@@ -270,7 +270,7 @@ jobs:
           LOCAL_PROPERTIES: ${{ env.LOCAL_PROPERTIES }}
         run: |
           set -euo pipefail
-          sed -i 's/-Xmx8192m/-Xmx3g/' gradle.properties
+          sed -i 's/-Xmx8192m/-Xmx6g -XX:MaxMetaspaceSize=512m/' gradle.properties
           chmod +x ./gradlew
           if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then
             echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
