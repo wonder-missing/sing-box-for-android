@@ -227,9 +227,12 @@ jobs:
           elif present:
               raise SystemExit("Signing secrets are incomplete. Set all four or none.")
           else:
+              if keystore.exists():
+                  keystore.unlink()
               subprocess.check_call([
                   "keytool", "-genkeypair",
                   "-keystore", str(keystore),
+                  "-storetype", "PKCS12",
                   "-storepass", "android",
                   "-alias", "androiddebugkey",
                   "-keypass", "android",
