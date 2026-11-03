@@ -35,6 +35,7 @@ import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.hasPermission
+import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.vendor.Vendor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -309,6 +310,11 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             PowerReportManager.refresh()
             Settings.startedByUser = false
             Settings.dataStore.flush()
+            runCatching {
+                TelemetryRuntime.detachAndFlush()
+            }.onFailure {
+                Log.w(TAG, "telemetry flush failed", it)
+            }
             withContext(Dispatchers.Main) {
                 status.value = Status.Stopped
                 service.stopSelf()
@@ -336,6 +342,11 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         if (::commandServer.isInitialized) {
             closeService()
             commandServer.close()
+        }
+        runCatching {
+            TelemetryRuntime.detachAndFlush()
+        }.onFailure {
+            Log.w(TAG, "telemetry flush failed", it)
         }
         withContext(Dispatchers.Main) {
             if (receiverRegistered) {
@@ -382,6 +393,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 stopAndAlert(Alert.StartCommandServer, e.message)
                 return@launch
             }
+            if (service is VPNService) {
+                TelemetryRuntime.attach(service)
+            }
             startService()
         }
         return Service.START_NOT_STICKY
@@ -393,6 +407,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         idleModeUpdates.cancel()
         idleModeScope.cancel()
         binder.close()
+        TelemetryRuntime.detachFromDestroy()
     }
 
     internal fun onRevoke() {

@@ -11,5 +11,7 @@ build/
 local.properties
 /app/libs/
 /service-account-credentials.json
+*.keystore
+*.jks
 /CLAUDE.md
 /.claude/

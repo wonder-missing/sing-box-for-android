@@ -72,6 +72,7 @@ import io.nekohasekai.sfa.compose.screen.usbip.USBIPDeviceDetailScreen
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPServerScreen
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPStatusViewModel
 import io.nekohasekai.sfa.constant.Status
+import io.nekohasekai.sfa.telemetry.TelemetrySettingsScreen
 
 private val slideInFromRight: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.EnterTransition = {
     slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300))
@@ -711,6 +712,16 @@ fun NavHost(
             popExitTransition = slideOutToRight,
         ) {
             PrivilegeSettingsScreen(navController = navController, serviceStatus = serviceStatus)
+        }
+
+        composable(
+            route = "settings/telemetry",
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            TelemetrySettingsScreen(navController = navController)
         }
 
         composable(

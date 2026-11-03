@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="telemetry_title">Telemetry / upload logs</string>
+    <string name="telemetry_summary">When this is on, new sing-box log lines are uploaded with HTTPS while the VPN is running. The endpoint and ingest token are saved only on this device. Nothing is uploaded until you fill both in.</string>
+    <string name="telemetry_enabled_summary">Every 5 minutes, or when about 500 lines or 200 KB are waiting, and again when the VPN stops or hits an error.</string>
+    <string name="telemetry_endpoint">Endpoint URL</string>
+    <string name="telemetry_endpoint_hint">https://</string>
+    <string name="telemetry_token">Ingest token</string>
+    <string name="telemetry_token_hint">Stored only on this device</string>
+    <string name="telemetry_show_token">Show token</string>
+    <string name="telemetry_hide_token">Hide token</string>
+</resources>

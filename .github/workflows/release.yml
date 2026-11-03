@@ -1,0 +1,358 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
+      go_version: ${{ steps.version.outputs.go_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Read version.properties
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION_NAME=$(grep '^VERSION_NAME=' version.properties | cut -d= -f2-)
+          GO_VERSION=$(grep '^GO_VERSION=' version.properties | cut -d= -f2-)
+          GO_VERSION=${GO_VERSION#go}
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "go_version=${GO_VERSION}" >> "$GITHUB_OUTPUT"
+
+  libbox:
+    name: Build libbox (${{ matrix.go_arch }})
+    runs-on: ubuntu-latest
+    needs: version
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        go_arch:
+          - "386"
+          - amd64
+          - arm
+          - arm64
+    steps:
+      - name: Checkout sing-box
+        uses: actions/checkout@v5
+        with:
+          repository: SagerNet/sing-box
+          ref: v${{ needs.version.outputs.version_name }}
+          path: sing-box
+          fetch-depth: 1
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.version.outputs.go_version }}
+          cache: false
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-${{ hashFiles('sing-box/go.sum') }}
+          restore-keys: go-mod-
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+      - name: Setup OpenJDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Prepare Android SDK
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            if [ -d /usr/local/lib/android/sdk ]; then
+              echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+              ANDROID_HOME=/usr/local/lib/android/sdk
+            else
+              echo "ANDROID_HOME=$HOME/.local/lib/android/sdk" >> "$GITHUB_ENV"
+              ANDROID_HOME=$HOME/.local/lib/android/sdk
+            fi
+          fi
+          mkdir -p "$ANDROID_HOME/licenses"
+          if ! touch "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null; then
+            ANDROID_HOME="$HOME/.local/lib/android/sdk"
+            echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+            mkdir -p "$ANDROID_HOME/licenses"
+            touch "$ANDROID_HOME/licenses/android-sdk-license"
+          fi
+      - name: Set tag
+        working-directory: sing-box
+        run: git tag "v${{ needs.version.outputs.version_name }}" -f
+      - name: Build library
+        working-directory: sing-box
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          make lib_install
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          go run ./cmd/internal/build_libbox -target android -platform "android/${{ matrix.go_arch }}"
+          mkdir -p "dist/${{ matrix.go_arch }}"
+          mv libbox.aar libbox-legacy.aar "dist/${{ matrix.go_arch }}/"
+      - name: Upload library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libbox-android-${{ matrix.go_arch }}
+          path: sing-box/dist
+          compression-level: 0
+
+  apk:
+    name: Build release APKs
+    runs-on: ubuntu-latest
+    needs:
+      - version
+      - libbox
+    timeout-minutes: 90
+    outputs:
+      debug_signed: ${{ steps.signing.outputs.debug_signed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Checkout sing-box
+        uses: actions/checkout@v5
+        with:
+          repository: SagerNet/sing-box
+          ref: v${{ needs.version.outputs.version_name }}
+          path: sing-box
+          fetch-depth: 1
+          clean: false
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.version.outputs.go_version }}
+          cache: false
+      - name: Setup OpenJDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Download libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: libbox-android-*
+          path: libbox-inputs
+          merge-multiple: true
+      - name: Merge libraries
+        working-directory: sing-box
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          aars=(../libbox-inputs/*/libbox.aar)
+          legacy=(../libbox-inputs/*/libbox-legacy.aar)
+          if [ "${#aars[@]}" -lt 4 ] || [ "${#legacy[@]}" -lt 4 ]; then
+            echo "expected 4 libbox AARs, found ${#aars[@]} and ${#legacy[@]} legacy"
+            find ../libbox-inputs -print
+            exit 1
+          fi
+          go run ./cmd/internal/merge_aar -output ../libbox.aar "${aars[@]}"
+          go run ./cmd/internal/merge_aar -output ../libbox-legacy.aar "${legacy[@]}"
+          mkdir -p ../app/libs
+          mv ../libbox.aar ../libbox-legacy.aar ../app/libs/
+      - name: Configure signing
+        id: signing
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import os
+          import subprocess
+          from pathlib import Path
+
+          keys = [
+              "SIGNING_KEYSTORE_BASE64",
+              "SIGNING_KEYSTORE_PASSWORD",
+              "SIGNING_KEY_ALIAS",
+              "SIGNING_KEY_PASSWORD",
+          ]
+          values = {key: os.environ.get(key, "") for key in keys}
+          present = [key for key, value in values.items() if value]
+          keystore = Path("app/release.keystore")
+          keystore.parent.mkdir(parents=True, exist_ok=True)
+
+          def prop_escape(text: str) -> str:
+              out = []
+              for index, ch in enumerate(text):
+                  if ch == "\\":
+                      out.append("\\\\")
+                  elif ch == "\n":
+                      out.append("\\n")
+                  elif ch == "\r":
+                      out.append("\\r")
+                  elif ch == "\t":
+                      out.append("\\t")
+                  elif ch in "#!=:" or (ch == " " and (index == 0 or index == len(text) - 1)):
+                      out.append("\\" + ch)
+                  else:
+                      out.append(ch)
+              return "".join(out)
+
+          if len(present) == len(keys):
+              keystore.write_bytes(base64.b64decode(values["SIGNING_KEYSTORE_BASE64"]))
+              store_pass = values["SIGNING_KEYSTORE_PASSWORD"]
+              alias = values["SIGNING_KEY_ALIAS"]
+              key_pass = values["SIGNING_KEY_PASSWORD"]
+              debug_signed = "false"
+              print("Using signing secrets.")
+          elif present:
+              raise SystemExit("Signing secrets are incomplete. Set all four or none.")
+          else:
+              subprocess.check_call([
+                  "keytool", "-genkeypair",
+                  "-keystore", str(keystore),
+                  "-storepass", "android",
+                  "-alias", "androiddebugkey",
+                  "-keypass", "android",
+                  "-keyalg", "RSA",
+                  "-keysize", "2048",
+                  "-validity", "10000",
+                  "-dname", "CN=Wonder Debug, OU=CI, O=Wonder, C=US",
+              ])
+              store_pass = "android"
+              alias = "androiddebugkey"
+              key_pass = "android"
+              debug_signed = "true"
+              print("Signing secrets absent. Using a debug key and marking the release debug-signed.")
+
+          props = Path("signing.properties")
+          props.write_text(
+              "KEYSTORE_PASS=" + prop_escape(store_pass) + "\n"
+              + "ALIAS_NAME=" + prop_escape(alias) + "\n"
+              + "ALIAS_PASS=" + prop_escape(key_pass) + "\n",
+              encoding="utf-8",
+          )
+          encoded = base64.b64encode(props.read_bytes()).decode("ascii")
+          props.unlink()
+          env_path = Path(os.environ["GITHUB_ENV"])
+          with env_path.open("a", encoding="utf-8") as handle:
+              handle.write(f"LOCAL_PROPERTIES={encoded}\n")
+              handle.write(f"DEBUG_SIGNED={debug_signed}\n")
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          with output_path.open("a", encoding="utf-8") as handle:
+              handle.write(f"debug_signed={debug_signed}\n")
+          PY
+      - name: Build
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          LOCAL_PROPERTIES: ${{ env.LOCAL_PROPERTIES }}
+        run: |
+          set -euo pipefail
+          sed -i 's/-Xmx8192m/-Xmx3g/' gradle.properties
+          chmod +x ./gradlew
+          if [ -z "${ANDROID_HOME:-}" ] && [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+            echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+            ANDROID_HOME="${ANDROID_SDK_ROOT}"
+          fi
+          if [ -n "${ANDROID_HOME:-}" ]; then
+            mkdir -p "$ANDROID_HOME/licenses"
+            printf '%s\n' "24333f8a63b6825ea9c5514f83c2829b004d1fee" "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$ANDROID_HOME/licenses/android-sdk-license" || true
+          fi
+          ./gradlew :app:assembleOtherRelease :app:assembleOtherLegacyRelease --stacktrace
+      - name: Collect APKs
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find app/build/outputs/apk -path '*release*.apk' -name '*.apk' -exec cp {} dist/ \;
+          python3 - <<'PY'
+          import pathlib
+          import sys
+          import zipfile
+
+          apks = sorted(pathlib.Path("dist").glob("*.apk"))
+          if not apks:
+              sys.exit("no release APKs were produced")
+          installable = False
+          for apk in apks:
+              with zipfile.ZipFile(apk) as archive:
+                  names = archive.namelist()
+              has_manifest = "AndroidManifest.xml" in names
+              has_dex = any(name.startswith("classes") and name.endswith(".dex") for name in names)
+              has_arm64 = any(name.startswith("lib/arm64-v8a/") and name.endswith(".so") for name in names)
+              print(f"{apk.name}: manifest={has_manifest} dex={has_dex} arm64={has_arm64}")
+              if has_manifest and has_dex and has_arm64:
+                  installable = True
+          if not installable:
+              sys.exit("no installable arm64-v8a or universal APK")
+          PY
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apks
+          path: dist/*.apk
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - version
+      - apk
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: release-apks
+          path: dist
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEBUG_SIGNED: ${{ needs.apk.outputs.debug_signed }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="dispatch-${GITHUB_RUN_NUMBER}"
+          fi
+          if [ "${DEBUG_SIGNED}" = "true" ]; then
+            TITLE="${TAG} (debug-signed)"
+            NOTES=$(printf '%s\n' "debug-signed" "" "Wonder fork of sing-box for Android." "Signed with a debug key because the signing secrets were absent.")
+            PRERELEASE=(--prerelease)
+          else
+            TITLE="${TAG}"
+            NOTES=$(printf '%s\n' "Wonder fork of sing-box for Android.")
+            PRERELEASE=()
+          fi
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            PRERELEASE=(--prerelease)
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES"
+            gh release upload "$TAG" dist/*.apk --clobber
+          else
+            gh release create "$TAG" dist/*.apk --target "${GITHUB_SHA}" --title "$TITLE" --notes "$NOTES" "${PRERELEASE[@]}"
+          fi
+          gh release view "$TAG" --json url,assets --jq '{url: .url, assets: [.assets[].url]}'

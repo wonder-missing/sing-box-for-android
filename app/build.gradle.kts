@@ -73,6 +73,7 @@ android {
 
     defaultConfig {
         applicationId = "io.nekohasekai.sfa"
+        applicationIdSuffix = ".wonder"
         minSdk = 24
         targetSdk = 37
         versionCode = getVersionProps("VERSION_CODE").toInt()
