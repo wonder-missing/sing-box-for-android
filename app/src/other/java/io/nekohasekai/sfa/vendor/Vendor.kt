@@ -40,6 +40,13 @@ object Vendor : VendorInterface {
                     showTrackNotSupportedDialog(activity)
                 }
             }
+        } catch (e: UpdateCheckException.Unreachable) {
+            Log.e(TAG, "checkUpdate: unreachable", e)
+            if (byUser) {
+                activity.runOnUiThread {
+                    showUnreachableDialog(activity, e.message)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "checkUpdate: ", e)
             if (byUser) {
@@ -85,6 +92,14 @@ object Vendor : VendorInterface {
         MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.check_update)
             .setMessage(R.string.update_track_not_supported)
+            .setPositiveButton(R.string.ok, null)
+            .show()
+    }
+
+    private fun showUnreachableDialog(activity: Activity, detail: String?) {
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.check_update)
+            .setMessage(activity.getString(R.string.update_check_unreachable, detail ?: ""))
             .setPositiveButton(R.string.ok, null)
             .show()
     }

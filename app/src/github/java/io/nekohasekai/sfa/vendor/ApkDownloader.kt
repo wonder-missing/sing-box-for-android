@@ -1,21 +1,15 @@
 package io.nekohasekai.sfa.vendor
 
-import io.nekohasekai.libbox.HTTPResponseWriteToProgressHandler
-import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.update.UpdateState
-import io.nekohasekai.sfa.utils.HTTPClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.File
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 
 class ApkDownloader : Closeable {
-    private val client = Libbox.newHTTPClient().apply {
-        modernTLS()
-        keepAlive()
-    }
-
     suspend fun download(url: String): File = withContext(Dispatchers.IO) {
         val cacheDir = File(Application.application.cacheDir, "updates")
         cacheDir.mkdirs()
@@ -23,20 +17,37 @@ class ApkDownloader : Closeable {
 
         if (apkFile.exists()) apkFile.delete()
 
-        val request = client.newRequest()
-        request.setUserAgent(HTTPClient.userAgent)
-        request.setURL(url)
-
-        val response = request.execute()
-        response.writeToWithProgress(
-            apkFile.absolutePath,
-            object : HTTPResponseWriteToProgressHandler {
-                override fun update(progress: Long, total: Long) {
-                    UpdateState.downloadProgress.value =
-                        if (total > 0) progress.toFloat() / total.toFloat() else null
+        val connection = (URL(url).openConnection() as HttpsURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            requestMethod = "GET"
+            setRequestProperty("Accept", "application/vnd.android.package-archive,*/*")
+            setRequestProperty("User-Agent", "WonderSing")
+        }
+        try {
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                throw Exception("Download failed: HTTP $code")
+            }
+            val total = connection.contentLengthLong
+            connection.inputStream.use { input ->
+                apkFile.outputStream().use { output ->
+                    val buffer = ByteArray(8192)
+                    var readTotal = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        readTotal += count
+                        UpdateState.downloadProgress.value =
+                            if (total > 0) readTotal.toFloat() / total.toFloat() else null
+                    }
                 }
-            },
-        )
+            }
+        } finally {
+            connection.disconnect()
+        }
 
         if (!apkFile.exists() || apkFile.length() == 0L) {
             throw Exception("Download failed: empty file")
@@ -46,7 +57,5 @@ class ApkDownloader : Closeable {
         apkFile
     }
 
-    override fun close() {
-        client.close()
-    }
+    override fun close() = Unit
 }
