@@ -1326,6 +1326,12 @@ fun AppSettingsScreen(
                                     } catch (_: UpdateCheckException.TrackNotSupported) {
                                         UpdateState.setUpdate(null)
                                         showErrorDialog = context.getString(R.string.update_track_not_supported)
+                                    } catch (e: UpdateCheckException.Unreachable) {
+                                        UpdateState.setUpdate(null)
+                                        showErrorDialog = context.getString(
+                                            R.string.update_check_unreachable,
+                                            e.message ?: "",
+                                        )
                                     } catch (e: Exception) {
                                         Log.e("AppSettingsScreen", "checkUpdateAsync failed", e)
                                         UpdateState.setUpdate(null)
