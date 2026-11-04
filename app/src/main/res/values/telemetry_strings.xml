@@ -1,12 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="telemetry_title">Telemetry / upload logs</string>
-    <string name="telemetry_summary">When this is on, new sing-box log lines are uploaded with HTTPS while the VPN is running. The endpoint and ingest token are saved only on this device. Nothing is uploaded until you fill both in.</string>
-    <string name="telemetry_enabled_summary">Every 5 minutes, or when about 500 lines or 200 KB are waiting, and again when the VPN stops or hits an error.</string>
+    <string name="telemetry_title">Telemetry</string>
+    <string name="telemetry_row_summary">Upload VPN logs</string>
+    <string name="telemetry_summary">Logs are sent only while the VPN is running, about every 5 minutes.</string>
+    <string name="telemetry_enabled_summary">Off until you turn this on and save an endpoint and token.</string>
     <string name="telemetry_endpoint">Endpoint URL</string>
-    <string name="telemetry_endpoint_hint">https://</string>
+    <string name="telemetry_endpoint_hint">https://example.workers.dev</string>
     <string name="telemetry_token">Ingest token</string>
     <string name="telemetry_token_hint">Stored only on this device</string>
     <string name="telemetry_show_token">Show token</string>
     <string name="telemetry_hide_token">Hide token</string>
+    <string name="telemetry_save">Save</string>
+    <string name="telemetry_saved">Saved</string>
+    <string name="telemetry_test">Test connection</string>
+    <string name="telemetry_testing">Testing…</string>
+    <string name="telemetry_help_title">How upload works</string>
+    <string name="telemetry_help_body">A host URL or a URL that already ends in /ingest both work. The token is sent as Authorization: Bearer and is not included in the app backup. The first batch goes out shortly after the VPN is running; later batches go every 5 minutes, or sooner after about 500 lines or 200 KB.</string>
+    <string name="update_allow_installs">Allow installs from this app, then tap Update again.</string>
 </resources>

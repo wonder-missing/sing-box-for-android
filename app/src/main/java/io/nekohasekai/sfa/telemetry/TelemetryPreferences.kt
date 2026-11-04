@@ -28,16 +28,39 @@ internal object TelemetryPreferences {
     fun ingestToken(context: Context): String = prefs(context).getString(KEY_TOKEN, "").orEmpty()
 
     fun setEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_ENABLED, enabled).commit()
+        TelemetryRuntime.onSettingsChanged(context)
     }
 
-    fun setEndpointUrl(context: Context, url: String) {
-        prefs(context).edit().putString(KEY_ENDPOINT, url.trim()).apply()
+    fun save(context: Context, enabled: Boolean, endpoint: String, token: String) {
+        val normalizedToken = token.trim().removePrefix("Bearer ").trim()
+        prefs(context).edit()
+            .putBoolean(KEY_ENABLED, enabled)
+            .putString(KEY_ENDPOINT, normalizeEndpoint(endpoint))
+            .putString(KEY_TOKEN, normalizedToken)
+            .commit()
+        TelemetryRuntime.onSettingsChanged(context)
     }
 
-    fun setIngestToken(context: Context, token: String) {
-        val normalized = token.trim().removePrefix("Bearer ").trim()
-        prefs(context).edit().putString(KEY_TOKEN, normalized).apply()
+    fun normalizeEndpoint(raw: String): String {
+        var text = raw.trim()
+        if (text.isEmpty()) return ""
+        if (!text.contains("://")) {
+            text = "https://$text"
+        }
+        val uri = runCatching { java.net.URI(text) }.getOrNull() ?: return text
+        if (!uri.scheme.equals("https", ignoreCase = true)) return text
+        val host = uri.host ?: return text
+        var path = uri.rawPath.orEmpty()
+        if (path.length > 1 && path.endsWith("/")) {
+            path = path.dropLast(1)
+        }
+        if (path.isEmpty() || path == "/") {
+            path = "/ingest"
+        }
+        val port = if (uri.port == -1) "" else ":${uri.port}"
+        val query = if (uri.rawQuery.isNullOrEmpty()) "" else "?${uri.rawQuery}"
+        return "https://$host$port$path$query"
     }
 
     fun deviceId(context: Context): String {
@@ -46,7 +69,7 @@ internal object TelemetryPreferences {
             return existing
         }
         val created = UUID.randomUUID().toString()
-        prefs(context).edit().putString(KEY_DEVICE, created).apply()
+        prefs(context).edit().putString(KEY_DEVICE, created).commit()
         return created
     }
 
@@ -54,7 +77,7 @@ internal object TelemetryPreferences {
         if (!isEnabled(context)) return false
         val token = ingestToken(context)
         if (token.isBlank() || token.any { it == '\r' || it == '\n' }) return false
-        return isHttpsEndpoint(endpointUrl(context))
+        return isHttpsEndpoint(normalizeEndpoint(endpointUrl(context)))
     }
 
     fun isHttpsEndpoint(url: String): Boolean {

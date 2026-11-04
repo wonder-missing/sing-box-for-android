@@ -1,8 +1,6 @@
 package io.nekohasekai.sfa.vendor
 
 import android.app.Activity
-import android.content.Intent
-import android.net.Uri
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -73,8 +71,21 @@ object Vendor : VendorInterface {
             .setTitle(R.string.check_update)
             .setMessage(message)
             .setPositiveButton(R.string.update) { _, _ ->
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.releaseUrl))
-                activity.startActivity(intent)
+                kotlinx.coroutines.CoroutineScope(
+                    kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+                ).launch {
+                    runCatching {
+                        downloadAndInstall(activity, updateInfo.downloadUrl)
+                    }.onFailure { error ->
+                        activity.runOnUiThread {
+                            android.widget.Toast.makeText(
+                                activity,
+                                error.message ?: activity.getString(R.string.update_allow_installs),
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

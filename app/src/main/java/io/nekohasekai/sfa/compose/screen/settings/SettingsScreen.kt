@@ -254,7 +254,7 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     supportingContent = {
-                        Text(stringResource(R.string.telemetry_enabled_summary))
+                        Text(stringResource(R.string.telemetry_row_summary))
                     },
                     leadingContent = {
                         Icon(

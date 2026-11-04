@@ -54,6 +54,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         private const val PROFILE_UPDATE_INTERVAL = 15L * 60 * 1000 // 15 minutes in milliseconds
         private const val TAG = "BoxService"
 
+        @Volatile
+        var runningVpn: VPNService? = null
+
         @OptIn(DelicateCoroutinesApi::class)
         fun start() = GlobalScope.launch(Dispatchers.Main.immediate) {
             Settings.dataStore.initialize()
@@ -310,6 +313,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             PowerReportManager.refresh()
             Settings.startedByUser = false
             Settings.dataStore.flush()
+            if (service is VPNService) {
+                runningVpn = null
+            }
             runCatching {
                 TelemetryRuntime.detachAndFlush()
             }.onFailure {
@@ -342,6 +348,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         if (::commandServer.isInitialized) {
             closeService()
             commandServer.close()
+        }
+        if (service is VPNService) {
+            runningVpn = null
         }
         runCatching {
             TelemetryRuntime.detachAndFlush()
@@ -394,6 +403,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 return@launch
             }
             if (service is VPNService) {
+                runningVpn = service
                 TelemetryRuntime.attach(service)
             }
             startService()

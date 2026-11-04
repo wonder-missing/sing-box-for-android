@@ -8,15 +8,20 @@ import android.os.Build
 import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.URI
+import java.net.URL
+import java.net.UnknownHostException
 import java.security.SecureRandom
 import java.util.zip.GZIPOutputStream
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLSocket
 
 internal sealed class UploadResult {
@@ -52,20 +57,76 @@ internal class TelemetryUploader(
         if (gzipped.size > TelemetryPayload.MAX_GZIP_BYTES) {
             return UploadResult.TooLarge
         }
-        val target = parseHttps(endpoint) ?: return UploadResult.Failed(false, "endpoint is not https")
-        return try {
-            val status = execute(target, token, gzipped, connectTimeoutMs, readTimeoutMs)
-            when (status) {
-                200 -> UploadResult.Success
-                401 -> UploadResult.Unauthorized
-                413 -> UploadResult.TooLarge
-                408, 429 -> UploadResult.Failed(true, "HTTP $status")
-                in 500..599 -> UploadResult.Failed(true, "HTTP $status")
-                else -> UploadResult.Failed(false, "HTTP $status")
-            }
+        val normalized = TelemetryPreferences.normalizeEndpoint(endpoint)
+        val target = parseHttps(normalized) ?: return UploadResult.Failed(false, "endpoint is not https")
+        val bypass = try {
+            mapStatus(execute(target, token, gzipped, connectTimeoutMs, readTimeoutMs))
         } catch (e: Exception) {
-            UploadResult.Failed(true, e.message ?: e.javaClass.simpleName)
+            UploadResult.Failed(true, describeFailure(e))
         }
+        if (bypass is UploadResult.Success ||
+            bypass is UploadResult.Unauthorized ||
+            bypass is UploadResult.TooLarge ||
+            (bypass is UploadResult.Failed && bypass.detail.startsWith("HTTP "))
+        ) {
+            return bypass
+        }
+        Log.w(TAG, "bypass upload failed (${(bypass as UploadResult.Failed).detail}); retrying on the default network")
+        return try {
+            postDirect(normalized, token, gzipped, connectTimeoutMs, readTimeoutMs)
+        } catch (e: Exception) {
+            UploadResult.Failed(true, describeFailure(e))
+        }
+    }
+
+    private fun postDirect(
+        url: String,
+        token: String,
+        gzipped: ByteArray,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+    ): UploadResult {
+        val connection = (URL(url).openConnection() as HttpsURLConnection).apply {
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
+            requestMethod = "POST"
+            doOutput = true
+            instanceFollowRedirects = false
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("Content-Encoding", "gzip")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "WonderSing")
+        }
+        try {
+            connection.outputStream.use { it.write(gzipped) }
+            val status = connection.responseCode
+            Log.i(TAG, "upload HTTP $status via default network (${gzipped.size} gzipped bytes)")
+            return mapStatus(status)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun mapStatus(status: Int): UploadResult {
+        if (status < 100) {
+            return UploadResult.Failed(true, "no HTTP response")
+        }
+        return when (status) {
+            HttpURLConnection.HTTP_OK -> UploadResult.Success
+            HttpURLConnection.HTTP_UNAUTHORIZED -> UploadResult.Unauthorized
+            413 -> UploadResult.TooLarge
+            408, 429 -> UploadResult.Failed(true, "HTTP $status")
+            in 500..599 -> UploadResult.Failed(true, "HTTP $status")
+            else -> UploadResult.Failed(false, "HTTP $status")
+        }
+    }
+
+    private fun describeFailure(error: Exception): String = when (error) {
+        is UnknownHostException -> "DNS: ${error.message ?: "unknown host"}"
+        is SocketTimeoutException -> "timeout: ${error.message ?: "timed out"}"
+        is SSLException -> "TLS: ${error.message ?: "handshake failed"}"
+        else -> error.message ?: error.javaClass.simpleName
     }
 
     private fun execute(
@@ -106,7 +167,7 @@ internal class TelemetryUploader(
                 output.write(gzipped)
                 output.flush()
                 val (status, _) = readResponse(ssl.inputStream)
-                Log.d(TAG, "upload HTTP $status (${gzipped.size} gzipped bytes)")
+                Log.i(TAG, "upload HTTP $status via protected socket (${gzipped.size} gzipped bytes)")
                 return status
             } finally {
                 runCatching { ssl.close() }

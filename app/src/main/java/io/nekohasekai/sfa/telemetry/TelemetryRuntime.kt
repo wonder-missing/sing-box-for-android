@@ -55,6 +55,10 @@ internal object TelemetryRuntime {
     private var coreVersion: String = ""
     private var appContext: Context? = null
     private var persistQueued = false
+    private var firstFlushScheduled = false
+
+    @Volatile
+    private var flushRequested = false
 
     private val handler = object : CommandClient.Handler {
         override fun onConnected() {
@@ -84,6 +88,13 @@ internal object TelemetryRuntime {
             val queue = buffer ?: return
             val crossed = queue.append(lines)
             schedulePersist()
+            if (!firstFlushScheduled) {
+                firstFlushScheduled = true
+                scope?.launch {
+                    delay(15_000)
+                    uploadAvailable("interval", finalFlush = false)
+                }
+            }
             if (crossed) {
                 scope?.launch { uploadAvailable("threshold", finalFlush = false) }
             }
@@ -101,6 +112,7 @@ internal object TelemetryRuntime {
             uploader = TelemetryUploader(context) { socket -> vpn.protect(socket) }
             collectorConnected = false
             connectInFlight = false
+            firstFlushScheduled = false
             val created = CoroutineScope(SupervisorJob() + Dispatchers.IO)
             scope = created
             commandClient = CommandClient(
@@ -112,6 +124,57 @@ internal object TelemetryRuntime {
             created.launch { runLoop() }
         }
         Log.i(TAG, "attached")
+    }
+
+    fun onSettingsChanged(context: Context) {
+        if (!attached) {
+            val vpn = io.nekohasekai.sfa.bg.BoxService.runningVpn
+            if (vpn != null) {
+                attach(vpn)
+            }
+        }
+        flushRequested = true
+        scope?.launch {
+            syncCollector()
+            delay(15_000)
+            if (attached) {
+                uploadAvailable("interval", finalFlush = false)
+            }
+        }
+        Log.i(TAG, "settings changed; upload armed=${TelemetryPreferences.canUpload(context)} attached=$attached")
+    }
+
+    fun probe(context: Context): String {
+        if (!TelemetryPreferences.isEnabled(context)) {
+            return "Upload is off. Turn it on and save."
+        }
+        val endpoint = TelemetryPreferences.normalizeEndpoint(TelemetryPreferences.endpointUrl(context))
+        val token = TelemetryPreferences.ingestToken(context)
+        if (!TelemetryPreferences.isHttpsEndpoint(endpoint) || token.isBlank()) {
+            return "Save an https endpoint and token first."
+        }
+        val body = TelemetryPayload.build(
+            device = TelemetryPreferences.deviceId(context),
+            appVersion = BuildConfig.VERSION_NAME,
+            coreVersion = runCatching { Libbox.version() }.getOrDefault(""),
+            tsMillis = System.currentTimeMillis(),
+            lines = listOf("telemetry probe"),
+        )
+        val result = TelemetryUploader(context.applicationContext, null).post(
+            endpoint = endpoint,
+            token = token,
+            body = body,
+            connectTimeoutMs = CONNECT_TIMEOUT_MS,
+            readTimeoutMs = READ_TIMEOUT_MS,
+        )
+        return describe(result)
+    }
+
+    fun describe(result: UploadResult): String = when (result) {
+        UploadResult.Success -> "Connected. The server accepted the probe."
+        UploadResult.Unauthorized -> "HTTP 401. The ingest token was rejected."
+        UploadResult.TooLarge -> "HTTP 413. The server rejected the payload size."
+        is UploadResult.Failed -> result.detail
     }
 
     suspend fun detachAndFlush() {
@@ -169,7 +232,8 @@ internal object TelemetryRuntime {
             if (!attached) break
             syncCollector()
             val now = System.currentTimeMillis()
-            if (now >= nextFlushAt) {
+            if (flushRequested || now >= nextFlushAt) {
+                flushRequested = false
                 nextFlushAt = now + TelemetryPayload.FLUSH_INTERVAL_MS
                 uploadAvailable("interval", finalFlush = false)
             }

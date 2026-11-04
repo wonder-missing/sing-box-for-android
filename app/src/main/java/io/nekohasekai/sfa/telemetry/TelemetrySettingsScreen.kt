@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,9 +24,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,6 +48,10 @@ import androidx.navigation.NavController
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,11 +71,23 @@ fun TelemetrySettingsScreen(navController: NavController) {
     }
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var enabled by rememberSaveable { mutableStateOf(TelemetryPreferences.isEnabled(context)) }
     var endpoint by rememberSaveable { mutableStateOf(TelemetryPreferences.endpointUrl(context)) }
     var token by rememberSaveable { mutableStateOf(TelemetryPreferences.ingestToken(context)) }
     var tokenVisible by rememberSaveable { mutableStateOf(false) }
+    var saved by rememberSaveable { mutableStateOf(false) }
+    var helpOpen by rememberSaveable { mutableStateOf(false) }
+    var testing by rememberSaveable { mutableStateOf(false) }
+    var testResult by rememberSaveable { mutableStateOf<String?>(null) }
     val scaffoldPadding = LocalScaffoldPadding.current
+
+    fun persist() {
+        TelemetryPreferences.save(context, enabled, endpoint, token)
+        endpoint = TelemetryPreferences.endpointUrl(context)
+        token = TelemetryPreferences.ingestToken(context)
+        saved = true
+    }
 
     Column(
         modifier = Modifier
@@ -103,7 +122,7 @@ fun TelemetrySettingsScreen(navController: NavController) {
                         checked = enabled,
                         onCheckedChange = { checked ->
                             enabled = checked
-                            TelemetryPreferences.setEnabled(context, checked)
+                            saved = false
                         },
                     )
                 },
@@ -123,9 +142,9 @@ fun TelemetrySettingsScreen(navController: NavController) {
             Column(modifier = Modifier.padding(16.dp)) {
                 OutlinedTextField(
                     value = endpoint,
-                    onValueChange = { value ->
-                        endpoint = value
-                        TelemetryPreferences.setEndpointUrl(context, value)
+                    onValueChange = {
+                        endpoint = it
+                        saved = false
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.telemetry_endpoint)) },
@@ -136,9 +155,9 @@ fun TelemetrySettingsScreen(navController: NavController) {
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = token,
-                    onValueChange = { value ->
-                        token = value
-                        TelemetryPreferences.setIngestToken(context, value)
+                    onValueChange = {
+                        token = it
+                        saved = false
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.telemetry_token)) },
@@ -170,12 +189,67 @@ fun TelemetrySettingsScreen(navController: NavController) {
                     },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.telemetry_summary),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Button(
+                    onClick = { persist() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.telemetry_save))
+                }
+                if (saved) {
+                    Text(
+                        text = stringResource(R.string.telemetry_saved),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        persist()
+                        testing = true
+                        testResult = null
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                TelemetryRuntime.probe(context)
+                            }
+                            testResult = result
+                            testing = false
+                        }
+                    },
+                    enabled = !testing,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(
+                            if (testing) R.string.telemetry_testing else R.string.telemetry_test,
+                        ),
+                    )
+                }
+                if (!testResult.isNullOrBlank()) {
+                    Text(
+                        text = testResult!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             }
+        }
+
+        TextButton(
+            onClick = { helpOpen = !helpOpen },
+            modifier = Modifier.padding(horizontal = 16.dp),
+        ) {
+            Text(stringResource(R.string.telemetry_help_title))
+        }
+        if (helpOpen) {
+            Text(
+                text = stringResource(R.string.telemetry_help_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 32.dp),
+            )
         }
     }
 }
