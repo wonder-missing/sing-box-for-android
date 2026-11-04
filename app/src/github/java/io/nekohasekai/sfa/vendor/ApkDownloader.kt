@@ -30,7 +30,7 @@ class ApkDownloader : Closeable {
             if (code !in 200..299) {
                 throw Exception("Download failed: HTTP $code")
             }
-            val total = connection.contentLengthLong
+            val total = connection.contentLength.toLong()
             connection.inputStream.use { input ->
                 apkFile.outputStream().use { output ->
                     val buffer = ByteArray(8192)
