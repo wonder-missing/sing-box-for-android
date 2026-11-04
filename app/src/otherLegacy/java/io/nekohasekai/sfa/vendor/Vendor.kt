@@ -13,6 +13,10 @@ import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.update.UpdateTrack
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 object Vendor : VendorInterface {
     private const val TAG = "Vendor"
@@ -69,9 +73,7 @@ object Vendor : VendorInterface {
             .setTitle(R.string.check_update)
             .setMessage(message)
             .setPositiveButton(R.string.update) { _, _ ->
-                kotlinx.coroutines.CoroutineScope(
-                    kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
-                ).launch {
+                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                     runCatching {
                         downloadAndInstall(activity, updateInfo.downloadUrl)
                     }.onFailure { error ->
