@@ -46,12 +46,20 @@ internal class TelemetryUploader(
     private val context: Context,
     private val protect: SocketProtector?,
 ) {
+    /**
+     * Tries the last path that worked first ("direct" = protected socket on the
+     * underlying network, "vpn" = default network, i.e. through the tunnel), then
+     * the other one. Every attempt is recorded in [TelemetryEventLog] with its
+     * duration so upload success rate and latency are measurable even when the
+     * upload itself failed. [tags] are copied onto those events.
+     */
     fun post(
         endpoint: String,
         token: String,
         body: ByteArray,
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
+        tags: Map<String, Any?> = emptyMap(),
     ): UploadResult {
         val gzipped = gzip(body)
         if (gzipped.size > TelemetryPayload.MAX_GZIP_BYTES) {
@@ -59,23 +67,80 @@ internal class TelemetryUploader(
         }
         val normalized = TelemetryPreferences.normalizeEndpoint(endpoint)
         val target = parseHttps(normalized) ?: return UploadResult.Failed(false, "endpoint is not https")
-        val bypass = try {
-            mapStatus(execute(target, token, gzipped, connectTimeoutMs, readTimeoutMs))
-        } catch (e: Exception) {
-            UploadResult.Failed(true, describeFailure(e))
+        val preferred = preferredPath(context)
+        val order = if (preferred == PATH_VPN) listOf(PATH_VPN, PATH_DIRECT) else listOf(PATH_DIRECT, PATH_VPN)
+        var last: UploadResult = UploadResult.Failed(true, "not sent")
+        order.forEachIndexed { index, path ->
+            // The non-preferred path gets a shorter connect timeout so a blocked
+            // route does not add a full 15 s to every upload.
+            val connectTimeout = if (index == 0 && preferred != null) connectTimeoutMs else minOf(connectTimeoutMs, SECONDARY_CONNECT_TIMEOUT_MS)
+            val started = System.currentTimeMillis()
+            val result = try {
+                if (path == PATH_DIRECT) {
+                    mapStatus(execute(target, token, gzipped, connectTimeout, readTimeoutMs))
+                } else {
+                    postDirect(normalized, token, gzipped, connectTimeout, readTimeoutMs)
+                }
+            } catch (e: Exception) {
+                UploadResult.Failed(true, describeFailure(e))
+            }
+            val elapsed = System.currentTimeMillis() - started
+            recordAttempt(path, index + 1, result, elapsed, gzipped.size, tags)
+            last = result
+            val definitive = result is UploadResult.Success ||
+                result is UploadResult.Unauthorized ||
+                result is UploadResult.TooLarge ||
+                (result is UploadResult.Failed && result.detail.startsWith("HTTP "))
+            if (result is UploadResult.Success && path != preferred) {
+                rememberPath(context, path)
+            }
+            if (definitive) return result
+            Log.w(TAG, "$path upload failed after ${elapsed}ms (${(result as UploadResult.Failed).detail})")
         }
-        if (bypass is UploadResult.Success ||
-            bypass is UploadResult.Unauthorized ||
-            bypass is UploadResult.TooLarge ||
-            (bypass is UploadResult.Failed && bypass.detail.startsWith("HTTP "))
-        ) {
-            return bypass
+        return last
+    }
+
+    private fun recordAttempt(
+        path: String,
+        hop: Int,
+        result: UploadResult,
+        elapsedMs: Long,
+        gzippedBytes: Int,
+        tags: Map<String, Any?>,
+    ) {
+        val fields = LinkedHashMap<String, Any?>()
+        fields["path"] = path
+        fields["hop"] = hop
+        fields["ms"] = elapsedMs
+        fields["gz_bytes"] = gzippedBytes
+        fields.putAll(tags)
+        when (result) {
+            UploadResult.Success -> TelemetryEventLog.record(context, "telemetry_upload_ok", fields)
+            UploadResult.Unauthorized -> TelemetryEventLog.record(context, "telemetry_upload_failed", fields + ("status" to 401))
+            UploadResult.TooLarge -> TelemetryEventLog.record(context, "telemetry_upload_failed", fields + ("status" to 413))
+            is UploadResult.Failed -> {
+                val status = Regex("^HTTP (\\d+)").find(result.detail)?.groupValues?.get(1)?.toIntOrNull()
+                TelemetryEventLog.record(
+                    context,
+                    "telemetry_upload_failed",
+                    fields + mapOf("status" to status, "error" to errorClass(result.detail), "detail" to TelemetryEvents.scrub(result.detail).take(120)),
+                )
+            }
         }
-        Log.w(TAG, "bypass upload failed (${(bypass as UploadResult.Failed).detail}); retrying on the default network")
-        return try {
-            postDirect(normalized, token, gzipped, connectTimeoutMs, readTimeoutMs)
-        } catch (e: Exception) {
-            UploadResult.Failed(true, describeFailure(e))
+    }
+
+    private fun errorClass(detail: String): String {
+        val d = detail.lowercase()
+        return when {
+            d.startsWith("http ") -> "http"
+            d.startsWith("dns") -> "dns"
+            d.startsWith("timeout") -> "timeout"
+            d.startsWith("tls") -> "tls"
+            "refused" in d -> "refused"
+            "reset" in d -> "reset"
+            "unreachable" in d || "no route" in d -> "unreachable"
+            "no http response" in d -> "no_response"
+            else -> "other"
         }
     }
 
@@ -288,6 +353,24 @@ internal class TelemetryUploader(
 
     private companion object {
         const val TAG = "Telemetry"
+        const val PATH_DIRECT = "direct"
+        const val PATH_VPN = "vpn"
+        const val SECONDARY_CONNECT_TIMEOUT_MS = 6_000
+        const val PREFS = "telemetry_upload_path"
+
+        @Volatile
+        var cachedPath: String? = null
+
+        fun preferredPath(context: Context): String? {
+            cachedPath?.let { return it }
+            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("preferred", null)
+                ?.also { cachedPath = it }
+        }
+
+        fun rememberPath(context: Context, path: String) {
+            cachedPath = path
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("preferred", path).apply()
+        }
         const val MAX_HEADER_BYTES = 64 * 1024
         const val MAX_BODY_BYTES = 8 * 1024
     }

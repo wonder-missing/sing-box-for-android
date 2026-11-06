@@ -36,6 +36,7 @@ internal object TelemetryPayload {
         droppedLines: Int = 0,
         more: Int = 0,
         eventsJson: String? = null,
+        clientEventsJson: String? = null,
     ): ByteArray {
         val json = StringBuilder(lines.sumOf { it.length } + 128 + (eventsJson?.length ?: 0))
         json.append("{\"device\":").append(quote(device))
@@ -46,6 +47,7 @@ internal object TelemetryPayload {
         if (droppedLines > 0) json.append(",\"dropped_lines\":").append(droppedLines)
         if (more > 0) json.append(",\"more\":").append(more)
         if (eventsJson != null) json.append(",\"events\":").append(eventsJson)
+        if (clientEventsJson != null) json.append(",\"client_events\":").append(clientEventsJson)
         json.append(",\"lines\":[")
         lines.forEachIndexed { index, line ->
             if (index > 0) json.append(',')

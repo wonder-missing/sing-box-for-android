@@ -74,11 +74,21 @@ class UpdateProfileWork {
                 if (lastSeconds < profile.typed.autoUpdateInterval * 60) {
                     continue
                 }
+                val updateStarted = System.currentTimeMillis()
+                val updateHost = runCatching { java.net.URI(profile.typed.remoteURL).host }.getOrNull()
                 try {
                     val content = HTTPClient().use { it.getString(profile.typed.remoteURL) }
                     Libbox.checkConfig(content)
                     val file = File(profile.typed.path)
-                    if (file.readText() != content) {
+                    val changed = file.readText() != content
+                    runCatching {
+                        io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(
+                            applicationContext,
+                            "profile_update_ok",
+                            mapOf("host" to updateHost, "ms" to System.currentTimeMillis() - updateStarted, "changed" to changed, "bytes" to content.length),
+                        )
+                    }
+                    if (changed) {
                         File(profile.typed.path).writeText(content)
                         if (profile.id == selectedProfile) {
                             selectedProfileUpdated = true
@@ -88,6 +98,18 @@ class UpdateProfileWork {
                     ProfileManager.update(profile)
                 } catch (e: Exception) {
                     Log.e(TAG, "update profile ${profile.name}", e)
+                    runCatching {
+                        io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(
+                            applicationContext,
+                            "profile_update_failed",
+                            mapOf(
+                                "host" to updateHost,
+                                "ms" to System.currentTimeMillis() - updateStarted,
+                                "error" to e.javaClass.simpleName,
+                                "detail" to io.nekohasekai.sfa.telemetry.TelemetryEvents.scrub(e.message.orEmpty()).take(120),
+                            ),
+                        )
+                    }
                     success = false
                 }
             }

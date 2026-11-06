@@ -115,6 +115,8 @@ internal object TelemetryRuntime {
                     it.append(listOf("INFO[0000] WONDER service start app=${BuildConfig.VERSION_NAME}"))
                 }
             }
+            TelemetryEventLog.record(context, "service_start", TelemetrySignals.powerState(context) + mapOf("app" to BuildConfig.VERSION_NAME, "sdk" to android.os.Build.VERSION.SDK_INT))
+            TelemetrySignals.startNetworkWatch(context)
             ackFile = File(context.filesDir, "telemetry/last_ack")
             lastAckedId = runCatching { ackFile?.readText()?.trim() }.getOrNull()
             uploader = TelemetryUploader(context) { socket -> vpn.protect(socket) }
@@ -174,6 +176,7 @@ internal object TelemetryRuntime {
             body = body,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,
+            tags = mapOf("reason" to "probe"),
         )
         return describe(result)
     }
@@ -185,7 +188,7 @@ internal object TelemetryRuntime {
         is UploadResult.Failed -> result.detail
     }
 
-    suspend fun detachAndFlush() {
+    suspend fun detachAndFlush(reason: String = "stop") {
         lifecycleMutex.withLock {
             val stop = synchronized(stateLock) {
                 if (!attached) {
@@ -207,6 +210,8 @@ internal object TelemetryRuntime {
                 runCatching { client.disconnect() }
             }
             appContext?.let { context ->
+                TelemetrySignals.stopNetworkWatch(context)
+                TelemetryEventLog.record(context, "service_stop", mapOf("reason" to reason))
                 if (TelemetryPreferences.canUpload(context)) {
                     buffer?.append(listOf("INFO[0000] WONDER service stop"))
                 }
@@ -298,8 +303,8 @@ internal object TelemetryRuntime {
             // flush sent a single 500-line batch, so a busy log fell behind and the
             // disk cap evicted the oldest lines).
             var sent = 0
-            while (sent < maxBatches && !queue.isEmpty()) {
-                val delivered = sendOne(context, queue, token, finalFlush)
+            while (sent < maxBatches && (!queue.isEmpty() || (sent == 0 && TelemetryEventLog.hasPending(context)))) {
+                val delivered = sendOne(context, queue, token, finalFlush, reason)
                 if (!delivered) break
                 sent++
             }
@@ -312,6 +317,7 @@ internal object TelemetryRuntime {
         queue: TelemetryLogBuffer,
         token: String,
         finalFlush: Boolean,
+        reason: String,
     ): Boolean {
         val uploader = uploader ?: return false
         val endpoint = TelemetryPreferences.endpointUrl(context)
@@ -323,8 +329,9 @@ internal object TelemetryRuntime {
         while (attemptsLeftForSize > 0) {
             val ts = System.currentTimeMillis()
             val pending = queue.peek()
-            if (pending.isEmpty()) return false
-            val batch = TelemetryPayload.selectBatch(
+            val clientEvents = TelemetryEventLog.pending(context)
+            if (pending.isEmpty() && clientEvents == null) return false
+            val batch = if (pending.isEmpty()) emptyList() else TelemetryPayload.selectBatch(
                 lines = pending,
                 device = device,
                 appVersion = appVersion,
@@ -333,13 +340,13 @@ internal object TelemetryRuntime {
                 maxLines = maxLines,
                 maxRawBytes = maxRawBytes,
             )
-            if (batch.isEmpty()) {
+            if (batch.isEmpty() && pending.isNotEmpty()) {
                 queue.dropPrefix(1)
                 Log.w(TAG, "dropped a log line that could not fit in a batch")
                 return true
             }
             val batchId = TelemetryPayload.batchId(device, batch)
-            if (batchId == lastAckedId) {
+            if (batch.isNotEmpty() && batchId == lastAckedId) {
                 // Already accepted by the server (e.g. process died before the queue was persisted).
                 queue.dropPrefix(batch.size)
                 queue.persist()
@@ -356,10 +363,19 @@ internal object TelemetryRuntime {
                 droppedLines = queue.droppedCount(),
                 more = (pending.size - batch.size).coerceAtLeast(0),
                 eventsJson = TelemetryEvents.toJson(batch),
+                clientEventsJson = clientEvents?.second,
             )
-            val result = postWithRetry(uploader, endpoint, token, body, finalFlush)
+            val tags = mapOf(
+                "reason" to reason,
+                "lines" to batch.size,
+                "queue" to pending.size,
+                "bytes" to body.size,
+                "batch" to batchId.take(12),
+            )
+            val result = postWithRetry(uploader, endpoint, token, body, finalFlush, tags)
             when (result) {
                 UploadResult.Success -> {
+                    clientEvents?.let { TelemetryEventLog.ack(context, it.first) }
                     queue.dropPrefix(batch.size)
                     queue.resetDropped()
                     lastAckedId = batchId
@@ -402,6 +418,7 @@ internal object TelemetryRuntime {
         token: String,
         body: ByteArray,
         finalFlush: Boolean,
+        tags: Map<String, Any?>,
     ): UploadResult {
         val attempts = if (finalFlush) FINAL_ATTEMPTS else RETRY_ATTEMPTS
         val connectTimeout = if (finalFlush) FINAL_CONNECT_TIMEOUT_MS else CONNECT_TIMEOUT_MS
@@ -409,7 +426,7 @@ internal object TelemetryRuntime {
         var delayMs = 15_000L
         var last: UploadResult = UploadResult.Failed(true, "not sent")
         repeat(attempts) { attempt ->
-            val result = uploader.post(endpoint, token, body, connectTimeout, readTimeout)
+            val result = uploader.post(endpoint, token, body, connectTimeout, readTimeout, tags + ("attempt" to attempt + 1))
             last = result
             val retry = result is UploadResult.Failed && result.retryable && attempt < attempts - 1
             if (!retry) return result

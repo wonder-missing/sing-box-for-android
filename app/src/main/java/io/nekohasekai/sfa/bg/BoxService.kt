@@ -337,6 +337,13 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
+        runCatching {
+            io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(
+                service,
+                "service_alert",
+                mapOf("alert" to type.name, "detail" to message?.let { io.nekohasekai.sfa.telemetry.TelemetryEvents.scrub(it).take(120) }),
+            )
+        }
         Settings.startedByUser = false
         Settings.dataStore.flush()
         val pfd = fileDescriptor
@@ -353,7 +360,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             runningVpn = null
         }
         runCatching {
-            TelemetryRuntime.detachAndFlush()
+            TelemetryRuntime.detachAndFlush("alert:${type.name}")
         }.onFailure {
             Log.w(TAG, "telemetry flush failed", it)
         }
@@ -421,6 +428,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     internal fun onRevoke() {
+        runCatching { io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(service, "vpn_revoked") }
         stopService()
     }
 
