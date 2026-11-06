@@ -34,3 +34,15 @@
 - [x] 把应用内 Crash Report 摘要纳入上报：`crash_report` 事件带 metadata 摘要 + go/jvm 日志头（每份最多 2500 字符，每次最多 3 份）；不读取/上报 `configuration.json`；服务器接受后才记住报告 id
 - [x] App 侧上报入口改用 `ws-tele.soulfun.fyi`，已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时自动规范化；`wrangler.toml` 已加自定义域；Soul 已部署绑定（workers.dev 兜底保留）
 - [x] 核对 ingest KV 仍是 7 天 TTL（`index.js` 中 `TTL = 7 * 86400`，未改动）；远程约 210 条记录 + 152 个去重键
+
+## Tools Agent POC（未发版）
+
+定位：个人网络平面 + 资料枢纽的第一块运行时能力。不打 Release。
+
+- [ ] Tools 增加 Agent 入口与对话页，能在运行时按名称动态调用工具（工具注册表 + JSON 参数），而不是写死流程
+- [ ] 复用原版 Remote Control 那套已暴露接口（`CommandClient` / `CommandTarget`：Status、Groups、Outbounds、Log、ClashMode、Connections），不要另起查询通道；本机系统网络类型等不在该接口上的能力需标明为本地感知
+- [ ] 工具：列出当前配置里的节点/出站组、感知当前设备网络环境（网络类型、VPN/服务状态、当前选中出站）
+- [ ] 工具：按需指定某条节点当出口探测 URL（复用已有 outbound / CommandClient / 测速侧能力，不要另起拨号栈）
+- [ ] 不包含登机器（Tailscale SSH 等另行授权）；改网络路径若做到了，执行前要有确认点
+- [ ] 无模型密钥时仍可手动点选/调用上述工具（证明运行时调用本身能工作）；有可选的 tool-calling 挂钩即可，不要把密钥写进仓库
+- [ ] 为注册表、参数校验、权限边界（禁止登机器）和探测请求构造补 JVM 单元测试
