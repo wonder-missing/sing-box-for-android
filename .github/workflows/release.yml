@@ -91,9 +91,6 @@ jobs:
       fail-fast: false
       matrix:
         go_arch:
-          - "386"
-          - amd64
-          - arm
           - arm64
     steps:
       - name: Checkout sing-box
@@ -214,16 +211,17 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           aars=(../libbox-inputs/*/libbox.aar)
-          legacy=(../libbox-inputs/*/libbox-legacy.aar)
-          if [ "${#aars[@]}" -lt 4 ] || [ "${#legacy[@]}" -lt 4 ]; then
-            echo "expected 4 libbox AARs, found ${#aars[@]} and ${#legacy[@]} legacy"
+          if [ "${#aars[@]}" -lt 1 ]; then
+            echo "expected 1 arm64 libbox AAR, found ${#aars[@]}"
             find ../libbox-inputs -print
             exit 1
           fi
-          go run ./cmd/internal/merge_aar -output ../libbox.aar "${aars[@]}"
-          go run ./cmd/internal/merge_aar -output ../libbox-legacy.aar "${legacy[@]}"
           mkdir -p ../app/libs
-          mv ../libbox.aar ../libbox-legacy.aar ../app/libs/
+          if [ "${#aars[@]}" -eq 1 ]; then
+            cp "${aars[0]}" ../app/libs/libbox.aar
+          else
+            go run ./cmd/internal/merge_aar -output ../app/libs/libbox.aar "${aars[@]}"
+          fi
       - name: Configure signing
         id: signing
         env:
@@ -329,7 +327,7 @@ jobs:
             mkdir -p "$ANDROID_HOME/licenses"
             printf '%s\n' "24333f8a63b6825ea9c5514f83c2829b004d1fee" "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$ANDROID_HOME/licenses/android-sdk-license" || true
           fi
-          ./gradlew :app:assembleOtherRelease :app:assembleOtherLegacyRelease --stacktrace
+          ./gradlew :app:assembleOtherRelease --stacktrace
       - name: Collect APKs
         run: |
           set -euo pipefail
