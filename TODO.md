@@ -24,3 +24,13 @@
 - [ ] 遥测外层入口和文案保持简洁，少堆说明
 - [ ] 核对并完善应用内检查更新：从本仓库 Releases 拉取 APK，支持一键下载安装（部分逻辑已随近几版带上，不够再补）
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
+
+## 遥测下一批（2026-11-06，Claude Code 做、Soul 验收，未发版）
+
+详细说明见 [docs/cc-task-telemetry-2026-11-06.md](docs/cc-task-telemetry-2026-11-06.md)。不要打 Release。
+
+- [ ] 关闭连接 / Stopping 不再等待遥测上报（先落盘，再异步冲刷）
+- [ ] 设置页展示最近一次成功上报时间，并提供「立即上报」按钮（与连通测试分开）
+- [ ] 把应用内 Crash Report 摘要纳入上报（不含 configuration.json / 订阅原文）
+- [ ] 上报入口改用 `ws-tele.soulfun.fyi`（保留 workers.dev 兜底；已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时规范到新域名）
+- [ ] 核对 ingest KV 仍是 7 天 TTL（已有自动过期，确认没有被关掉）
