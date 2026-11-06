@@ -55,6 +55,8 @@ internal object TelemetryRuntime {
     private var coreVersion: String = ""
     private var appContext: Context? = null
     private var persistQueued = false
+    private var ackFile: File? = null
+    private var lastAckedId: String? = null
     private var firstFlushScheduled = false
 
     @Volatile
@@ -108,7 +110,13 @@ internal object TelemetryRuntime {
             val context = vpn.applicationContext
             appContext = context
             coreVersion = runCatching { Libbox.version() }.getOrDefault("")
-            buffer = TelemetryLogBuffer(File(context.filesDir, "telemetry/pending.log"))
+            buffer = TelemetryLogBuffer(File(context.filesDir, "telemetry/pending.log")).also {
+                if (TelemetryPreferences.canUpload(context)) {
+                    it.append(listOf("INFO[0000] WONDER service start app=${BuildConfig.VERSION_NAME}"))
+                }
+            }
+            ackFile = File(context.filesDir, "telemetry/last_ack")
+            lastAckedId = runCatching { ackFile?.readText()?.trim() }.getOrNull()
             uploader = TelemetryUploader(context) { socket -> vpn.protect(socket) }
             collectorConnected = false
             connectInFlight = false
@@ -198,6 +206,11 @@ internal object TelemetryRuntime {
             stop.second?.let { client ->
                 runCatching { client.disconnect() }
             }
+            appContext?.let { context ->
+                if (TelemetryPreferences.canUpload(context)) {
+                    buffer?.append(listOf("INFO[0000] WONDER service stop"))
+                }
+            }
             withTimeoutOrNull(TelemetryPayload.FINAL_FLUSH_TIMEOUT_MS) {
                 uploadAvailable("stop", finalFlush = true)
             }
@@ -281,15 +294,11 @@ internal object TelemetryRuntime {
             } else {
                 TelemetryPayload.MAX_DRAIN_BATCHES
             }
+            // Drain the whole backlog in sequential batches (previously an interval
+            // flush sent a single 500-line batch, so a busy log fell behind and the
+            // disk cap evicted the oldest lines).
             var sent = 0
             while (sent < maxBatches && !queue.isEmpty()) {
-                val keepGoing = when {
-                    finalFlush -> true
-                    sent == 0 && reason == "interval" -> true
-                    queue.overThreshold() -> true
-                    else -> false
-                }
-                if (!keepGoing) break
                 val delivered = sendOne(context, queue, token, finalFlush)
                 if (!delivered) break
                 sent++
@@ -329,11 +338,33 @@ internal object TelemetryRuntime {
                 Log.w(TAG, "dropped a log line that could not fit in a batch")
                 return true
             }
-            val body = TelemetryPayload.build(device, appVersion, coreVersion, ts, batch)
+            val batchId = TelemetryPayload.batchId(device, batch)
+            if (batchId == lastAckedId) {
+                // Already accepted by the server (e.g. process died before the queue was persisted).
+                queue.dropPrefix(batch.size)
+                queue.persist()
+                Log.i(TAG, "skipped ${batch.size} already-uploaded lines")
+                return true
+            }
+            val body = TelemetryPayload.build(
+                device = device,
+                appVersion = appVersion,
+                coreVersion = coreVersion,
+                tsMillis = ts,
+                lines = batch,
+                batchId = batchId,
+                droppedLines = queue.droppedCount(),
+                more = (pending.size - batch.size).coerceAtLeast(0),
+                eventsJson = TelemetryEvents.toJson(batch),
+            )
             val result = postWithRetry(uploader, endpoint, token, body, finalFlush)
             when (result) {
                 UploadResult.Success -> {
                     queue.dropPrefix(batch.size)
+                    queue.resetDropped()
+                    lastAckedId = batchId
+                    runCatching { ackFile?.writeText(batchId) }
+                    queue.persist()
                     Log.i(TAG, "uploaded ${batch.size} lines")
                     return true
                 }

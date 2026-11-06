@@ -6,14 +6,14 @@ internal object TelemetryPayload {
     const val FLUSH_RAW_BYTES = 200 * 1024
     const val MAX_BATCH_JSON_BYTES = 256 * 1024
     const val MAX_GZIP_BYTES = 900 * 1024
-    const val MAX_DISK_BYTES = 768 * 1024
-    const val MAX_DISK_LINES = 4000
+    const val MAX_DISK_BYTES = 2 * 1024 * 1024
+    const val MAX_DISK_LINES = 12000
     const val MAX_LINE_CHARS = 16 * 1024
     const val COLLECTOR_POLL_MS = 15_000L
     const val AUTH_PAUSE_MS = 30L * 60L * 1000L
     const val FINAL_FLUSH_TIMEOUT_MS = 12_000L
-    const val MAX_STOP_BATCHES = 4
-    const val MAX_DRAIN_BATCHES = 8
+    const val MAX_STOP_BATCHES = 6
+    const val MAX_DRAIN_BATCHES = 24
 
     fun normalizeLine(raw: String): String? {
         val stripped = raw.replace(ANSI_COLOR, "")
@@ -32,12 +32,20 @@ internal object TelemetryPayload {
         coreVersion: String,
         tsMillis: Long,
         lines: List<String>,
+        batchId: String? = null,
+        droppedLines: Int = 0,
+        more: Int = 0,
+        eventsJson: String? = null,
     ): ByteArray {
-        val json = StringBuilder(lines.sumOf { it.length } + 128)
+        val json = StringBuilder(lines.sumOf { it.length } + 128 + (eventsJson?.length ?: 0))
         json.append("{\"device\":").append(quote(device))
         json.append(",\"app_version\":").append(quote(appVersion))
         json.append(",\"core_version\":").append(quote(coreVersion))
         json.append(",\"ts\":").append(tsMillis)
+        if (batchId != null) json.append(",\"batch_id\":").append(quote(batchId))
+        if (droppedLines > 0) json.append(",\"dropped_lines\":").append(droppedLines)
+        if (more > 0) json.append(",\"more\":").append(more)
+        if (eventsJson != null) json.append(",\"events\":").append(eventsJson)
         json.append(",\"lines\":[")
         lines.forEachIndexed { index, line ->
             if (index > 0) json.append(',')
@@ -73,6 +81,18 @@ internal object TelemetryPayload {
             if (chosen.size == 1 && rawBytes > maxRawBytes) break
         }
         return chosen
+    }
+
+    /** Stable id for a batch; matches the Worker's fallback hash for old clients. */
+    fun batchId(device: String, lines: List<String>): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        digest.update(device.toByteArray(Charsets.UTF_8))
+        digest.update('\n'.code.toByte())
+        lines.forEachIndexed { index, line ->
+            if (index > 0) digest.update('\n'.code.toByte())
+            digest.update(line.toByteArray(Charsets.UTF_8))
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     fun quote(value: String): String {

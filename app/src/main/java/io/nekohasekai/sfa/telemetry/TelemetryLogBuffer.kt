@@ -13,6 +13,7 @@ internal class TelemetryLogBuffer(private val file: File) {
     private var rawBytes = 0
     private var dirty = false
     private var generation = 0
+    private var droppedSinceUpload = 0
 
     init {
         load()
@@ -31,6 +32,13 @@ internal class TelemetryLogBuffer(private val file: File) {
             return overThresholdLocked()
         }
     }
+
+    /** Lines evicted by the disk cap since the last successful upload. */
+    fun droppedCount(): Int = synchronized(lock) { droppedSinceUpload }
+
+    fun size(): Int = synchronized(lock) { lines.size }
+
+    fun resetDropped() = synchronized(lock) { droppedSinceUpload = 0 }
 
     fun isEmpty(): Boolean = synchronized(lock) { lines.isEmpty() }
 
@@ -83,6 +91,7 @@ internal class TelemetryLogBuffer(private val file: File) {
         ) {
             val removed = lines.removeFirst()
             rawBytes -= removed.toByteArray(Charsets.UTF_8).size
+            droppedSinceUpload++
         }
         if (rawBytes < 0) rawBytes = 0
     }
