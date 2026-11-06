@@ -29,8 +29,8 @@
 
 详细说明见 [docs/cc-task-telemetry-2026-11-06.md](docs/cc-task-telemetry-2026-11-06.md)。不要打 Release。
 
-- [ ] 关闭连接 / Stopping 不再等待遥测上报（先落盘，再异步冲刷）
-- [ ] 设置页展示最近一次成功上报时间，并提供「立即上报」按钮（与连通测试分开）
-- [ ] 把应用内 Crash Report 摘要纳入上报（不含 configuration.json / 订阅原文）
-- [ ] 上报入口改用 `ws-tele.soulfun.fyi`（保留 workers.dev 兜底；已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时规范到新域名）
-- [ ] 核对 ingest KV 仍是 7 天 TTL（已有自动过期，确认没有被关掉）
+- [x] 关闭连接 / Stopping 不再等待遥测上报：先落盘，再由 daemon 线程异步冲刷（`detachAndFlushAsync`；不变更 `Stopped` 的时序）
+- [x] 设置页展示最近一次成功上报时间（`last_upload_ok_at`）和上次连通测试时间，并提供「立即上报」按钮（与连通测试分开）
+- [x] 把应用内 Crash Report 摘要纳入上报：`crash_report` 事件带 metadata 摘要 + go/jvm 日志头（每份最多 2500 字符，每次最多 3 份）；不读取/上报 `configuration.json`；服务器接受后才记住报告 id
+- [x] App 侧上报入口改用 `ws-tele.soulfun.fyi`，已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时自动规范化；`wrangler.toml` 已加自定义域配置（workers.dev 兜底保留）。**域名尚未部署/绑定，待 Soul 执行 wrangler deploy**
+- [x] 核对 ingest KV 仍是 7 天 TTL（`index.js` 中 `TTL = 7 * 86400`，未改动）；key 数量未能用 wrangler 查询（本机命令权限受限，待 Soul 验收时补）

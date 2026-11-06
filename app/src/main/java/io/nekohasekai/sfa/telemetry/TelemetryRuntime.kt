@@ -7,6 +7,7 @@ import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogEntry
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.utils.CommandClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,7 +18,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -34,9 +34,11 @@ internal object TelemetryRuntime {
     private const val RETRY_ATTEMPTS = 2
     private const val FINAL_ATTEMPTS = 1
 
+    /** Background stop flush budget; keeps the upload mutex from starving a restart. */
+    private const val FINAL_FLUSH_BUDGET_MS = 45_000L
+
     private val stateLock = Any()
     private val uploadMutex = Mutex()
-    private val lifecycleMutex = Mutex()
 
     @Volatile
     private var attached = false
@@ -62,6 +64,33 @@ internal object TelemetryRuntime {
     @Volatile
     private var flushRequested = false
 
+    /** Bumped on every attach so a detached flush cannot overwrite a newer queue file. */
+    @Volatile
+    private var sessionEpoch = 0L
+
+    private class FlushContext(
+        val context: Context,
+        val queue: TelemetryLogBuffer,
+        val uploader: TelemetryUploader,
+        val coreVersion: String,
+        val epoch: Long,
+    )
+
+    private data class UploadOutcome(
+        val batches: Int,
+        val lines: Int,
+        val crashReports: Int,
+        val hadPending: Boolean,
+        val failure: String?,
+    )
+
+    private data class SendOutcome(
+        val sent: Boolean,
+        val lines: Int = 0,
+        val crashAcked: Boolean = false,
+        val detail: String? = null,
+    )
+
     private val handler = object : CommandClient.Handler {
         override fun onConnected() {
             connectInFlight = false
@@ -81,14 +110,20 @@ internal object TelemetryRuntime {
         }
 
         override fun appendLogs(message: List<LogEntry>) {
+            if (!attached) return
             val context = appContext ?: return
             if (!TelemetryPreferences.canUpload(context)) return
             val lines = message.mapNotNull { entry ->
                 TelemetryPayload.normalizeLine(entry.message ?: return@mapNotNull null)
             }
             if (lines.isEmpty()) return
-            val queue = buffer ?: return
-            val crossed = queue.append(lines)
+            // Serialize with detachAndFlushAsync: once it clears the buffer and
+            // persists, no late collector callback may add lines to a dead queue.
+            val crossed = synchronized(stateLock) {
+                if (!attached) return
+                val queue = buffer ?: return
+                queue.append(lines)
+            }
             schedulePersist()
             if (!firstFlushScheduled) {
                 firstFlushScheduled = true
@@ -123,6 +158,7 @@ internal object TelemetryRuntime {
             collectorConnected = false
             connectInFlight = false
             firstFlushScheduled = false
+            sessionEpoch++
             val created = CoroutineScope(SupervisorJob() + Dispatchers.IO)
             scope = created
             commandClient = CommandClient(
@@ -178,6 +214,9 @@ internal object TelemetryRuntime {
             readTimeoutMs = READ_TIMEOUT_MS,
             tags = mapOf("reason" to "probe"),
         )
+        if (result == UploadResult.Success) {
+            TelemetryPreferences.noteProbeOk(context)
+        }
         return describe(result)
     }
 
@@ -188,54 +227,76 @@ internal object TelemetryRuntime {
         is UploadResult.Failed -> result.detail
     }
 
-    suspend fun detachAndFlush(reason: String = "stop") {
-        lifecycleMutex.withLock {
-            val stop = synchronized(stateLock) {
-                if (!attached) {
-                    null
-                } else {
-                    attached = false
-                    val connected = collectorConnected || connectInFlight
-                    val current = commandClient
-                    commandClient = null
-                    collectorConnected = false
-                    connectInFlight = false
-                    connected to current
-                }
-            } ?: return@withLock
-            if (stop.first) {
-                delay(400)
-            }
-            stop.second?.let { client ->
-                runCatching { client.disconnect() }
-            }
-            appContext?.let { context ->
-                TelemetrySignals.stopNetworkWatch(context)
-                TelemetryEventLog.record(context, "service_stop", mapOf("reason" to reason))
+    /**
+     * Detaches the collector and persists pending data synchronously, then runs
+     * the final upload on a daemon thread. The Stopping UI never waits for HTTP.
+     */
+    fun detachAndFlushAsync(reason: String = "stop") {
+        val detached = synchronized(stateLock) {
+            if (!attached) return
+            attached = false
+            val client = commandClient
+            commandClient = null
+            collectorConnected = false
+            connectInFlight = false
+            val oldScope = scope
+            scope = null
+            persistQueued = false
+            val context = appContext
+            val queue = buffer
+            val currentUploader = uploader
+            if (context != null) {
+                runCatching { TelemetrySignals.stopNetworkWatch(context) }
+                runCatching { TelemetryEventLog.record(context, "service_stop", mapOf("reason" to reason)) }
                 if (TelemetryPreferences.canUpload(context)) {
-                    buffer?.append(listOf("INFO[0000] WONDER service stop"))
+                    runCatching { queue?.append(listOf("INFO[0000] WONDER service stop")) }
                 }
+                // Persist first: the file survives even if the upload never completes.
+                runCatching { queue?.persist() }
             }
-            withTimeoutOrNull(TelemetryPayload.FINAL_FLUSH_TIMEOUT_MS) {
-                uploadAvailable("stop", finalFlush = true)
+            val snapshot = if (context != null && queue != null && currentUploader != null) {
+                FlushContext(context, queue, currentUploader, coreVersion, sessionEpoch)
+            } else {
+                null
             }
-            buffer?.persist()
-            synchronized(stateLock) {
-                scope?.cancel()
-                scope = null
-                buffer = null
-                uploader = null
-                appContext = null
+            buffer = null
+            uploader = null
+            coreVersion = ""
+            appContext = null
+            // Local command-socket disconnect, not network. Do it under the lock
+            // so a quickly restarted service cannot receive this session's callbacks.
+            runCatching { client?.disconnect() }
+            oldScope to snapshot
+        }
+        detached.first?.cancel()
+        thread(name = "telemetry-stop-flush", isDaemon = true) {
+            val flush = detached.second ?: return@thread
+            runCatching {
+                runBlocking(Dispatchers.IO) {
+                    val outcome = uploadContext(
+                        flush,
+                        reason,
+                        finalFlush = true,
+                        maxBatches = TelemetryPayload.MAX_STOP_BATCHES,
+                        deadline = System.currentTimeMillis() + FINAL_FLUSH_BUDGET_MS,
+                    )
+                    persistIfCurrent(flush)
+                    Log.i(
+                        TAG,
+                        "final flush batches=${outcome.batches} lines=${outcome.lines} " +
+                            "crash=${outcome.crashReports} failure=${outcome.failure}",
+                    )
+                }
+            }.onFailure {
+                Log.w(TAG, "final flush failed", it)
             }
-            Log.i(TAG, "detached")
         }
     }
 
     fun detachFromDestroy() {
-        thread(name = "telemetry-stop", isDaemon = true) {
-            runBlocking(Dispatchers.IO) {
-                detachAndFlush()
-            }
+        // onDestroy() runs on the main thread; keep the disk write off it too.
+        thread(name = "telemetry-detach", isDaemon = true) {
+            runCatching { detachAndFlushAsync("destroy") }
         }
     }
 
@@ -285,57 +346,178 @@ internal object TelemetryRuntime {
     }
 
     private suspend fun uploadAvailable(reason: String, finalFlush: Boolean) {
-        uploadMutex.withLock {
-            val context = appContext ?: return@withLock
-            val queue = buffer ?: return@withLock
-            if (!TelemetryPreferences.canUpload(context)) return@withLock
-            val token = TelemetryPreferences.ingestToken(context)
-            if (TelemetryPreferences.isAuthPaused(context, token)) {
-                Log.i(TAG, "upload paused after HTTP 401")
-                return@withLock
-            }
-            val maxBatches = if (finalFlush) {
-                TelemetryPayload.MAX_STOP_BATCHES
+        val flush = synchronized(stateLock) {
+            val context = appContext ?: return
+            val queue = buffer ?: return
+            val currentUploader = uploader ?: return
+            FlushContext(context, queue, currentUploader, coreVersion, sessionEpoch)
+        }
+        try {
+            uploadContext(
+                flush,
+                reason,
+                finalFlush,
+                if (finalFlush) TelemetryPayload.MAX_STOP_BATCHES else TelemetryPayload.MAX_DRAIN_BATCHES,
+            )
+            persistIfCurrent(flush)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "scheduled upload failed", e)
+        }
+    }
+
+    /** Manual "upload now": drains logs, client events and unsent crash summaries. */
+    suspend fun uploadNow(context: Context): String {
+        val app = context.applicationContext
+        if (!TelemetryPreferences.isEnabled(app)) return "Upload is off."
+        if (!TelemetryPreferences.canUpload(app)) return "Save an https endpoint and token first."
+        val flush = synchronized(stateLock) {
+            val liveContext = appContext
+            val queue = buffer
+            val currentUploader = uploader
+            if (liveContext != null && queue != null && currentUploader != null) {
+                FlushContext(liveContext, queue, currentUploader, coreVersion, sessionEpoch)
             } else {
-                TelemetryPayload.MAX_DRAIN_BATCHES
+                FlushContext(
+                    app,
+                    TelemetryLogBuffer(File(app.filesDir, "telemetry/pending.log")),
+                    TelemetryUploader(app, null),
+                    runCatching { Libbox.version() }.getOrDefault(""),
+                    sessionEpoch,
+                )
             }
-            // Drain the whole backlog in sequential batches (previously an interval
-            // flush sent a single 500-line batch, so a busy log fell behind and the
-            // disk cap evicted the oldest lines).
-            var sent = 0
-            while (sent < maxBatches && (!queue.isEmpty() || (sent == 0 && TelemetryEventLog.hasPending(context)))) {
-                val delivered = sendOne(context, queue, token, finalFlush, reason)
-                if (!delivered) break
-                sent++
+        }
+        val outcome = try {
+            val result = uploadContext(
+                flush,
+                "manual",
+                finalFlush = false,
+                maxBatches = TelemetryPayload.MAX_DRAIN_BATCHES,
+            )
+            persistIfCurrent(flush)
+            result
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "manual upload failed", e)
+            return "Upload failed: ${e.message ?: e.javaClass.simpleName}"
+        }
+        return when {
+            outcome.failure != null && outcome.batches == 0 -> "Upload failed: ${outcome.failure}"
+            outcome.failure != null -> "Uploaded ${outcome.lines} lines, then failed: ${outcome.failure}"
+            !outcome.hadPending -> "Nothing pending."
+            else -> {
+                val parts = buildList {
+                    if (outcome.lines > 0) add("${outcome.lines} log lines")
+                    if (outcome.crashReports > 0) add("${outcome.crashReports} crash report(s)")
+                }
+                if (parts.isEmpty()) {
+                    "Uploaded pending telemetry events."
+                } else {
+                    "Uploaded ${parts.joinToString(" and ")}."
+                }
             }
-            queue.persist()
+        }
+    }
+
+    private suspend fun uploadContext(
+        flush: FlushContext,
+        reason: String,
+        finalFlush: Boolean,
+        maxBatches: Int,
+        deadline: Long = Long.MAX_VALUE,
+    ): UploadOutcome = uploadMutex.withLock {
+        drainLocked(flush, reason, finalFlush, maxBatches, deadline)
+    }
+
+    private suspend fun drainLocked(
+        flush: FlushContext,
+        reason: String,
+        finalFlush: Boolean,
+        maxBatches: Int,
+        deadline: Long,
+    ): UploadOutcome {
+        val context = flush.context
+        if (!TelemetryPreferences.canUpload(context)) {
+            return UploadOutcome(0, 0, 0, false, "upload is disabled")
+        }
+        val token = TelemetryPreferences.ingestToken(context)
+        // An explicit "upload now" retries even during the 401 back-off.
+        if (reason != "manual" && TelemetryPreferences.isAuthPaused(context, token)) {
+            Log.i(TAG, "upload paused after HTTP 401")
+            return UploadOutcome(0, 0, 0, false, "paused after HTTP 401")
+        }
+        var crashPending = runCatching { CrashReportTelemetry.pending(context) }
+            .getOrDefault(emptyList())
+        val hadPending = !flush.queue.isEmpty() ||
+            TelemetryEventLog.hasPending(context) ||
+            crashPending.isNotEmpty()
+        var batches = 0
+        var lines = 0
+        var crashReports = 0
+        var failure: String? = null
+        // Drain the whole backlog in sequential batches (previously an interval
+        // flush sent a single 500-line batch, so a busy log fell behind and the
+        // disk cap evicted the oldest lines).
+        while (batches < maxBatches && System.currentTimeMillis() < deadline) {
+            if (flush.queue.isEmpty() && !TelemetryEventLog.hasPending(context) && crashPending.isEmpty()) {
+                break
+            }
+            val outcome = sendOne(flush, token, finalFlush, reason, crashPending)
+            if (!outcome.sent) {
+                failure = outcome.detail
+                break
+            }
+            if (outcome.crashAcked) {
+                crashReports += crashPending.size
+                // Pick up the next page (if any) after these were marked sent.
+                crashPending = runCatching { CrashReportTelemetry.pending(context) }
+                    .getOrDefault(emptyList())
+            }
+            batches++
+            lines += outcome.lines
+        }
+        return UploadOutcome(batches, lines, crashReports, hadPending, failure)
+    }
+
+    private fun persistIfCurrent(flush: FlushContext) {
+        // A newer service session may have reloaded pending.log already.
+        if (flush.epoch == sessionEpoch) {
+            runCatching { flush.queue.persist() }
         }
     }
 
     private suspend fun sendOne(
-        context: Context,
-        queue: TelemetryLogBuffer,
+        flush: FlushContext,
         token: String,
         finalFlush: Boolean,
         reason: String,
-    ): Boolean {
-        val uploader = uploader ?: return false
+        crashEvents: List<CrashReportTelemetry.PendingEvent>,
+    ): SendOutcome {
+        val context = flush.context
+        val queue = flush.queue
         val endpoint = TelemetryPreferences.endpointUrl(context)
         val device = TelemetryPreferences.deviceId(context)
         val appVersion = BuildConfig.VERSION_NAME
         var maxLines = TelemetryPayload.FLUSH_LINE_COUNT
         var maxRawBytes = TelemetryPayload.FLUSH_RAW_BYTES
         var attemptsLeftForSize = 3
+        var crashToSend = crashEvents
         while (attemptsLeftForSize > 0) {
             val ts = System.currentTimeMillis()
             val pending = queue.peek()
             val clientEvents = TelemetryEventLog.pending(context)
-            if (pending.isEmpty() && clientEvents == null) return false
+            val includeCrash = crashToSend.isNotEmpty()
+            if (pending.isEmpty() && clientEvents == null && !includeCrash) {
+                val detail = if (crashEvents.isNotEmpty()) "HTTP 413: crash summary rejected" else null
+                return SendOutcome(false, detail = detail)
+            }
             val batch = if (pending.isEmpty()) emptyList() else TelemetryPayload.selectBatch(
                 lines = pending,
                 device = device,
                 appVersion = appVersion,
-                coreVersion = coreVersion,
+                coreVersion = flush.coreVersion,
                 tsMillis = ts,
                 maxLines = maxLines,
                 maxRawBytes = maxRawBytes,
@@ -343,26 +525,33 @@ internal object TelemetryRuntime {
             if (batch.isEmpty() && pending.isNotEmpty()) {
                 queue.dropPrefix(1)
                 Log.w(TAG, "dropped a log line that could not fit in a batch")
-                return true
+                return SendOutcome(true)
             }
-            val batchId = TelemetryPayload.batchId(device, batch)
+            // Crash summaries get their own batch id so a server-side dedup hit for
+            // the same log lines cannot swallow a new crash event.
+            val batchKey = if (crashToSend.isEmpty()) {
+                batch
+            } else {
+                batch + crashToSend.map { "crash_report:${it.id}" }
+            }
+            val batchId = TelemetryPayload.batchId(device, batchKey)
             if (batch.isNotEmpty() && batchId == lastAckedId) {
                 // Already accepted by the server (e.g. process died before the queue was persisted).
                 queue.dropPrefix(batch.size)
-                queue.persist()
+                runCatching { queue.persist() }
                 Log.i(TAG, "skipped ${batch.size} already-uploaded lines")
-                return true
+                return SendOutcome(true, batch.size)
             }
             val body = TelemetryPayload.build(
                 device = device,
                 appVersion = appVersion,
-                coreVersion = coreVersion,
+                coreVersion = flush.coreVersion,
                 tsMillis = ts,
                 lines = batch,
                 batchId = batchId,
                 droppedLines = queue.droppedCount(),
                 more = (pending.size - batch.size).coerceAtLeast(0),
-                eventsJson = TelemetryEvents.toJson(batch),
+                eventsJson = eventsJsonFor(batch, crashToSend),
                 clientEventsJson = clientEvents?.second,
             )
             val tags = mapOf(
@@ -371,32 +560,49 @@ internal object TelemetryRuntime {
                 "queue" to pending.size,
                 "bytes" to body.size,
                 "batch" to batchId.take(12),
+                "crash" to crashToSend.size,
             )
-            val result = postWithRetry(uploader, endpoint, token, body, finalFlush, tags)
+            val result = postWithRetry(flush.uploader, endpoint, token, body, finalFlush, tags)
             when (result) {
                 UploadResult.Success -> {
+                    // The server accepted the payload: this is the time the settings
+                    // page must show, even if a later local disk write fails.
+                    TelemetryPreferences.noteUploadOk(context)
                     clientEvents?.let { TelemetryEventLog.ack(context, it.first) }
+                    if (includeCrash) {
+                        TelemetryPreferences.markCrashIdsSent(context, crashToSend.map { it.id })
+                    }
                     queue.dropPrefix(batch.size)
                     queue.resetDropped()
                     lastAckedId = batchId
                     runCatching { ackFile?.writeText(batchId) }
-                    queue.persist()
-                    Log.i(TAG, "uploaded ${batch.size} lines")
-                    return true
+                    runCatching { queue.persist() }
+                    Log.i(TAG, "uploaded ${batch.size} lines (${crashToSend.size} crash summaries)")
+                    return SendOutcome(true, batch.size, crashAcked = includeCrash)
                 }
 
                 UploadResult.Unauthorized -> {
                     TelemetryPreferences.noteUnauthorized(context, token, TelemetryPayload.AUTH_PAUSE_MS)
                     Log.w(TAG, "upload rejected with HTTP 401; pausing")
-                    return false
+                    return SendOutcome(false, detail = "HTTP 401: token rejected")
                 }
 
                 UploadResult.TooLarge -> {
                     attemptsLeftForSize--
+                    if (includeCrash) {
+                        // Keep the log batch/events useful if a crash summary is the outlier.
+                        Log.w(TAG, "HTTP 413 with crash summary; retrying without it")
+                        crashToSend = emptyList()
+                        continue
+                    }
+                    if (batch.isEmpty()) {
+                        Log.w(TAG, "HTTP 413 for an empty batch")
+                        return SendOutcome(false, detail = "HTTP 413: payload rejected")
+                    }
                     if (batch.size <= 1) {
                         queue.dropPrefix(1)
                         Log.w(TAG, "dropped a log line rejected with HTTP 413")
-                        return true
+                        return SendOutcome(true, 1)
                     }
                     maxLines = (batch.size / 2).coerceAtLeast(1)
                     maxRawBytes = (maxRawBytes / 2).coerceAtLeast(1024)
@@ -405,11 +611,32 @@ internal object TelemetryRuntime {
 
                 is UploadResult.Failed -> {
                     Log.w(TAG, "upload failed: ${result.detail}")
-                    return false
+                    return SendOutcome(false, detail = result.detail)
                 }
             }
         }
-        return false
+        return SendOutcome(false, detail = "payload too large")
+    }
+
+    private fun eventsJsonFor(
+        batch: List<String>,
+        crashEvents: List<CrashReportTelemetry.PendingEvent>,
+    ): String {
+        val lineEvents = TelemetryEvents.toJson(batch)
+        if (crashEvents.isEmpty()) return lineEvents
+        val hasLineEvents = lineEvents.length > 2 // more than "[]"
+        val out = StringBuilder(lineEvents.length + crashEvents.sumOf { it.json.length } + 8)
+        if (hasLineEvents) {
+            out.append(lineEvents, 0, lineEvents.length - 1)
+        } else {
+            out.append('[')
+        }
+        crashEvents.forEachIndexed { index, event ->
+            if (hasLineEvents || index > 0) out.append(',')
+            out.append(event.json)
+        }
+        out.append(']')
+        return out.toString()
     }
 
     private suspend fun postWithRetry(

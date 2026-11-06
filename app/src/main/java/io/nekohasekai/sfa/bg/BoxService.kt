@@ -316,10 +316,12 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             if (service is VPNService) {
                 runningVpn = null
             }
+            // Persist locally and hand the upload to a daemon thread; the Stopping
+            // state must not wait for HTTP timeouts (especially workers.dev direct).
             runCatching {
-                TelemetryRuntime.detachAndFlush()
+                TelemetryRuntime.detachAndFlushAsync("stop")
             }.onFailure {
-                Log.w(TAG, "telemetry flush failed", it)
+                Log.w(TAG, "telemetry detach failed", it)
             }
             withContext(Dispatchers.Main) {
                 status.value = Status.Stopped
@@ -360,9 +362,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             runningVpn = null
         }
         runCatching {
-            TelemetryRuntime.detachAndFlush("alert:${type.name}")
+            TelemetryRuntime.detachAndFlushAsync("alert:${type.name}")
         }.onFailure {
-            Log.w(TAG, "telemetry flush failed", it)
+            Log.w(TAG, "telemetry detach failed", it)
         }
         withContext(Dispatchers.Main) {
             if (receiverRegistered) {

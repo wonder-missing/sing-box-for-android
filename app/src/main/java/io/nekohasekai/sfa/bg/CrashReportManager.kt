@@ -99,6 +99,10 @@ object CrashReportManager {
         _unreadCount.value = reports.count { !it.isRead }
     }
 
+    /** Local reports on disk, newest first. Safe before the list screen was opened. */
+    fun listReports(): List<CrashReport> =
+        if (::workingDir.isInitialized) scanCrashReports() else emptyList()
+
     private fun archivePendingJvmCrashReport() {
         val crashFile = File(workingDir, PENDING_JVM_CRASH_FILE_NAME)
         val metadataFile = File(workingDir, PENDING_JVM_METADATA_FILE_NAME)

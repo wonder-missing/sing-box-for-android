@@ -31,8 +31,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -49,9 +51,13 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,7 +86,19 @@ fun TelemetrySettingsScreen(navController: NavController) {
     var helpOpen by rememberSaveable { mutableStateOf(false) }
     var testing by rememberSaveable { mutableStateOf(false) }
     var testResult by rememberSaveable { mutableStateOf<String?>(null) }
+    var uploading by remember { mutableStateOf(false) }
+    var uploadResult by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastUploadAt by remember { mutableStateOf(TelemetryPreferences.lastUploadOkAt(context)) }
+    var lastTestAt by remember { mutableStateOf(TelemetryPreferences.lastProbeOkAt(context)) }
     val scaffoldPadding = LocalScaffoldPadding.current
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            lastUploadAt = TelemetryPreferences.lastUploadOkAt(context)
+            lastTestAt = TelemetryPreferences.lastProbeOkAt(context)
+            delay(2_000)
+        }
+    }
 
     fun persist() {
         TelemetryPreferences.save(context, enabled, endpoint, token)
@@ -214,6 +232,7 @@ fun TelemetrySettingsScreen(navController: NavController) {
                                 TelemetryRuntime.probe(context)
                             }
                             testResult = result
+                            lastTestAt = TelemetryPreferences.lastProbeOkAt(context)
                             testing = false
                         }
                     },
@@ -234,6 +253,63 @@ fun TelemetrySettingsScreen(navController: NavController) {
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        persist()
+                        uploading = true
+                        uploadResult = null
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                TelemetryRuntime.uploadNow(context)
+                            }
+                            uploadResult = result
+                            lastUploadAt = TelemetryPreferences.lastUploadOkAt(context)
+                            uploading = false
+                        }
+                    },
+                    enabled = !uploading,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(
+                            if (uploading) R.string.telemetry_uploading else R.string.telemetry_upload_now,
+                        ),
+                    )
+                }
+                if (!uploadResult.isNullOrBlank()) {
+                    Text(
+                        text = uploadResult!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = stringResource(
+                        R.string.telemetry_last_upload,
+                        if (lastUploadAt > 0) {
+                            formatTimestamp(lastUploadAt)
+                        } else {
+                            stringResource(R.string.telemetry_never)
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.telemetry_last_test,
+                        if (lastTestAt > 0) {
+                            formatTimestamp(lastTestAt)
+                        } else {
+                            stringResource(R.string.telemetry_never)
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -253,3 +329,6 @@ fun TelemetrySettingsScreen(navController: NavController) {
         }
     }
 }
+
+private fun formatTimestamp(timestamp: Long): String =
+    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))

@@ -38,7 +38,8 @@ internal object TelemetryEvents {
     private val DURATION = Regex("\\(([\\d.]+m?s)\\)")
     private val LEADING_INT = Regex("^\\d+")
 
-    fun scrub(value: String): String = URL.replace(value) { it.groupValues[1] + "/…" }.take(200)
+    fun scrub(value: String, maxChars: Int = 200): String =
+        URL.replace(value) { it.groupValues[1] + "/…" }.take(maxChars)
 
     fun reasonOf(text: String): String {
         val s = text.lowercase()

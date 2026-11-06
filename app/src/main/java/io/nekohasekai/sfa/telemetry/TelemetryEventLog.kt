@@ -87,7 +87,7 @@ internal object TelemetryEventLog {
 
     fun hasPending(context: Context): Boolean = synchronized(lock) {
         ensureLoaded(context)
-        events.isNotEmpty()
+        events.isNotEmpty() || droppedEvents > 0
     }
 
     /** Called after the server accepted a payload containing events up to [seq]. */
