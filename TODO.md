@@ -8,7 +8,7 @@
 - [x] Release 只编手机能装的 `arm64-v8a`（libbox 只编 arm64，不打其他 ABI / universal / Android 5 legacy）
 - [x] Release 跑完自动通知主人（成功给 arm64 安装链接，失败给运行记录）
 
-## 遥测质量（已提交到 dev，未发版）
+## 遥测质量（随 wonder.8 发版）
 
 - [x] 不再丢日志：每次上传把积压分多批（每批 500 行）依次传完，本地缓存上限 4000→12000 行，批次带 `dropped_lines`/`more` 便于发现截断（`e2aade9`）
 - [x] 去重：每批带 `batch_id`（内容哈希），成功后立即落盘并记住最后确认的批次；Worker 端同一 `batch_id` 只存一次（旧版 wonder.7 按内容哈希同样去重）（`e2aade9`；Worker 已部署）
@@ -25,12 +25,12 @@
 - [ ] 核对并完善应用内检查更新：从本仓库 Releases 拉取 APK，支持一键下载安装（部分逻辑已随近几版带上，不够再补）
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 
-## 遥测下一批（2026-11-06，Claude Code 做、Soul 验收，未发版）
+## 遥测下一批（2026-11-06，随 wonder.8 发版）
 
-详细说明见 [docs/cc-task-telemetry-2026-11-06.md](docs/cc-task-telemetry-2026-11-06.md)。不要打 Release。
+详细说明见 [docs/cc-task-telemetry-2026-11-06.md](docs/cc-task-telemetry-2026-11-06.md)。
 
 - [x] 关闭连接 / Stopping 不再等待遥测上报：先落盘，再由 daemon 线程异步冲刷（`detachAndFlushAsync`；不变更 `Stopped` 的时序）
 - [x] 设置页展示最近一次成功上报时间（`last_upload_ok_at`）和上次连通测试时间，并提供「立即上报」按钮（与连通测试分开）
 - [x] 把应用内 Crash Report 摘要纳入上报：`crash_report` 事件带 metadata 摘要 + go/jvm 日志头（每份最多 2500 字符，每次最多 3 份）；不读取/上报 `configuration.json`；服务器接受后才记住报告 id
-- [x] App 侧上报入口改用 `ws-tele.soulfun.fyi`，已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时自动规范化；`wrangler.toml` 已加自定义域配置（workers.dev 兜底保留）。**域名尚未部署/绑定，待 Soul 执行 wrangler deploy**
-- [x] 核对 ingest KV 仍是 7 天 TTL（`index.js` 中 `TTL = 7 * 86400`，未改动）；key 数量未能用 wrangler 查询（本机命令权限受限，待 Soul 验收时补）
+- [x] App 侧上报入口改用 `ws-tele.soulfun.fyi`，已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时自动规范化；`wrangler.toml` 已加自定义域；Soul 已部署绑定（workers.dev 兜底保留）
+- [x] 核对 ingest KV 仍是 7 天 TTL（`index.js` 中 `TTL = 7 * 86400`，未改动）；远程约 210 条记录 + 152 个去重键
