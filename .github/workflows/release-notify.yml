@@ -1,0 +1,24 @@
+name: Release notify
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Mark release workflow settled
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record triggering run
+        run: |
+          set -euo pipefail
+          echo "Release workflow conclusion=${{ github.event.workflow_run.conclusion }}"
+          echo "Release run=${{ github.event.workflow_run.html_url }}"
+          echo "head_branch=${{ github.event.workflow_run.head_branch }}"
+          echo "display_title=${{ github.event.workflow_run.display_title }}"
+          echo "event=${{ github.event.workflow_run.event }}"
