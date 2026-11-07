@@ -675,4 +675,25 @@
     <string name="taildrop_dismiss">關閉</string>
     <string name="taildrop_open_app">開啟 sing-box</string>
     <string name="taildrop_notification_title">正在傳送檔案</string>
+
+    <!-- Tools Agent POC -->
+    <string name="agent">網路 Agent</string>
+    <string name="agent_status_connected">核心：已透過 CommandClient 連線</string>
+    <string name="agent_status_disconnected">核心：未連線。請先啟動服務或進入 Remote Control。</string>
+    <string name="agent_status_remote_connected">Remote Control：已連線</string>
+    <string name="agent_status_remote_disconnected">Remote Control：連線中…</string>
+    <string name="agent_no_model_hint">未設定雲端模型：輸入框使用本地規則選擇工具，下方按鈕直接呼叫。</string>
+    <string name="agent_empty_hint">試試「看看節點」「網路狀態」，或點 probe_via_node。每次呼叫都會顯示工具名稱、參數和原始 JSON 結果。</string>
+    <string name="agent_input_hint">例如：看看節點 / 網路狀態 / 用 node-a 探測 https://example.com</string>
+    <string name="agent_send">傳送</string>
+    <string name="agent_parse_failed">本地規則無法理解這句話。請用下方按鈕，或直接輸入工具名稱（list_nodes / network_snapshot / probe_via_node）後接 JSON 參數。</string>
+    <string name="agent_manual_list">手動：list_nodes</string>
+    <string name="agent_manual_snapshot">手動：network_snapshot</string>
+    <string name="agent_manual_probe">手動：probe_via_node</string>
+    <string name="agent_probe_title">經節點探測</string>
+    <string name="agent_probe_outbound">出站 / 節點 tag</string>
+    <string name="agent_probe_url">URL（http 或 https）</string>
+    <string name="agent_probe_run">探測</string>
+    <string name="agent_confirm_title">確認工具呼叫</string>
+    <string name="agent_confirm_run">執行</string>
 </resources>

@@ -12,6 +12,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import io.nekohasekai.sfa.agent.AgentScreen
 import io.nekohasekai.sfa.compose.screen.configuration.NewProfileScreen
 import io.nekohasekai.sfa.compose.screen.connections.ConnectionDetailsRoute
 import io.nekohasekai.sfa.compose.screen.connections.ConnectionsPage
@@ -272,6 +273,16 @@ fun NavHost(
             popExitTransition = slideOutToRight,
         ) {
             NetworkQualityScreen(navController = navController, serviceStatus = serviceStatus)
+        }
+
+        composable(
+            route = "tools/agent",
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            AgentScreen(navController = navController, serviceStatus = serviceStatus)
         }
 
         composable(

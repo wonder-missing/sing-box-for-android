@@ -744,4 +744,25 @@
     <string name="endpoint_browser_navigation_failed">Browser navigation failed: %1$s</string>
     <string name="endpoint_browser_too_many_windows">The authentication page opened too many browser windows.</string>
     <string name="endpoint_browser_profile_unavailable">Browser authentication is unavailable on this device.</string>
+
+    <!-- Tools Agent POC -->
+    <string name="agent">Network Agent</string>
+    <string name="agent_status_connected">Core: connected via CommandClient</string>
+    <string name="agent_status_disconnected">Core: not connected. Start the service or enter Remote Control.</string>
+    <string name="agent_status_remote_connected">Remote Control: connected</string>
+    <string name="agent_status_remote_disconnected">Remote Control: connecting…</string>
+    <string name="agent_no_model_hint">No cloud model configured. The text box uses a local rule planner; the chips below call tools directly.</string>
+    <string name="agent_empty_hint">Try “list nodes”, “network status”, or open probe_via_node. Every call shows the tool name, arguments and raw JSON result.</string>
+    <string name="agent_input_hint">e.g. list nodes / network status / probe node-a https://example.com</string>
+    <string name="agent_send">Send</string>
+    <string name="agent_parse_failed">The local planner could not map that sentence. Use a chip below, or type a tool name (list_nodes / network_snapshot / probe_via_node) followed by JSON arguments.</string>
+    <string name="agent_manual_list">Manual: list_nodes</string>
+    <string name="agent_manual_snapshot">Manual: network_snapshot</string>
+    <string name="agent_manual_probe">Manual: probe_via_node</string>
+    <string name="agent_probe_title">Probe via outbound</string>
+    <string name="agent_probe_outbound">Outbound / node tag</string>
+    <string name="agent_probe_url">URL (http or https)</string>
+    <string name="agent_probe_run">Probe</string>
+    <string name="agent_confirm_title">Confirm tool call</string>
+    <string name="agent_confirm_run">Run</string>
 </resources>
