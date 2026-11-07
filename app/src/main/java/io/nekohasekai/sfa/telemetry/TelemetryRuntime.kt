@@ -145,12 +145,14 @@ internal object TelemetryRuntime {
             val context = vpn.applicationContext
             appContext = context
             coreVersion = runCatching { Libbox.version() }.getOrDefault("")
-            buffer = TelemetryLogBuffer(File(context.filesDir, "telemetry/pending.log")).also {
+            buffer = newBuffer(context).also {
                 if (TelemetryPreferences.canUpload(context)) {
                     it.append(listOf("INFO[0000] WONDER service start app=${BuildConfig.VERSION_NAME}"))
                 }
             }
-            TelemetryEventLog.record(context, "service_start", TelemetrySignals.powerState(context) + mapOf("app" to BuildConfig.VERSION_NAME, "sdk" to android.os.Build.VERSION.SDK_INT))
+            runCatching {
+                TelemetryEventLog.record(context, "service_start", TelemetrySignals.powerState(context) + mapOf("app" to BuildConfig.VERSION_NAME, "sdk" to android.os.Build.VERSION.SDK_INT))
+            }
             TelemetrySignals.startNetworkWatch(context)
             ackFile = File(context.filesDir, "telemetry/last_ack")
             lastAckedId = runCatching { ackFile?.readText()?.trim() }.getOrNull()
@@ -176,7 +178,10 @@ internal object TelemetryRuntime {
         if (!attached) {
             val vpn = io.nekohasekai.sfa.bg.BoxService.runningVpn
             if (vpn != null) {
-                attach(vpn)
+                // Called from the UI thread; a telemetry failure must not crash it.
+                runCatching { attach(vpn) }.onFailure {
+                    Log.w(TAG, "telemetry attach failed", it)
+                }
             }
         }
         flushRequested = true
@@ -301,6 +306,18 @@ internal object TelemetryRuntime {
     }
 
     private suspend fun runLoop() {
+        try {
+            runLoopInner()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Last line of defence: an uncaught coroutine exception reaches the
+            // Android default handler and kills the process (VPN included).
+            Log.w(TAG, "telemetry loop stopped", e)
+        }
+    }
+
+    private suspend fun runLoopInner() {
         syncCollector()
         if (buffer?.isEmpty() == false) {
             uploadAvailable("interval", finalFlush = false)
@@ -320,28 +337,37 @@ internal object TelemetryRuntime {
     }
 
     private fun syncCollector() {
-        val context = appContext ?: return
-        val client = commandClient ?: return
-        val want = TelemetryPreferences.canUpload(context)
-        if (want && !collectorConnected && !connectInFlight) {
-            connectInFlight = true
-            suppressDisconnect = true
-            try {
-                client.connect()
-            } finally {
-                suppressDisconnect = false
+        // Collector control failures are telemetry's problem, never the VPN's:
+        // swallow them here so the service loop cannot die on a socket error.
+        try {
+            val context = appContext ?: return
+            val client = commandClient ?: return
+            val want = TelemetryPreferences.canUpload(context)
+            if (want && !collectorConnected && !connectInFlight) {
+                connectInFlight = true
+                suppressDisconnect = true
+                try {
+                    client.connect()
+                } finally {
+                    suppressDisconnect = false
+                }
+                Log.i(TAG, "log collector connecting")
+            } else if (!want && (collectorConnected || connectInFlight)) {
+                collectorConnected = false
+                connectInFlight = false
+                suppressDisconnect = true
+                try {
+                    client.disconnect()
+                } finally {
+                    suppressDisconnect = false
+                }
+                Log.i(TAG, "log collector disconnected")
             }
-            Log.i(TAG, "log collector connecting")
-        } else if (!want && (collectorConnected || connectInFlight)) {
-            collectorConnected = false
+        } catch (e: Exception) {
+            // Do not leave connectInFlight stuck: that would mute telemetry for
+            // the rest of the session after one transient failure.
             connectInFlight = false
-            suppressDisconnect = true
-            try {
-                client.disconnect()
-            } finally {
-                suppressDisconnect = false
-            }
-            Log.i(TAG, "log collector disconnected")
+            Log.w(TAG, "log collector sync failed", e)
         }
     }
 
@@ -381,7 +407,7 @@ internal object TelemetryRuntime {
             } else {
                 FlushContext(
                     app,
-                    TelemetryLogBuffer(File(app.filesDir, "telemetry/pending.log")),
+                    newBuffer(app),
                     TelemetryUploader(app, null),
                     runCatching { Libbox.version() }.getOrDefault(""),
                     sessionEpoch,
@@ -538,7 +564,7 @@ internal object TelemetryRuntime {
             if (batch.isNotEmpty() && batchId == lastAckedId) {
                 // Already accepted by the server (e.g. process died before the queue was persisted).
                 queue.dropPrefix(batch.size)
-                runCatching { queue.persist() }
+                persistIfCurrent(flush)
                 Log.i(TAG, "skipped ${batch.size} already-uploaded lines")
                 return SendOutcome(true, batch.size)
             }
@@ -576,7 +602,7 @@ internal object TelemetryRuntime {
                     queue.resetDropped()
                     lastAckedId = batchId
                     runCatching { ackFile?.writeText(batchId) }
-                    runCatching { queue.persist() }
+                    persistIfCurrent(flush)
                     Log.i(TAG, "uploaded ${batch.size} lines (${crashToSend.size} crash summaries)")
                     return SendOutcome(true, batch.size, crashAcked = includeCrash)
                 }
@@ -672,7 +698,28 @@ internal object TelemetryRuntime {
         current.launch {
             delay(1_000)
             synchronized(stateLock) { persistQueued = false }
-            buffer?.persist()
+            val queue = synchronized(stateLock) { buffer }
+            // Telemetry disk errors must never reach the coroutine's uncaught
+            // handler: that would kill the process and take the VPN with it.
+            runCatching { queue?.persist() }.onFailure {
+                Log.w(TAG, "scheduled telemetry persist failed", it)
+            }
         }
+    }
+
+    private fun newBuffer(context: Context): TelemetryLogBuffer {
+        return TelemetryLogBuffer(
+            File(context.filesDir, "telemetry/pending.log"),
+            onPersistFailure = { error ->
+                Log.w(TAG, "telemetry persist failed: ${error.message}", error)
+                runCatching {
+                    TelemetryEventLog.record(
+                        context,
+                        "telemetry_persist_failed",
+                        mapOf("err" to (error.message ?: error.javaClass.simpleName).take(120)),
+                    )
+                }
+            },
+        )
     }
 }

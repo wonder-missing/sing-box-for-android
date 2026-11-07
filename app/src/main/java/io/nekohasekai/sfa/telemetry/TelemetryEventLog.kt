@@ -15,18 +15,25 @@ internal object TelemetryEventLog {
     private const val MAX_AGE_MS = 48L * 3600L * 1000L
     const val MAX_PER_UPLOAD = 150
 
+    /** events.log is ~300 small JSON lines; anything larger is corrupt/hostile. */
+    private const val MAX_FILE_BYTES = 4L * 1024L * 1024L
+
     private val lock = Any()
     private var file: File? = null
     private val events = ArrayDeque<Pair<Long, String>>() // seq to json
     private var nextSeq = 1L
     private var droppedEvents = 0
+    private var droppedByCap = 0
+    private var droppedByAge = 0
 
     private fun ensureLoaded(context: Context): File {
         file?.let { return it }
         val f = File(context.applicationContext.filesDir, "telemetry/events.log")
-        if (f.isFile) {
-            runCatching {
-                f.readLines().forEach { line ->
+        // Skip an oversized/corrupt file instead of trying to parse it all; the
+        // next write rewrites it from the current in-memory ring.
+        runCatching {
+            if (f.isFile && f.length() <= MAX_FILE_BYTES) {
+                f.readLines(Charsets.UTF_8).forEach { line ->
                     val tab = line.indexOf('\t')
                     val seq = if (tab > 0) line.substring(0, tab).toLongOrNull() else null
                     if (seq != null) {
@@ -79,7 +86,10 @@ internal object TelemetryEventLog {
         if (droppedEvents > 0) {
             if (chosen.isNotEmpty()) out.append(',')
             out.append("{\"type\":\"client_events_dropped\",\"ts\":").append(System.currentTimeMillis())
-                .append(",\"n\":").append(droppedEvents).append('}')
+                .append(",\"n\":").append(droppedEvents)
+                .append(",\"capped\":").append(droppedByCap)
+                .append(",\"expired\":").append(droppedByAge)
+                .append('}')
         }
         out.append(']')
         (chosen.lastOrNull()?.first ?: 0L) to out.toString()
@@ -95,6 +105,8 @@ internal object TelemetryEventLog {
         val f = ensureLoaded(context)
         while (events.isNotEmpty() && events.first().first <= seq) events.removeFirst()
         droppedEvents = 0
+        droppedByCap = 0
+        droppedByAge = 0
         writeLocked(f)
     }
 
@@ -102,10 +114,12 @@ internal object TelemetryEventLog {
         while (events.size > MAX_EVENTS) {
             events.removeFirst()
             droppedEvents++
+            droppedByCap++
         }
         while (events.isNotEmpty() && tsOf(events.first().second) < now - MAX_AGE_MS) {
             events.removeFirst()
             droppedEvents++
+            droppedByAge++
         }
     }
 
@@ -116,10 +130,14 @@ internal object TelemetryEventLog {
     }
 
     private fun writeLocked(f: File) {
+        // Telemetry events are best effort: any IO error is swallowed here so a
+        // bad disk can never propagate into the service/upload threads.
         runCatching {
             f.parentFile?.mkdirs()
             val tmp = File(f.parentFile, f.name + ".tmp")
-            tmp.writeText(events.joinToString("") { (seq, json) -> "$seq\t$json\n" })
+            // A directory squatting on the temp path would make every write fail.
+            if (tmp.isDirectory) tmp.deleteRecursively()
+            tmp.writeText(events.joinToString("") { (seq, json) -> "$seq\t$json\n" }, Charsets.UTF_8)
             if (!tmp.renameTo(f)) {
                 tmp.copyTo(f, overwrite = true)
                 tmp.delete()

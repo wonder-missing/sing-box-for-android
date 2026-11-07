@@ -413,7 +413,11 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             }
             if (service is VPNService) {
                 runningVpn = service
-                TelemetryRuntime.attach(service)
+                // Telemetry is best effort; a failing buffer must not abort the
+                // service startup coroutine (uncaught -> process crash).
+                runCatching { TelemetryRuntime.attach(service) }.onFailure {
+                    Log.w(TAG, "telemetry attach failed", it)
+                }
             }
             startService()
         }
