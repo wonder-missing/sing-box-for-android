@@ -53,11 +53,11 @@ class TelemetryClientEventTest {
             sessionId = null,
         )
 
-        assertFalse(json.contains("\"from\""))
-        assertTrue(json.contains("\"to\":\"node-a\""))
-        assertTrue(json.contains("\"reason\":\"urltest\""))
-        assertEquals(200, longValue.take(200).length)
-        assertTrue(json.contains("\"long\":\"${"x".take(200)}\""))
-        assertFalse(json.contains("x".repeat(201)))
+        assertFalse(json, json.contains("\"from\""))
+        assertTrue(json, json.contains("\"to\":\"node-a\""))
+        assertTrue(json, json.contains("\"reason\":\"urltest\""))
+        val encodedLong = json.substringAfter("\"long\":\"").substringBefore('"')
+        assertEquals(json, 200, encodedLong.length)
+        assertFalse(json, json.contains("x".repeat(201)))
     }
 }
