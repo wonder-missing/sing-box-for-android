@@ -5,20 +5,118 @@ on:
     workflows: ["Release"]
     types:
       - completed
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  ping:
-    name: Mark release workflow settled
+  feishu:
+    name: Send release notification to Feishu
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     steps:
-      - name: Record triggering run
+      - name: Compose message
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          echo "Release workflow conclusion=${{ github.event.workflow_run.conclusion }}"
-          echo "Release run=${{ github.event.workflow_run.html_url }}"
-          echo "head_branch=${{ github.event.workflow_run.head_branch }}"
-          echo "display_title=${{ github.event.workflow_run.display_title }}"
-          echo "event=${{ github.event.workflow_run.event }}"
+          message_file="$RUNNER_TEMP/feishu-message.txt"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            {
+              echo "WonderSing 发版通知渠道测试"
+              echo "GitHub Actions 已切换为飞书通知。"
+            } > "$message_file"
+          elif [ "$CONCLUSION" = "success" ]; then
+            tag="$TAG"
+            if ! printf '%s' "$tag" | grep -q '^v'; then
+              tag=$(gh release view -R "$REPO" --json tagName -q .tagName)
+            fi
+            release_url=$(gh release view "$tag" -R "$REPO" --json url -q .url)
+            apk_url=$(gh release view "$tag" -R "$REPO" --json assets \
+              --jq '.assets[] | select(.name | endswith("-arm64-v8a.apk")) | .url' | head -n 1)
+            {
+              echo "WonderSing 发版成功"
+              echo "${tag#v}"
+              if [ -n "$apk_url" ]; then
+                echo "安装包（arm64-v8a）：$apk_url"
+              fi
+              echo "Release：$release_url"
+            } > "$message_file"
+          else
+            {
+              echo "WonderSing 发版失败"
+              echo "标签/分支：${TAG:-unknown}"
+              echo "结论：${CONCLUSION:-unknown}"
+              echo "运行记录：$RUN_URL"
+            } > "$message_file"
+          fi
+          echo "---- Feishu message ----"
+          cat "$message_file"
+
+      - name: Send to Feishu
+        env:
+          LARK_NOTIFY_CREDENTIALS: ${{ secrets.LARK_NOTIFY_CREDENTIALS }}
+          LARK_NOTIFY_RECIPIENTS: ${{ secrets.LARK_NOTIFY_RECIPIENTS }}
+        run: |
+          set -euo pipefail
+          credentials=$(printf '%s' "$LARK_NOTIFY_CREDENTIALS" | tr -d '[:space:]')
+          app_id="${credentials%%:*}"
+          app_secret="${credentials#*:}"
+          if [ -z "$app_id" ] || [ -z "$app_secret" ] || [ "$app_secret" = "$credentials" ]; then
+            echo "LARK_NOTIFY_CREDENTIALS must be <App ID>:<App Secret>"
+            exit 1
+          fi
+          auth_body=$(jq -n --arg id "$app_id" --arg secret "$app_secret" \
+            '{app_id:$id, app_secret:$secret}')
+          token_response=$(curl -sS --connect-timeout 10 --max-time 20 \
+            -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
+            -H "Content-Type: application/json" \
+            --data-binary "$auth_body")
+          token=$(printf '%s' "$token_response" | jq -r '.tenant_access_token // empty')
+          if [ -z "$token" ]; then
+            echo "Feishu auth failed: code=$(printf '%s' "$token_response" | jq -r '.code // "?"') msg=$(printf '%s' "$token_response" | jq -r '.msg // "?"')"
+            exit 1
+          fi
+          message=$(cat "$RUNNER_TEMP/feishu-message.txt")
+          failed=0
+          IFS=',' read -ra recipients <<< "$LARK_NOTIFY_RECIPIENTS"
+          for entry in "${recipients[@]}"; do
+            entry=$(printf '%s' "$entry" | tr -d '[:space:]')
+            [ -z "$entry" ] && continue
+            receiver_type="${entry%%:*}"
+            receiver_id="${entry#*:}"
+            case "$receiver_type" in
+              open_id|chat_id|user_id|union_id|email) ;;
+              *)
+                echo "Unsupported receiver type: $receiver_type"
+                failed=1
+                continue
+                ;;
+            esac
+            if [ -z "$receiver_id" ] || [ "$receiver_id" = "$entry" ]; then
+              echo "Recipient must be <receiver_type>:<receiver_id>"
+              failed=1
+              continue
+            fi
+            payload=$(jq -n --arg receive_id "$receiver_id" --arg text "$message" \
+              '{receive_id:$receive_id, msg_type:"text", content:({text:$text}|tojson)}')
+            response=$(curl -sS --connect-timeout 10 --max-time 20 \
+              -X POST "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiver_type}" \
+              -H "Authorization: Bearer $token" \
+              -H "Content-Type: application/json" \
+              --data-binary "$payload")
+            code=$(printf '%s' "$response" | jq -r '.code // 0')
+            if [ "$code" != "0" ]; then
+              echo "Feishu send failed for $receiver_type: code=$code msg=$(printf '%s' "$response" | jq -r '.msg // "?"')"
+              failed=1
+            else
+              echo "Feishu notification sent to $receiver_type"
+            fi
+          done
+          exit "$failed"

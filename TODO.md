@@ -6,7 +6,7 @@
 ## 流程（已落地、随仓库生效）
 
 - [x] Release 只编手机能装的 `arm64-v8a`（libbox 只编 arm64，不打其他 ABI / universal / Android 5 legacy）
-- [x] Release 跑完自动通知主人（成功给 arm64 安装链接，失败给运行记录）
+- [x] Release 跑完自动通知主人（成功给 arm64 安装链接，失败给运行记录）—— 经飞书应用 API 直发（`release-notify.yml`）；Actions secrets：`LARK_NOTIFY_CREDENTIALS`、`LARK_NOTIFY_RECIPIENTS`，不再经 Soul webhook
 
 ## 边界（主人铁律）
 
