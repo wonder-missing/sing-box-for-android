@@ -8,6 +8,10 @@
 - [x] Release 只编手机能装的 `arm64-v8a`（libbox 只编 arm64，不打其他 ABI / universal / Android 5 legacy）
 - [x] Release 跑完自动通知主人（成功给 arm64 安装链接，失败给运行记录）
 
+## 边界（主人铁律）
+
+- [x] 不做、也不再规划 Tailscale SSH / 登机器入口（公钥 sshd 授权；WonderSing 不新增 SSH 便利入口，Agent 也不做 `ssh` / `login_host` / shell）。上游 SFA 自带的 Remote Control 与 SSH 终端是既有能力，与 WonderSing 新增入口无关，保持原样。
+
 ## 遥测质量（随 wonder.8 发版）
 
 - [x] 不再丢日志：每次上传把积压分多批（每批 500 行）依次传完，本地缓存上限 4000→12000 行，批次带 `dropped_lines`/`more` 便于发现截断（`e2aade9`）
@@ -16,13 +20,12 @@
 - [x] 上传失败本身记为本地事件（磁盘环形缓存，最多 300 条 / 48 小时），下次上传成功时随 `client_events` 一起带上，服务器确认后才清除；每次上传都记 ok/failed、走哪条路、耗时（`275a676`；Worker 已部署）
 - [x] 上传慢：两台手机每批都固定慢约 16–18 秒（直连 workers.dev 15 秒连接超时后才走 VPN）。改为记住上次成功的路径优先走，备用路径连接超时 6 秒（`275a676`）
 - [x] 补充事件：服务启动（省电/电池优化/Doze）、停止原因、报错类型、VPN 权限被收回、网络切换（仅类型）、订阅更新成败（仅主机名）（`275a676`）
-- [ ] 应用内检查更新结果事件（github flavor 的 UpdateChecker，暂未接）
 
 ## 功能
 
-- [ ] 遥测设置：填完地址和 Token 后有明确保存提示，并加一键连通测试
-- [ ] 遥测外层入口和文案保持简洁，少堆说明
-- [ ] 核对并完善应用内检查更新：从本仓库 Releases 拉取 APK，支持一键下载安装（部分逻辑已随近几版带上，不够再补）
+- [x] 遥测设置：填完地址和 Token 后有明确保存提示，并加一键连通测试 —— 已满足：Save 后显示 `telemetry_saved`（Saved）；Test connection 按钮调用 `TelemetryRuntime.probe` 显示结果，并展示上次测试时间（`TelemetrySettingsScreen.kt`）
+- [x] 遥测外层入口和文案保持简洁，少堆说明 —— 已满足：Settings 入口只有标题 + 一行 `telemetry_row_summary`；设置页只有开关、地址、Token、Save/Test/Upload 三个按钮和两行时间，说明默认折叠
+- [x] 核对并完善应用内检查更新：已从本仓库 Releases 拉取（`GitHubUpdateChecker.RELEASES_URL` = `wonder-missing/sing-box-for-android/releases`），`downloadAndInstall` 支持一键下载安装。本批只补结果事件，未重做更新 UX
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 
 ## 遥测下一批（2026-11-06，随 wonder.8 发版）
@@ -35,19 +38,28 @@
 - [x] App 侧上报入口改用 `ws-tele.soulfun.fyi`，已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时自动规范化；`wrangler.toml` 已加自定义域；Soul 已部署绑定（workers.dev 兜底保留）
 - [x] 核对 ingest KV 仍是 7 天 TTL（`index.js` 中 `TTL = 7 * 86400`，未改动）；远程约 210 条记录 + 152 个去重键
 
-## Tools Agent POC（随 wonder.9 发版）
+## wonder.10 批次（2026-11-07，随 wonder.10 发版）
 
-定位：个人网络平面 + 资料枢纽的第一块运行时能力。不打 Release。
+- [x] 应用内检查更新结果事件（github flavor 的 UpdateChecker）：`src/other/.../Vendor.kt` 在每次检查后记 `update_check`（source / ok / has_update / version_code / error，无 token）
+- [x] `vpn_session_id`：每次 `BoxService` 成功 attach 生成 12 位会话 id；`service_start` / `service_stop` / 节点切换 / 上传事件自动携带，下一轮服务换新 id
+- [x] `default_network_id`：`network_change` 与 `service_start` 记录默认上行 `wifi:<hash>` / `cellular:<hash>`（仅 transport + Network hash，无 SSID / 运营商 / IP）
+- [x] `outbound_selected`：复用 CommandClient Groups（与 Agent 同一条命令路径），首次快照和 selected 变化时记 `group` / `from` / `to` / `reason` / `root` / 可选 `ms`；reason = `start` | `urltest` | `user` | `unknown`
+- [x] 异常隔离：选中/网络事件全部 runCatching，写盘失败不得影响 VPN
+- [x] JVM 单测：会话 id 生命周期、选中变化去重、reason 映射、scrub 不含订阅 URL 路径/查询
+
+## Tools Agent POC（已随 wonder.9 发版）
+
+定位：个人网络平面 + 资料枢纽的第一块运行时能力。已随 wonder.9 发版（未单独打 Release）。
 
 - [x] Tools 增加 Agent 入口与对话页，能在运行时按名称动态调用工具（工具注册表 + JSON 参数），而不是写死流程
 - [x] 复用原版 Remote Control 那套已暴露接口（`CommandClient` / `CommandTarget`：Status、Groups、Outbounds、Log、ClashMode、Connections），不要另起查询通道；本机系统网络类型等不在该接口上的能力需标明为本地感知
 - [x] 工具：列出当前配置里的节点/出站组、感知当前设备网络环境（网络类型、VPN/服务状态、当前选中出站）
 - [x] 工具：按需指定某条节点当出口探测 URL（复用已有 outbound / CommandClient / 测速侧能力，不要另起拨号栈）
-- [x] 不包含登机器（Tailscale SSH 等另行授权）；改网络路径若做到了，执行前要有确认点
+- [x] 按主人铁律不包含登机器：WonderSing 不做、也不再规划 Tailscale SSH / 登机器入口；改网络路径若做到了，执行前要有确认点
 - [x] 无模型密钥时仍可手动点选/调用上述工具（证明运行时调用本身能工作）；有可选的 tool-calling 挂钩即可，不要把密钥写进仓库
 - [x] 为注册表、参数校验、权限边界（禁止登机器）和探测请求构造补 JVM 单元测试
 
-## pending.log.tmp 写盘隔离（随 wonder.9 发版）
+## pending.log.tmp 写盘隔离（已随 wonder.9 发版）
 
 主人 2026-11-07：wonder.8 上遥测写 `pending.log.tmp` 失败会带崩 VPN；修完前不要再发版指望它已好。
 
