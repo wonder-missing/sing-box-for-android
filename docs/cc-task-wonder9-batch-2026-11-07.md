@@ -6,7 +6,7 @@
 
 闭环：改完 → 提交 → `git push origin dev` → 用 `gh run watch` 盯 CI Test 工作流 → 红了看 `--log-failed` 再改再推，直到绿（最多 5 轮失败后停下写明原因）。本机**没有** JDK，单测只靠 GitHub Actions（`.github/workflows/test.yml` 已在 `dev`）。
 
-权限：仓库内 `.claude/settings.local.json` 已允许 status/diff/log/add/commit、`git push origin dev`、`gh run list/view/watch`、`gh workflow run`。禁止 force-push、打 tag、推 `v*`、读 `/workspace/CFG/private/**`。
+权限：仓库内 `.claude/settings.local.json` 已允许 status/diff/log/add/commit、`git push origin dev`、`gh run list/view/watch`、`gh workflow run`。禁止 force-push、打 tag、推 `v*`、读 `~/workspace/CFG/private/**`。
 
 ---
 

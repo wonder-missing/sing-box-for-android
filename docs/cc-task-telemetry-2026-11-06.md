@@ -73,7 +73,7 @@ KV / Worker 现状（`/workspace/CFG/telemetry-ingest/index.js`，已部署）�
 - 在 `/workspace/CFG/telemetry-ingest/wrangler.toml`（或你在本机对应的 CFG 副本）加上自定义域/routes，**不要**关掉 `workers.dev` 兜底。
 - 若你这边没有 Cloudflare 写权限或 DNS 加不出记录，在结果里写明缺哪一步，交给 Soul 去绑域名，不要编造已经绑好。
 - App 侧：设置页 hint 不要再只写 `https://example.workers.dev`。若用户已保存的 endpoint host 就是旧的 `wk-7c41e9.wonderbeyond.workers.dev`，读取时规范到新域名（只改这一台已知 worker，别误伤用户自定义的其它 URL）。
-- 不要把 ingest token 写进仓库、文档或提交信息。现网 token 在云电脑 `/workspace/CFG/private/sfa-telemetry.env`，只给运行/验收用。
+- 不要把 ingest token 写进仓库、文档或提交信息。现网 token 在 Mini `~/workspace/CFG/private/sfa-telemetry.env`，只给运行/验收用。
 
 ### 5. 服务端清理（结论：已有 7 天 TTL，核对即可）
 
