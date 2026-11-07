@@ -6,8 +6,6 @@ object SettingsKey {
     const val CHECK_UPDATE_ENABLED = "check_update_enabled"
     const val UPDATE_CHECK_PROMPTED = "update_check_prompted"
     const val UPDATE_SOURCE = "update_source"
-    const val UPDATE_TRACK = "update_track"
-    const val GITHUB_TOKEN = "github_token"
     const val FDROID_MIRROR_URL = "fdroid_mirror_url"
     const val FDROID_CUSTOM_MIRRORS = "fdroid_custom_mirrors"
     const val SILENT_INSTALL_ENABLED = "silent_install_enabled"
@@ -43,6 +41,7 @@ object SettingsKey {
     // dashboard
     const val DASHBOARD_ITEM_ORDER = "dashboard_item_order"
     const val DASHBOARD_DISABLED_ITEMS = "dashboard_disabled_items"
+    const val GROUP_SINGLE_COLUMN = "group_single_column"
 
     // Remote Control
     const val ACTIVE_REMOTE_SERVER_ID = "active_remote_server_id"

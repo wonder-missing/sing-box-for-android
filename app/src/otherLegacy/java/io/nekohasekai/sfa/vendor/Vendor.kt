@@ -8,11 +8,9 @@ import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.RootClient
 import io.nekohasekai.sfa.compose.screen.qrscan.QRCodeCropArea
-import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateState
-import io.nekohasekai.sfa.update.UpdateTrack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,13 +29,6 @@ object Vendor : VendorInterface {
             } else if (byUser) {
                 activity.runOnUiThread {
                     showNoUpdatesDialog(activity)
-                }
-            }
-        } catch (e: UpdateCheckException.TrackNotSupported) {
-            Log.d(TAG, "checkUpdate: track not supported")
-            if (byUser) {
-                activity.runOnUiThread {
-                    showTrackNotSupportedDialog(activity)
                 }
             }
         } catch (e: UpdateCheckException.Unreachable) {
@@ -99,14 +90,6 @@ object Vendor : VendorInterface {
             .show()
     }
 
-    private fun showTrackNotSupportedDialog(activity: Activity) {
-        MaterialAlertDialogBuilder(activity)
-            .setTitle(R.string.check_update)
-            .setMessage(R.string.update_track_not_supported)
-            .setPositiveButton(R.string.ok, null)
-            .show()
-    }
-
     private fun showUnreachableDialog(activity: Activity, detail: String?) {
         MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.check_update)
@@ -123,12 +106,7 @@ object Vendor : VendorInterface {
 
     override val hasCustomUpdate = true
 
-    override fun checkUpdateAsync(): UpdateInfo? {
-        val track = UpdateTrack.fromString(Settings.updateTrack)
-        return GitHubUpdateChecker().use { checker ->
-            checker.checkUpdate(track, Settings.githubToken)
-        }
-    }
+    override fun checkUpdateAsync(): UpdateInfo? = GitHubUpdateChecker().use { checker -> checker.checkUpdate() }
 
     override fun scheduleAutoUpdate() {
         UpdateWorker.schedule(io.nekohasekai.sfa.Application.application)

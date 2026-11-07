@@ -46,6 +46,8 @@
 - [x] `outbound_selected`：复用 CommandClient Groups（与 Agent 同一条命令路径），首次快照和 selected 变化时记 `group` / `from` / `to` / `reason` / `root` / 可选 `ms`；reason = `start` | `urltest` | `user` | `unknown`
 - [x] 异常隔离：选中/网络事件全部 runCatching，写盘失败不得影响 VPN
 - [x] JVM 单测：会话 id 生命周期、选中变化去重、reason 映射、scrub 不含订阅 URL 路径/查询
+- [x] 检查更新不再依赖 GitHub REST API（issue #3）：改用 `releases.atom` + `releases/expanded_assets` 两个普通页面，避开未认证 API 每 IP 的 403 限流；资产名/大小/ABI 从资产页解析，解析层有 JVM 单测。随之移除失效的 GitHub Token 与 Update Track 设置（fork 的 tag 发布都不标记 prerelease，track 已无作用）
+- [x] 组内节点列表支持单列布局（issue #2）：Groups 顶栏、仪表盘组面板标题栏都有单列/双列切换按钮，App 设置里也有「节点列表布局」开关；偏好持久化并跨界面同步，单列时节点名占满整行（`GroupLayout` 有 JVM 单测）
 
 ## Tools Agent POC（已随 wonder.9 发版）
 

@@ -37,11 +37,13 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -116,6 +118,7 @@ import io.nekohasekai.sfa.compose.component.SnackbarHost
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
 import io.nekohasekai.sfa.compose.component.UptimeText
 import io.nekohasekai.sfa.compose.model.Connection
+import io.nekohasekai.sfa.compose.model.GroupLayoutPreference
 import io.nekohasekai.sfa.compose.navigation.NavHost
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.navigation.ProfileRoutes
@@ -1376,6 +1379,7 @@ class MainActivity :
                 },
             )
             val groupsUiState by groupsViewModel.uiState.collectAsState()
+            val groupsSingleColumn by GroupLayoutPreference.singleColumn.collectAsState()
             val allCollapsed = groupsUiState.expandedGroups.isEmpty()
 
             ModalBottomSheet(
@@ -1409,20 +1413,38 @@ class MainActivity :
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
-                                if (groupsUiState.groups.isNotEmpty()) {
-                                    IconButton(onClick = { groupsViewModel.toggleAllGroups() }) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { GroupLayoutPreference.toggle() }) {
                                         Icon(
-                                            imageVector = if (allCollapsed) {
-                                                Icons.Default.UnfoldMore
+                                            imageVector = if (groupsSingleColumn) {
+                                                Icons.Default.GridView
                                             } else {
-                                                Icons.Default.UnfoldLess
+                                                Icons.Default.ViewList
                                             },
-                                            contentDescription = if (allCollapsed) {
-                                                stringResource(R.string.expand_all)
-                                            } else {
-                                                stringResource(R.string.collapse_all)
-                                            },
+                                            contentDescription = stringResource(
+                                                if (groupsSingleColumn) {
+                                                    R.string.use_two_columns
+                                                } else {
+                                                    R.string.use_single_column
+                                                },
+                                            ),
                                         )
+                                    }
+                                    if (groupsUiState.groups.isNotEmpty()) {
+                                        IconButton(onClick = { groupsViewModel.toggleAllGroups() }) {
+                                            Icon(
+                                                imageVector = if (allCollapsed) {
+                                                    Icons.Default.UnfoldMore
+                                                } else {
+                                                    Icons.Default.UnfoldLess
+                                                },
+                                                contentDescription = if (allCollapsed) {
+                                                    stringResource(R.string.expand_all)
+                                                } else {
+                                                    stringResource(R.string.collapse_all)
+                                                },
+                                            )
+                                        }
                                     }
                                 }
                             }

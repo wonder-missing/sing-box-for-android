@@ -2,67 +2,51 @@ package io.nekohasekai.sfa.vendor
 
 import android.os.Build
 import io.nekohasekai.sfa.BuildConfig
+import io.nekohasekai.sfa.update.GitHubReleaseFeed
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
-import io.nekohasekai.sfa.update.UpdateTrack
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.io.Closeable
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import javax.net.ssl.HttpsURLConnection
 
 /**
  * Looks for newer WonderSing releases on this fork.
  *
- * versionCode is [WONDER_VERSION_CODE_BASE] plus the `wonder.N` build in the tag.
- * Keep that base in sync with app/build.gradle.kts.
+ * Uses the public release Atom feed and asset pages, not the REST API, so an
+ * exhausted unauthenticated GitHub API quota (HTTP 403) cannot block updates.
+ *
+ * versionCode is [GitHubReleaseFeed.WONDER_VERSION_CODE_BASE] plus the `wonder.N`
+ * build in the tag. Keep that base in sync with app/build.gradle.kts.
  */
 class GitHubUpdateChecker : Closeable {
     companion object {
-        const val RELEASES_URL = "https://api.github.com/repos/wonder-missing/sing-box-for-android/releases"
-        const val WONDER_VERSION_CODE_BASE = 11_404_000
+        private const val REPO_URL = "https://github.com/wonder-missing/sing-box-for-android/releases"
+        const val FEED_URL = "$REPO_URL.atom"
+        private const val ASSETS_URL = "$REPO_URL/expanded_assets"
         private const val CONNECT_TIMEOUT_MS = 15_000
         private const val READ_TIMEOUT_MS = 20_000
-        private val WONDER_BUILD = Regex("""wonder\.(\d+)""")
-        private val ABI_SUFFIXES = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
-
-        fun wonderBuild(tagOrName: String): Int? {
-            return WONDER_BUILD.find(tagOrName)?.groupValues?.get(1)?.toIntOrNull()
-        }
-
-        fun versionCodeOf(tagOrName: String): Int {
-            val build = wonderBuild(tagOrName) ?: return 0
-            return WONDER_VERSION_CODE_BASE + build
-        }
-
-        fun matchesApk(name: String, abi: String, legacy: Boolean): Boolean {
-            if (!name.startsWith("SFA-") || !name.endsWith("-$abi.apk")) return false
-            return name.contains("-legacy-android-5-") == legacy
-        }
     }
 
-    private val json = Json { ignoreUnknownKeys = true }
-
-    fun checkUpdate(track: UpdateTrack, githubToken: String): UpdateInfo? {
-        val content = httpGet("$RELEASES_URL?per_page=30", githubToken)
-        val releases = json.decodeFromString<List<GitHubRelease>>(content)
-            .filter { release -> !release.draft && includeRelease(track, release) }
-            .sortedByDescending { versionCodeOf(it.tagName) }
-        for (release in releases) {
-            val versionCode = versionCodeOf(release.tagName)
-            if (versionCode <= BuildConfig.VERSION_CODE) {
-                return null
-            }
-            val apk = selectApk(release.assets) ?: continue
+    fun checkUpdate(): UpdateInfo? {
+        val entries = GitHubReleaseFeed.parseFeed(httpGet(FEED_URL))
+        if (entries.isEmpty()) {
+            throw UpdateCheckException.Unreachable("Empty release feed")
+        }
+        for (entry in entries.sortedByDescending { GitHubReleaseFeed.versionCodeOf(it.tag) }) {
+            val versionCode = GitHubReleaseFeed.versionCodeOf(entry.tag)
+            if (versionCode <= 0) continue
+            if (versionCode <= BuildConfig.VERSION_CODE) return null
+            val assetsPage = httpGet("$ASSETS_URL/${URLEncoder.encode(entry.tag, "UTF-8")}")
+            val apk = selectApk(GitHubReleaseFeed.parseAssets(assetsPage)) ?: continue
             return UpdateInfo(
                 versionCode = versionCode,
-                versionName = release.tagName.removePrefix("v"),
-                downloadUrl = apk.browserDownloadUrl,
-                releaseUrl = release.htmlUrl,
-                releaseNotes = release.body,
-                isPrerelease = release.prerelease,
+                versionName = entry.tag.removePrefix("v"),
+                downloadUrl = apk.downloadUrl,
+                releaseUrl = entry.releaseUrl,
+                releaseNotes = entry.notes,
+                isPrerelease = false,
                 fileSize = apk.size,
             )
         }
@@ -71,37 +55,21 @@ class GitHubUpdateChecker : Closeable {
 
     override fun close() = Unit
 
-    private fun includeRelease(track: UpdateTrack, release: GitHubRelease): Boolean {
-        if (wonderBuild(release.tagName) != null) return true
-        return when (track) {
-            UpdateTrack.BETA -> true
-            UpdateTrack.STABLE -> !release.prerelease
-        }
-    }
+    private fun selectApk(assets: List<GitHubReleaseFeed.Asset>): GitHubReleaseFeed.Asset? =
+        GitHubReleaseFeed.selectApk(
+            assets = assets,
+            abis = Build.SUPPORTED_ABIS.toList(),
+            legacy = Build.VERSION.SDK_INT < Build.VERSION_CODES.M,
+        )
 
-    private fun selectApk(assets: List<GitHubAsset>): GitHubAsset? {
-        val legacy = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
-        val preferences = Build.SUPPORTED_ABIS.toList() + "universal"
-        for (abi in preferences) {
-            if (abi != "universal" && abi !in ABI_SUFFIXES) continue
-            val match = assets.find { asset -> matchesApk(asset.name, abi, legacy) }
-            if (match != null) return match
-        }
-        return null
-    }
-
-    private fun httpGet(url: String, githubToken: String): String {
+    private fun httpGet(url: String): String {
         val connection = (URL(url).openConnection() as HttpsURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
             requestMethod = "GET"
-            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("Accept", "application/atom+xml, text/html;q=0.9, */*;q=0.8")
             setRequestProperty("User-Agent", "WonderSing")
-            val token = githubToken.trim()
-            if (token.isNotEmpty() && token.none { it == '\r' || it == '\n' }) {
-                setRequestProperty("Authorization", "Bearer $token")
-            }
         }
         try {
             val code = connection.responseCode
@@ -122,22 +90,4 @@ class GitHubUpdateChecker : Closeable {
             connection.disconnect()
         }
     }
-
-    @Serializable
-    data class GitHubRelease(
-        @SerialName("tag_name") val tagName: String = "",
-        val name: String = "",
-        val body: String? = null,
-        val draft: Boolean = false,
-        val prerelease: Boolean = false,
-        @SerialName("html_url") val htmlUrl: String = "",
-        val assets: List<GitHubAsset> = emptyList(),
-    )
-
-    @Serializable
-    data class GitHubAsset(
-        val name: String = "",
-        @SerialName("browser_download_url") val browserDownloadUrl: String = "",
-        val size: Long = 0,
-    )
 }

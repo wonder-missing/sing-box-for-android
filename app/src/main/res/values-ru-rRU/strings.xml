@@ -275,10 +275,6 @@
     <string name="check_update_automatic">Автоматическая проверка обновлений</string>
     <string name="check_update_prompt_play">Включить автоматическую проверку обновлений через **Google Play**?</string>
     <string name="check_update_prompt_github">Включить автоматическую проверку обновлений через **GitHub**?</string>
-    <string name="update_track">Канал обновлений</string>
-    <string name="update_track_stable">Стабильный</string>
-    <string name="update_track_beta">Бета</string>
-    <string name="update_track_not_supported">Этот канал пока не поддерживает проверку обновлений</string>
     <string name="view_release">Посмотреть релиз</string>
     <string name="downloading">Загрузка...</string>
     <string name="exporting">Экспорт...</string>
@@ -289,8 +285,6 @@
     <string name="update_source">Источник обновлений</string>
     <string name="update_source_github">GitHub</string>
     <string name="update_source_fdroid">F-Droid</string>
-    <string name="github_token">Токен GitHub</string>
-    <string name="github_token_description">Получите более высокие лимиты запросов GitHub API</string>
     <string name="fdroid_mirror">Зеркало F-Droid</string>
     <string name="fdroid_mirror_test_all">Автовыбор по задержке</string>
     <string name="fdroid_mirror_testing">Тестирование…</string>

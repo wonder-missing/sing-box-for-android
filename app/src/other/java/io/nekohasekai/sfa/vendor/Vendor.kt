@@ -14,7 +14,6 @@ import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateSource
 import io.nekohasekai.sfa.update.UpdateState
-import io.nekohasekai.sfa.update.UpdateTrack
 import io.nekohasekai.sfa.update.checkFDroidUpdate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,13 +33,6 @@ object Vendor : VendorInterface {
             } else if (byUser) {
                 activity.runOnUiThread {
                     showNoUpdatesDialog(activity)
-                }
-            }
-        } catch (e: UpdateCheckException.TrackNotSupported) {
-            Log.d(TAG, "checkUpdate: track not supported")
-            if (byUser) {
-                activity.runOnUiThread {
-                    showTrackNotSupportedDialog(activity)
                 }
             }
         } catch (e: UpdateCheckException.Unreachable) {
@@ -102,14 +94,6 @@ object Vendor : VendorInterface {
             .show()
     }
 
-    private fun showTrackNotSupportedDialog(activity: Activity) {
-        MaterialAlertDialogBuilder(activity)
-            .setTitle(R.string.check_update)
-            .setMessage(R.string.update_track_not_supported)
-            .setPositiveButton(R.string.ok, null)
-            .show()
-    }
-
     private fun showUnreachableDialog(activity: Activity, detail: String?) {
         MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.check_update)
@@ -133,12 +117,7 @@ object Vendor : VendorInterface {
         return try {
             val result = when (source) {
                 UpdateSource.FDROID -> checkFDroidUpdate(Application.application)
-                UpdateSource.GITHUB -> {
-                    val track = UpdateTrack.fromString(Settings.updateTrack)
-                    GitHubUpdateChecker().use { checker ->
-                        checker.checkUpdate(track, Settings.githubToken)
-                    }
-                }
+                UpdateSource.GITHUB -> GitHubUpdateChecker().use { checker -> checker.checkUpdate() }
             }
             TelemetryUpdateCheck.record(source.name.lowercase(), result?.versionCode, null)
             result

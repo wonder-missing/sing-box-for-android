@@ -76,7 +76,7 @@ android {
         applicationIdSuffix = ".wonder"
         minSdk = 24
         targetSdk = 37
-        // Keep 11404000 in sync with GitHubUpdateChecker.WONDER_VERSION_CODE_BASE.
+        // Keep 11404000 in sync with GitHubReleaseFeed.WONDER_VERSION_CODE_BASE.
         val wonderBuild = getVersionProps("WONDER_BUILD").toIntOrNull() ?: 0
         val coreVersion = getVersionProps("CORE_VERSION").ifBlank {
             getVersionProps("VERSION_NAME").substringBefore("-wonder")

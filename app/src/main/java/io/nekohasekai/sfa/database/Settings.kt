@@ -4,7 +4,6 @@ import android.os.Build
 import androidx.room.Room
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.Application
-import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.bg.ProxyService
 import io.nekohasekai.sfa.bg.VPNService
 import io.nekohasekai.sfa.constant.Path
@@ -44,18 +43,6 @@ object Settings {
     var updateSource by dataStore.string(SettingsKey.UPDATE_SOURCE) { "github" }
     var checkUpdateEnabled by dataStore.boolean(SettingsKey.CHECK_UPDATE_ENABLED) { false }
     var updateCheckPrompted by dataStore.boolean(SettingsKey.UPDATE_CHECK_PROMPTED) { false }
-    var updateTrack by dataStore.string(SettingsKey.UPDATE_TRACK) {
-        val versionName = BuildConfig.VERSION_NAME.lowercase()
-        if (versionName.contains("-alpha") ||
-            versionName.contains("-beta") ||
-            versionName.contains("-rc")
-        ) {
-            "beta"
-        } else {
-            "stable"
-        }
-    }
-    var githubToken by dataStore.string(SettingsKey.GITHUB_TOKEN) { "" }
     var silentInstallEnabled by dataStore.boolean(SettingsKey.SILENT_INSTALL_ENABLED) { false }
     var silentInstallMethod by dataStore.string(SettingsKey.SILENT_INSTALL_METHOD) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -115,6 +102,7 @@ object Settings {
 
     var dashboardItemOrder by dataStore.string(SettingsKey.DASHBOARD_ITEM_ORDER) { "" }
     var dashboardDisabledItems by dataStore.stringSet(SettingsKey.DASHBOARD_DISABLED_ITEMS) { emptySet() }
+    var groupSingleColumn by dataStore.boolean(SettingsKey.GROUP_SINGLE_COLUMN) { false }
 
     var activeRemoteServerId by dataStore.long(SettingsKey.ACTIVE_REMOTE_SERVER_ID) { 0L }
 

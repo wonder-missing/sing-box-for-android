@@ -56,6 +56,11 @@
     <string name="title_edit_profile">編輯設定檔</string>
     <string name="title_edit_configuration">編輯設定</string>
     <string name="title_groups">群組</string>
+    <string name="group_list_layout">節點列表版面</string>
+    <string name="group_list_single_column">單欄（完整名稱）</string>
+    <string name="group_list_two_columns">雙欄（緊湊）</string>
+    <string name="use_single_column">每列顯示一個節點</string>
+    <string name="use_two_columns">每列顯示兩個節點</string>
     <string name="title_debug">偵錯</string>
     <string name="title_connections">連線</string>
     <string name="title_others">其他</string>
@@ -277,10 +282,6 @@
     <string name="check_update_automatic">自動檢查更新</string>
     <string name="check_update_prompt_play">是否啟用從 **Play Store** 自動檢查更新？</string>
     <string name="check_update_prompt_github">是否啟用從 **GitHub** 自動檢查更新？</string>
-    <string name="update_track">更新通道</string>
-    <string name="update_track_stable">穩定版</string>
-    <string name="update_track_beta">Beta 版</string>
-    <string name="update_track_not_supported">目前通道尚不支援檢查更新</string>
     <string name="view_release">查看發布</string>
     <string name="downloading">下載中…</string>
     <string name="exporting">匯出中…</string>
@@ -291,8 +292,6 @@
     <string name="update_source">更新來源</string>
     <string name="update_source_github">GitHub</string>
     <string name="update_source_fdroid">F-Droid</string>
-    <string name="github_token">GitHub Token</string>
-    <string name="github_token_description">取得更高的 GitHub API 速率限制</string>
     <string name="fdroid_mirror">F-Droid 鏡像</string>
     <string name="fdroid_mirror_test_all">依延遲自動選擇</string>
     <string name="fdroid_mirror_testing">測試中…</string>

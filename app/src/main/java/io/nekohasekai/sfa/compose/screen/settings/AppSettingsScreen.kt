@@ -27,21 +27,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Autorenew
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Notifications
@@ -49,6 +45,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
+import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
@@ -63,7 +60,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -79,14 +75,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.os.LocaleListCompat
@@ -100,6 +92,7 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.base.UiEvent
 import io.nekohasekai.sfa.compose.base.rememberApplyServiceChangeNotifier
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
+import io.nekohasekai.sfa.compose.model.GroupLayoutPreference
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
@@ -108,7 +101,6 @@ import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateSource
 import io.nekohasekai.sfa.update.UpdateState
-import io.nekohasekai.sfa.update.UpdateTrack
 import io.nekohasekai.sfa.utils.HookStatusClient
 import io.nekohasekai.sfa.vendor.Vendor
 import io.nekohasekai.sfa.xposed.XposedActivation
@@ -148,10 +140,6 @@ fun AppSettingsScreen(
     val isChecking by UpdateState.isChecking
     var showSourceDialog by remember { mutableStateOf(false) }
     var currentSource by remember { mutableStateOf(Settings.updateSource) }
-    var showTrackDialog by remember { mutableStateOf(false) }
-    var currentTrack by remember { mutableStateOf(Settings.updateTrack) }
-    var showGitHubTokenDialog by remember { mutableStateOf(false) }
-    var githubToken by remember { mutableStateOf(Settings.githubToken) }
     var checkUpdateEnabled by remember { mutableStateOf(Settings.checkUpdateEnabled) }
     var showErrorDialog by remember { mutableStateOf<String?>(null) }
 
@@ -185,6 +173,7 @@ fun AppSettingsScreen(
 
     var cacheSize by remember { mutableStateOf(0L) }
     var cacheSizeText by remember { mutableStateOf("") }
+    val singleColumn by GroupLayoutPreference.singleColumn.collectAsState()
 
     fun refreshCacheSize() {
         scope.launch(Dispatchers.IO) {
@@ -248,35 +237,6 @@ fun AppSettingsScreen(
                 showSourceDialog = false
             },
             onDismiss = { showSourceDialog = false },
-        )
-    }
-
-    if (showTrackDialog) {
-        UpdateTrackDialog(
-            currentTrack = currentTrack,
-            onTrackSelected = { track ->
-                currentTrack = track
-                UpdateState.clear()
-                scope.launch(Dispatchers.IO) {
-                    Settings.updateTrack = track
-                }
-                showTrackDialog = false
-            },
-            onDismiss = { showTrackDialog = false },
-        )
-    }
-
-    if (showGitHubTokenDialog) {
-        GitHubTokenDialog(
-            currentToken = githubToken,
-            onSave = { token ->
-                githubToken = token
-                scope.launch(Dispatchers.IO) {
-                    Settings.githubToken = token
-                }
-                showGitHubTokenDialog = false
-            },
-            onDismiss = { showGitHubTokenDialog = false },
         )
     }
 
@@ -582,6 +542,47 @@ fun AppSettingsScreen(
                 ListItem(
                     headlineContent = {
                         Text(
+                            stringResource(R.string.group_list_layout),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            stringResource(
+                                if (singleColumn) {
+                                    R.string.group_list_single_column
+                                } else {
+                                    R.string.group_list_two_columns
+                                },
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.ViewList,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = singleColumn,
+                            onCheckedChange = null,
+                        )
+                    },
+                    modifier =
+                    Modifier
+                        .clickable { GroupLayoutPreference.toggle() },
+                    colors =
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
+                )
+
+                ListItem(
+                    headlineContent = {
+                        Text(
                             stringResource(R.string.cache_size),
                             style = MaterialTheme.typography.bodyLarge,
                         )
@@ -808,12 +809,6 @@ fun AppSettingsScreen(
                         if (Vendor.updateSources.size > 1) {
                             count += 1
                         }
-                        if (Vendor.hasCustomUpdate) {
-                            count += 1
-                        }
-                        if (Vendor.hasCustomUpdate && !isFDroid) {
-                            count += 1
-                        }
                         if (isFDroid) {
                             count += 1
                         }
@@ -873,75 +868,6 @@ fun AppSettingsScreen(
                         modifier =
                         updateItemModifier()
                             .clickable { showSourceDialog = true },
-                        colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
-                    )
-                }
-
-                if (Vendor.hasCustomUpdate) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                stringResource(R.string.update_track),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        },
-                        supportingContent = {
-                            val trackName = if (isFDroid) {
-                                stringResource(R.string.update_track_stable)
-                            } else {
-                                when (UpdateTrack.fromString(currentTrack)) {
-                                    UpdateTrack.STABLE -> stringResource(R.string.update_track_stable)
-                                    UpdateTrack.BETA -> stringResource(R.string.update_track_beta)
-                                }
-                            }
-                            Text(trackName, style = MaterialTheme.typography.bodyMedium)
-                        },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.NewReleases,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        modifier =
-                        updateItemModifier().let {
-                            if (isFDroid) it.alpha(0.38f) else it.clickable { showTrackDialog = true }
-                        },
-                        colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
-                    )
-                }
-
-                if (Vendor.hasCustomUpdate && !isFDroid) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                stringResource(R.string.github_token),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                stringResource(R.string.github_token_description),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Key,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        modifier =
-                        updateItemModifier()
-                            .clickable { showGitHubTokenDialog = true },
                         colors =
                         ListItemDefaults.colors(
                             containerColor = Color.Transparent,
@@ -1323,9 +1249,6 @@ fun AppSettingsScreen(
                                         } else {
                                             showUpdateAvailableDialog = true
                                         }
-                                    } catch (_: UpdateCheckException.TrackNotSupported) {
-                                        UpdateState.setUpdate(null)
-                                        showErrorDialog = context.getString(R.string.update_track_not_supported)
                                     } catch (e: UpdateCheckException.Unreachable) {
                                         UpdateState.setUpdate(null)
                                         showErrorDialog = context.getString(
@@ -1427,96 +1350,6 @@ private fun UpdateSourceDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(android.R.string.cancel))
-            }
-        },
-    )
-}
-
-@Composable
-private fun UpdateTrackDialog(
-    currentTrack: String,
-    onTrackSelected: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val tracks = listOf(
-        "stable" to stringResource(R.string.update_track_stable),
-        "beta" to stringResource(R.string.update_track_beta),
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.update_track)) },
-        text = {
-            Column {
-                tracks.forEach { (value, label) ->
-                    Row(
-                        modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onTrackSelected(value) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = currentTrack == value,
-                            onClick = { onTrackSelected(value) },
-                        )
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        },
-    )
-}
-
-@Composable
-private fun GitHubTokenDialog(
-    currentToken: String,
-    onSave: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var token by remember(currentToken) { mutableStateOf(currentToken) }
-    var tokenVisible by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.github_token)) },
-        text = {
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { tokenVisible = !tokenVisible }) {
-                        Icon(
-                            imageVector = if (tokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = null,
-                        )
-                    }
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(token.trim()) }) {
-                Text(stringResource(R.string.save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
             }
         },
     )

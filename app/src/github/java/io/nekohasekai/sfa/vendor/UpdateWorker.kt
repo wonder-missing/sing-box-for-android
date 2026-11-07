@@ -13,7 +13,6 @@ import androidx.work.WorkerParameters
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.update.UpdateSource
 import io.nekohasekai.sfa.update.UpdateState
-import io.nekohasekai.sfa.update.UpdateTrack
 import io.nekohasekai.sfa.update.checkFDroidUpdate
 import java.util.concurrent.TimeUnit
 
@@ -63,10 +62,7 @@ class UpdateWorker(private val appContext: Context, params: WorkerParameters) : 
         return try {
             val updateInfo = when (UpdateSource.fromString(Settings.updateSource)) {
                 UpdateSource.FDROID -> checkFDroidUpdate(appContext)
-                UpdateSource.GITHUB -> {
-                    val track = UpdateTrack.fromString(Settings.updateTrack)
-                    GitHubUpdateChecker().use { it.checkUpdate(track, Settings.githubToken) }
-                }
+                UpdateSource.GITHUB -> GitHubUpdateChecker().use { it.checkUpdate() }
             }
 
             if (updateInfo == null) {

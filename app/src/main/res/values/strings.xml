@@ -56,6 +56,11 @@
     <string name="title_edit_profile">Edit Profile</string>
     <string name="title_edit_configuration">Edit Configuration</string>
     <string name="title_groups">Groups</string>
+    <string name="group_list_layout">Node list layout</string>
+    <string name="group_list_single_column">Single column (full names)</string>
+    <string name="group_list_two_columns">Two columns (compact)</string>
+    <string name="use_single_column">Show one node per row</string>
+    <string name="use_two_columns">Show two nodes per row</string>
     <string name="title_debug">Debug</string>
     <string name="title_connections">Connections</string>
     <string name="title_others">Others</string>
@@ -280,12 +285,6 @@
     <string name="update_source">Update Source</string>
     <string name="update_source_github">GitHub</string>
     <string name="update_source_fdroid">F-Droid</string>
-    <string name="github_token">GitHub Token</string>
-    <string name="github_token_description">Get higher GitHub API rate limits</string>
-    <string name="update_track">Update Track</string>
-    <string name="update_track_stable">Stable</string>
-    <string name="update_track_beta">Beta</string>
-    <string name="update_track_not_supported">Current track does not support update checking yet</string>
     <string name="view_release">View Release</string>
     <string name="downloading">Downloading…</string>
     <string name="exporting">Exporting…</string>

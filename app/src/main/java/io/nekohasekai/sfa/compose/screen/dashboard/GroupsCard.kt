@@ -23,9 +23,11 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -73,6 +75,8 @@ import io.nekohasekai.sfa.compat.rememberOverscrollEffectCompat
 import io.nekohasekai.sfa.compose.component.SnackbarHost
 import io.nekohasekai.sfa.compose.model.Group
 import io.nekohasekai.sfa.compose.model.GroupItem
+import io.nekohasekai.sfa.compose.model.GroupLayout
+import io.nekohasekai.sfa.compose.model.GroupLayoutPreference
 import io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsUiState
 import io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsViewModel
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
@@ -103,6 +107,7 @@ fun GroupsCard(
     )
     val snackbarHostState = remember { SnackbarHostState() }
     val uiState by actualViewModel.uiState.collectAsState()
+    val singleColumn by GroupLayoutPreference.singleColumn.collectAsState()
 
     if (showTopBar) {
         val allCollapsed = uiState.expandedGroups.isEmpty()
@@ -110,6 +115,17 @@ fun GroupsCard(
             TopAppBar(
                 title = { Text(stringResource(R.string.title_groups)) },
                 actions = {
+                    IconButton(onClick = { GroupLayoutPreference.toggle() }) {
+                        Icon(
+                            imageVector = if (singleColumn) Icons.Default.GridView else Icons.Default.ViewList,
+                            contentDescription =
+                            if (singleColumn) {
+                                stringResource(R.string.use_two_columns)
+                            } else {
+                                stringResource(R.string.use_single_column)
+                            },
+                        )
+                    }
                     if (uiState.groups.isNotEmpty()) {
                         IconButton(onClick = { actualViewModel.toggleAllGroups() }) {
                             Icon(
@@ -180,6 +196,7 @@ fun GroupsCard(
     Box(modifier = modifier) {
         GroupsCardContent(
             uiState = uiState,
+            singleColumn = singleColumn,
             onToggleExpanded = onToggleExpanded,
             onItemSelected = onItemSelected,
             onUrlTest = onUrlTest,
@@ -198,6 +215,7 @@ fun GroupsCard(
 @Composable
 private fun GroupsCardContent(
     uiState: GroupsUiState,
+    singleColumn: Boolean,
     onToggleExpanded: (String) -> Unit,
     onItemSelected: (String, String) -> Unit,
     onUrlTest: (String) -> Unit,
@@ -280,7 +298,7 @@ private fun GroupsCardContent(
                         }
                     }
                     if (isExpanded) {
-                        val rowItems = group.items.chunked(2)
+                        val rowItems = GroupLayout.rows(group.items, singleColumn)
                         rowItems.forEachIndexed { rowIndex, row ->
                             item(
                                 key = "row:${group.tag}:${row.first().tag}",
@@ -288,6 +306,7 @@ private fun GroupsCardContent(
                             ) {
                                 GroupItemRow(
                                     row = row,
+                                    columns = GroupLayout.columns(singleColumn),
                                     selectedTag = group.selected,
                                     isSelectable = group.selectable,
                                     isLast = rowIndex == rowItems.lastIndex,
@@ -514,6 +533,7 @@ private fun GroupDotsGrid(
 @Composable
 private fun GroupItemRow(
     row: List<GroupItem>,
+    columns: Int,
     selectedTag: String,
     isSelectable: Boolean,
     isLast: Boolean,
@@ -546,12 +566,13 @@ private fun GroupItemRow(
                     isSelected = item.tag == selectedTag,
                     isSelectable = isSelectable,
                     palette = palette,
+                    maxNameLines = if (columns == 1) 2 else 1,
                     onClick = { onItemSelected(item.tag) },
                     onUrlTest = { onItemUrlTest(item.tag) },
                     modifier = Modifier.weight(1f),
                 )
             }
-            repeat(2 - row.size) {
+            repeat(columns - row.size) {
                 Spacer(modifier = Modifier.weight(1f))
             }
         }
@@ -565,6 +586,7 @@ private fun ProxyChip(
     isSelected: Boolean,
     isSelectable: Boolean,
     palette: UrlTestPalette,
+    maxNameLines: Int,
     onClick: () -> Unit,
     onUrlTest: () -> Unit,
     modifier: Modifier = Modifier,
@@ -603,7 +625,7 @@ private fun ProxyChip(
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     },
-                    maxLines = 1,
+                    maxLines = maxNameLines,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Row(
