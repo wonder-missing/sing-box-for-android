@@ -2,6 +2,12 @@
 
 改动先记在这里，不默认立刻打 Release。凑一批或主人点头后再发版。
 新增一项就加一条 `- [ ]`；已随某版发出去就勾掉并写上版本号。
+未完成项统一放最上面的「现在待办」，已完成批次留作历史。
+
+## 现在待办
+
+- [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
+- [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
 
 ## 流程（已落地、随仓库生效）
 
@@ -25,12 +31,9 @@
 
 - [x] 遥测设置：填完地址和 Token 后有明确保存提示，并加一键连通测试 —— 已满足：Save 后显示 `telemetry_saved`（Saved）；Test connection 按钮调用 `TelemetryRuntime.probe` 显示结果，并展示上次测试时间（`TelemetrySettingsScreen.kt`）
 - [x] 遥测外层入口和文案保持简洁，少堆说明 —— 已满足：Settings 入口只有标题 + 一行 `telemetry_row_summary`；设置页只有开关、地址、Token、Save/Test/Upload 三个按钮和两行时间，说明默认折叠
-- [x] 核对并完善应用内检查更新：已从本仓库 Releases 拉取（`GitHubUpdateChecker.RELEASES_URL` = `wonder-missing/sing-box-for-android/releases`），`downloadAndInstall` 支持一键下载安装。本批只补结果事件，未重做更新 UX
-- [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
+- [x] 核对并完善应用内检查更新：已从本仓库 Releases 拉取（`GitHubUpdateChecker.FEED_URL` + `GitHubReleaseFeed`），`downloadAndInstall` 支持一键下载安装。本批只补结果事件，未重做更新 UX
 
 ## 遥测下一批（2026-11-06，随 wonder.8 发版）
-
-详细说明见 [docs/cc-task-telemetry-2026-11-06.md](docs/cc-task-telemetry-2026-11-06.md)。
 
 - [x] 关闭连接 / Stopping 不再等待遥测上报：先落盘，再由 daemon 线程异步冲刷（`detachAndFlushAsync`；不变更 `Stopped` 的时序）
 - [x] 设置页展示最近一次成功上报时间（`last_upload_ok_at`）和上次连通测试时间，并提供「立即上报」按钮（与连通测试分开）
@@ -52,11 +55,18 @@
 ## wonder.11 批次（2026-11-07）
 
 - [x] Groups 面板改为全宽：去掉列表外层 16dp 横向 padding，节点距屏幕边缘只剩面板内一层 16dp；仪表盘组面板标题同步对齐
-- [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
 
 ## wonder.12 批次（2026-11-07）
 
 - [x] 发布链路压缩：Release 的 libbox 复用 Test 在 `dev` 上写的缓存（tag 可读默认分支缓存），省掉每次发版的 Go 构建；APK job 去掉未使用的 sing-box checkout / Go / NDK 安装，直接安装下载的 AAR。实测 wonder.12：libbox job 293s → 7s，整条 Release 13m18s → 8m03s；剩余大头是 APK 的 `assembleOtherRelease`（436s，Kotlin/KSP/R8）
+
+## 整理（2026-11-08，已落地，随下次发版生效）
+
+- [x] README 补 WonderSing fork 说明、Releases/arm64 链接、AGENTS/signing 指针
+- [x] 版本单源：`version.properties` 只保留 `CORE_VERSION`/`WONDER_BUILD`/`GO_VERSION`，`VERSION_CODE`/`VERSION_NAME` 由 Gradle 派生；新增 `WonderVersionTest` 防 base 漂移
+- [x] AGENTS 发版流程去掉硬编码 core 版本；open items 收敛到本文件
+- [x] TODO 修掉失效链接和 stale 符号；未完成项提到顶部「现在待办」
+- [x] `.claude/settings.json` 的 tag 权限从固定 core 版本改为 `v*`
 
 ## Tools Agent POC（已随 wonder.9 发版）
 

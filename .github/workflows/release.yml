@@ -62,7 +62,7 @@ jobs:
     needs: require-signing
     if: github.event_name != 'workflow_dispatch' || inputs.signing_check_only == false
     outputs:
-      version_name: ${{ steps.version.outputs.version_name }}
+      core_version: ${{ steps.version.outputs.core_version }}
       go_version: ${{ steps.version.outputs.go_version }}
     steps:
       - name: Checkout
@@ -71,14 +71,14 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          VERSION_NAME=$(grep '^VERSION_NAME=' version.properties | cut -d= -f2-)
-          CORE_VERSION=$(grep '^CORE_VERSION=' version.properties | cut -d= -f2- || true)
+          CORE_VERSION=$(grep '^CORE_VERSION=' version.properties | cut -d= -f2-)
           if [ -z "${CORE_VERSION}" ]; then
-            CORE_VERSION="${VERSION_NAME}"
+            echo "CORE_VERSION missing from version.properties"
+            exit 1
           fi
           GO_VERSION=$(grep '^GO_VERSION=' version.properties | cut -d= -f2-)
           GO_VERSION=${GO_VERSION#go}
-          echo "version_name=${CORE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "core_version=${CORE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "go_version=${GO_VERSION}" >> "$GITHUB_OUTPUT"
 
   libbox:
@@ -101,13 +101,13 @@ jobs:
           # Same key as the Test workflow. Tag runs can restore caches from
           # the default branch (dev), where Test seeds this on every push.
           # Bump the trailing version when the libbox build recipe changes.
-          key: libbox-aar-${{ needs.version.outputs.version_name }}-go${{ needs.version.outputs.go_version }}-${{ matrix.go_arch }}-v1
+          key: libbox-aar-${{ needs.version.outputs.core_version }}-go${{ needs.version.outputs.go_version }}-${{ matrix.go_arch }}-v1
       - name: Checkout sing-box
         if: steps.cache-libbox.outputs.cache-hit != 'true'
         uses: actions/checkout@v5
         with:
           repository: SagerNet/sing-box
-          ref: v${{ needs.version.outputs.version_name }}
+          ref: v${{ needs.version.outputs.core_version }}
           path: sing-box
           fetch-depth: 1
       - name: Setup Go
@@ -158,7 +158,7 @@ jobs:
       - name: Set tag
         if: steps.cache-libbox.outputs.cache-hit != 'true'
         working-directory: sing-box
-        run: git tag "v${{ needs.version.outputs.version_name }}" -f
+        run: git tag "v${{ needs.version.outputs.core_version }}" -f
       - name: Build library
         if: steps.cache-libbox.outputs.cache-hit != 'true'
         working-directory: sing-box

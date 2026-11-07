@@ -30,10 +30,10 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          VERSION_NAME=$(grep '^VERSION_NAME=' version.properties | cut -d= -f2-)
-          CORE_VERSION=$(grep '^CORE_VERSION=' version.properties | cut -d= -f2- || true)
+          CORE_VERSION=$(grep '^CORE_VERSION=' version.properties | cut -d= -f2-)
           if [ -z "${CORE_VERSION}" ]; then
-            CORE_VERSION="${VERSION_NAME}"
+            echo "CORE_VERSION missing from version.properties"
+            exit 1
           fi
           GO_VERSION=$(grep '^GO_VERSION=' version.properties | cut -d= -f2-)
           GO_VERSION=${GO_VERSION#go}

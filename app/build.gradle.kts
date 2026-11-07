@@ -76,21 +76,14 @@ android {
         applicationIdSuffix = ".wonder"
         minSdk = 24
         targetSdk = 37
-        // Keep 11404000 in sync with GitHubReleaseFeed.WONDER_VERSION_CODE_BASE.
+        // Keep 11404000 in sync with GitHubReleaseFeed.WONDER_VERSION_CODE_BASE;
+        // WonderVersionTest guards the pair.
         val wonderBuild = getVersionProps("WONDER_BUILD").toIntOrNull() ?: 0
-        val coreVersion = getVersionProps("CORE_VERSION").ifBlank {
-            getVersionProps("VERSION_NAME").substringBefore("-wonder")
-        }
-        versionCode = if (wonderBuild > 0) {
-            11_404_000 + wonderBuild
-        } else {
-            getVersionProps("VERSION_CODE").toInt()
-        }
-        versionName = if (wonderBuild > 0) {
-            "$coreVersion-wonder.$wonderBuild"
-        } else {
-            getVersionProps("VERSION_NAME")
-        }
+        require(wonderBuild > 0) { "WONDER_BUILD must be set in version.properties" }
+        val coreVersion = getVersionProps("CORE_VERSION")
+        require(coreVersion.isNotBlank()) { "CORE_VERSION must be set in version.properties" }
+        versionCode = 11_404_000 + wonderBuild
+        versionName = "$coreVersion-wonder.$wonderBuild"
         base.archivesName.set("SFA-${versionName}")
     }
 
@@ -391,7 +384,7 @@ if (playCredentialsJSON.exists()) {
     play {
         serviceAccountCredentials.set(playCredentialsJSON)
         defaultToAppBundles.set(true)
-        val version = getVersionProps("VERSION_NAME")
+        val version = getVersionProps("CORE_VERSION")
         track.set(
             if (version.contains("alpha") || version.contains("beta")/* || version.contains("rc")*/) {
                 "beta"

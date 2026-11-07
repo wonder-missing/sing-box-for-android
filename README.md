@@ -1,8 +1,25 @@
-# SFA
+# WonderSing (SFA fork)
+
+Personal fork of [sing-box for Android](https://github.com/SagerNet/sing-box-for-android),
+maintained on clawdy-mini. The app is published as `WonderSing` with the
+`io.nekohasekai.sfa.wonder` application ID.
+
+- Releases: https://github.com/wonder-missing/sing-box-for-android/releases
+  (only `arm64-v8a` APKs are built)
+- Agent rules, work loop and release flow: [AGENTS.md](AGENTS.md)
+- Local signing notes and limitations: [docs/signing.md](docs/signing.md)
+
+## Fork notes
+
+- In-app update checks read this fork's GitHub Releases without a GitHub API token.
+- Telemetry is optional and configured from Settings → Telemetry.
+- Maintained by agents on clawdy-mini; open work lives in [TODO.md](TODO.md).
+
+## Upstream
 
 Experimental Android client for sing-box, the universal proxy platform.
 
-## Documentation
+### Documentation
 
 https://sing-box.sagernet.org/installation/clients/sfa/
 

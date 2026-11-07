@@ -2,8 +2,7 @@
 
 Release key: `~/workspace/CFG/private/wondersing-release.jks`.
 Parameters: `~/workspace/CFG/private/wondersing-signing.env` (private, never commit
-or print). Mini uses its own API key; no cloud-computer API key is needed.
-Keep the private directory mode 0700 and files 0600.
+or print). Keep the private directory mode 0700 and files 0600.
 
 ## Existing Gradle inputs
 

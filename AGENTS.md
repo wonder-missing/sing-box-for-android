@@ -7,6 +7,8 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 - Fork: `wonder-missing/sing-box-for-android`, work branch `dev`. Upstream is SagerNet.
 - **Always pass `-R wonder-missing/sing-box-for-android` to every `gh` command** (default resolves to upstream).
 - Workspace: `~/workspace` on clawdy-mini. CFG repo: `~/workspace/CFG`.
+- The Mini has no JDK/Android emulator; compile and unit tests run in CI. UI changes are compile-checked only and need a device check.
+- `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
 
 ## Work loop
 1. `git pull --ff-only` on `dev`.
@@ -19,11 +21,11 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 6. When an issue is fixed: `gh issue comment` (what changed, which version) and `gh issue close` (with `-R ...`).
 
 ## Release flow
-1. Bump `version.properties`: `WONDER_BUILD=N`, `VERSION_CODE=11404000+N`, `VERSION_NAME=1.15.0-alpha.13-wonder.N`.
+1. Set `WONDER_BUILD=N` in `version.properties`. `VERSION_CODE` and `VERSION_NAME` are derived from `CORE_VERSION` and `WONDER_BUILD`; only change `CORE_VERSION` when moving to a new upstream core.
 2. Commit, `git push origin dev`, wait for green Test CI.
-3. `git tag v1.15.0-alpha.13-wonder.N && git push origin v1.15.0-alpha.13-wonder.N`.
-4. `gh run watch` the Release workflow; then `gh release view v1.15.0-alpha.13-wonder.N -R wonder-missing/sing-box-for-android`
-   and confirm the `arm64-v8a` APK asset exists. Report its download URL.
+3. Tag `v<CORE_VERSION>-wonder.<N>` and push the tag.
+4. `gh run watch` the Release workflow; then `gh release view <tag> -R wonder-missing/sing-box-for-android`
+   and confirm the `arm64-v8a` APK asset exists. Also confirm the `Release notify` run sent the Feishu message. Report the download URL.
 - Releases are **arm64-v8a only**.
 - `release.yml` restores the `libbox.aar` cache that `test.yml` writes on `dev` (tag runs may read the default-branch cache). Keep the cache key and trailing recipe version in sync between the two workflows; bump both when the libbox build recipe changes.
 - Never delete/move tags or releases; never force-push; push only to `dev` (and release tags).
@@ -35,5 +37,6 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
   - `sfa-telemetry.env` — telemetry ingest token. `ws-secrets/` — Actions secret backups. `airport-sub.yaml` — not for this repo.
 - Never print tokens/passwords/subscription URLs into logs, commits, issues or chat.
 
-## Known open items
-- Add a local signing hook so a Mini build can read the key from `~/workspace/CFG/private/wondersing-release.jks` + `wondersing-signing.env` (Gradle properties/env; no secrets in Git).
+## Open work
+- Track open work in `TODO.md` under 「现在待办」; do not keep a second list here.
+- Local signing limitation and keystore rules: `docs/signing.md`.
