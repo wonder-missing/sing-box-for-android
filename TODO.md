@@ -67,5 +67,5 @@
 - [x] `TelemetryLogBuffer`（及同类 EventLog）对坏文件、半截 tmp、rename 失败可恢复
 - [x] JVM 单测覆盖写失败隔离与 load 韧性
 - [x] 顺查 Worker HTTP 500 与 `client_events_dropped`（有修就修）
-  - Worker 源码 `/workspace/CFG/telemetry-ingest` 已只读检查，未见明确的代码级 500 路径；服务端未改、未部署。`client_events_dropped` 事件补充 `capped` / `expired` 丢弃原因。
+  - Worker 源码 `~/workspace/CFG/telemetry-ingest` 已只读检查，未见明确的代码级 500 路径；服务端未改、未部署。`client_events_dropped` 事件补充 `capped` / `expired` 丢弃原因。
 

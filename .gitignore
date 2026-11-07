@@ -14,4 +14,4 @@ local.properties
 *.keystore
 *.jks
 /CLAUDE.md
-/.claude/
+/.claude/settings.local.json
