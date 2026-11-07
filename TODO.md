@@ -49,6 +49,10 @@
 - [x] 检查更新不再依赖 GitHub REST API（issue #3）：改用 `releases.atom` + `releases/expanded_assets` 两个普通页面，避开未认证 API 每 IP 的 403 限流；资产名/大小/ABI 从资产页解析，解析层有 JVM 单测。随之移除失效的 GitHub Token 与 Update Track 设置（fork 的 tag 发布都不标记 prerelease，track 已无作用）
 - [x] 组内节点列表支持单列布局（issue #2）：Groups 顶栏、仪表盘组面板标题栏都有单列/双列切换按钮，App 设置里也有「节点列表布局」开关；偏好持久化并跨界面同步，单列时节点名占满整行（`GroupLayout` 有 JVM 单测）
 
+## wonder.11 批次（2026-11-07）
+
+- [x] Groups 面板改为全宽：去掉列表外层 16dp 横向 padding，节点距屏幕边缘只剩面板内一层 16dp；仪表盘组面板标题同步对齐
+
 ## Tools Agent POC（已随 wonder.9 发版）
 
 定位：个人网络平面 + 资料枢纽的第一块运行时能力。已随 wonder.9 发版（未单独打 Release）。

@@ -247,8 +247,8 @@ private fun GroupsCardContent(
         state = lazyListState,
         contentPadding =
         PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
+            start = 0.dp,
+            end = 0.dp,
             top = 8.dp,
             bottom = 16.dp,
         ),
