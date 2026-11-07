@@ -36,4 +36,3 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 
 ## Known open items
 - Add a local signing hook so a Mini build can read the key from `~/workspace/CFG/private/wondersing-release.jks` + `wondersing-signing.env` (Gradle properties/env; no secrets in Git).
-- dev already carries unreleased telemetry changes (vpn_session_id, default_network, selected node/switch_reason, update-check result); they ship with the next release.

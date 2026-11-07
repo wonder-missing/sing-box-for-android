@@ -38,7 +38,7 @@
 - [x] App 侧上报入口改用 `ws-tele.soulfun.fyi`，已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时自动规范化；`wrangler.toml` 已加自定义域；Soul 已部署绑定（workers.dev 兜底保留）
 - [x] 核对 ingest KV 仍是 7 天 TTL（`index.js` 中 `TTL = 7 * 86400`，未改动）；远程约 210 条记录 + 152 个去重键
 
-## wonder.10 批次（2026-11-07，随 wonder.10 发版）
+## wonder.10 批次（2026-11-07，已随 wonder.10 发版）
 
 - [x] 应用内检查更新结果事件（github flavor 的 UpdateChecker）：`src/other/.../Vendor.kt` 在每次检查后记 `update_check`（source / ok / has_update / version_code / error，无 token）
 - [x] `vpn_session_id`：每次 `BoxService` 成功 attach 生成 12 位会话 id；`service_start` / `service_stop` / 节点切换 / 上传事件自动携带，下一轮服务换新 id
