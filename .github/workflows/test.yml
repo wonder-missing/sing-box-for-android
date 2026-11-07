@@ -1,0 +1,213 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - dev
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      core_version: ${{ steps.version.outputs.core_version }}
+      go_version: ${{ steps.version.outputs.go_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Read version.properties
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION_NAME=$(grep '^VERSION_NAME=' version.properties | cut -d= -f2-)
+          CORE_VERSION=$(grep '^CORE_VERSION=' version.properties | cut -d= -f2- || true)
+          if [ -z "${CORE_VERSION}" ]; then
+            CORE_VERSION="${VERSION_NAME}"
+          fi
+          GO_VERSION=$(grep '^GO_VERSION=' version.properties | cut -d= -f2-)
+          GO_VERSION=${GO_VERSION#go}
+          echo "core_version=${CORE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "go_version=${GO_VERSION}" >> "$GITHUB_OUTPUT"
+
+  libbox:
+    name: Build libbox (arm64)
+    runs-on: ubuntu-latest
+    needs: version
+    timeout-minutes: 120
+    steps:
+      - name: Cache libbox.aar
+        id: cache-libbox
+        uses: actions/cache@v4
+        with:
+          path: libbox.aar
+          # The upstream tag is immutable, so version + toolchain is enough.
+          # Bump the trailing version if the build recipe changes.
+          key: libbox-aar-${{ needs.version.outputs.core_version }}-go${{ needs.version.outputs.go_version }}-arm64-v1
+      - name: Checkout sing-box
+        if: steps.cache-libbox.outputs.cache-hit != 'true'
+        uses: actions/checkout@v5
+        with:
+          repository: SagerNet/sing-box
+          ref: v${{ needs.version.outputs.core_version }}
+          path: sing-box
+          fetch-depth: 1
+      - name: Setup Go
+        if: steps.cache-libbox.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ needs.version.outputs.go_version }}
+          cache: false
+      - name: Cache Go modules
+        if: steps.cache-libbox.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-${{ hashFiles('sing-box/go.sum') }}
+          restore-keys: go-mod-
+      - name: Setup Android NDK
+        if: steps.cache-libbox.outputs.cache-hit != 'true'
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+      - name: Setup OpenJDK 17
+        if: steps.cache-libbox.outputs.cache-hit != 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Prepare Android SDK
+        if: steps.cache-libbox.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            if [ -d /usr/local/lib/android/sdk ]; then
+              echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+              ANDROID_HOME=/usr/local/lib/android/sdk
+            else
+              echo "ANDROID_HOME=$HOME/.local/lib/android/sdk" >> "$GITHUB_ENV"
+              ANDROID_HOME=$HOME/.local/lib/android/sdk
+            fi
+          fi
+          mkdir -p "$ANDROID_HOME/licenses"
+          if ! touch "$ANDROID_HOME/licenses/android-sdk-license" 2>/dev/null; then
+            ANDROID_HOME="$HOME/.local/lib/android/sdk"
+            echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+            mkdir -p "$ANDROID_HOME/licenses"
+            touch "$ANDROID_HOME/licenses/android-sdk-license"
+          fi
+      - name: Build library
+        if: steps.cache-libbox.outputs.cache-hit != 'true'
+        working-directory: sing-box
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          git tag "v${{ needs.version.outputs.core_version }}" -f
+          make lib_install
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          go run ./cmd/internal/build_libbox -target android -platform android/arm64
+          cp libbox.aar "$GITHUB_WORKSPACE/libbox.aar"
+      - name: Upload library
+        uses: actions/upload-artifact@v4
+        with:
+          name: libbox-android-arm64
+          path: libbox.aar
+          if-no-files-found: error
+          compression-level: 0
+
+  test:
+    name: Unit tests (otherDebug)
+    runs-on: ubuntu-latest
+    needs: libbox
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup OpenJDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Download libbox
+        uses: actions/download-artifact@v4
+        with:
+          name: libbox-android-arm64
+          path: libbox-input
+      - name: Install libbox
+        run: |
+          set -euo pipefail
+          mkdir -p app/libs
+          cp libbox-input/libbox.aar app/libs/libbox.aar
+          # Not compiled for otherDebug, but keeps every variant's file entry resolvable.
+          cp app/libs/libbox.aar app/libs/libbox-legacy.aar
+      - name: Prepare Android SDK
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            if [ -d /usr/local/lib/android/sdk ]; then
+              echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+              ANDROID_HOME=/usr/local/lib/android/sdk
+            else
+              echo "ANDROID_HOME=$HOME/.local/lib/android/sdk" >> "$GITHUB_ENV"
+              ANDROID_HOME=$HOME/.local/lib/android/sdk
+            fi
+          fi
+          if [ -z "${ANDROID_SDK_ROOT:-}" ]; then
+            echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          fi
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf '%s\n' \
+            "24333f8a63b6825ea9c5514f83c2829b004d1fee" \
+            "d56f5187479451eabf01fb78af6dfcb131a6481e" \
+            > "$ANDROID_HOME/licenses/android-sdk-license" || true
+      - name: Run unit tests
+        run: |
+          set -euo pipefail
+          sed -i 's/-Xmx8192m/-Xmx6g -XX:MaxMetaspaceSize=512m/' gradle.properties
+          chmod +x ./gradlew
+          ./gradlew :app:testOtherDebugUnitTest --stacktrace
+      - name: Test summary
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+
+          tests = failures = errors = skipped = 0
+          for path in glob.glob("app/build/test-results/testOtherDebugUnitTest/*.xml"):
+              root = ET.parse(path).getroot()
+              tests += int(root.get("tests", 0))
+              failures += int(root.get("failures", 0))
+              errors += int(root.get("errors", 0))
+              skipped += int(root.get("skipped", 0))
+          summary = f"tests={tests} failures={failures} errors={errors} skipped={skipped}"
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write(summary + "\n")
+          PY
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports-${{ github.run_attempt }}
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
