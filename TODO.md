@@ -35,7 +35,7 @@
 - [x] App 侧上报入口改用 `ws-tele.soulfun.fyi`，已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时自动规范化；`wrangler.toml` 已加自定义域；Soul 已部署绑定（workers.dev 兜底保留）
 - [x] 核对 ingest KV 仍是 7 天 TTL（`index.js` 中 `TTL = 7 * 86400`，未改动）；远程约 210 条记录 + 152 个去重键
 
-## Tools Agent POC（未发版）
+## Tools Agent POC（随 wonder.9 发版）
 
 定位：个人网络平面 + 资料枢纽的第一块运行时能力。不打 Release。
 
@@ -47,7 +47,7 @@
 - [x] 无模型密钥时仍可手动点选/调用上述工具（证明运行时调用本身能工作）；有可选的 tool-calling 挂钩即可，不要把密钥写进仓库
 - [x] 为注册表、参数校验、权限边界（禁止登机器）和探测请求构造补 JVM 单元测试
 
-## pending.log.tmp 写盘隔离（未发版）
+## pending.log.tmp 写盘隔离（随 wonder.9 发版）
 
 主人 2026-11-07：wonder.8 上遥测写 `pending.log.tmp` 失败会带崩 VPN；修完前不要再发版指望它已好。
 
