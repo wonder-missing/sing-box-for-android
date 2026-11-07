@@ -46,3 +46,13 @@
 - [x] 不包含登机器（Tailscale SSH 等另行授权）；改网络路径若做到了，执行前要有确认点
 - [x] 无模型密钥时仍可手动点选/调用上述工具（证明运行时调用本身能工作）；有可选的 tool-calling 挂钩即可，不要把密钥写进仓库
 - [x] 为注册表、参数校验、权限边界（禁止登机器）和探测请求构造补 JVM 单元测试
+
+## pending.log.tmp 写盘隔离（未发版）
+
+主人 2026-11-07：wonder.8 上遥测写 `pending.log.tmp` 失败会带崩 VPN；修完前不要再发版指望它已好。
+
+- [ ] 遥测写盘 / `.tmp` rename 失败不得冒泡崩 VPN；`schedulePersist` 等路径全部隔离异常
+- [ ] `TelemetryLogBuffer`（及同类 EventLog）对坏文件、半截 tmp、rename 失败可恢复
+- [ ] JVM 单测覆盖写失败隔离与 load 韧性
+- [ ] 顺查 Worker HTTP 500 与 `client_events_dropped`（有修就修）
+
