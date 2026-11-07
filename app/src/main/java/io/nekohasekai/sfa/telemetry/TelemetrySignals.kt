@@ -41,6 +41,46 @@ internal object TelemetrySignals {
         }
     }
 
+    /**
+     * Stable-ish per-network id: transport plus the Network hash (netId). No
+     * SSID, carrier name or address ever enters this string.
+     */
+    private fun networkId(kind: String, network: Network): String =
+        "$kind:${network.hashCode().toString(16)}"
+
+    /**
+     * Snapshot of the current default uplink, used for the service_start event
+     * and for network_change. The VPN itself is skipped so "default" means the
+     * physical network the tunnel rides on.
+     */
+    fun currentDefaultNetwork(context: Context): Map<String, Any?> {
+        val app = context.applicationContext
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return emptyMap()
+        return runCatching {
+            val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) cm.activeNetwork else null
+            val chosen = active?.let { network ->
+                cm.getNetworkCapabilities(network)?.let { caps -> if (isUplink(caps)) network to caps else null }
+            } ?: runCatching { cm.allNetworks }.getOrNull()?.firstNotNullOfOrNull { network ->
+                val caps = cm.getNetworkCapabilities(network) ?: return@firstNotNullOfOrNull null
+                if (isUplink(caps)) network to caps else null
+            }
+            if (chosen == null) {
+                emptyMap<String, Any?>()
+            } else {
+                val kind = describe(chosen.second)
+                mapOf(
+                    "transport" to kind,
+                    "default_network_id" to networkId(kind, chosen.first),
+                )
+            }
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun isUplink(caps: NetworkCapabilities): Boolean =
+        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+
     fun startNetworkWatch(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || callback != null) return
         val app = context.applicationContext
@@ -50,10 +90,20 @@ internal object TelemetrySignals {
                 val kind = describe(caps)
                 val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
                 val metered = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-                val key = "$kind/$validated/$metered"
+                val id = networkId(kind, network)
+                val key = "$id/$validated/$metered"
                 if (key == lastNetwork) return
                 lastNetwork = key
-                TelemetryEventLog.record(app, "network_change", mapOf("transport" to kind, "validated" to validated, "metered" to metered))
+                TelemetryEventLog.record(
+                    app,
+                    "network_change",
+                    mapOf(
+                        "transport" to kind,
+                        "default_network_id" to id,
+                        "validated" to validated,
+                        "metered" to metered,
+                    ),
+                )
             }
 
             override fun onLost(network: Network) {

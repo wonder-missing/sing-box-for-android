@@ -54,19 +54,12 @@ internal object TelemetryEventLog {
     fun record(context: Context, type: String, fields: Map<String, Any?> = emptyMap()) {
         if (!TelemetryPreferences.isEnabled(context)) return
         val now = System.currentTimeMillis()
-        val json = StringBuilder("{\"type\":").append(TelemetryPayload.quote(type)).append(",\"ts\":").append(now)
-        for ((k, v) in fields) {
-            if (v == null) continue
-            json.append(',').append(TelemetryPayload.quote(k)).append(':')
-            when (v) {
-                is Number, is Boolean -> json.append(v.toString())
-                else -> json.append(TelemetryPayload.quote(v.toString().take(200)))
-            }
-        }
-        json.append('}')
+        // While a VPN session is live every event carries its id, so service,
+        // network, selection and upload events can be grouped after the fact.
+        val json = TelemetryClientEvent.encode(type, now, fields, TelemetryRuntime.currentSessionId())
         synchronized(lock) {
             val f = ensureLoaded(context)
-            events.addLast(nextSeq++ to json.toString())
+            events.addLast(nextSeq++ to json)
             trimLocked(now)
             writeLocked(f)
         }

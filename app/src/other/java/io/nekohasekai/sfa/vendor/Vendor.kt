@@ -9,6 +9,7 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.RootClient
 import io.nekohasekai.sfa.compose.screen.qrscan.QRCodeCropArea
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.telemetry.TelemetryUpdateCheck
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateSource
@@ -127,13 +128,23 @@ object Vendor : VendorInterface {
 
     override val updateSources = listOf(UpdateSource.GITHUB, UpdateSource.FDROID)
 
-    override fun checkUpdateAsync(): UpdateInfo? = when (UpdateSource.fromString(Settings.updateSource)) {
-        UpdateSource.FDROID -> checkFDroidUpdate(Application.application)
-        UpdateSource.GITHUB -> {
-            val track = UpdateTrack.fromString(Settings.updateTrack)
-            GitHubUpdateChecker().use { checker ->
-                checker.checkUpdate(track, Settings.githubToken)
+    override fun checkUpdateAsync(): UpdateInfo? {
+        val source = UpdateSource.fromString(Settings.updateSource)
+        return try {
+            val result = when (source) {
+                UpdateSource.FDROID -> checkFDroidUpdate(Application.application)
+                UpdateSource.GITHUB -> {
+                    val track = UpdateTrack.fromString(Settings.updateTrack)
+                    GitHubUpdateChecker().use { checker ->
+                        checker.checkUpdate(track, Settings.githubToken)
+                    }
+                }
             }
+            TelemetryUpdateCheck.record(source.name.lowercase(), result?.versionCode, null)
+            result
+        } catch (e: Exception) {
+            TelemetryUpdateCheck.record(source.name.lowercase(), null, e)
+            throw e
         }
     }
 

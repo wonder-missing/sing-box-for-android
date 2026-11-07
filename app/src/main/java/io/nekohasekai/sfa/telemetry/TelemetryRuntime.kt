@@ -5,6 +5,7 @@ import android.net.VpnService
 import android.util.Log
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogEntry
+import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.utils.CommandClient
 import kotlinx.coroutines.CancellationException
@@ -20,6 +21,28 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import kotlin.concurrent.thread
+
+/** Reads the libbox group exactly once: its items iterator is single-use. */
+private fun OutboundGroup.toSelection(): OutboundGroupSelection {
+    val itemTags = ArrayList<String>()
+    var selectedDelay: Int? = null
+    val iterator = items
+    while (iterator.hasNext()) {
+        val item = iterator.next()
+        itemTags.add(item.tag)
+        if (item.tag == selected) {
+            selectedDelay = item.urlTestDelay.takeIf { it > 0 }
+        }
+    }
+    return OutboundGroupSelection(
+        tag = tag,
+        type = type,
+        selectable = selectable,
+        selected = selected,
+        selectedDelayMs = selectedDelay,
+        itemTags = itemTags,
+    )
+}
 
 /**
  * Collects the same sing-box log lines as the Log screen and uploads them
@@ -61,6 +84,15 @@ internal object TelemetryRuntime {
     private var lastAckedId: String? = null
     private var firstFlushScheduled = false
 
+    /** One id per successful VPN service session; null while detached. */
+    private val session = VpnSessionState()
+
+    /** Replaced on every attach so the first Groups snapshot is reported as `start`. */
+    @Volatile
+    private var outboundTracker = OutboundSelectionTracker()
+
+    internal fun currentSessionId(): String? = session.current
+
     @Volatile
     private var flushRequested = false
 
@@ -74,6 +106,7 @@ internal object TelemetryRuntime {
         val uploader: TelemetryUploader,
         val coreVersion: String,
         val epoch: Long,
+        val sessionId: String?,
     )
 
     private data class UploadOutcome(
@@ -136,6 +169,34 @@ internal object TelemetryRuntime {
                 scope?.launch { uploadAvailable("threshold", finalFlush = false) }
             }
         }
+
+        override fun updateGroups(newGroups: MutableList<OutboundGroup>) {
+            // Same Groups command path the Agent/dashboard use; never a second
+            // query channel. Any conversion error is telemetry's problem only.
+            if (!attached) return
+            val context = appContext ?: return
+            val groups = runCatching { newGroups.map { it.toSelection() } }.getOrDefault(emptyList())
+            if (groups.isEmpty()) return
+            val changes = runCatching { outboundTracker.update(groups) }.getOrDefault(emptyList())
+            for (change in changes) {
+                runCatching {
+                    TelemetryEventLog.record(
+                        context,
+                        "outbound_selected",
+                        buildMap {
+                            put("group", change.group)
+                            change.from?.let { put("from", it) }
+                            put("to", change.to)
+                            put("reason", change.reason.wireValue)
+                            put("root", change.root)
+                            change.ms?.let { put("ms", it) }
+                        },
+                    )
+                }.onFailure {
+                    Log.w(TAG, "outbound selection event failed", it)
+                }
+            }
+        }
     }
 
     fun attach(vpn: VpnService) {
@@ -144,16 +205,26 @@ internal object TelemetryRuntime {
             attached = true
             val context = vpn.applicationContext
             appContext = context
+            // New VPN session: new id, and the first Groups snapshot speaks again
+            // even if the previous session had the same selection.
+            session.start()
+            outboundTracker = OutboundSelectionTracker()
             coreVersion = runCatching { Libbox.version() }.getOrDefault("")
             buffer = newBuffer(context).also {
                 if (TelemetryPreferences.canUpload(context)) {
                     it.append(listOf("INFO[0000] WONDER service start app=${BuildConfig.VERSION_NAME}"))
                 }
             }
-            runCatching {
-                TelemetryEventLog.record(context, "service_start", TelemetrySignals.powerState(context) + mapOf("app" to BuildConfig.VERSION_NAME, "sdk" to android.os.Build.VERSION.SDK_INT))
-            }
             TelemetrySignals.startNetworkWatch(context)
+            runCatching {
+                TelemetryEventLog.record(
+                    context,
+                    "service_start",
+                    TelemetrySignals.powerState(context) +
+                        TelemetrySignals.currentDefaultNetwork(context) +
+                        mapOf("app" to BuildConfig.VERSION_NAME, "sdk" to android.os.Build.VERSION.SDK_INT),
+                )
+            }
             ackFile = File(context.filesDir, "telemetry/last_ack")
             lastAckedId = runCatching { ackFile?.readText()?.trim() }.getOrNull()
             uploader = TelemetryUploader(context) { socket -> vpn.protect(socket) }
@@ -165,7 +236,11 @@ internal object TelemetryRuntime {
             scope = created
             commandClient = CommandClient(
                 scope = created,
-                connectionType = CommandClient.ConnectionType.Log,
+                connectionTypes =
+                    listOf(
+                        CommandClient.ConnectionType.Log,
+                        CommandClient.ConnectionType.Groups,
+                    ),
                 handler = handler,
                 localOnly = true,
             )
@@ -250,6 +325,7 @@ internal object TelemetryRuntime {
             val context = appContext
             val queue = buffer
             val currentUploader = uploader
+            val sessionId = session.current
             if (context != null) {
                 runCatching { TelemetrySignals.stopNetworkWatch(context) }
                 runCatching { TelemetryEventLog.record(context, "service_stop", mapOf("reason" to reason)) }
@@ -259,8 +335,11 @@ internal object TelemetryRuntime {
                 // Persist first: the file survives even if the upload never completes.
                 runCatching { queue?.persist() }
             }
+            // The stop event above carries this id; later flushed events carry it
+            // through the upload tags added in sendOne().
+            session.stop()
             val snapshot = if (context != null && queue != null && currentUploader != null) {
-                FlushContext(context, queue, currentUploader, coreVersion, sessionEpoch)
+                FlushContext(context, queue, currentUploader, coreVersion, sessionEpoch, sessionId)
             } else {
                 null
             }
@@ -376,7 +455,7 @@ internal object TelemetryRuntime {
             val context = appContext ?: return
             val queue = buffer ?: return
             val currentUploader = uploader ?: return
-            FlushContext(context, queue, currentUploader, coreVersion, sessionEpoch)
+            FlushContext(context, queue, currentUploader, coreVersion, sessionEpoch, session.current)
         }
         try {
             uploadContext(
@@ -403,7 +482,7 @@ internal object TelemetryRuntime {
             val queue = buffer
             val currentUploader = uploader
             if (liveContext != null && queue != null && currentUploader != null) {
-                FlushContext(liveContext, queue, currentUploader, coreVersion, sessionEpoch)
+                FlushContext(liveContext, queue, currentUploader, coreVersion, sessionEpoch, session.current)
             } else {
                 FlushContext(
                     app,
@@ -411,6 +490,7 @@ internal object TelemetryRuntime {
                     TelemetryUploader(app, null),
                     runCatching { Libbox.version() }.getOrDefault(""),
                     sessionEpoch,
+                    session.current,
                 )
             }
         }
@@ -580,14 +660,17 @@ internal object TelemetryRuntime {
                 eventsJson = eventsJsonFor(batch, crashToSend),
                 clientEventsJson = clientEvents?.second,
             )
-            val tags = mapOf(
-                "reason" to reason,
-                "lines" to batch.size,
-                "queue" to pending.size,
-                "bytes" to body.size,
-                "batch" to batchId.take(12),
-                "crash" to crashToSend.size,
-            )
+            val tags = buildMap {
+                put("reason", reason)
+                put("lines", batch.size)
+                put("queue", pending.size)
+                put("bytes", body.size)
+                put("batch", batchId.take(12))
+                put("crash", crashToSend.size)
+                // Final flushes run after detach, so the live session field is
+                // already cleared; keep the producing session on the upload event.
+                flush.sessionId?.let { put(TelemetryClientEvent.SESSION_FIELD, it) }
+            }
             val result = postWithRetry(flush.uploader, endpoint, token, body, finalFlush, tags)
             when (result) {
                 UploadResult.Success -> {
