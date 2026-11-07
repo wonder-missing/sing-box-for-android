@@ -56,7 +56,7 @@
 
 ## wonder.12 批次（2026-11-07）
 
-- [x] 发布链路压缩：Release 的 libbox 复用 Test 在 `dev` 上写的缓存（tag 可读默认分支缓存），省掉每次发版的 Go 构建；APK job 去掉未使用的 sing-box checkout / Go / NDK 安装，直接安装下载的 AAR
+- [x] 发布链路压缩：Release 的 libbox 复用 Test 在 `dev` 上写的缓存（tag 可读默认分支缓存），省掉每次发版的 Go 构建；APK job 去掉未使用的 sing-box checkout / Go / NDK 安装，直接安装下载的 AAR。实测 wonder.12：libbox job 293s → 7s，整条 Release 13m18s → 8m03s；剩余大头是 APK 的 `assembleOtherRelease`（436s，Kotlin/KSP/R8）
 
 ## Tools Agent POC（已随 wonder.9 发版）
 

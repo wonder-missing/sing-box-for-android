@@ -25,6 +25,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 4. `gh run watch` the Release workflow; then `gh release view v1.15.0-alpha.13-wonder.N -R wonder-missing/sing-box-for-android`
    and confirm the `arm64-v8a` APK asset exists. Report its download URL.
 - Releases are **arm64-v8a only**.
+- `release.yml` restores the `libbox.aar` cache that `test.yml` writes on `dev` (tag runs may read the default-branch cache). Keep the cache key and trailing recipe version in sync between the two workflows; bump both when the libbox build recipe changes.
 - Never delete/move tags or releases; never force-push; push only to `dev` (and release tags).
 
 ## Signing & private files
