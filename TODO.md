@@ -9,9 +9,11 @@
 - [x] 应用内更新下载失败详情：错误文案带请求 URL、时间、App 版本；错误对话框增加「复制详情」按钮（`DownloadErrorDetails`，`AppSettingsScreen.kt`、`MainActivity.kt`）。2026-11-08 复现的 504 下次发版可带上这些信息
 - [x] Release 开启 `isShrinkResources`；Release CI 传 `-PwonderLocales=en`，构建期只保留英文资源，不改 app 代码
 - [x] 增量更新评估：见 [`docs/incremental-update.md`](docs/incremental-update.md)。整包 bsdiff 补丁约 5MB（全量 36MB）；归档感知因 Android 11+ 兼容性与 GPL-2.0 许可证问题暂缓。只规划，未实施
+- [x] Conductor 输入栏按 Lyra 的 [`SPEC.md`](design/conductor/input-bar/SPEC.md) 改为三颗圆钮 + 矢量图标，颜色走 MaterialTheme token；工程侧交接约定见 [`docs/design-handoff.md`](docs/design-handoff.md)。已实现，待随 wonder.16 真机验收
 
 ## 现在待办
 
+- [ ] 增量更新（低优先级）：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做
 - [ ] Conductor Phase 1 剩余：`/probe` 命令 + 参数表单 / 确认卡片
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 - [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉

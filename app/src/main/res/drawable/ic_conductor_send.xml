@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lyra 2026-11-08 · Conductor 输入区图标 · 24 网格、描边 2、圆头圆角；颜色由 Compose tint 决定 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M12,19 V5 M6,11 l6,-6 l6,6"
+        android:fillColor="#00000000" android:strokeColor="#FF000000"
+        android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+</vector>

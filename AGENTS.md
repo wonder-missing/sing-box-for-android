@@ -28,6 +28,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 - Prefer references (DeepSeek input bar, WeChat composer, Material 3 components) and relative descriptions (“same size as the left button”, “icon centred in its circle”) over requiring exact numbers.
 - Apply product-level padding, alignment and safe margins yourself; do not wait for the owner to point out basic spacing or centring.
 - A bare “px” means design dp (`1 design px ≈ 1dp`) and 5dp is a very small radius. For this app, inputs and cards usually use `8–12dp` radii.
+- Design specs live in `design/`; token mapping, touch-target rules and the handoff checklist are in `docs/design-handoff.md`.
 - Conductor-specific UI decisions live in `docs/agent-control-plane.md`.
 
 ## Release flow
