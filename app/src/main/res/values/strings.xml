@@ -59,6 +59,7 @@
     <string name="title_conduct" translatable="false">Conduct</string>
     <string name="conductor_input_hint">Type / for commands</string>
     <string name="conductor_send">Send</string>
+    <string name="conductor_running">Running</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Command palette</string>

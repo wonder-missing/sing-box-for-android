@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -315,6 +314,7 @@ private fun ConductorInputBar(
     focusRequester: FocusRequester,
 ) {
     val sendLabel = stringResource(R.string.conductor_send)
+    val runningLabel = stringResource(R.string.conductor_running)
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(12.dp),
@@ -350,10 +350,13 @@ private fun ConductorInputBar(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Row(
+                // The 48dp touch targets overhang the 36dp visuals by 6dp on
+                // each side. Keep 6dp padding so the visual circles still sit
+                // 12dp from the card edge, as the design requires.
                 modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    .padding(start = 6.dp, end = 6.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 InputGlyphButton(
@@ -361,24 +364,36 @@ private fun ConductorInputBar(
                     label = stringResource(R.string.conductor_commands),
                     onClick = onSlash,
                 )
-                Spacer(modifier = Modifier.width(8.dp))
                 InputGlyphButton(
                     icon = R.drawable.ic_conductor_at,
                     label = stringResource(R.string.conductor_mention),
                     onClick = onAt,
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                Box(
-                    modifier = Modifier.size(36.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (isRunning) {
+                if (isRunning) {
+                    Box(
+                        modifier = Modifier.size(48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
+                            modifier =
+                            Modifier
+                                .size(20.dp)
+                                .semantics { contentDescription = runningLabel },
                             strokeWidth = 2.dp,
                         )
-                    } else {
-                        val enabled = input.isNotBlank()
+                    }
+                } else {
+                    val enabled = input.isNotBlank()
+                    Box(
+                        modifier =
+                        Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .clickable(enabled = enabled, onClick = onSend)
+                            .semantics { contentDescription = sendLabel },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Box(
                             modifier =
                             Modifier
@@ -390,9 +405,7 @@ private fun ConductorInputBar(
                                     } else {
                                         MaterialTheme.colorScheme.surfaceContainerHighest
                                     },
-                                )
-                                .clickable(enabled = enabled, onClick = onSend)
-                                .semantics { contentDescription = sendLabel },
+                                ),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
@@ -423,18 +436,26 @@ private fun InputGlyphButton(
     Box(
         modifier =
         Modifier
-            .size(36.dp)
+            .size(48.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .clickable(onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            painter = painterResource(icon),
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSurface,
-        )
+        Box(
+            modifier =
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
     }
 }

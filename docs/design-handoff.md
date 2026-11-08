@@ -24,7 +24,7 @@ Lyra 的设计稿在 [`design/`](../design/README.md)。这份文档记录本项
 
 这次遇到的摩擦，下次可以提前写清：
 
-1. **视觉尺寸与触控尺寸没分开**：规范写「点击区就是 36 圆本身」，但项目触控标准是 48dp。实现按 36dp 做了；如果希望扩大触控区又保持 36dp 视觉，需要额外说明，因为会改变行内间距。
+1. **视觉尺寸与触控尺寸分开写**：v1.0 写「点击区就是 36 圆本身」，但项目触控标准是 48dp。Lyra 在 v1.1 已改成「视觉 36 / 触控 48」，并明确 Slash–At 视觉间距改为 12dp。实现时按钮行布局 padding 从 12dp 调到 6dp，让 48dp 热区外扩 6dp 后，36dp 视觉圆仍距卡片边 12dp。这个换算值得保留在以后的规范里。
 2. **空白输入算不算空**：规范写「输入为空」，实现沿用 `isNotBlank()`，全空格视为空。下次可直接写「trim 后为空」。
 3. **运行中状态的可访问性没定义**：发送钮变成转圈后，屏幕阅读器读什么没有说；实现目前只保留进度指示器。
 4. **没有覆盖 RTL、系统大字体、横屏、输入法遮挡**：实现沿用现有 `maxLines = 3` 和 `imePadding()`，但规范没给这些场景的验收标准。
@@ -49,7 +49,8 @@ Lyra 的设计稿在 [`design/`](../design/README.md)。这份文档记录本项
 ## 本次实现的映射
 
 - 卡片 `surfaceContainerHigh`；圆钮 `surfaceContainerHighest`；发送可用 `primary` / `onPrimary`；命令与提及图标 `onSurface`；发送不可用 `onSurfaceVariant`。全部来自 `MaterialTheme.colorScheme`。
-- 36dp 圆钮、20dp 图标、文本区 16/16/12dp、按钮行 12/12/12dp、间距 8dp、圆角 12dp：按规范落地。
-- 字符串沿用现有 `conductor_commands` / `conductor_mention` / `conductor_send` / `conductor_input_hint`。
-- 图标直接使用 `design/conductor/input-bar/icons/` 里的 VectorDrawable 副本。
-- 36dp 触控目标低于项目 48dp 标准，这是按本次规范做的取舍；如果后续要改，建议 Lyra 在规范里同时给视觉尺寸和触控尺寸。
+- 36dp 视觉圆钮、48dp 触控、20dp 图标、文本区 16/16/12dp、按钮行布局 6/6/12dp（48dp 热区外扩 6dp 后视觉仍是 12dp）、Slash–At 视觉间距 12dp（两颗 48dp 热区相邻）、圆角 12dp。
+- 发送可用性用 `input.isNotBlank()`，全空格算空。
+- 运行中新增 `conductor_running`（中英各一），作为进度指示器的 `contentDescription`。
+- 字符串沿用 `conductor_commands` / `conductor_mention` / `conductor_send` / `conductor_input_hint`。
+- 图标直接使用 `design/conductor/input-bar/icons/` 里的 VectorDrawable 副本；XML 没有 `autoMirrored`，RTL 下整行镜像但图标几何不镜像。
