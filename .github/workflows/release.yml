@@ -320,7 +320,7 @@ jobs:
             mkdir -p "$ANDROID_HOME/licenses"
             printf '%s\n' "24333f8a63b6825ea9c5514f83c2829b004d1fee" "d56f5187479451eabf01fb78af6dfcb131a6481e" > "$ANDROID_HOME/licenses/android-sdk-license" || true
           fi
-          ./gradlew :app:assembleOtherRelease --stacktrace
+          ./gradlew :app:assembleOtherRelease -PwonderLocales=en --stacktrace
       - name: Collect APKs
         run: |
           set -euo pipefail

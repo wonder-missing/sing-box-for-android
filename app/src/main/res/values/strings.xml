@@ -388,6 +388,7 @@
     <string name="success_logs_saved">Logs saved successfully</string>
     <string name="success_configuration_saved">Configuration saved</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
+    <string name="copy_details">Copy details</string>
 
     <!-- Toast Messages -->
     <string name="toast_clipboard_empty">Clipboard is empty</string>

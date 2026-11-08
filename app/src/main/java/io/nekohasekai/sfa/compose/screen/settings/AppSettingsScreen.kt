@@ -98,6 +98,7 @@ import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.clipboardText
+import io.nekohasekai.sfa.update.DownloadErrorDetails
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateSource
 import io.nekohasekai.sfa.update.UpdateState
@@ -253,15 +254,16 @@ fun AppSettingsScreen(
         )
     }
 
+    val downloadErrorMessage = downloadError
     if (showDownloadDialog) {
         AlertDialog(
             onDismissRequest = {},
             title = { Text(stringResource(R.string.update)) },
             text = {
                 Column {
-                    if (downloadError != null) {
+                    if (downloadErrorMessage != null) {
                         Text(
-                            downloadError!!,
+                            downloadErrorMessage,
                             color = MaterialTheme.colorScheme.error,
                         )
                     } else {
@@ -296,8 +298,22 @@ fun AppSettingsScreen(
                         UpdateState.downloadProgress.value = null
                     },
                 ) {
-                    Text(stringResource(if (downloadError != null) R.string.ok else android.R.string.cancel))
+                    Text(stringResource(if (downloadErrorMessage != null) R.string.ok else android.R.string.cancel))
                 }
+            },
+            dismissButton = if (downloadErrorMessage != null) {
+                {
+                    TextButton(
+                        onClick = {
+                            clipboardText = downloadErrorMessage
+                            Toast.makeText(context, R.string.copied_to_clipboard, Toast.LENGTH_SHORT).show()
+                        },
+                    ) {
+                        Text(stringResource(R.string.copy_details))
+                    }
+                }
+            } else {
+                null
             },
         )
     }
@@ -392,7 +408,7 @@ fun AppSettingsScreen(
                         showDownloadDialog = false
                     } catch (e: Exception) {
                         Log.e("AppSettingsScreen", "Error downloading update", e)
-                        downloadError = e.message
+                        downloadError = DownloadErrorDetails.format(updateInfo?.downloadUrl, e)
                     }
                 }
             },

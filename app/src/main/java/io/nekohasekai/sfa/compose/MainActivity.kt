@@ -9,6 +9,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -148,8 +149,10 @@ import io.nekohasekai.sfa.constant.Alert
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.ktx.launchCustomTab
+import io.nekohasekai.sfa.update.DownloadErrorDetails
 import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.utils.RemoteControlManager
 import io.nekohasekai.sfa.vendor.Vendor
@@ -718,7 +721,7 @@ class MainActivity :
                             }
                             showDownloadDialog = false
                         } catch (e: Exception) {
-                            downloadError = e.message
+                            downloadError = DownloadErrorDetails.format(updateInfo?.downloadUrl, e)
                         }
                     }
                 },
@@ -726,15 +729,16 @@ class MainActivity :
         }
 
         // Download progress dialog
+        val downloadErrorMessage = downloadError
         if (showDownloadDialog) {
             AlertDialog(
                 onDismissRequest = {},
                 title = { Text(stringResource(R.string.update)) },
                 text = {
                     Column {
-                        if (downloadError != null) {
+                        if (downloadErrorMessage != null) {
                             Text(
-                                downloadError!!,
+                                downloadErrorMessage,
                                 color = MaterialTheme.colorScheme.error,
                             )
                         } else {
@@ -769,8 +773,22 @@ class MainActivity :
                             UpdateState.downloadProgress.value = null
                         },
                     ) {
-                        Text(stringResource(if (downloadError != null) R.string.ok else android.R.string.cancel))
+                        Text(stringResource(if (downloadErrorMessage != null) R.string.ok else android.R.string.cancel))
                     }
+                },
+                dismissButton = if (downloadErrorMessage != null) {
+                    {
+                        TextButton(
+                            onClick = {
+                                clipboardText = downloadErrorMessage
+                                Toast.makeText(this@MainActivity, R.string.copied_to_clipboard, Toast.LENGTH_SHORT).show()
+                            },
+                        ) {
+                            Text(stringResource(R.string.copy_details))
+                        }
+                    }
+                } else {
+                    null
                 },
             )
         }

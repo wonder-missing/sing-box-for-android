@@ -104,6 +104,7 @@ android {
         }
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
             vcsInfo.include = false
@@ -156,6 +157,14 @@ android {
 
     androidResources {
         generateLocaleConfig = true
+        // Release CI passes -PwonderLocales=en to keep only the default locale in
+        // the APK. Local builds without the property keep every locale.
+        providers.gradleProperty("wonderLocales").orNull
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { localeFilters.addAll(it) }
     }
 
     buildFeatures {

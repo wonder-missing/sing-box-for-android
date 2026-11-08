@@ -4,9 +4,14 @@
 新增一项就加一条 `- [ ]`；已随某版发出去就勾掉并写上版本号。
 未完成项统一放最上面的「现在待办」，已完成批次留作历史。
 
+## 待发版（wonder.16，未发版）
+
+- [x] 应用内更新下载失败详情：错误文案带请求 URL、时间、App 版本；错误对话框增加「复制详情」按钮（`DownloadErrorDetails`，`AppSettingsScreen.kt`、`MainActivity.kt`）。2026-11-08 复现的 504 下次发版可带上这些信息
+- [x] Release 开启 `isShrinkResources`；Release CI 传 `-PwonderLocales=en`，构建期只保留英文资源，不改 app 代码
+- [x] 增量更新评估：见 [`docs/incremental-update.md`](docs/incremental-update.md)。实测代码版补丁约 2.1–5.0MB；只规划，未实施
+
 ## 现在待办
 
-- [ ] 应用内更新下载失败只显示 `Download failed: HTTP 504`（2026-11-08 复现：蜂窝 / WiFi / 不同代理均 504）：错误详情至少带请求 URL；错误对话框除 OK 外增加「复制详情」按钮（URL、HTTP 状态、异常、时间、版本）。落点：`ApkDownloader.kt` 抛错、`AppSettingsScreen.kt` 和 `MainActivity.kt` 的下载错误对话框。下次发版修
 - [ ] Conductor Phase 1 剩余：`/probe` 命令 + 参数表单 / 确认卡片
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 - [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
