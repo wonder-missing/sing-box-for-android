@@ -48,9 +48,9 @@ Lyra 的设计稿在 [`design/`](../design/README.md)。这份文档记录本项
 
 ## 本次实现的映射
 
-- 卡片 `surfaceContainerHigh`；圆钮 `surfaceContainerHighest`；发送可用 `primary` / `onPrimary`；命令与提及图标 `onSurface`；发送不可用 `onSurfaceVariant`。全部来自 `MaterialTheme.colorScheme`。
-- 36dp 视觉圆钮、48dp 触控、20dp 图标、文本区 16/16/12dp、按钮行布局 6/6/12dp（48dp 热区外扩 6dp 后视觉仍是 12dp）、Slash–At 视觉间距 12dp（两颗 48dp 热区相邻）、圆角 12dp。
-- 发送可用性用 `input.isNotBlank()`，全空格算空。
-- 运行中新增 `conductor_running`（中英各一），作为进度指示器的 `contentDescription`。
-- 字符串沿用 `conductor_commands` / `conductor_mention` / `conductor_send` / `conductor_input_hint`。
-- 图标直接使用 `design/conductor/input-bar/icons/` 里的 VectorDrawable 副本；XML 没有 `autoMirrored`，RTL 下整行镜像但图标几何不镜像。
+- v1.2 输入区改为底部贴边面板：默认 120dp，展开为可用高度 85%，上两角 16dp、下两角直角；展开/收起是纯 UI 状态，不改 ViewModel。
+- 文本区 padding 左 16、上 18、右 60、下 60；按钮行高 60，布局 padding 6dp（48dp 热区外扩 6dp 后视觉圆仍距边 12dp）；展开钮和发送钮圆心距右/底 30dp。
+- 卡片 `surfaceContainerHigh`；圆钮 `surfaceContainerHighest`；发送可用 `primary` / `onPrimary`；命令与提及图标 `onSurface`；发送不可用 `onSurfaceVariant`；展开/收起图标 `onSurfaceVariant`。全部来自 `MaterialTheme.colorScheme`。
+- 36dp 视觉圆钮、48dp 触控、20dp 图标；发送可用性用 `input.isNotBlank()`，全空格算空。
+- 运行中 `conductor_running`；展开/收起 `conductor_expand` / `conductor_collapse`。
+- 图标直接使用 `design/conductor/input-bar/icons/` 里的 VectorDrawable 副本；RTL 下整行镜像，图标几何不镜像。

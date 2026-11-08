@@ -19,12 +19,15 @@
 - [x] Tailscale 快捷方式只在服务运行时出现；点击后解析当前配置里的 Tailscale 端点并直接进入，不写死 tag，多端点时取第一个
 - [x] 远程订阅卡片把源端更新时间和上次拉取时间压成一行，去掉“云朵 + Remote”和文字标签，沿用带箭头的云朵和时钟图标
 
+## wonder.18 批次（待发版）
+
+- [x] Conductor 输入栏 v1.2：底部贴边面板、默认 120dp、展开 85%、上圆角 16、右上 ghost 展开钮；发送后自动收回，系统返回先收起
+- [x] 日志与 service 解耦（issue #4）：新增 `AppLog` 本地日志缓冲，持久化 app 启动、服务状态、订阅更新等事件；日志页和仪表盘预览在服务停止时也能显示 app 日志，清空日志同时清 app 日志
+- [x] Conductor `/probe`：`/probe <outbound> <url>` 先出确认按钮，确认后复用现有 `probe_via_node`；无参数时给用法提示
+
 ## 现在待办
 
-- [ ] Conductor 输入栏按 Lyra 下一版设计调整（等设计稿）
-- [ ] 日志与 service 解耦（issue #4）：当前日志流来自 libbox 的 `CommandLog`，服务不启动就没有日志；`LogScreen` 的“Service not started”只是这个事实的提示，不是门禁。要真正展示 app 日志，需要新增 app 级日志缓冲并合并进日志页。等主人确认要 app 日志再做
 - [ ] 增量更新（低优先级）：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做
-- [ ] Conductor Phase 1 剩余：`/probe` 命令 + 参数表单 / 确认卡片
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 - [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
 
