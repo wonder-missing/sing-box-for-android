@@ -2,7 +2,7 @@
 
 状态：规划中。Phase 1（Conductor 命令面板 MVP）尚未开工；当前 Agent 代码仍是 wonder.9 的 POC。
 最后更新：2026-11-08
-命名：模块/包名 `conductor`；底部导航文案 `Conduct`；页面标题建议 `Conductor`。
+命名：模块/包名 `conductor`；外层底部导航文案 `Conduct`；Conductor 页面进入沉浸模式，不设页面标题。
 
 ## 1. 愿景
 
@@ -37,9 +37,9 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 ## 4. 命名与入口
 
 - 模块/包名：`conductor`（`io.nekohasekai.sfa.conductor`）。
-- 底部导航文案：`Conduct`。
-- 页面标题：`Conductor`。导航用动词，页面用品牌名。
-- 底部导航：`Dashboard / Conduct / Tools / Settings`。Conductor 取代现在的 Logs 位置。
+- 外层底部导航文案：`Conduct`（只是入口，不是页面标题）。
+- Conductor 页面：沉浸模式，没有页面标题、没有顶部栏、没有底部导航按钮，看起来像打开一个 inner app。消息流 + 输入框就是全部界面；退出走系统返回手势/返回键。
+- 底部导航：`Dashboard / Conduct / Tools / Settings`。Conductor 取代现在的 Logs 位置；进入 Conductor 后隐藏外层底部导航。
 - Logs：不再占底部导航；移到 Dashboard 的卡片入口，放在 Profiles 下方；点击卡片进入原来的 Logs 页面。
 - Tools：回到 fork 前的上游原版，移除 Agent 入口；Conductor 吸收 Agent POC 的能力，不保留两个命令面。
 - 不采用的名字：Composer（和 Jetpack Compose / Docker Compose 混淆）、Console（语义被开发者控制台收窄）、Maestro（和移动测试框架撞名）、Cockpit（和主人另一个项目重名）。
@@ -48,6 +48,8 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 
 目标：像手机版 DeepSeek 一样简洁，能让人愿意每天打开、测试、陪它演化。
 
+- Conductor 是全屏沉浸页面：没有顶部标题栏，没有底部导航；消息流 + 输入框就是全部界面；退出走系统返回。
+- 输入区处理 IME 和系统导航栏 insets；沉浸不等于内容压到刘海或手势区下面。
 - 消息流占满剩余空间；底部是输入框。
 - 输入框默认 1 行，最高扩到 3 行，超过 3 行内部滚动；`imePadding` 保证键盘不遮挡。
 - 输入框上方一排最多 3 个控件：`/` 命令按钮、当前上下文（本机/远程，后续再加）、发送。不要堆一排装饰性开关。
@@ -140,7 +142,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 
 验收：
 
-- 真机上能完成：打开 Conductor → 输入 `/` 看到命令面板 → 选中/补全 → 执行 → 看到结果/确认/错误。
+- 真机上能完成：从 `Conduct` 进入沉浸式 Conductor（无标题栏/底部导航）→ 输入 `/` 看到命令面板 → 选中/补全 → 执行 → 看到结果/确认/错误 → 系统返回退出。
 - `/tailscale` 能列出节点；`/telemetry-upload` 有异步进度；`/probe` 能走确认卡片。
 - Logs 卡片只在 Dashboard 可见时刷新，点击进入原 Logs 页面。
 - JVM 测试覆盖命令注册表、参数校验、确认、超时/取消、日志预览采样。
@@ -173,7 +175,6 @@ Phase 1 的第一场景就是 Conductor 命令面板本身：用真实可用的�
 - Logs 卡片是否允许在 Dashboard 设置里隐藏/排序，还是固定在 Profiles 下方。
 - Tools 回到上游原版的具体范围：只移除 Agent 入口，还是同时清理其他 fork 新增项。
 - Phase 1 命令集是否按上面的列表，还是先砍到 4–5 个。
-- 页面标题用 `Conductor`、导航用 `Conduct` 是否最终确定。
 - DeepSeek key：设备端 BYOK 加密存储，还是后端代理（Phase 2 决策）。
 - 是否需要在 Mini/云电脑上放常驻协调器，还是 App 打开时编排即可。
 
