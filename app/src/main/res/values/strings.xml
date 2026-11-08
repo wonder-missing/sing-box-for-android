@@ -176,6 +176,8 @@
     <string name="basic_information">Basic Information</string>
     <string name="remote_configuration">Remote Configuration</string>
     <string name="last_updated_format">Last updated: %s</string>
+    <string name="source_updated_format">Source updated: %s</string>
+    <string name="source_updated_unknown">Source update time unknown</string>
     <string name="content">Content</string>
     <string name="json_viewer">JSON Viewer</string>
     <string name="json_editor">JSON Editor</string>

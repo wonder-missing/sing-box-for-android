@@ -175,6 +175,8 @@
     <string name="basic_information">基本信息</string>
     <string name="remote_configuration">远程配置</string>
     <string name="last_updated_format">最后更新：%s</string>
+    <string name="source_updated_format">源端更新：%s</string>
+    <string name="source_updated_unknown">源端更新时间未知</string>
     <string name="content">内容</string>
     <string name="json_viewer">JSON 查看器</string>
     <string name="json_editor">JSON 编辑器</string>

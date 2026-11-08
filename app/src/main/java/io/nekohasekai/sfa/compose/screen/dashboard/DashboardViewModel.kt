@@ -20,6 +20,7 @@ import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.RemoteControlManager
+import io.nekohasekai.sfa.utils.refreshRemoteLastModified
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -391,6 +392,11 @@ class DashboardViewModel :
                 // Show success state
                 withContext(Dispatchers.Main) {
                     updateState { copy(updatingProfileId = null, updatedProfileId = profile.id) }
+                }
+
+                if (profile.typed.refreshRemoteLastModified()) {
+                    ProfileManager.update(profile)
+                    loadProfiles()
                 }
 
                 // Clear success state after delay

@@ -14,6 +14,7 @@ import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
 import io.nekohasekai.sfa.utils.HTTPClient
+import io.nekohasekai.sfa.utils.refreshRemoteLastModified
 import java.io.File
 import java.util.Date
 import java.util.concurrent.TimeUnit
@@ -96,6 +97,9 @@ class UpdateProfileWork {
                     }
                     profile.typed.lastUpdated = Date()
                     ProfileManager.update(profile)
+                    if (profile.typed.refreshRemoteLastModified()) {
+                        ProfileManager.update(profile)
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "update profile ${profile.name}", e)
                     runCatching {

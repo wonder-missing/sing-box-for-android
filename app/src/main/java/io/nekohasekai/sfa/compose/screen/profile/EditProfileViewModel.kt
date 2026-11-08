@@ -14,6 +14,7 @@ import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
 import io.nekohasekai.sfa.utils.HTTPClient
+import io.nekohasekai.sfa.utils.refreshRemoteLastModified
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +36,7 @@ data class EditProfileUiState(
     val autoUpdate: Boolean = false,
     val autoUpdateInterval: Int = 60,
     val lastUpdated: Date? = null,
+    val remoteLastModified: Date? = null,
     // Original values for change detection
     val originalName: String = "",
     val originalIcon: String? = null,
@@ -90,6 +92,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                         autoUpdateInterval = typedProfile.autoUpdateInterval,
                         originalAutoUpdateInterval = typedProfile.autoUpdateInterval,
                         lastUpdated = typedProfile.lastUpdated,
+                        remoteLastModified = typedProfile.remoteLastModified,
                         isLoading = false,
                     )
                 }
@@ -205,6 +208,9 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 profile.name = state.name
                 profile.icon = state.icon
                 profile.typed.remoteURL = state.remoteUrl
+                if (state.remoteUrl != state.originalRemoteUrl) {
+                    profile.typed.remoteLastModified = null
+                }
 
                 // Handle auto-update changes
                 val autoUpdateChanged = state.autoUpdate != state.originalAutoUpdate
@@ -227,6 +233,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                         originalRemoteUrl = state.remoteUrl,
                         originalAutoUpdate = state.autoUpdate,
                         originalAutoUpdateInterval = state.autoUpdateInterval,
+                        remoteLastModified = profile.typed.remoteLastModified,
                         hasChanges = false,
                         isSaving = false,
                     )
@@ -275,6 +282,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 _uiState.update {
                     it.copy(
                         lastUpdated = profile.typed.lastUpdated,
+                        remoteLastModified = profile.typed.remoteLastModified,
                         isUpdating = false,
                         showUpdateSuccess = true,
                     )
@@ -286,6 +294,13 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                         Libbox.newStandaloneCommandClient().serviceReload()
                     } catch (e: Exception) {
                         // Service reload errors are not critical
+                    }
+                }
+
+                if (profile.typed.refreshRemoteLastModified()) {
+                    ProfileManager.update(profile)
+                    _uiState.update {
+                        it.copy(remoteLastModified = profile.typed.remoteLastModified)
                     }
                 }
             } catch (e: Exception) {

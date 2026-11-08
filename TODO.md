@@ -10,6 +10,7 @@
 - [x] Release 开启 `isShrinkResources`；Release CI 传 `-PwonderLocales=en`，构建期只保留英文资源，不改 app 代码
 - [x] 增量更新评估：见 [`docs/incremental-update.md`](docs/incremental-update.md)。整包 bsdiff 补丁约 5MB（全量 36MB）；归档感知因 Android 11+ 兼容性与 GPL-2.0 许可证问题暂缓。只规划，未实施
 - [x] Conductor 输入栏按 Lyra 的 [`SPEC.md`](design/conductor/input-bar/SPEC.md) v1.1 改为三颗圆钮 + 矢量图标：36dp 视觉、48dp 触控、Slash–At 视觉间距 12dp；颜色走 MaterialTheme token；运行中进度有 `conductor_running` 描述。工程侧交接约定见 [`docs/design-handoff.md`](docs/design-handoff.md)。已实现，待随 wonder.16 真机验收
+- [x] 远程订阅展示源端 `Last-Modified`：内容仍走 libbox，另发 5s 超时的 HEAD（不支持时回退 GET）只读响应头；失败保留旧值或显示“源端更新时间未知”，不影响订阅更新。展示在仪表盘订阅信息和编辑页。已实现，待随 wonder.16 真机验收
 
 ## 现在待办
 

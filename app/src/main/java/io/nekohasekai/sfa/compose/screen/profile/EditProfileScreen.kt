@@ -353,6 +353,20 @@ fun EditProfileScreen(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
+                                        Text(
+                                            text =
+                                            uiState.remoteLastModified?.let { lastModified ->
+                                                stringResource(
+                                                    R.string.source_updated_format,
+                                                    RelativeTimeFormatter.format(
+                                                        context,
+                                                        lastModified,
+                                                    ),
+                                                )
+                                            } ?: stringResource(R.string.source_updated_unknown),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
                                     }
                                 }
                                 // Update button in top-right corner

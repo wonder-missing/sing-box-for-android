@@ -11,6 +11,7 @@ import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.TypedProfile
 import io.nekohasekai.sfa.utils.HTTPClient
+import io.nekohasekai.sfa.utils.refreshRemoteLastModified
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -308,6 +309,10 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
 
         // Create profile in database and select it
         ProfileManager.create(profile, andSelect = true)
+
+        if (typedProfile.refreshRemoteLastModified()) {
+            ProfileManager.update(profile)
+        }
 
         // Reconfigure updater if auto-update is enabled
         if (state.autoUpdate) {
