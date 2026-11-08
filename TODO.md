@@ -4,10 +4,10 @@
 新增一项就加一条 `- [ ]`；已随某版发出去就勾掉并写上版本号。
 未完成项统一放最上面的「现在待办」，已完成批次留作历史。
 
-## 待发版（wonder.16，未发版）
+## wonder.16 批次（2026-11-08，随 wonder.16 发版）
 
 - [x] 应用内更新下载失败详情：错误文案带请求 URL、时间、App 版本；错误对话框增加「复制详情」按钮（`DownloadErrorDetails`，`AppSettingsScreen.kt`、`MainActivity.kt`）。2026-11-08 复现的 504 下次发版可带上这些信息
-- [x] Release 开启 `isShrinkResources`；Release CI 传 `-PwonderLocales=en`，构建期只保留英文资源，不改 app 代码
+- [x] Release 开启 `isShrinkResources`；Release CI 传 `-PwonderLocales=en`，构建期只保留英文资源，不改 app 代码。实测 wonder.16 APK 36.41→34.42MB，`resources.arsc` 2.21→0.61MB
 - [x] 增量更新评估：见 [`docs/incremental-update.md`](docs/incremental-update.md)。整包 bsdiff 补丁约 5MB（全量 36MB）；归档感知因 Android 11+ 兼容性与 GPL-2.0 许可证问题暂缓。只规划，未实施
 - [x] Conductor 输入栏按 Lyra 的 [`SPEC.md`](design/conductor/input-bar/SPEC.md) v1.1 改为三颗圆钮 + 矢量图标：36dp 视觉、48dp 触控、Slash–At 视觉间距 12dp；颜色走 MaterialTheme token；运行中进度有 `conductor_running` 描述。工程侧交接约定见 [`docs/design-handoff.md`](docs/design-handoff.md)。已实现，待随 wonder.16 真机验收
 - [x] 远程订阅展示源端 `Last-Modified`：内容仍走 libbox，另发 5s 超时的 HEAD（不支持时回退 GET）只读响应头；失败保留旧值或显示“源端更新时间未知”，不影响订阅更新。展示在仪表盘订阅信息和编辑页。已实现，待随 wonder.16 真机验收

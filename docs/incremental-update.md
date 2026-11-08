@@ -18,7 +18,8 @@
 
 | 项目 | 大小 |
 |---|---|
-| 全量 APK | 36.41 MB |
+| 全量 APK（wonder.15） | 36.41 MB |
+| 全量 APK（wonder.16，资源收缩 + 英文过滤） | **34.42 MB** |
 | 整包 bsdiff 补丁（wonder.14 → wonder.15） | 5.01 MB |
 | 整包 zstd 补丁（同一次更新） | 5.03 MB |
 | 按未压缩 zip 条目做补丁（同一次更新，估算） | **2.14 MB** |
@@ -26,11 +27,13 @@
 | 其中 `resources.arsc` + 全部 res XML | 0.07 MB |
 | `libbox.so` 未压缩补丁（两次构建只差 8 字节时） | 10 KB |
 
-wonder.14 → wonder.15 只改了 Kotlin/Compose 与版本资源，`libbox.so` 字节相同。归档感知的方式理论上是 2.1 MB，但因下面的兼容性问题，当前不采用；整包 bsdiff 是 5.0 MB，约为全量的 13.8%。
+wonder.16 的 `resources.arsc` 从 2.21 MB 降到 0.61 MB，`res/` 条目从 1013 降到 696；剩下的体积仍由 `libbox.so` 主导，增量更新的结论不变。
+
+wonder.14 → wonder.15 只改了 Kotlin/Compose 与版本资源，`libbox.so` 字节相同。归档感知的方式理论上是 2.1 MB，但因下面的兼容性问题，当前不采用；整包 bsdiff 是 5.0 MB，约为 wonder.16 全量的 14.5%。
 
 wonder.7 → wonder.14 的 `libbox.so` 有少量字节差异，整包 zstd 补丁仍有 5.06 MB；说明「Go 库有一点改动就整包重下」不是必然。真正的大版本 core 升级（大量函数地址变化）补丁会变大，保守估计 10–20 MB，但仍小于全量。
 
-为什么不能到 8 MB：`libbox.so` 压缩后 26.92 MB（未压缩 78.60 MB），`classes.dex` 压缩后 4.97 MB，`resources.arsc` 2.21 MB。不损失功能时，冷安装 APK 现实下限约 30 MB。增量更新解决的是「每次更新下载多少」，不是「首次安装多大」。
+为什么不能到 8 MB：`libbox.so` 压缩后 26.92 MB（未压缩 78.60 MB），`classes.dex` 压缩后 4.97 MB，`resources.arsc` 在 wonder.16 已从 2.21 MB 降到 0.61 MB。不损失功能时，冷安装 APK 现实下限约 34 MB（wonder.16 已到 34.42 MB）。增量更新解决的是「每次更新下载多少」，不是「首次安装多大」。
 
 ## 为什么暂缓归档感知补丁
 
