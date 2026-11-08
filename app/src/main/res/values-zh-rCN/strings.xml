@@ -59,6 +59,8 @@
     <string name="conductor_input_hint">输入 / 查看命令</string>
     <string name="conductor_send">发送</string>
     <string name="conductor_running">正在执行</string>
+    <string name="conductor_expand">展开输入框</string>
+    <string name="conductor_collapse">收起输入框</string>
     <string name="conductor_commands">命令</string>
     <string name="conductor_mention">提及</string>
     <string name="conductor_empty_title">命令面板</string>

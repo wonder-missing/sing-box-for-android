@@ -1,14 +1,20 @@
 package io.nekohasekai.sfa.conductor
 
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,6 +52,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -53,6 +60,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
@@ -81,6 +89,7 @@ fun ConductorScreen(
     }
 
     var input by rememberSaveable { mutableStateOf("") }
+    var inputExpanded by rememberSaveable { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
@@ -96,62 +105,91 @@ fun ConductorScreen(
         if (text.isEmpty()) return
         viewModel.submit(text)
         input = ""
+        inputExpanded = false
         focusManager.clearFocus()
     }
 
-    Column(
+    BackHandler(enabled = inputExpanded) {
+        inputExpanded = false
+    }
+
+    BoxWithConstraints(
         modifier =
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(scaffoldPadding)
             .imePadding(),
     ) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        val panelHeight by animateDpAsState(
+            targetValue = if (inputExpanded) maxHeight * 0.85f else 120.dp,
+            animationSpec = tween(200),
+            label = "conductorInputPanelHeight",
+        )
+        val layoutDirection = LocalLayoutDirection.current
+
+        Column(
+            modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(
+                    top = scaffoldPadding.calculateTopPadding(),
+                    start = scaffoldPadding.calculateStartPadding(layoutDirection),
+                    end = scaffoldPadding.calculateEndPadding(layoutDirection),
+                )
+                .padding(bottom = panelHeight),
         ) {
-            if (uiState.messages.isEmpty()) {
-                item(key = "empty") {
-                    ConductorEmptyState(
-                        onCommand = { command ->
-                            input = ""
-                            viewModel.submit(command)
-                        },
-                    )
-                }
-            } else {
-                items(uiState.messages.size, key = { index -> index }) { index ->
-                    ConductorMessageItem(uiState.messages[index])
-                }
-            }
-        }
-
-        LaunchedEffect(uiState.messages.size) {
-            if (uiState.messages.isNotEmpty()) {
-                listState.animateScrollToItem(uiState.messages.lastIndex)
-            }
-        }
-
-        if (suggestions.isNotEmpty()) {
-            CommandSuggestions(
-                commands = suggestions,
-                onPick = { command ->
-                    if (command.takesArgs) {
-                        input = "/${command.name} "
-                        focusInput()
-                    } else {
-                        input = ""
-                        viewModel.submit("/${command.name}")
-                        focusManager.clearFocus()
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (uiState.messages.isEmpty()) {
+                    item(key = "empty") {
+                        ConductorEmptyState(
+                            onCommand = { command ->
+                                input = ""
+                                inputExpanded = false
+                                viewModel.submit(command)
+                            },
+                        )
                     }
-                },
-            )
+                } else {
+                    items(uiState.messages.size, key = { index -> index }) { index ->
+                        ConductorMessageItem(uiState.messages[index])
+                    }
+                }
+            }
+
+            LaunchedEffect(uiState.messages.size) {
+                if (uiState.messages.isNotEmpty()) {
+                    listState.animateScrollToItem(uiState.messages.lastIndex)
+                }
+            }
+
+            if (!inputExpanded && suggestions.isNotEmpty()) {
+                CommandSuggestions(
+                    commands = suggestions,
+                    onPick = { command ->
+                        if (command.takesArgs) {
+                            input = "/${command.name} "
+                            focusInput()
+                        } else {
+                            input = ""
+                            inputExpanded = false
+                            viewModel.submit("/${command.name}")
+                            focusManager.clearFocus()
+                        }
+                    },
+                )
+            }
         }
 
         ConductorInputBar(
+            modifier = Modifier.align(Alignment.BottomCenter),
+            height = panelHeight,
+            expanded = inputExpanded,
+            onToggleExpand = { inputExpanded = !inputExpanded },
             input = input,
             onInputChange = { input = it },
             onSend = { send() },
@@ -305,6 +343,10 @@ private fun CommandSuggestions(
 
 @Composable
 private fun ConductorInputBar(
+    modifier: Modifier = Modifier,
+    height: Dp,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
     input: String,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
@@ -315,28 +357,28 @@ private fun ConductorInputBar(
 ) {
     val sendLabel = stringResource(R.string.conductor_send)
     val runningLabel = stringResource(R.string.conductor_running)
+    val expandLabel = stringResource(if (expanded) R.string.conductor_collapse else R.string.conductor_expand)
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.fillMaxWidth().height(height),
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Column {
+        Box(Modifier.fillMaxSize()) {
             BasicTextField(
                 value = input,
                 onValueChange = onInputChange,
                 modifier =
                 Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 12.dp)
+                    .fillMaxSize()
+                    .padding(start = 16.dp, top = 18.dp, end = 60.dp, bottom = 60.dp)
                     .focusRequester(focusRequester),
                 textStyle =
                 MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurface,
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                maxLines = 3,
                 decorationBox = { innerTextField ->
-                    Box {
+                    Box(Modifier.fillMaxSize()) {
                         if (input.isEmpty()) {
                             Text(
                                 text = stringResource(R.string.conductor_input_hint),
@@ -348,15 +390,44 @@ private fun ConductorInputBar(
                     }
                 },
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                // The 48dp touch targets overhang the 36dp visuals by 6dp on
-                // each side. Keep 6dp padding so the visual circles still sit
-                // 12dp from the card edge, as the design requires.
+
+            Box(
                 modifier =
                 Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 6.dp)
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onToggleExpand)
+                    .semantics { contentDescription = expandLabel },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter =
+                    painterResource(
+                        if (expanded) {
+                            R.drawable.ic_conductor_collapse
+                        } else {
+                            R.drawable.ic_conductor_expand
+                        },
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Row(
+                // 48dp touch targets overhang the 36dp visuals by 6dp on each
+                // side; 6dp row padding keeps the visual circles 12dp from the
+                // panel edges. The 60dp-high row centers them 30dp above the
+                // bottom, as the design requires.
+                modifier =
+                Modifier
+                    .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .padding(start = 6.dp, end = 6.dp, bottom = 12.dp),
+                    .height(60.dp)
+                    .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 InputGlyphButton(

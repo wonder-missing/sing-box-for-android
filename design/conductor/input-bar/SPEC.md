@@ -1,135 +1,124 @@
 # Conductor 输入框（ConductorInputBar）· UI 规格
 
-版本：v1.1 · 2026-11-08  
-定稿方向：主人选定「D 方案 · 矢量图标版」。实现以本文为准，`mockup.png` 只是示意；与本文冲突时以本文为准。  
+版本：v1.2 · 2026-11-08  
+定稿：主人在 v1.1（D 方案 · 矢量圆钮）基础上确认「贴边面板 + 顶部圆角 + 右上角展开」。实现以本文为准，`mockup.png` 只是示意（左：默认；右：展开 85%）；与本文冲突时以本文为准。  
 对接约定见 [`docs/design-handoff.md`](../../../docs/design-handoff.md)。
+
+## 0. 相对 v1.1 的变化（实现方先看这里）
+
+1. 输入区从「悬浮卡片」改为**底部贴边面板**：左、右、下三边贴屏幕边缘，去掉卡片外距；**只保留左上、右上 16dp 圆角**，下两角为直角。
+2. 默认高度固定 **120dp**：上半 60dp 放文本，下半 60dp 放按钮行，按钮圆心在距面板底 30dp 处。
+3. 三颗圆钮到屏幕左 / 右 / 下边的视觉距离都是 **12dp**。
+4. 新增右上角**展开 / 收起**按钮（ghost 样式），点开后面板高度 = 可用高度 × **85%**。
+5. 新增两个图标 `ic_conductor_expand.xml` / `ic_conductor_collapse.xml`，两个字符串 `conductor_expand` / `conductor_collapse`。
+
+v1.1 中仍然有效的：圆钮 36/48、图标 20、Slash–At 间距 12、颜色 token、发送状态逻辑、RTL、可访问性。
 
 ## 1. 目标与非目标
 
 **目标**
-- 把 `/`、`@` 从「看起来像飘着的文字」改成与发送钮同款的圆钮 + 矢量图标。
-- 视觉尺寸 36dp、触控尺寸 48dp，符合项目触控标准。
-- 左右外边距对称。
+- 输入区做成从底部升起的面板：三边贴边，顶部圆角保留边界感（主人明确：去掉圆角会像纸片）。
+- 按钮到三条屏幕边等距（12dp）。
+- 写长指令时可一键展开到 85%，上方仍露出最近一两条消息。
 
 **非目标 / 必须保持**
-- 不改字符串资源（沿用 `conductor_commands` / `conductor_mention` / `conductor_send` / `conductor_input_hint`）。
-- 不改 ViewModel，以及 `onSlash` / `onAt` / `onSend` 的行为语义。
-- 不改输入框圆角、卡片外距、主题色写死；颜色全部走 `MaterialTheme.colorScheme`。
-- 不调整输入栏与上方消息流 / 命令建议列表的间距（沿用现有结构）。
+- 不改 ViewModel，以及 `onSlash` / `onAt` / `onSend` 语义；展开状态是纯 UI 状态。
+- 不为系统手势条额外加底部留白（主人确认无所谓）；但 `imePadding()` 必须保留。
+- 颜色全部走 `MaterialTheme.colorScheme`，不写死 hex。
 
 ## 2. 落点
 
-- 改：`app/src/main/java/io/nekohasekai/sfa/conductor/ConductorScreen.kt`（`ConductorInputBar`、`InputGlyphButton`）
-- 新增 drawable：把本目录 `icons/ic_conductor_*.xml` 复制到 `app/src/main/res/drawable/`
-  - `ic_conductor_slash.xml`
-  - `ic_conductor_at.xml`
-  - `ic_conductor_send.xml`（替换 `Icons.Default.ArrowUpward`）
-- 不改：`values*/strings.xml`、ViewModel、命令逻辑
+- 改：`app/src/main/java/io/nekohasekai/sfa/conductor/ConductorScreen.kt`（`ConductorInputBar` 及其外层布局）
+- 新增 drawable：把本目录 `icons/ic_conductor_expand.xml`、`icons/ic_conductor_collapse.xml` 复制到 `app/src/main/res/drawable/`（v1.1 的 slash / at / send 三个保持）
+- 新增字符串（中英各一）：`conductor_expand`「展开输入框 / Expand input」、`conductor_collapse`「收起输入框 / Collapse input」；若 v1.1 未加 `conductor_running` 一并补上。
 
 ## 3. 结构
 
 ```
-Surface (卡片)
-└─ Column（无水平 padding；垂直：上 12 / 下 12，子项间距见下）
-   ├─ BasicTextField（水平 padding 16 / 16）
-   └─ Row（按钮行；水平 padding 12 / 12；与上方间距 8）
-      ├─ SlashButton
-      ├─ 视觉间距 12
-      ├─ AtButton
+Surface（面板；宽 = 屏宽；形状 RoundedCornerShape(topStart=16, topEnd=16, bottomStart=0, bottomEnd=0)）
+└─ Box（高度：默认 120dp / 展开 = 可用高度 × 0.85）
+   ├─ BasicTextField（对齐 TopStart；padding 左 16、上 18、右 60、下 60）
+   ├─ ExpandToggle（对齐 TopEnd；48×48 触控，圆心距面板顶 30、距右 30）
+   └─ Row 按钮行（对齐 BottomStart；高 60；水平 padding 12/12；内容垂直居中）
+      ├─ SlashButton ─ 视觉间距 12 ─ AtButton
       ├─ Spacer(weight=1)
       └─ SendButton | Progress
 ```
+
+面板放在屏幕最底部，外层不再加水平 16 / 垂直 8 的卡片外距；面板外沿就是屏幕外沿。
 
 ## 4. 尺寸（dp）
 
 | 项 | 视觉 | 触控 | 说明 |
 |---|---|---|---|
-| 卡片外距 | 水平 16、垂直 8 | — | 不变 |
-| 卡片圆角 | 12 | — | 不变 |
-| 文本区内边距 | 左 16、右 16、上 12 | — | 提示文字起点 16，比按钮略往里，属预期 |
-| 按钮行内边距 | 左 12、右 12、下 12 | — | 视觉上左右对称 |
-| 文本区 ↔ 按钮行 | 间距 8 | — | |
-| 圆钮 | 直径 36 | **48×48** | 视觉圆 36；外扩透明触控到 48，涟漪可铺满触控区 |
-| 图标 | 20×20 | — | 居中于 36 圆 |
-| Slash ↔ At 视觉间距 | **12**（圆心距 48） | — | 保证两颗 48 触控区不相交；v1.0 写的 8 作废 |
-| 发送钮 | 同圆钮 | 同 48 | |
+| 面板外距 | 0 | — | 左右下贴屏 |
+| 面板圆角 | 上 16，下 0 | — | |
+| 默认高度 | 120 | — | 固定；输入超过可见区域时文本区内部滚动 |
+| 展开高度 | 可用高度 × 0.85 | — | 「可用高度」见第 6 节 |
+| 按钮行 | 高 60，贴面板底 | — | 圆钮圆心距面板底 30 |
+| 圆钮 | 直径 36 | 48×48 | 同 v1.1 |
+| 圆钮到屏幕左/右/下 | **12** | 6 | 圆心距边 30 |
+| Slash ↔ At | 12 | 不相交 | 同 v1.1 |
+| 文本区 padding | 左 16、上 18、右 60、下 60 | — | 右 60 给展开钮让位；下 60 给按钮行让位 |
+| 展开钮 | 图标 20，无底 | 48×48 | 圆心 (右 30, 上 30)，与发送钮同一竖线 |
 
-**必须精确**：圆钮视觉 36、触控 48、图标 20、左右视觉外边距 12、Slash–At 视觉间距 12。  
-**可微调**：若 Material 默认 ripple 裁剪与 48 触控有冲突，优先保证触控 48 与视觉圆 36 分离，不要为了涟漪缩小触控区。
-
-触控实现建议：外层 `Box(Modifier.size(48.dp), contentAlignment = Center)` + `clickable` / `IconButton`；内层 `Box(Modifier.size(36.dp).clip(CircleShape).background(...))`。不要把点击绑在 36 圆上。
-
-左右 12 视觉边距时，48 触控会各向卡片外多出 6dp；由卡片水平内边距吸收即可，不要再加大卡片外距。
+**必须精确**：120 默认高、上 16 圆角、三钮距三边 12、展开钮圆心与发送钮圆心在同一 x、85%。  
+默认态下提示文字一行即可，单行垂直落在上半区中部（上 padding 18 + bodyLarge 行高 24 → 文字中线约 30，与展开钮圆心齐平）。
 
 ## 5. 颜色与字体
 
-全部来自 `MaterialTheme.colorScheme`，代码不写死 hex。
-
 | 元素 | token |
 |---|---|
-| 卡片底 | `surfaceContainerHigh` |
-| 三钮默认底（含发送空态） | `surfaceContainerHighest` |
-| 命令 / 提及图标 | `onSurface` |
-| 发送空态图标 | `onSurfaceVariant` |
-| 发送可用底 / 图标 | `primary` / `onPrimary` |
-| 提示文字 | `onSurfaceVariant`，alpha ≈ 0.7（沿用现状） |
-| 输入正文 | `bodyLarge` + `onSurface` |
+| 面板底 | `surfaceContainerHigh` |
+| 三钮底 / 图标 / 发送可用态 | 同 v1.1 |
+| 展开 / 收起图标 | `onSurfaceVariant`，**无底色**（ghost），比三颗圆钮低一级 |
+| 提示文字 / 正文 | 同 v1.1 |
 
 ## 6. 状态
 
 | 状态 | 行为 |
 |---|---|
-| 默认 | 命令、提及：最高容器底 + onSurface 图标；发送：最高容器底 + onSurfaceVariant 箭头，**不可点** |
-| 有输入 | 「有输入」= `input.trim().isNotEmpty()`（全空格算空）→ 发送变 primary / onPrimary，可点 |
-| 按压 | Material 默认 ripple；无定制颜色 |
-| 运行中 `isRunning` | 发送位置不画圆底，显示 `CircularProgressIndicator` 20dp、strokeWidth 2；命令与提及仍可点 |
-| 深色 / 浅色 | 只靠 token，两套主题都验收 |
+| 默认（收起） | 高 120；右上显示 expand 图标 |
+| 展开 | 高 = 0.85 × 可用高度；右上换 collapse 图标；按钮行仍贴底；文本区占满中间，可多行输入并内部滚动 |
+| 切换 | 点展开钮切换；高度用 `animateDpAsState` 或 `animateContentSize`，约 200ms，标准缓动；图标直接切换，不做旋转动画 |
+| 发送成功 | 输入清空后**自动收回默认**（展开是为写长指令，发完回到看消息） |
+| 键盘弹出 | 「可用高度」= 状态栏以下、键盘以上的高度（即父容器在 `imePadding()` 之后的高度）；键盘弹出时展开面板跟着缩，按钮始终在键盘上方可见 |
+| 返回键 | 展开时按系统返回：先收起，不退出页面（`BackHandler(enabled = expanded)`） |
+| 发送 / 运行中 / 有输入 | 同 v1.1 |
 
-无单独 focused / error 态要求。长按无特殊行为（不弹菜单）。
+展开状态用 `rememberSaveable`，转屏不丢。
 
 ## 7. 内容
 
-- 字符串 key 不变。
-- `BasicTextField` 仍 `maxLines = 3`；超长滚动，不截断成省略号。
-- RTL：整行 `Row` 自然镜像（发送到视觉左侧）；**三个图标本身不镜像**（slash / at / send 路径保持 LTR 几何）。实现：`Icon` 上 `Modifier.autoMirrored` 关掉或使用不自动镜像的 drawable。
+- 去掉 v1.1 的 `maxLines = 3`：默认态视口只显示约一到两行，超出内部滚动；展开态不限行数。
+- RTL：整体镜像（Slash/At 去右侧，发送去左侧，展开钮去左上）；图标几何不镜像。expand/collapse 是对称图形，镜像与否看起来一样，统一不镜像即可。
 
 ## 8. 可访问性
 
-- `contentDescription`：命令 / 提及 / 发送用现有字符串。
-- 运行中：进度指示器设 `contentDescription` 为「正在执行」（若无现成 string，可新增 `conductor_running`，中英各一；不写死在 Composable 里）。
-- 触控目标：三钮均为 48dp。
-- 阅读顺序：命令 → 提及 → 输入框 → 发送/进度（沿用语义树即可，不必强行自定义 traversal）。
+- 展开钮 `contentDescription`：收起态读 `conductor_expand`，展开态读 `conductor_collapse`；可加 `stateDescription` 但不强求。
+- 触控 48dp；阅读顺序：输入框 → 展开钮 → 命令 → 提及 → 发送。
 
 ## 9. 图标
 
-本目录 `icons/`：
-- SVG 原稿：`ic_slash.svg` / `ic_at.svg` / `ic_send.svg`
-- VectorDrawable：`ic_conductor_slash.xml` / `ic_conductor_at.xml` / `ic_conductor_send.xml`
-
-统一：viewport 24、描边 2、圆头 round、接合 round、无填充；颜色由 tint 决定。路径：
-
-- slash：`M15 4.5 9 19.5`
-- at：内圆 `cx=12 cy=12 r=3.5`；外弧 `M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8`
-- send：`M12 19V5M6 11l6-6 6 6`
-
-真机验收：20dp 下 slash 不要细到看不见；at 不要糊成一团。若偏细，只允许把 strokeWidth 微调到 2.25，不要改路径。
+本目录 `icons/` 新增（24 viewport、描边 2、圆头圆角、无填充，tint 着色）：
+- expand：`M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5`（右上、左下两个角向外的箭头）
+- collapse：`M4 14h6v6M20 10h-6V4M10 14l-6.5 6.5M14 10l6.5-6.5`（同位置，箭头向内）
+- 文件：`ic_expand.svg` / `ic_collapse.svg` / `ic_conductor_expand.xml` / `ic_conductor_collapse.xml`
 
 ## 10. 验收
 
-1. 三颗钮视觉直径一致 36，图标居中，不随系统字体漂移。
-2. 触控热区均为约 48×48，Slash 与 At 热区不相交。
-3. 命令钮左外沿到卡片左边 = 发送钮右外沿到卡片右边 = 12（视觉）。
-4. Slash–At 视觉间距 12。
-5. 提示文字左边起点 16（比按钮略往里）。
-6. trim 后为空 → 发送灰且不可点；有非空白 → primary 可点。
-7. 运行中：转圈 + 读「正在执行」；命令 / 提及仍可点。
-8. 深色、浅色各看一眼；无硬编码色值。
-9. RTL：行镜像，图标几何不镜像。
-10. 按压为默认 ripple；无长按菜单。
+1. 面板左右下三边贴屏，上两角 16dp 圆角，下两角直角；无卡片外距。
+2. 默认高 120；三颗圆钮视觉边到屏幕左 / 右 / 下均为 12。
+3. 展开钮与发送钮圆心在同一竖线，距面板顶 30；无底色，图标 onSurfaceVariant。
+4. 点展开：面板升到可用高度 85%，上方仍能看到最近消息；图标变 collapse；再点回 120。
+5. 键盘弹出时展开：面板不被键盘盖住，按钮在键盘上方。
+6. 发送后自动收回；展开时系统返回先收起。
+7. 文本不压到展开钮和按钮行（右 60、下 60 留白生效）。
+8. 深浅主题、RTL 各看一眼；v1.1 的 10 条验收仍通过（第 3 条改为相对屏幕边）。
 
 ## 11. 已知取舍
 
-- v1.0 写「点击区就是 36 圆本身」作废；以视觉 36 / 触控 48 为准。
-- v1.0 Slash–At 间距 8 作废；改为 12，否则 48 触控重叠。
-- 输入栏与上方列表间距不在本次范围。
-- 大字体 / 横屏 / 输入法遮挡沿用现有 `maxLines=3` 与 `imePadding()`；本次不新增验收项，但实现不得删掉现有 imePadding。
+- 曾试过去掉顶部圆角，主人否决（像纸片，没有边界感），保留 16。
+- 85% 而非 100%：保留上下文，且留出视觉上「这是一块可收起的面板」的提示。
+- 不处理手势条：按钮距屏底 12 在手势导航机型上与手势条较近，主人确认可接受。
+- v1.1 的 `maxLines = 3` 与卡片外距 16/8、卡片圆角 12 作废。
