@@ -6,7 +6,7 @@
 
 ## 现在待办
 
-- [ ] Agent 控制面：按 [`docs/agent-control-plane.md`](docs/agent-control-plane.md) 的 Phase 1 启动（设备盘点 + 只读 Agent 问答），等主人点头开工
+- [ ] Conductor：按 [`docs/agent-control-plane.md`](docs/agent-control-plane.md) 的 Phase 1 启动（命令面板 MVP：导航 / Logs 卡片 / 指令集），等主人点头开工
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 - [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
 
@@ -73,7 +73,7 @@
 
 定位：个人网络平面 + 资料枢纽的第一块运行时能力。已随 wonder.9 发版（未单独打 Release）。
 
-正式版的愿景、边界和分期见 [`docs/agent-control-plane.md`](docs/agent-control-plane.md)；POC 是验证版，不是最终形态。
+正式版的愿景、边界和分期见 [`docs/agent-control-plane.md`](docs/agent-control-plane.md)；POC 是验证版，不是最终形态。Phase 1 会把 Tools 恢复到 fork 前原版（无 Agent 入口），POC 能力迁到 Conductor。
 
 - [x] Tools 增加 Agent 入口与对话页，能在运行时按名称动态调用工具（工具注册表 + JSON 参数），而不是写死流程
 - [x] 复用原版 Remote Control 那套已暴露接口（`CommandClient` / `CommandTarget`：Status、Groups、Outbounds、Log、ClashMode、Connections），不要另起查询通道；本机系统网络类型等不在该接口上的能力需标明为本地感知

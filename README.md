@@ -7,7 +7,7 @@ maintained on clawdy-mini. The app is published as `WonderSing` with the
 - Releases: https://github.com/wonder-missing/sing-box-for-android/releases
   (only `arm64-v8a` APKs are built)
 - Agent rules, work loop and release flow: [AGENTS.md](AGENTS.md)
-- Agent control-plane vision and phased plan: [docs/agent-control-plane.md](docs/agent-control-plane.md)
+- Conductor control-plane vision and phased plan: [docs/agent-control-plane.md](docs/agent-control-plane.md)
 - Local signing notes and limitations: [docs/signing.md](docs/signing.md)
 
 ## Fork notes

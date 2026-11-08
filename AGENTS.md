@@ -39,5 +39,5 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 
 ## Open work
 - Track open work in `TODO.md` under 「现在待办」; do not keep a second list here.
-- Agent control-plane vision and phased plan: `docs/agent-control-plane.md`.
+- Conductor control-plane vision and phased plan: `docs/agent-control-plane.md`.
 - Local signing limitation and keystore rules: `docs/signing.md`.

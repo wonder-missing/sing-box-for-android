@@ -1,7 +1,8 @@
-# Agent 控制面：愿景与落地规划
+# Conductor：个人设备控制面（愿景与落地规划）
 
-状态：规划中。Phase 1 尚未开工，当前 Agent 代码仍是 wonder.9 的 POC。
+状态：规划中。Phase 1（Conductor 命令面板 MVP）尚未开工；当前 Agent 代码仍是 wonder.9 的 POC。
 最后更新：2026-11-08
+命名：模块/包名 `conductor`；底部导航文案 `Conduct`；页面标题建议 `Conductor`。
 
 ## 1. 愿景
 
@@ -9,7 +10,7 @@
 
 跨设备资源转移（文件、会话、剪贴板）由数据面完成，Agent 只负责规划和确认。
 
-Agent 不是通用聊天助手，而是这个控制面的自然语言入口。
+Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和基础交互夯实，不接 LLM。
 
 ## 2. 边界（明确不做）
 
@@ -30,9 +31,56 @@ Agent 不是通用聊天助手，而是这个控制面的自然语言入口。
   - `AgentIntentParser`：无模型时的确定性兜底。
   - `AgentViewModel` / `AgentScreen`：手动调用、确认弹窗、结果展示。
   - JVM 单测覆盖注册表、参数校验、确认、sanitizer。
-- POC 是验证版，不是正式版。它的 registry / confirmation / sanitizer 可以直接作为正式版的骨架。
+- POC 是验证版，不是正式版。它的 registry / confirmation / sanitizer 可以直接作为 Conductor 的骨架。
+- 当前 Tools 页面里有一个 Agent 入口；Phase 1 会把 Tools 回到 fork 前的上游原版（没有这个入口），Agent 能力迁到 Conductor。
 
-## 4. 架构原则
+## 4. 命名与入口
+
+- 模块/包名：`conductor`（`io.nekohasekai.sfa.conductor`）。
+- 底部导航文案：`Conduct`。
+- 页面标题：`Conductor`。导航用动词，页面用品牌名。
+- 底部导航：`Dashboard / Conduct / Tools / Settings`。Conductor 取代现在的 Logs 位置。
+- Logs：不再占底部导航；移到 Dashboard 的卡片入口，放在 Profiles 下方；点击卡片进入原来的 Logs 页面。
+- Tools：回到 fork 前的上游原版，移除 Agent 入口；Conductor 吸收 Agent POC 的能力，不保留两个命令面。
+- 不采用的名字：Composer（和 Jetpack Compose / Docker Compose 混淆）、Console（语义被开发者控制台收窄）、Maestro（和移动测试框架撞名）、Cockpit（和主人另一个项目重名）。
+
+## 5. Conductor MVP UI
+
+目标：像手机版 DeepSeek 一样简洁，能让人愿意每天打开、测试、陪它演化。
+
+- 消息流占满剩余空间；底部是输入框。
+- 输入框默认 1 行，最高扩到 3 行，超过 3 行内部滚动；`imePadding` 保证键盘不遮挡。
+- 输入框上方一排最多 3 个控件：`/` 命令按钮、当前上下文（本机/远程，后续再加）、发送。不要堆一排装饰性开关。
+- 消息流区分：用户消息、系统/Agent 输出、命令结果、工具调用卡片、确认卡片。
+- 命令结果用等宽字体；长结果可展开；工具调用显示命令名、参数摘要、运行中/成功/失败。
+- 需要改网络状态的操作在消息流里出 Confirm/Cancel 卡片。
+- 新消息自动滚到底；用户手动上滑后不抢滚动，给“回到最新”按钮。
+- 空状态直接列出建议命令，例如 `/help`、`/capabilities`、`/tailscale`。
+
+## 6. 命令与能力集
+
+- `/` 开头 = 本地确定性命令；其他文本 = 未来的自然语言 Agent。
+- Phase 1 非 `/` 文本只提示“自然语言 Agent 暂未接入，请先用 / 命令”，不接 `AgentIntentParser`。它开销可以忽略（几条正则，发送时跑一次），但会让少数话能懂、多数不能，模糊 `/` 的边界；先留着以后做无模型兜底或调试开关。
+- 命令不要依赖记忆：输入 `/` 自动弹命令面板，按前缀过滤，显示命令名、描述、用法、示例；有参数的指令用参数表单/选择器，不要求手打位置参数。
+- `/help`、`/commands`、`/capabilities` 全部从同一份能力注册表生成。
+- 第一版按交互类型覆盖，不按数量凑：
+  - 发现：`/help`、`/commands`、`/capabilities`
+  - 只读列表：`/nodes`、`/tailscale`、`/network`
+  - 异步长任务：`/telemetry-upload`
+  - 参数 + 确认：`/probe`
+  - UI：`/clear`（`/logs` 可选）
+- 能力注册表：命令和未来 Agent 工具共用一份定义，包含 `name`、`description`、`usage/examples`、参数 schema、权限、`needsConfirmation`、`userInvocable`、`agentInvocable`、`execute`。
+- 现有 `AgentToolRegistry` 的校验、确认、sanitizer 复用；Conductor 的命令面板是注册表的 UI，不是另一套执行逻辑。
+
+## 7. Logs 卡片
+
+- Dashboard 新增 `CardGroup.Logs`，默认排在 Profiles 下方；是否允许隐藏/排序沿用 Dashboard 现有设置，待定。
+- 卡片只显示最新 3 条日志，等宽字体、按级别着色；点击卡片进入原来的 Logs 页面。
+- 只在 Dashboard 可见（`RESUMED`）时刷新，每 3 秒一次；离开页面或 App 后台就停。
+- 数据源复用现有日志流，不新开第二条 `CommandClient` Log 连接；建议抽共享 `LogRepository`/`LogBuffer`，卡片用 `sample(3s)` 或等价节流。
+- 预览状态放在卡片内部或独立小 ViewModel，不要塞进 `DashboardUiState`，避免每 3 秒重组 Profiles/流量卡片。
+
+## 8. 架构原则
 
 ### 控制面 vs 数据面
 
@@ -53,16 +101,17 @@ Agent 不是通用聊天助手，而是这个控制面的自然语言入口。
 
 ### Agent 的角色
 
-- 规划器/路由器：把自然语言变成 capability 调用，不直接执行任意命令。
-- 工具调用参数由现有 registry 校验；工具结果过 sanitizer 后再进模型/UI。
+- 最终是规划器/路由器：把自然语言变成 capability 调用，不直接执行任意命令。
+- Phase 1 先不做 LLM；Conductor 只是能力注册表的命令面板，验证“输入 → 解析 → 执行 → 展示”这条链路。
+- 工具调用参数由注册表校验；工具结果过 sanitizer 后再进模型/UI。
 - 多步任务必须有上限：步数、超时、取消、token/成本预算。
 
 ### 模型与密钥
 
-- 首选 DeepSeek：`https://api.deepseek.com`，OpenAI-compatible，模型 `deepseek-flash`（V4.1-Flash-1017）。支持 tool calls / streaming tool_calls；thinking 可按需关闭。
+- Phase 2 首选 DeepSeek：`https://api.deepseek.com`，OpenAI-compatible，模型 `deepseek-flash`（V4.1-Flash-1017）。支持 tool calls / streaming tool_calls；thinking 可按需关闭。
 - 第一版用薄自研运行时，不引入 ADK（Gemini-only，Android 工件 0.1.0）或 Koog（等 Agent 长大再评估）。
 - 密钥不进仓库。设备端 BYOK 加密存储或后端代理，二选一。
-- 性能：Agent 只在进入 Agent 页面初始化；流式输出；历史和工具输出有上限；不常驻大对象。
+- 性能：Conductor 只在进入页面时初始化；流式输出；历史和工具输出有上限；不常驻大对象。
 
 ### 安全与隐私
 
@@ -71,60 +120,64 @@ Agent 不是通用聊天助手，而是这个控制面的自然语言入口。
 - 只把必要元数据发给模型；文件内容、订阅 URL、token、日志全文不发送。
 - 设备返回的数据也当不可信输入，防 prompt injection。
 
-## 5. 分阶段规划
+## 9. 分阶段规划
 
 ### Phase 0：已完成
 
 - Agent POC：3 个本机工具、手动调用、确认、sanitizer、单测。
 - 验证了“运行时按名称调用工具”的路径。
 
-### Phase 1：只读控制面 + Agent 问答（下一步）
+### Phase 1：Conductor 命令面板 MVP（下一步）
 
 范围：
 
-- 设备盘点：Tailscale peers/status → 设备列表（在线、最后可见、能力）。
-- 能力注册表：typed schema + 权限/确认字段。
-- DeepSeek 模型客户端 + 单步 tool calling，把本机 3 个工具和设备盘点接进去。
-- 流式聊天 UI；会话历史有上限；密钥存储方案落地。
+- 新增 Conductor 页面和底部导航入口（`Conduct`），Logs 移到 Dashboard 卡片。
+- Tools 回到 fork 前的上游原版，移除 Agent 入口；Agent 能力迁到 Conductor。
+- 能力注册表、`/` 命令面板、自动补全、参数表单、消息流、确认卡片、命令结果展示。
+- 第一版命令：`/help`、`/commands`、`/capabilities`、`/nodes`、`/tailscale`、`/network`、`/telemetry-upload`、`/probe`、`/clear`。
+- Logs 卡片：最新 3 条、Dashboard 可见时每 3 秒刷新、点击进入 Logs 页面。
+- 不接 LLM；非 `/` 文本提示暂不支持。
 
 验收：
 
-- 在真机上问“现在有哪些设备在线？手机当前走哪条线路？”，Agent 能调工具并回答。
-- 只读，不改网络状态；无 key 时仍可手动调用工具。
-- JVM 测试用假模型服务器覆盖工具调用、参数校验、超时/取消。
+- 真机上能完成：打开 Conductor → 输入 `/` 看到命令面板 → 选中/补全 → 执行 → 看到结果/确认/错误。
+- `/tailscale` 能列出节点；`/telemetry-upload` 有异步进度；`/probe` 能走确认卡片。
+- Logs 卡片只在 Dashboard 可见时刷新，点击进入原 Logs 页面。
+- JVM 测试覆盖命令注册表、参数校验、确认、超时/取消、日志预览采样。
 
-不做：跨设备写操作、文件传输、后台常驻。
+不做：LLM、跨设备写操作、文件传输、后台常驻。
 
-### Phase 2：网络接力
+### Phase 2：DeepSeek 自然语言 Agent + 设备注册表
+
+- 接 DeepSeek 模型客户端、单步/多步 tool calling、流式输出、会话历史、密钥存储。
+- 复用 Phase 1 的能力注册表；非 `/` 文本进入 Agent。
+- 设备注册表：Tailscale peers/status、在线状态、能力。
+- 验收：自然语言能调用只读能力并回答；写操作仍需确认。
+
+### Phase 3：网络接力
 
 - 用 exit node / 代理路径把手机流量切到指定设备；改网络状态前确认；失败回滚。
 - 验收：目标设备离线、切换失败、回滚都有明确提示。
-- 仍不做文件内容传输。
 
-### Phase 3：文件交接
+### Phase 4：文件/会话交接与常驻协调
 
-- “把这个文件发到 Mini/云电脑”：Taildrop 或目标端 HTTP 能力端点；进度、取消、失败重试。
-- 模型只看到文件名/大小/目标设备，不看内容。
-- 验收：大文件不阻塞 UI；目标离线有明确错误；不经过 LLM 数据面。
-
-### Phase 4：会话接力与常驻协调
-
-- URL/剪贴板/命令在另一台设备打开；多步任务编排。
+- 文件走 Taildrop / 目标端 HTTP 能力端点；会话/剪贴板交接；多步任务编排。
 - 如果“手机不在也要接力”，再评估 Mini/云电脑上的常驻协调器；不提前拆服务。
 
-## 6. 第一场景
+## 10. 第一场景
 
-建议 Phase 1 先做“设备盘点 + 网络状态问答”，因为它只读，能先验证设备注册表和 Agent 工具链，风险最低。若你更在意文件转移，可把 Phase 2/3 对调。
+Phase 1 的第一场景就是 Conductor 命令面板本身：用真实可用的命令验证“输入 → 能力 → 结果”的闭环。第一个跨设备场景建议放在 Phase 3 的网络接力；如果主人更在意文件转移，可以把 Phase 3/4 对调。
 
-## 7. 未决问题
+## 11. 未决问题
 
-- 第一场景最终选哪个：设备盘点、网络接力，还是文件交接。
-- DeepSeek key：设备端 BYOK 加密存储，还是后端代理。
+- Logs 卡片是否允许在 Dashboard 设置里隐藏/排序，还是固定在 Profiles 下方。
+- Tools 回到上游原版的具体范围：只移除 Agent 入口，还是同时清理其他 fork 新增项。
+- Phase 1 命令集是否按上面的列表，还是先砍到 4–5 个。
+- 页面标题用 `Conductor`、导航用 `Conduct` 是否最终确定。
+- DeepSeek key：设备端 BYOK 加密存储，还是后端代理（Phase 2 决策）。
 - 是否需要在 Mini/云电脑上放常驻协调器，还是 App 打开时编排即可。
-- 设备端能力端点的最小协议（HTTP/RPC）和部署方式。
-- 哪些元数据允许发给模型：设备名、节点名、路径、延迟可以；订阅链接、token、日志全文不可以。
 
-## 8. 验收线
+## 12. 验收线
 
 每个功能必须能写成：
 
