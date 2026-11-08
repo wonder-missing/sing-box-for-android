@@ -6,7 +6,7 @@
 
 ## 现在待办
 
-- [ ] Conductor：按 [`docs/agent-control-plane.md`](docs/agent-control-plane.md) 的 Phase 1 启动（命令面板 MVP：导航 / Logs 卡片 / 指令集），等主人点头开工
+- [ ] Conductor Phase 1 剩余：`/probe` 命令 + 参数表单 / 确认卡片
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 - [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
 
@@ -68,6 +68,13 @@
 - [x] AGENTS 发版流程去掉硬编码 core 版本；open items 收敛到本文件
 - [x] TODO 修掉失效链接和 stale 符号；未完成项提到顶部「现在待办」
 - [x] `.claude/settings.json` 的 tag 权限从固定 core 版本改为 `v*`
+
+## wonder.13 批次（2026-11-08，随 wonder.13 发版）
+
+- [x] Conductor 命令面板 MVP：沉浸式全屏（无标题栏/底部导航）、`/` 自动补全、消息流、命令注册表；首批 `/help`、`/commands`、`/capabilities`、`/clear`、`/nodes`、`/network`、`/tailscale`、`/telemetry-upload`
+- [x] 底部导航 Logs → Conduct；Logs 移到 Dashboard 卡片（最新 3 条，Dashboard 可见时每 3 秒刷新，点击进入原 Logs 页）
+- [x] Tools 回到 fork 前原版，移除 Agent 入口；旧 POC 的 Agent UI/ViewModel 删除，registry/sanitizer 复用
+- [x] Conductor 命令注册表 JVM 单测
 
 ## Tools Agent POC（已随 wonder.9 发版）
 

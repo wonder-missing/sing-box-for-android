@@ -56,6 +56,11 @@
     <string name="title_edit_profile">编辑配置</string>
     <string name="title_edit_configuration">编辑配置</string>
     <string name="title_groups">组</string>
+    <string name="conductor_input_hint">输入 / 查看命令</string>
+    <string name="conductor_send">发送</string>
+    <string name="conductor_empty_title">命令面板</string>
+    <string name="conductor_empty_hint">输入 / 查看命令。</string>
+    <string name="logs_preview_empty">暂无日志</string>
     <string name="group_list_layout">节点列表布局</string>
     <string name="group_list_single_column">单列（完整名称）</string>
     <string name="group_list_two_columns">双列（紧凑）</string>

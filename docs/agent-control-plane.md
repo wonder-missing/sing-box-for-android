@@ -1,6 +1,6 @@
 # Conductor：个人设备控制面（愿景与落地规划）
 
-状态：规划中。Phase 1（Conductor 命令面板 MVP）尚未开工；当前 Agent 代码仍是 wonder.9 的 POC。
+状态：Phase 1 首批已随 wonder.13 发版；`/probe` 与参数表单待补。
 最后更新：2026-11-08
 命名：模块/包名 `conductor`；外层底部导航文案 `Conduct`；Conductor 页面进入沉浸模式，不设页面标题。
 
@@ -32,7 +32,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
   - `AgentViewModel` / `AgentScreen`：手动调用、确认弹窗、结果展示。
   - JVM 单测覆盖注册表、参数校验、确认、sanitizer。
 - POC 是验证版，不是正式版。它的 registry / confirmation / sanitizer 可以直接作为 Conductor 的骨架。
-- 当前 Tools 页面里有一个 Agent 入口；Phase 1 会把 Tools 回到 fork 前的上游原版（没有这个入口），Agent 能力迁到 Conductor。
+- Tools 已回到 fork 前的上游原版（Agent 入口已移除）；POC 的 Agent 能力迁到 Conductor，旧 POC UI/ViewModel 已删除。
 
 ## 4. 命名与入口
 
@@ -129,21 +129,21 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 - Agent POC：3 个本机工具、手动调用、确认、sanitizer、单测。
 - 验证了“运行时按名称调用工具”的路径。
 
-### Phase 1：Conductor 命令面板 MVP（下一步）
+### Phase 1：Conductor 命令面板 MVP（首批已随 wonder.13 发版；`/probe` 待补）
 
 范围：
 
 - 新增 Conductor 页面和底部导航入口（`Conduct`），Logs 移到 Dashboard 卡片。
 - Tools 回到 fork 前的上游原版，移除 Agent 入口；Agent 能力迁到 Conductor。
 - 能力注册表、`/` 命令面板、自动补全、参数表单、消息流、确认卡片、命令结果展示。
-- 第一版命令：`/help`、`/commands`、`/capabilities`、`/nodes`、`/tailscale`、`/network`、`/telemetry-upload`、`/probe`、`/clear`。
+- 第一版命令：`/help`、`/commands`、`/capabilities`、`/nodes`、`/tailscale`、`/network`、`/telemetry-upload`、`/clear`。`/probe` 与参数表单/确认卡片是 Phase 1 剩余项，未随首批发版。
 - Logs 卡片：最新 3 条、Dashboard 可见时每 3 秒刷新、点击进入 Logs 页面。
 - 不接 LLM；非 `/` 文本提示暂不支持。
 
 验收：
 
-- 真机上能完成：从 `Conduct` 进入沉浸式 Conductor（无标题栏/底部导航）→ 输入 `/` 看到命令面板 → 选中/补全 → 执行 → 看到结果/确认/错误 → 系统返回退出。
-- `/tailscale` 能列出节点；`/telemetry-upload` 有异步进度；`/probe` 能走确认卡片。
+- 真机上能完成：从 `Conduct` 进入沉浸式 Conductor（无标题栏/底部导航）→ 输入 `/` 看到命令面板 → 选中/补全 → 执行 → 看到结果/错误 → 系统返回退出。
+- `/tailscale` 能列出节点；`/telemetry-upload` 有异步进度；`/probe` 的确认卡片待补。
 - Logs 卡片只在 Dashboard 可见时刷新，点击进入原 Logs 页面。
 - JVM 测试覆盖命令注册表、参数校验、确认、超时/取消、日志预览采样。
 
@@ -172,9 +172,9 @@ Phase 1 的第一场景就是 Conductor 命令面板本身：用真实可用的�
 
 ## 11. 未决问题
 
-- Logs 卡片是否允许在 Dashboard 设置里隐藏/排序，还是固定在 Profiles 下方。
+- `Logs` 卡片是否允许在 Dashboard 设置里隐藏/排序，还是固定在 Profiles 下方。
 - Tools 回到上游原版的具体范围：只移除 Agent 入口，还是同时清理其他 fork 新增项。
-- Phase 1 命令集是否按上面的列表，还是先砍到 4–5 个。
+- `/probe` 的参数表单/确认卡片交互（Phase 1 剩余）。
 - DeepSeek key：设备端 BYOK 加密存储，还是后端代理（Phase 2 决策）。
 - 是否需要在 Mini/云电脑上放常驻协调器，还是 App 打开时编排即可。
 

@@ -12,7 +12,7 @@ data class CommandNodeState(
 )
 
 /**
- * Reads the cache maintained by AgentViewModel's CommandClient. This reuses the
+ * Reads the cache maintained by the conductor runtime's CommandClient. This reuses the
  * same Groups/Outbounds commands as the dashboard, locally and under Remote
  * Control, instead of opening a parallel query channel.
  */

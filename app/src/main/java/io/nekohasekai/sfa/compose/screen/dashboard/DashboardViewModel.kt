@@ -2,11 +2,14 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 
 import androidx.lifecycle.viewModelScope
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.libbox.LogEntry
 import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.sfa.bg.BoxService
 import io.nekohasekai.sfa.compose.base.BaseViewModel
 import io.nekohasekai.sfa.compose.base.UiEvent
+import io.nekohasekai.sfa.compose.screen.log.LogEntryData
+import io.nekohasekai.sfa.compose.screen.log.LogLevel
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
@@ -24,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -40,6 +44,7 @@ enum class CardGroup(val pairGroup: CardPairGroup? = null) {
     Connections(CardPairGroup.Statistics),
     SystemProxy,
     Profiles,
+    Logs,
 }
 
 enum class CardPairGroup {
@@ -95,6 +100,7 @@ data class DashboardUiState(
             CardGroup.Connections,
             CardGroup.SystemProxy,
             CardGroup.Profiles,
+            CardGroup.Logs,
         ),
     val cardOrder: List<CardGroup> =
         listOf(
@@ -105,6 +111,7 @@ data class DashboardUiState(
             CardGroup.SystemProxy,
             CardGroup.ClashMode,
             CardGroup.Profiles,
+            CardGroup.Logs,
         ),
     val showCardSettingsDialog: Boolean = false,
 ) {
@@ -127,9 +134,13 @@ class DashboardViewModel :
                 CommandClient.ConnectionType.Status,
                 CommandClient.ConnectionType.ClashMode,
                 CommandClient.ConnectionType.Groups,
+                CommandClient.ConnectionType.Log,
             ),
             this,
         )
+
+    private val _recentLogs = MutableStateFlow<List<LogEntryData>>(emptyList())
+    val recentLogs: StateFlow<List<LogEntryData>> = _recentLogs.asStateFlow()
 
     override fun createInitialState(): DashboardUiState {
         val savedOrder = loadItemOrder()
@@ -647,6 +658,19 @@ class DashboardViewModel :
         }
     }
 
+    override fun appendLogs(message: List<LogEntry>) {
+        val mapped =
+            message.map { entry ->
+                LogEntryData(
+                    level = LogLevel.entries.find { it.priority == entry.level } ?: LogLevel.Default,
+                    message = entry.message,
+                )
+            }
+        if (mapped.isNotEmpty()) {
+            _recentLogs.update { (it + mapped).takeLast(RECENT_LOG_LIMIT) }
+        }
+    }
+
     override fun updateGroups(newGroups: MutableList<OutboundGroup>) {
         viewModelScope.launch(Dispatchers.Main) {
             val hasGroups = newGroups.isNotEmpty()
@@ -720,6 +744,7 @@ class DashboardViewModel :
         CardGroup.SystemProxy,
         CardGroup.ClashMode,
         CardGroup.Profiles,
+        CardGroup.Logs,
     )
 
     private fun loadItemOrder(): List<CardGroup> {
@@ -781,3 +806,5 @@ class DashboardViewModel :
         null
     }
 }
+
+private const val RECENT_LOG_LIMIT = 50

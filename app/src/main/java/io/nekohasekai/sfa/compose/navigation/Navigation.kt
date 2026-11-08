@@ -12,7 +12,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import io.nekohasekai.sfa.agent.AgentScreen
+import io.nekohasekai.sfa.conductor.ConductorScreen
 import io.nekohasekai.sfa.compose.screen.configuration.NewProfileScreen
 import io.nekohasekai.sfa.compose.screen.connections.ConnectionDetailsRoute
 import io.nekohasekai.sfa.compose.screen.connections.ConnectionsPage
@@ -123,6 +123,7 @@ fun NavHost(
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
+                    onOpenLogs = { navController.navigate(Screen.Log.route) },
                     viewModel = dashboardViewModel,
                 )
             } else {
@@ -131,8 +132,13 @@ fun NavHost(
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
+                    onOpenLogs = { navController.navigate(Screen.Log.route) },
                 )
             }
+        }
+
+        composable(Screen.Conductor.route) {
+            ConductorScreen(serviceStatus = serviceStatus)
         }
 
         composable(Screen.Log.route) {
@@ -141,6 +147,7 @@ fun NavHost(
                     serviceStatus = serviceStatus,
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
+                    onBack = { navController.navigateUp() },
                     viewModel = logViewModel,
                 )
             } else {
@@ -148,6 +155,7 @@ fun NavHost(
                     serviceStatus = serviceStatus,
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
+                    onBack = { navController.navigateUp() },
                 )
             }
         }
@@ -273,16 +281,6 @@ fun NavHost(
             popExitTransition = slideOutToRight,
         ) {
             NetworkQualityScreen(navController = navController, serviceStatus = serviceStatus)
-        }
-
-        composable(
-            route = "tools/agent",
-            enterTransition = slideInFromRight,
-            exitTransition = slideOutToLeft,
-            popEnterTransition = slideInFromLeft,
-            popExitTransition = slideOutToRight,
-        ) {
-            AgentScreen(navController = navController, serviceStatus = serviceStatus)
         }
 
         composable(

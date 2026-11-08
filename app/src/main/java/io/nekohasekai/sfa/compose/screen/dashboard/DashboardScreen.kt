@@ -54,6 +54,7 @@ fun DashboardScreen(
     showStartFab: Boolean = false,
     showStatusBar: Boolean = false,
     onOpenNewProfile: (NewProfileArgs) -> Unit = {},
+    onOpenLogs: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -171,6 +172,7 @@ fun DashboardScreen(
                                 isCardAvailableWhenServiceRunning(cardGroup, uiState)
 
                         cardGroup == CardGroup.Profiles -> true // Profiles card is always available
+                        cardGroup == CardGroup.Logs -> true // Logs preview is a stable entry
                         else -> serviceRunning && isCardAvailableWhenServiceRunning(cardGroup, uiState)
                     }
                 }.toSet()
@@ -216,6 +218,8 @@ fun DashboardScreen(
                                 onHideProfilePickerSheet = viewModel::hideProfilePickerSheet,
                                 onOpenNewProfile = onOpenNewProfile,
                                 commandClient = viewModel.commandClient,
+                                recentLogs = viewModel.recentLogs,
+                                onOpenLogs = onOpenLogs,
                                 modifier =
                                 Modifier
                                     .weight(1f)
@@ -253,6 +257,8 @@ fun DashboardScreen(
                             onHideProfilePickerSheet = viewModel::hideProfilePickerSheet,
                             onOpenNewProfile = onOpenNewProfile,
                             commandClient = viewModel.commandClient,
+                            recentLogs = viewModel.recentLogs,
+                            onOpenLogs = onOpenLogs,
                         )
                     }
                 }
@@ -313,4 +319,5 @@ fun isCardAvailableWhenServiceRunning(cardGroup: CardGroup, uiState: DashboardUi
     CardGroup.Connections -> uiState.trafficVisible
     CardGroup.SystemProxy -> uiState.systemProxyVisible
     CardGroup.Profiles -> true // This shouldn't be called for Profiles, but return true for safety
+    CardGroup.Logs -> true
 }

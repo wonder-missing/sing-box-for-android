@@ -822,12 +822,14 @@ class MainActivity :
         val isToolsSubScreen = currentRoute?.startsWith("tools/") == true
         val isConnectionsDetail = currentRoute?.startsWith("connections/detail") == true
         val isProfileRoute = currentRoute?.startsWith("profile/") == true
+        val isConductorRoute = currentRoute == Screen.Conductor.route
         val currentRootRoute =
             when {
                 isSettingsSubScreen -> Screen.Settings.route
                 isToolsSubScreen -> Screen.Tools.route
                 currentRoute?.startsWith(Screen.Connections.route) == true -> Screen.Connections.route
                 currentRoute?.startsWith(Screen.Log.route) == true -> Screen.Log.route
+                isConductorRoute -> Screen.Conductor.route
                 isProfileRoute -> Screen.Dashboard.route
                 else -> currentRoute
             }
@@ -835,7 +837,7 @@ class MainActivity :
         val isGroupsRoute = currentRootRoute == Screen.Groups.route
         val isLogRoute = currentRootRoute == Screen.Log.route
 
-        val isSubScreen = isSettingsSubScreen || isToolsSubScreen || isConnectionsDetail || isProfileRoute
+        val isSubScreen = isSettingsSubScreen || isToolsSubScreen || isConnectionsDetail || isProfileRoute || isConductorRoute || isLogRoute
         // Get LogViewModel instance if we're on the Log screen
         val logViewModel: LogViewModel? =
             if (isLogRoute) {
@@ -939,7 +941,7 @@ class MainActivity :
                 if (connectionsAvailable) {
                     add(Screen.Connections)
                 }
-                add(Screen.Log)
+                add(Screen.Conductor)
                 add(Screen.Tools)
                 add(Screen.Settings)
             }
@@ -947,6 +949,7 @@ class MainActivity :
         val allowedRoutes =
             buildSet {
                 add(Screen.Dashboard.route)
+                add(Screen.Conductor.route)
                 add(Screen.Log.route)
                 add(Screen.Tools.route)
                 add(Screen.Settings.route)
@@ -1244,44 +1247,46 @@ class MainActivity :
         CompositionLocalProvider(LocalTopBarController provides topBarController) {
             if (useNavigationRail) {
                 Row(modifier = Modifier.fillMaxSize()) {
-                    Surface(tonalElevation = 1.dp) {
-                        NavigationRail(
-                            modifier = Modifier.fillMaxHeight(),
-                        ) {
-                            val hasUpdate by UpdateState.hasUpdate
-                            railScreens.forEach { screen ->
-                                val selected = currentRootRoute == screen.route
+                    if (!isConductorRoute) {
+                        Surface(tonalElevation = 1.dp) {
+                            NavigationRail(
+                                modifier = Modifier.fillMaxHeight(),
+                            ) {
+                                val hasUpdate by UpdateState.hasUpdate
+                                railScreens.forEach { screen ->
+                                    val selected = currentRootRoute == screen.route
 
-                                NavigationRailItem(
-                                    icon = {
-                                        if (screen == Screen.Settings && hasUpdate) {
-                                            BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.primary) }) {
+                                    NavigationRailItem(
+                                        icon = {
+                                            if (screen == Screen.Settings && hasUpdate) {
+                                                BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.primary) }) {
+                                                    Icon(screen.icon, contentDescription = null)
+                                                }
+                                            } else if (screen == Screen.Tools && taildropFailedCount > 0) {
+                                                BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.error) { Text("!") } }) {
+                                                    Icon(screen.icon, contentDescription = null)
+                                                }
+                                            } else if (screen == Screen.Tools && toolsUnreadCount > 0) {
+                                                BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.error) { Text("$toolsUnreadCount") } }) {
+                                                    Icon(screen.icon, contentDescription = null)
+                                                }
+                                            } else {
                                                 Icon(screen.icon, contentDescription = null)
                                             }
-                                        } else if (screen == Screen.Tools && taildropFailedCount > 0) {
-                                            BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.error) { Text("!") } }) {
-                                                Icon(screen.icon, contentDescription = null)
+                                        },
+                                        label = { Text(stringResource(screen.titleRes)) },
+                                        selected = selected,
+                                        onClick = {
+                                            navController.navigate(screen.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
                                             }
-                                        } else if (screen == Screen.Tools && toolsUnreadCount > 0) {
-                                            BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.error) { Text("$toolsUnreadCount") } }) {
-                                                Icon(screen.icon, contentDescription = null)
-                                            }
-                                        } else {
-                                            Icon(screen.icon, contentDescription = null)
-                                        }
-                                    },
-                                    label = { Text(stringResource(screen.titleRes)) },
-                                    selected = selected,
-                                    onClick = {
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                )
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -1294,7 +1299,7 @@ class MainActivity :
                             WindowInsets.safeDrawing.only(WindowInsetsSides.Start),
                         ),
                         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                        topBar = topBarContent,
+                        topBar = if (isConductorRoute) null else topBarContent,
                     ) { paddingValues ->
                         scaffoldContent(paddingValues)
                     }
@@ -1303,7 +1308,7 @@ class MainActivity :
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                    topBar = topBarContent,
+                    topBar = if (isConductorRoute) null else topBarContent,
                     bottomBar = {
                         if (!isSubScreen) {
                             val hasUpdate by UpdateState.hasUpdate

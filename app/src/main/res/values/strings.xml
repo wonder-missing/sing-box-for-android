@@ -56,6 +56,12 @@
     <string name="title_edit_profile">Edit Profile</string>
     <string name="title_edit_configuration">Edit Configuration</string>
     <string name="title_groups">Groups</string>
+    <string name="title_conduct" translatable="false">Conduct</string>
+    <string name="conductor_input_hint">Type / for commands</string>
+    <string name="conductor_send">Send</string>
+    <string name="conductor_empty_title">Command palette</string>
+    <string name="conductor_empty_hint">Type / to see commands.</string>
+    <string name="logs_preview_empty">No logs yet</string>
     <string name="group_list_layout">Node list layout</string>
     <string name="group_list_single_column">Single column (full names)</string>
     <string name="group_list_two_columns">Two columns (compact)</string>

@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TextSnippet
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.DeviceHub
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
@@ -22,6 +23,12 @@ sealed class Screen(val route: String, @StringRes val titleRes: Int, val icon: I
         route = "log",
         titleRes = R.string.title_log,
         icon = Icons.AutoMirrored.Default.TextSnippet,
+    )
+
+    object Conductor : Screen(
+        route = "conductor",
+        titleRes = R.string.title_conduct,
+        icon = Icons.Default.DeviceHub,
     )
 
     object Groups : Screen(
@@ -52,7 +59,7 @@ sealed class Screen(val route: String, @StringRes val titleRes: Int, val icon: I
 val bottomNavigationScreens =
     listOf(
         Screen.Dashboard,
-        Screen.Log,
+        Screen.Conductor,
         Screen.Tools,
         Screen.Settings,
     )

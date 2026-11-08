@@ -3,9 +3,11 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
+import io.nekohasekai.sfa.compose.screen.log.LogEntryData
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.utils.CommandClient
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun DashboardCardRenderer(
@@ -35,6 +37,8 @@ fun DashboardCardRenderer(
     onHideProfilePickerSheet: () -> Unit = {},
     onOpenNewProfile: (NewProfileArgs) -> Unit = {},
     commandClient: CommandClient? = null,
+    recentLogs: StateFlow<List<LogEntryData>>,
+    onOpenLogs: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (cardGroup) {
@@ -123,6 +127,14 @@ fun DashboardCardRenderer(
                 onShowProfilePickerSheet = onShowProfilePickerSheet,
                 onHideProfilePickerSheet = onHideProfilePickerSheet,
                 onOpenNewProfile = onOpenNewProfile,
+            )
+        }
+
+        CardGroup.Logs -> {
+            LogsPreviewCard(
+                recentLogs = recentLogs,
+                onOpenLogs = onOpenLogs,
+                modifier = modifier,
             )
         }
     }
