@@ -91,14 +91,14 @@ object ConductorCommands {
         if (!text.startsWith("/")) return null
         val body = text.removePrefix("/").trim()
         if (body.isEmpty()) return ConductorInput(command = null, args = emptyList(), raw = text)
-        val token = body.substringBefore(' ')
-        val command = find(token) ?: return ConductorInput(command = null, args = emptyList(), raw = text)
+        val parts = body.split(Regex("""\s+"""), limit = 2)
+        val command = find(parts[0]) ?: return ConductorInput(command = null, args = emptyList(), raw = text)
         val args =
-            body
-                .substringAfter(' ', "")
-                .trim()
-                .split(Regex("""\s+"""))
-                .filter { it.isNotBlank() }
+            parts
+                .getOrNull(1)
+                ?.split(Regex("""\s+"""))
+                ?.filter { it.isNotBlank() }
+                .orEmpty()
         return ConductorInput(command = command, args = args, raw = text)
     }
 
@@ -106,7 +106,7 @@ object ConductorCommands {
         val text = input.trimStart()
         if (!text.startsWith("/")) return emptyList()
         val body = text.removePrefix("/")
-        if (body.contains(' ')) return emptyList()
+        if (body.any { it.isWhitespace() }) return emptyList()
         return all.filter { body.isEmpty() || it.name.startsWith(body, ignoreCase = true) }
     }
 
@@ -137,7 +137,7 @@ object ConductorCommands {
         }
 
     fun unknownMessage(raw: String): String {
-        val token = raw.trim().removePrefix("/").substringBefore(' ')
+        val token = raw.trim().removePrefix("/").takeWhile { !it.isWhitespace() }
         val hint =
             all
                 .filter { token.isNotEmpty() && it.name.startsWith(token.take(1), ignoreCase = true) }

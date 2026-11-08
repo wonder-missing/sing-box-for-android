@@ -10,9 +10,11 @@
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 - [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
 
-## 待发版修复（2026-11-08）
+## wonder.14 批次（2026-11-08，随 wonder.14 发版）
 
-- [x] 手动上传遥测按钮卡在 uploading：上传成功后 `TelemetryUploader` 会记一条 `telemetry_upload_ok` 诊断事件，drain 循环把它当成新积压，形成自循环；现已从 drain 的 pending 判断中排除，并给手动上传加 30s 预算、剩余提示和 `finally` 复位。待下次发版
+- [x] Conductor 输入框改成约两行高的容器：文本默认 1 行、最多 3 行自动长高；`/`、`@`、换行、发送按钮放在容器内部，支持换行输入
+- [x] Conductor 消息流：系统/Agent 输出和命令结果去掉卡片，直接全宽铺在消息流里；用户消息保持气泡
+- [x] 手动上传遥测按钮卡在 uploading：上传成功后 `TelemetryUploader` 会记一条 `telemetry_upload_ok` 诊断事件，drain 循环把它当成新积压，形成自循环；现已从 drain 的 pending 判断中排除，并给手动上传加 30s 预算、剩余提示和 `finally` 复位
 
 ## 流程（已落地、随仓库生效）
 

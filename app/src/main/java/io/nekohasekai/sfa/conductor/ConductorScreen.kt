@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -17,36 +18,39 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -76,10 +80,15 @@ fun ConductorScreen(
     }
 
     var input by rememberSaveable { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val scaffoldPadding = LocalScaffoldPadding.current
     val suggestions = ConductorCommands.suggestions(input)
+
+    fun focusInput() {
+        runCatching { focusRequester.requestFocus() }
+    }
 
     fun send() {
         val text = input.trim()
@@ -101,7 +110,7 @@ fun ConductorScreen(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (uiState.messages.isEmpty()) {
                 item(key = "empty") {
@@ -131,6 +140,7 @@ fun ConductorScreen(
                 onPick = { command ->
                     if (command.takesArgs) {
                         input = "/${command.name} "
+                        focusInput()
                     } else {
                         input = ""
                         viewModel.submit("/${command.name}")
@@ -145,7 +155,24 @@ fun ConductorScreen(
             onInputChange = { input = it },
             onSend = { send() },
             isRunning = uiState.isRunning,
-            onSlash = { input = "/" },
+            onSlash = {
+                input = if (input.startsWith("/")) input else "/" + input
+                focusInput()
+            },
+            onAt = {
+                input =
+                    when {
+                        input.isBlank() -> "@"
+                        input.last().isWhitespace() -> input + "@"
+                        else -> "$input @"
+                    }
+                focusInput()
+            },
+            onNewline = {
+                input += "\n"
+                focusInput()
+            },
+            focusRequester = focusRequester,
         )
     }
 }
@@ -200,41 +227,37 @@ private fun ConductorMessageItem(message: ConductorMessage) {
         ConductorMessageKind.RESULT,
         ConductorMessageKind.ERROR -> {
             val isError = message.kind == ConductorMessageKind.ERROR
+            val isResult = message.kind == ConductorMessageKind.RESULT
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = message.title,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
-                )
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
                     color =
                     if (isError) {
-                        MaterialTheme.colorScheme.errorContainer
+                        MaterialTheme.colorScheme.error
                     } else {
-                        MaterialTheme.colorScheme.surfaceContainerLow
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                ) {
-                    SelectionContainer {
-                        Text(
-                            text = message.body,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily =
-                            if (message.kind == ConductorMessageKind.RESULT) {
-                                FontFamily.Monospace
-                            } else {
-                                FontFamily.Default
-                            },
-                            color =
-                            if (isError) {
-                                MaterialTheme.colorScheme.onErrorContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        )
-                    }
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+                SelectionContainer {
+                    Text(
+                        text = message.body,
+                        style =
+                        if (isResult) {
+                            MaterialTheme.typography.bodySmall
+                        } else {
+                            MaterialTheme.typography.bodyMedium
+                        },
+                        fontFamily = if (isResult) FontFamily.Monospace else FontFamily.Default,
+                        color =
+                        if (isError) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
         }
@@ -249,7 +272,7 @@ private fun CommandSuggestions(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 2.dp,
-        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
     ) {
         LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
             items(commands, key = { it.name }) { command ->
@@ -290,41 +313,126 @@ private fun ConductorInputBar(
     onSend: () -> Unit,
     isRunning: Boolean,
     onSlash: () -> Unit,
+    onAt: () -> Unit,
+    onNewline: () -> Unit,
+    focusRequester: FocusRequester,
 ) {
-    Surface(tonalElevation = 3.dp) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.Bottom,
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(26.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(
+            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 2.dp),
         ) {
-            TextButton(onClick = onSlash) {
-                Text("/", style = MaterialTheme.typography.titleLarge)
-            }
-            OutlinedTextField(
+            BasicTextField(
                 value = input,
                 onValueChange = onInputChange,
-                modifier = Modifier.weight(1f),
-                minLines = 1,
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                textStyle =
+                MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 maxLines = 3,
-                shape = RoundedCornerShape(20.dp),
-                placeholder = { Text(stringResource(R.string.conductor_input_hint)) },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { onSend() }),
+                decorationBox = { innerTextField ->
+                    Box {
+                        if (input.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.conductor_input_hint),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
             )
-            Box(
-                modifier = Modifier.size(48.dp),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (isRunning) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                } else {
-                    IconButton(onClick = onSend, enabled = input.isNotBlank()) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = stringResource(R.string.conductor_send),
+                InputGlyphButton(
+                    text = "/",
+                    label = stringResource(R.string.conductor_commands),
+                    onClick = onSlash,
+                )
+                InputGlyphButton(
+                    text = "@",
+                    label = stringResource(R.string.conductor_mention),
+                    onClick = onAt,
+                )
+                InputGlyphButton(
+                    text = "↵",
+                    label = stringResource(R.string.conductor_newline),
+                    onClick = onNewline,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Box(
+                    modifier = Modifier.size(36.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isRunning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
                         )
+                    } else {
+                        val enabled = input.isNotBlank()
+                        Box(
+                            modifier =
+                            Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (enabled) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    },
+                                )
+                                .clickable(enabled = enabled, onClick = onSend),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = stringResource(R.string.conductor_send),
+                                modifier = Modifier.size(18.dp),
+                                tint =
+                                if (enabled) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun InputGlyphButton(
+    text: String,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier =
+        Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { this.contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = if (text == "/") FontFamily.Monospace else FontFamily.Default,
+        )
     }
 }

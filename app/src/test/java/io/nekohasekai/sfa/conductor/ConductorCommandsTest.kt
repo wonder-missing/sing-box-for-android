@@ -17,6 +17,14 @@ class ConductorCommandsTest {
     }
 
     @Test
+    fun `parses newline separated arguments`() {
+        val input = ConductorCommands.parse("/help\nnodes")!!
+
+        assertEquals("help", input.command?.name)
+        assertEquals(listOf("nodes"), input.args)
+    }
+
+    @Test
     fun `parses no-arg command`() {
         val input = ConductorCommands.parse("/tailscale")!!
 

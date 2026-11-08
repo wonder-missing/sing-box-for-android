@@ -58,6 +58,9 @@
     <string name="title_groups">组</string>
     <string name="conductor_input_hint">输入 / 查看命令</string>
     <string name="conductor_send">发送</string>
+    <string name="conductor_commands">命令</string>
+    <string name="conductor_mention">提及</string>
+    <string name="conductor_newline">换行</string>
     <string name="conductor_empty_title">命令面板</string>
     <string name="conductor_empty_hint">输入 / 查看命令。</string>
     <string name="logs_preview_empty">暂无日志</string>
