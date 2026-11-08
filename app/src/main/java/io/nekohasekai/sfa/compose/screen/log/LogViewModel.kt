@@ -4,6 +4,9 @@ import androidx.lifecycle.viewModelScope
 import io.nekohasekai.libbox.LogEntry
 import io.nekohasekai.sfa.compose.util.AnsiColorUtils
 import io.nekohasekai.sfa.constant.Status
+import io.nekohasekai.sfa.log.AppLog
+import io.nekohasekai.sfa.log.AppLogEntry
+import io.nekohasekai.sfa.log.AppLogLevel
 import io.nekohasekai.sfa.utils.AppLifecycleObserver
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
@@ -15,7 +18,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.LinkedList
+import java.util.Locale
 
 class LogViewModel :
     BaseLogViewModel(),
@@ -33,8 +39,15 @@ class LogViewModel :
         )
     private var lastServiceStatus: Status = Status.Stopped
     private val serviceStatusFlow = MutableStateFlow(Status.Stopped)
+    private val appLogListener: (AppLogEntry) -> Unit = { entry ->
+        viewModelScope.launch(Dispatchers.Main) {
+            appendAppLog(entry)
+        }
+    }
 
     init {
+        AppLog.entries().forEach(::appendAppLog)
+        AppLog.addListener(appLogListener)
         viewModelScope.launch {
             combine(
                 AppLifecycleObserver.isForeground,
@@ -66,6 +79,32 @@ class LogViewModel :
             entry = LogEntryData(level = level, message = entry.message),
             annotatedString = AnsiColorUtils.ansiToAnnotatedString(entry.message),
         )
+    }
+
+    private fun appendAppLog(entry: AppLogEntry) {
+        val level =
+            when (entry.level) {
+                AppLogLevel.Info -> LogLevel.INFO
+                AppLogLevel.Warning -> LogLevel.WARNING
+                AppLogLevel.Error -> LogLevel.ERROR
+            }
+        val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(entry.timestamp))
+        val message = "$time [app] ${entry.message}"
+        val processed =
+            ProcessedLogEntry(
+                id = logIdGenerator.incrementAndGet(),
+                entry = LogEntryData(level = level, message = message),
+                annotatedString = AnsiColorUtils.ansiToAnnotatedString(message),
+            )
+        if (_uiState.value.isPaused) {
+            bufferedLogs.addLast(processed)
+            return
+        }
+        allLogs.addLast(processed)
+        while (allLogs.size > maxLines) {
+            allLogs.removeFirst()
+        }
+        updateDisplayedLogs()
     }
 
     override fun updateServiceStatus(status: Status) {
@@ -103,6 +142,7 @@ class LogViewModel :
 
     override fun clearLogs() {
         viewModelScope.launch(Dispatchers.Main) {
+            AppLog.clear()
             allLogs.clear()
             bufferedLogs.clear()
             _uiState.update { it.copy(isPaused = false) }
@@ -172,6 +212,7 @@ class LogViewModel :
     }
 
     override fun onCleared() {
+        AppLog.removeListener(appLogListener)
         super.onCleared()
         commandClient.disconnect()
     }

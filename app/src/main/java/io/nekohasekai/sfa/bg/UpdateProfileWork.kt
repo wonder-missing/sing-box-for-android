@@ -13,6 +13,7 @@ import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
+import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.refreshRemoteLastModified
 import java.io.File
@@ -97,11 +98,13 @@ class UpdateProfileWork {
                     }
                     profile.typed.lastUpdated = Date()
                     ProfileManager.update(profile)
+                    AppLog.info("Profile updated: ${profile.name}")
                     if (profile.typed.refreshRemoteLastModified()) {
                         ProfileManager.update(profile)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "update profile ${profile.name}", e)
+                    AppLog.warning("Profile update failed: ${profile.name}: ${e.javaClass.simpleName}")
                     runCatching {
                         io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(
                             applicationContext,

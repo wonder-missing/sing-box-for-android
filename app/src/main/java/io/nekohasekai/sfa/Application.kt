@@ -22,6 +22,7 @@ import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.compose.screen.tools.TaildropFiles
 import io.nekohasekai.sfa.constant.Bugs
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.utils.AppLifecycleObserver
 import io.nekohasekai.sfa.utils.HookModuleUpdateNotifier
 import io.nekohasekai.sfa.utils.HookStatusClient
@@ -61,6 +62,8 @@ class Application : Application() {
         filesDir.mkdirs()
         cacheDir.mkdirs()
         installWorkingDir()
+        AppLog.initialize(File(filesDir, "logs/app.log"))
+        AppLog.info("App started, version ${BuildConfig.VERSION_NAME}")
 
         @Suppress("OPT_IN_USAGE")
         GlobalScope.launch(Dispatchers.IO) {

@@ -15,6 +15,9 @@ import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
+import io.nekohasekai.sfa.log.AppLog
+import io.nekohasekai.sfa.log.AppLogEntry
+import io.nekohasekai.sfa.log.AppLogLevel
 import io.nekohasekai.sfa.utils.AppLifecycleObserver
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
@@ -34,8 +37,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONException
 import java.io.File
+import java.text.SimpleDateFormat
 import java.util.Collections
 import java.util.Date
+import java.util.Locale
 
 enum class CardGroup(val pairGroup: CardPairGroup? = null) {
     ClashMode,
@@ -142,6 +147,9 @@ class DashboardViewModel :
 
     private val _recentLogs = MutableStateFlow<List<LogEntryData>>(emptyList())
     val recentLogs: StateFlow<List<LogEntryData>> = _recentLogs.asStateFlow()
+    private val appLogListener: (AppLogEntry) -> Unit = { entry ->
+        _recentLogs.update { (it + appLogEntry(entry)).takeLast(RECENT_LOG_LIMIT) }
+    }
 
     override fun createInitialState(): DashboardUiState {
         val savedOrder = loadItemOrder()
@@ -160,6 +168,8 @@ class DashboardViewModel :
     init {
         loadProfiles()
         ProfileManager.registerCallback(::onProfilesChanged)
+        _recentLogs.value = AppLog.entries().takeLast(RECENT_LOG_LIMIT).map(::appLogEntry)
+        AppLog.addListener(appLogListener)
 
         viewModelScope.launch {
             combine(
@@ -187,6 +197,7 @@ class DashboardViewModel :
 
     override fun onCleared() {
         super.onCleared()
+        AppLog.removeListener(appLogListener)
         ProfileManager.unregisterCallback(::onProfilesChanged)
         commandClient.disconnect()
     }
@@ -377,6 +388,7 @@ class DashboardViewModel :
                 // Update last updated time
                 profile.typed.lastUpdated = Date()
                 ProfileManager.update(profile)
+                AppLog.info("Profile updated: ${profile.name}")
 
                 if (contentChanged && profile.id == Settings.selectedProfile) {
                     try {
@@ -405,6 +417,7 @@ class DashboardViewModel :
                     updateState { copy(updatedProfileId = null) }
                 }
             } catch (e: Exception) {
+                AppLog.warning("Profile update failed: ${profile.name}: ${e.javaClass.simpleName}")
                 sendErrorMessage("Failed to update profile: ${e.message}")
                 // Clear updating state on error
                 withContext(Dispatchers.Main) {
@@ -675,6 +688,17 @@ class DashboardViewModel :
         if (mapped.isNotEmpty()) {
             _recentLogs.update { (it + mapped).takeLast(RECENT_LOG_LIMIT) }
         }
+    }
+
+    private fun appLogEntry(entry: AppLogEntry): LogEntryData {
+        val level =
+            when (entry.level) {
+                AppLogLevel.Info -> LogLevel.INFO
+                AppLogLevel.Warning -> LogLevel.WARNING
+                AppLogLevel.Error -> LogLevel.ERROR
+            }
+        val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(entry.timestamp))
+        return LogEntryData(level, "$time [app] ${entry.message}")
     }
 
     override fun updateGroups(newGroups: MutableList<OutboundGroup>) {

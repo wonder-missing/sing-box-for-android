@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -156,7 +157,11 @@ fun ConductorScreen(
                     }
                 } else {
                     items(uiState.messages.size, key = { index -> index }) { index ->
-                        ConductorMessageItem(uiState.messages[index])
+                        ConductorMessageItem(
+                            message = uiState.messages[index],
+                            onConfirmProbe = viewModel::confirmProbe,
+                            onCancelProbe = viewModel::cancelProbe,
+                        )
                     }
                 }
             }
@@ -238,7 +243,11 @@ private fun ConductorEmptyState(onCommand: (String) -> Unit) {
 }
 
 @Composable
-private fun ConductorMessageItem(message: ConductorMessage) {
+private fun ConductorMessageItem(
+    message: ConductorMessage,
+    onConfirmProbe: (Long) -> Unit,
+    onCancelProbe: (Long) -> Unit,
+) {
     when (message.kind) {
         ConductorMessageKind.USER ->
             Row(
@@ -293,6 +302,20 @@ private fun ConductorMessageItem(message: ConductorMessage) {
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+                val confirmationId = message.confirmationId
+                if (message.confirmation != null && confirmationId != null) {
+                    Row(
+                        modifier = Modifier.padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TextButton(onClick = { onConfirmProbe(confirmationId) }) {
+                            Text(stringResource(R.string.conductor_probe_run))
+                        }
+                        TextButton(onClick = { onCancelProbe(confirmationId) }) {
+                            Text(stringResource(R.string.conductor_probe_cancel))
+                        }
+                    }
                 }
             }
         }

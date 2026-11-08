@@ -32,6 +32,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import java.util.concurrent.atomic.AtomicLong
 
 class ConductorViewModel(
     application: Application,
@@ -58,6 +61,7 @@ class ConductorViewModel(
     private var localServiceStarted: Boolean? = null
 
     private var wantConnected = false
+    private val confirmationIds = AtomicLong(0)
 
     private val commandClient =
         CommandClient(
@@ -171,6 +175,8 @@ class ConductorViewModel(
             ConductorAction.TAILSCALE -> runTailscale()
 
             ConductorAction.TELEMETRY_UPLOAD -> runTelemetryUpload()
+
+            ConductorAction.PROBE -> runProbe(parsed.args)
         }
     }
 
@@ -187,11 +193,15 @@ class ConductorViewModel(
         super.onCleared()
     }
 
-    private fun runTool(name: String) {
+    private fun runTool(
+        name: String,
+        argsJson: String = "{}",
+        confirmed: Boolean = false,
+    ) {
         updateUi { copy(isRunning = true) }
         viewModelScope.launch(Dispatchers.IO) {
             val result =
-                runCatching { registry.invoke(name) }
+                runCatching { registry.invoke(name, argsJson, confirmed) }
                     .getOrElse { throwable ->
                         io.nekohasekai.sfa.agent.AgentInvocationResult(
                             tool = name,
@@ -215,6 +225,79 @@ class ConductorViewModel(
                         result.errorMessage ?: "Tool failed.",
                     )
                 }
+            }
+        }
+    }
+
+    private fun runProbe(args: List<String>) {
+        if (args.size < 2) {
+            append(
+                ConductorMessageKind.SYSTEM,
+                "probe",
+                "Usage: /probe <outbound> <url>\nUse /nodes to list outbound tags.",
+            )
+            return
+        }
+        val outbound = args.first()
+        val url = args.drop(1).joinToString(" ")
+        val argsJson =
+            buildJsonObject {
+                put("outbound", JsonPrimitive(outbound))
+                put("url", JsonPrimitive(url))
+            }.toString()
+        val result = registry.invoke("probe_via_node", argsJson, confirmed = false)
+        val confirmation = result.confirmation
+        if (confirmation == null) {
+            if (result.ok) {
+                append(
+                    ConductorMessageKind.RESULT,
+                    "probe",
+                    AgentJson.pretty(result.output ?: JsonObject(emptyMap())),
+                )
+            } else {
+                append(
+                    ConductorMessageKind.ERROR,
+                    "probe",
+                    result.errorMessage ?: "Probe failed.",
+                )
+            }
+            return
+        }
+        appendMessage(
+            ConductorMessage(
+                kind = ConductorMessageKind.SYSTEM,
+                title = "probe",
+                body = "Outbound: $outbound\nURL: $url\n\n${confirmation.reason}",
+                confirmation = confirmation,
+                confirmationId = confirmationIds.incrementAndGet(),
+            ),
+        )
+    }
+
+    fun confirmProbe(id: Long) {
+        val state = _uiState.value
+        val index = state.messages.indexOfFirst { it.confirmationId == id }
+        if (index < 0) return
+        val argsJson = state.messages[index].confirmation?.argsJson ?: return
+        clearConfirmation(id)
+        append(ConductorMessageKind.SYSTEM, "probe", "Running probe…")
+        runTool("probe_via_node", argsJson, confirmed = true)
+    }
+
+    fun cancelProbe(id: Long) {
+        clearConfirmation(id)
+        append(ConductorMessageKind.SYSTEM, "probe", "Probe cancelled.")
+    }
+
+    private fun clearConfirmation(id: Long) {
+        updateUi {
+            val index = messages.indexOfFirst { it.confirmationId == id }
+            if (index >= 0) {
+                val updated = messages.toMutableList()
+                updated[index] = updated[index].copy(confirmation = null)
+                copy(messages = updated)
+            } else {
+                this
             }
         }
     }
@@ -326,8 +409,12 @@ class ConductorViewModel(
         title: String,
         body: String,
     ) {
+        appendMessage(ConductorMessage(kind, title, body))
+    }
+
+    private fun appendMessage(message: ConductorMessage) {
         updateUi {
-            copy(messages = (messages + ConductorMessage(kind, title, body)).takeLast(MAX_MESSAGES))
+            copy(messages = (messages + message).takeLast(MAX_MESSAGES))
         }
     }
 

@@ -62,6 +62,8 @@
     <string name="conductor_running">Running</string>
     <string name="conductor_expand">Expand input</string>
     <string name="conductor_collapse">Collapse input</string>
+    <string name="conductor_probe_run">Run probe</string>
+    <string name="conductor_probe_cancel">Cancel</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Command palette</string>
@@ -79,6 +81,7 @@
 
     <!-- Status -->
     <string name="status_default">Service not started</string>
+    <string name="logs_empty">No logs yet</string>
     <string name="status_starting">Starting</string>
     <string name="status_stopping">Stopping</string>
     <string name="status_started">Started</string>

@@ -34,6 +34,7 @@ import io.nekohasekai.sfa.constant.Alert
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.vendor.Vendor
@@ -188,6 +189,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             }
 
             status.postValue(Status.Started)
+            AppLog.info("Service started")
             withContext(Dispatchers.Main) {
                 notification.show(lastProfileName, R.string.status_started)
             }
@@ -292,6 +294,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     private fun stopService() {
         if (status.value != Status.Started) return
         status.value = Status.Stopping
+        AppLog.info("Service stopping")
         if (receiverRegistered) {
             service.unregisterReceiver(receiver)
             receiverRegistered = false
@@ -325,6 +328,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             }
             withContext(Dispatchers.Main) {
                 status.value = Status.Stopped
+                AppLog.info("Service stopped")
                 service.stopSelf()
             }
         }
@@ -376,6 +380,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 callback.onServiceAlert(type.ordinal, message)
             }
             status.value = Status.Stopped
+            AppLog.warning("Service stopped: ${type.name}")
             service.stopSelf()
         }
     }
@@ -385,6 +390,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     internal fun onStartCommand(): Int {
         if (status.value != Status.Stopped) return Service.START_NOT_STICKY
         status.value = Status.Starting
+        AppLog.info("Service starting")
         notification.show(lastProfileName, R.string.status_starting)
 
         if (!receiverRegistered) {

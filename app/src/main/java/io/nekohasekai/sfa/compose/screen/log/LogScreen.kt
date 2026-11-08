@@ -493,7 +493,7 @@ fun LogScreen(
                                     serviceStatus == Status.Started -> stringResource(R.string.status_started)
                                     serviceStatus == Status.Starting -> stringResource(R.string.status_starting)
                                     serviceStatus == Status.Stopping -> stringResource(R.string.status_stopping)
-                                    else -> stringResource(R.string.status_default)
+                                    else -> stringResource(R.string.logs_empty)
                                 }
                             } else {
                                 emptyStateMessage

@@ -13,6 +13,7 @@ import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
+import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.refreshRemoteLastModified
 import kotlinx.coroutines.Dispatchers
@@ -277,6 +278,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 // Update last updated time
                 profile.typed.lastUpdated = Date()
                 ProfileManager.update(profile)
+                AppLog.info("Profile updated: ${profile.name}")
 
                 // Update UI state with success indicator
                 _uiState.update {
@@ -304,6 +306,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                     }
                 }
             } catch (e: Exception) {
+                AppLog.warning("Profile update failed: ${profile.name}: ${e.javaClass.simpleName}")
                 _uiState.update {
                     it.copy(
                         isUpdating = false,

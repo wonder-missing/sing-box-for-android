@@ -33,6 +33,14 @@ class ConductorCommandsTest {
     }
 
     @Test
+    fun `parses probe arguments`() {
+        val input = ConductorCommands.parse("/probe node-a https://example.com")!!
+
+        assertEquals("probe", input.command?.name)
+        assertEquals(listOf("node-a", "https://example.com"), input.args)
+    }
+
+    @Test
     fun `unknown slash command has no command`() {
         assertNull(ConductorCommands.parse("/nope")?.command)
     }

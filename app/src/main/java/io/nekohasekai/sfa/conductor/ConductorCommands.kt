@@ -10,6 +10,7 @@ enum class ConductorAction {
     NETWORK,
     TAILSCALE,
     TELEMETRY_UPLOAD,
+    PROBE,
 }
 
 data class ConductorCommand(
@@ -69,6 +70,13 @@ object ConductorCommands {
                 description = "Show the current network snapshot.",
                 usage = "/network",
                 action = ConductorAction.NETWORK,
+            ),
+            ConductorCommand(
+                name = "probe",
+                description = "Probe an http(s) URL through an outbound node.",
+                usage = "/probe <outbound> <url>",
+                takesArgs = true,
+                action = ConductorAction.PROBE,
             ),
             ConductorCommand(
                 name = "tailscale",

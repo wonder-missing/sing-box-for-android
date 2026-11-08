@@ -61,6 +61,8 @@
     <string name="conductor_running">正在执行</string>
     <string name="conductor_expand">展开输入框</string>
     <string name="conductor_collapse">收起输入框</string>
+    <string name="conductor_probe_run">执行探测</string>
+    <string name="conductor_probe_cancel">取消</string>
     <string name="conductor_commands">命令</string>
     <string name="conductor_mention">提及</string>
     <string name="conductor_empty_title">命令面板</string>
@@ -78,6 +80,7 @@
 
     <!-- Status -->
     <string name="status_default">服务未启动</string>
+    <string name="logs_empty">暂无日志</string>
     <string name="status_starting">启动中</string>
     <string name="status_stopping">停止中</string>
     <string name="status_started">已启动</string>
