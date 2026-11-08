@@ -1299,7 +1299,7 @@ class MainActivity :
                             WindowInsets.safeDrawing.only(WindowInsetsSides.Start),
                         ),
                         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                        topBar = if (isConductorRoute) null else topBarContent,
+                        topBar = { if (!isConductorRoute) topBarContent() },
                     ) { paddingValues ->
                         scaffoldContent(paddingValues)
                     }
@@ -1308,7 +1308,7 @@ class MainActivity :
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                    topBar = if (isConductorRoute) null else topBarContent,
+                    topBar = { if (!isConductorRoute) topBarContent() },
                     bottomBar = {
                         if (!isSubScreen) {
                             val hasUpdate by UpdateState.hasUpdate
