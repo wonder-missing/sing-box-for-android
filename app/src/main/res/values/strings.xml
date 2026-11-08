@@ -61,7 +61,6 @@
     <string name="conductor_send">Send</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
-    <string name="conductor_newline">New line</string>
     <string name="conductor_empty_title">Command palette</string>
     <string name="conductor_empty_hint">Type / to see commands.</string>
     <string name="logs_preview_empty">No logs yet</string>

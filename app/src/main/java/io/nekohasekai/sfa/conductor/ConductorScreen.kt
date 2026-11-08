@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -23,7 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
@@ -166,10 +168,6 @@ fun ConductorScreen(
                         input.last().isWhitespace() -> input + "@"
                         else -> "$input @"
                     }
-                focusInput()
-            },
-            onNewline = {
-                input += "\n"
                 focusInput()
             },
             focusRequester = focusRequester,
@@ -314,16 +312,15 @@ private fun ConductorInputBar(
     isRunning: Boolean,
     onSlash: () -> Unit,
     onAt: () -> Unit,
-    onNewline: () -> Unit,
     focusRequester: FocusRequester,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(26.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(
-            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 2.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
         ) {
             BasicTextField(
                 value = input,
@@ -348,8 +345,9 @@ private fun ConductorInputBar(
                     }
                 },
             )
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 InputGlyphButton(
@@ -361,11 +359,6 @@ private fun ConductorInputBar(
                     text = "@",
                     label = stringResource(R.string.conductor_mention),
                     onClick = onAt,
-                )
-                InputGlyphButton(
-                    text = "↵",
-                    label = stringResource(R.string.conductor_newline),
-                    onClick = onNewline,
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Box(
@@ -382,7 +375,7 @@ private fun ConductorInputBar(
                         Box(
                             modifier =
                             Modifier
-                                .size(34.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
                                 .background(
                                     if (enabled) {
@@ -395,9 +388,9 @@ private fun ConductorInputBar(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Send,
+                                imageVector = Icons.Default.ArrowUpward,
                                 contentDescription = stringResource(R.string.conductor_send),
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(20.dp),
                                 tint =
                                 if (enabled) {
                                     MaterialTheme.colorScheme.onPrimary
@@ -431,6 +424,8 @@ private fun InputGlyphButton(
         Text(
             text = text,
             style = MaterialTheme.typography.titleMedium,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontFamily = if (text == "/") FontFamily.Monospace else FontFamily.Default,
         )
