@@ -20,6 +20,16 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
    `gh run watch <id> -R wonder-missing/sing-box-for-android --exit-status`. Red → fix and repeat until green.
 6. When an issue is fixed: `gh issue comment` (what changed, which version) and `gh issue close` (with `-R ...`).
 
+## UI conventions
+
+- Layout sizes, spacing and corner radii use `dp`; text uses `sp`.
+- Standard scale: spacing `4/8/12/16/24dp`; corner radius `8/12/16dp` (pills use half the height); touch target `48dp`; body text `14–16sp`.
+- The owner has web frontend experience. Accept `padding` / `margin` / `gap` / `border-radius` / `flex` / `align-items` wording and translate it to dp and Compose `Row` / `Column` / `weight`.
+- Prefer references (DeepSeek input bar, WeChat composer, Material 3 components) and relative descriptions (“same size as the left button”, “icon centred in its circle”) over requiring exact numbers.
+- Apply product-level padding, alignment and safe margins yourself; do not wait for the owner to point out basic spacing or centring.
+- A bare “px” means design dp (`1 design px ≈ 1dp`) and 5dp is a very small radius. For this app, inputs and cards usually use `8–12dp` radii.
+- Conductor-specific UI decisions live in `docs/agent-control-plane.md`.
+
 ## Release flow
 1. Set `WONDER_BUILD=N` in `version.properties`. `VERSION_CODE` and `VERSION_NAME` are derived from `CORE_VERSION` and `WONDER_BUILD`; only change `CORE_VERSION` when moving to a new upstream core.
 2. Commit, `git push origin dev`, wait for green Test CI.
