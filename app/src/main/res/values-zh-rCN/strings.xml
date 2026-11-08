@@ -706,4 +706,16 @@
     <string name="shortcut_stop_service">停止服务</string>
     <string name="shortcut_tailscale">Tailscale</string>
     <string name="shortcut_upload_telemetry">上传遥测</string>
+    <string name="shortcut_service_starting">正在启动服务…</string>
+    <string name="shortcut_service_started">服务已启动</string>
+    <string name="shortcut_service_stopping">正在停止服务…</string>
+    <string name="shortcut_service_stopped">服务已停止</string>
+    <string name="shortcut_service_already_running">服务已在运行</string>
+    <string name="shortcut_service_already_stopped">服务已经停止</string>
+    <string name="shortcut_service_start_failed">无法启动服务</string>
+    <string name="shortcut_service_stop_failed">无法停止服务</string>
+    <string name="shortcut_tailscale_unavailable">请先启动服务再打开 Tailscale</string>
+    <string name="shortcut_tailscale_not_configured">当前配置里没有 Tailscale 端点</string>
+    <string name="last_fetched_icon">上次拉取</string>
+    <string name="source_updated_icon">源端更新</string>
 </resources>

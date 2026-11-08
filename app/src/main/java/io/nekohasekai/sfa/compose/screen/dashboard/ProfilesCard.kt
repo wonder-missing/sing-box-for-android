@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Edit
@@ -646,77 +645,63 @@ private fun ProfileInfoRow(profile: Profile?) {
     val context = LocalContext.current
     val sourceLastModified = profile.typed.remoteLastModified
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    if (profile.typed.type == TypedProfile.Type.Remote) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Icon(
-                    imageVector = if (profile.typed.type == TypedProfile.Type.Remote) {
-                        Icons.Default.Cloud
-                    } else {
-                        Icons.Outlined.Description
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = if (profile.typed.type == TypedProfile.Type.Remote) {
-                        stringResource(R.string.profile_type_remote)
-                    } else {
-                        stringResource(R.string.profile_type_local)
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (profile.typed.type == TypedProfile.Type.Remote) {
+            if (sourceLastModified != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.AccessTime,
-                        contentDescription = null,
+                        imageVector = Icons.Default.CloudDownload,
+                        contentDescription = stringResource(R.string.source_updated_icon),
                         modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = RelativeTimeFormatter.format(context, profile.typed.lastUpdated),
+                        text = RelativeTimeFormatter.format(context, sourceLastModified),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-        }
 
-        if (profile.typed.type == TypedProfile.Type.Remote && sourceLastModified != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Default.CloudDownload,
-                    contentDescription = null,
+                    imageVector = Icons.Default.AccessTime,
+                    contentDescription = stringResource(R.string.last_fetched_icon),
                     modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text =
-                    stringResource(
-                        R.string.source_updated_format,
-                        RelativeTimeFormatter.format(context, sourceLastModified),
-                    ),
+                    text = RelativeTimeFormatter.format(context, profile.typed.lastUpdated),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    } else {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Description,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(R.string.profile_type_local),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

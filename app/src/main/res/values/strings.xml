@@ -781,4 +781,16 @@
     <string name="shortcut_tailscale">Tailscale</string>
     <string name="shortcut_conductor" translatable="false">Conduct</string>
     <string name="shortcut_upload_telemetry">Upload Telemetry</string>
+    <string name="shortcut_service_starting">Starting service…</string>
+    <string name="shortcut_service_started">Service started</string>
+    <string name="shortcut_service_stopping">Stopping service…</string>
+    <string name="shortcut_service_stopped">Service stopped</string>
+    <string name="shortcut_service_already_running">Service is already running</string>
+    <string name="shortcut_service_already_stopped">Service is already stopped</string>
+    <string name="shortcut_service_start_failed">Could not start the service</string>
+    <string name="shortcut_service_stop_failed">Could not stop the service</string>
+    <string name="shortcut_tailscale_unavailable">Start the service to open Tailscale</string>
+    <string name="shortcut_tailscale_not_configured">No Tailscale endpoint in the current profile</string>
+    <string name="last_fetched_icon">Last fetched</string>
+    <string name="source_updated_icon">Source updated</string>
 </resources>

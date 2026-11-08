@@ -4,9 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.content.Intent
-import android.content.pm.ShortcutInfo
-import android.content.pm.ShortcutManager
-import android.graphics.drawable.Icon as AndroidIcon
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
@@ -17,9 +14,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.DrawableRes
-import androidx.annotation.RequiresApi
-import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.scaleIn
@@ -110,6 +104,7 @@ import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.BoxService
 import io.nekohasekai.sfa.bg.CrashReportManager
+import io.nekohasekai.sfa.bg.LauncherShortcuts
 import io.nekohasekai.sfa.bg.OOMReportManager
 import io.nekohasekai.sfa.bg.PowerReportManager
 import io.nekohasekai.sfa.bg.ServiceConnection
@@ -158,7 +153,6 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.ktx.launchCustomTab
-import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.update.DownloadErrorDetails
 import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.utils.RemoteControlManager
@@ -175,7 +169,6 @@ class MainActivity :
     private val connection = ServiceConnection(this, this)
     private lateinit var dashboardViewModel: DashboardViewModel
     private var currentServiceStatus by mutableStateOf(Status.Stopped)
-    private var pendingServiceToggle = false
     private var currentAlert by mutableStateOf<Pair<Alert, String?>?>(null)
     private var showLocationPermissionDialog by mutableStateOf(false)
     private var showBackgroundLocationDialog by mutableStateOf(false)
@@ -232,6 +225,7 @@ class MainActivity :
             }
         }
     private val pendingNavigationRoute = mutableStateOf<String?>(null)
+    private var pendingTailscaleShortcut by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -244,7 +238,7 @@ class MainActivity :
         }
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
-            publishShortcuts()
+            LauncherShortcuts.publish(this, currentServiceStatus)
         }
 
         lifecycleScope.launch {
@@ -284,23 +278,13 @@ class MainActivity :
             return
         }
         when (intent.action) {
-            Action.SHORTCUT_TOGGLE_SERVICE -> {
-                requestServiceToggle()
-                return
-            }
-
             Action.SHORTCUT_TAILSCALE -> {
-                pendingNavigationRoute.value = Screen.Tools.route
+                pendingTailscaleShortcut = true
                 return
             }
 
             Action.SHORTCUT_CONDUCTOR -> {
                 pendingNavigationRoute.value = Screen.Conductor.route
-                return
-            }
-
-            Action.SHORTCUT_UPLOAD_TELEMETRY -> {
-                uploadTelemetryFromShortcut()
                 return
             }
         }
@@ -923,6 +907,49 @@ class MainActivity :
 
         val tailscaleStatusViewModel: TailscaleStatusViewModel = viewModel()
         val tailscaleState by tailscaleStatusViewModel.uiState.collectAsState()
+
+        LaunchedEffect(pendingTailscaleShortcut, tailscaleState.endpoints, currentServiceStatus) {
+            if (!pendingTailscaleShortcut) return@LaunchedEffect
+            val endpoint = tailscaleState.endpoints.firstOrNull()
+            when {
+                endpoint != null -> {
+                    pendingTailscaleShortcut = false
+                    navController.navigate("tools/tailscale/${Uri.encode(endpoint.endpointTag)}") {
+                        launchSingleTop = true
+                    }
+                }
+
+                currentServiceStatus == Status.Stopped -> {
+                    pendingTailscaleShortcut = false
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.shortcut_tailscale_unavailable,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+
+                tailscaleState.isSubscribed && tailscaleState.hasUpdate -> {
+                    pendingTailscaleShortcut = false
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.shortcut_tailscale_not_configured,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
+        LaunchedEffect(pendingTailscaleShortcut) {
+            if (!pendingTailscaleShortcut) return@LaunchedEffect
+            delay(8_000)
+            if (pendingTailscaleShortcut) {
+                pendingTailscaleShortcut = false
+                Toast.makeText(
+                    this@MainActivity,
+                    R.string.shortcut_tailscale_unavailable,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
         val taildropUnreadCount = tailscaleState.endpoints.sumOf { it.unreadFileCount }
         val taildropSendSessions by TaildropSendManager.sessions.collectAsState()
         val taildropFailedCount = taildropSendSessions.count { it.errorMessage != null }
@@ -1578,92 +1605,12 @@ class MainActivity :
         }
     }
 
-    private fun requestServiceToggle() {
-        if (connection.connected) {
-            toggleService(connection.status)
-        } else {
-            pendingServiceToggle = true
-        }
-    }
-
-    private fun toggleService(status: Status) {
-        when (status) {
-            Status.Stopped -> startService()
-            Status.Started -> BoxService.stop()
-            else -> {}
-        }
-    }
-
-    private fun uploadTelemetryFromShortcut() {
-        Toast.makeText(this, R.string.telemetry_uploading, Toast.LENGTH_SHORT).show()
-        lifecycleScope.launch {
-            val message =
-                withContext(Dispatchers.IO) {
-                    TelemetryRuntime.uploadNow(this@MainActivity)
-                }
-            Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.N_MR1)
-    private fun publishShortcuts() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) return
-        val manager = getSystemService(ShortcutManager::class.java) ?: return
-        val running = currentServiceStatus == Status.Started
-        val shortcuts =
-            listOf(
-                shortcutInfo(
-                    id = "toggle_service",
-                    label = if (running) R.string.shortcut_stop_service else R.string.shortcut_start_service,
-                    icon = if (running) R.drawable.ic_stop_24 else R.drawable.ic_play_arrow_24,
-                    action = Action.SHORTCUT_TOGGLE_SERVICE,
-                ),
-                shortcutInfo(
-                    id = "tailscale",
-                    label = R.string.shortcut_tailscale,
-                    icon = R.drawable.ic_electric_bolt_24,
-                    action = Action.SHORTCUT_TAILSCALE,
-                ),
-                shortcutInfo(
-                    id = "conductor",
-                    label = R.string.shortcut_conductor,
-                    icon = R.drawable.ic_message_24,
-                    action = Action.SHORTCUT_CONDUCTOR,
-                ),
-                shortcutInfo(
-                    id = "upload_telemetry",
-                    label = R.string.shortcut_upload_telemetry,
-                    icon = R.drawable.ic_conductor_send,
-                    action = Action.SHORTCUT_UPLOAD_TELEMETRY,
-                ),
-            )
-        runCatching { manager.setDynamicShortcuts(shortcuts) }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.N_MR1)
-    private fun shortcutInfo(
-        id: String,
-        @StringRes label: Int,
-        @DrawableRes icon: Int,
-        action: String,
-    ): ShortcutInfo =
-        ShortcutInfo.Builder(this, id)
-            .setShortLabel(getString(label))
-            .setLongLabel(getString(label))
-            .setIcon(AndroidIcon.createWithResource(this, icon))
-            .setIntent(Intent(this, MainActivity::class.java).setAction(action))
-            .build()
-
     override fun onServiceStatusChanged(status: Status) {
         runOnUiThread {
             val previous = currentServiceStatus
             currentServiceStatus = status
-            if (pendingServiceToggle) {
-                pendingServiceToggle = false
-                toggleService(status)
-            }
             if (previous != status && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
-                publishShortcuts()
+                LauncherShortcuts.publish(this, status)
             }
         }
     }

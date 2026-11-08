@@ -13,8 +13,15 @@
 - [x] 远程订阅展示源端 `Last-Modified`：内容仍走 libbox，另发 5s 超时的 HEAD（不支持时回退 GET）只读响应头；失败保留旧值或显示“源端更新时间未知”，不影响订阅更新。展示在仪表盘订阅信息和编辑页。已实现，待随 wonder.16 真机验收
 - [x] 桌面图标长按快捷方式（issue #5）：动态快捷方式提供启动/停止服务（按服务状态换文案和图标）、Tailscale（打开 Tools）、Conduct、上传遥测；上传结果用 Toast 显示。已实现，待随 wonder.16 真机验收
 
+## wonder.17 批次（待发版）
+
+- [x] 快捷方式 Start/Stop 改为无界面的 `ShortcutActionActivity`：只在后台启动/停止服务并弹 Toast，不再打开主界面
+- [x] Tailscale 快捷方式只在服务运行时出现；点击后解析当前配置里的 Tailscale 端点并直接进入，不再先落 Tools
+- [x] 远程订阅卡片把源端更新时间和上次拉取时间压成一行，去掉“云朵 + Remote”和文字标签，沿用带箭头的云朵和时钟图标
+
 ## 现在待办
 
+- [ ] Conductor 输入栏按 Lyra 下一版设计调整（等设计稿）
 - [ ] 日志与 service 解耦（issue #4）：当前日志流来自 libbox 的 `CommandLog`，服务不启动就没有日志；`LogScreen` 的“Service not started”只是这个事实的提示，不是门禁。要真正展示 app 日志，需要新增 app 级日志缓冲并合并进日志页。等主人确认要 app 日志再做
 - [ ] 增量更新（低优先级）：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做
 - [ ] Conductor Phase 1 剩余：`/probe` 命令 + 参数表单 / 确认卡片

@@ -36,7 +36,6 @@ class ServiceConnection(private val context: Context, callback: Callback, privat
     private var connectJob: Job? = null
 
     val status get() = service?.status?.let { Status.values()[it] } ?: Status.Stopped
-    val connected get() = service != null
 
     fun connect() {
         connectJob?.cancel()

@@ -116,6 +116,15 @@
 
         </activity>
         <activity
+            android:name=".compose.ShortcutActionActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/AppTheme.Share" />
+
+        <activity
             android:name=".compose.ShareActivity"
             android:excludeFromRecents="true"
             android:exported="true"
