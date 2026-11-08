@@ -8,7 +8,7 @@
 
 - [x] 应用内更新下载失败详情：错误文案带请求 URL、时间、App 版本；错误对话框增加「复制详情」按钮（`DownloadErrorDetails`，`AppSettingsScreen.kt`、`MainActivity.kt`）。2026-11-08 复现的 504 下次发版可带上这些信息
 - [x] Release 开启 `isShrinkResources`；Release CI 传 `-PwonderLocales=en`，构建期只保留英文资源，不改 app 代码
-- [x] 增量更新评估：见 [`docs/incremental-update.md`](docs/incremental-update.md)。实测代码版补丁约 2.1–5.0MB；只规划，未实施
+- [x] 增量更新评估：见 [`docs/incremental-update.md`](docs/incremental-update.md)。整包 bsdiff 补丁约 5MB（全量 36MB）；归档感知因 Android 11+ 兼容性与 GPL-2.0 许可证问题暂缓。只规划，未实施
 
 ## 现在待办
 
