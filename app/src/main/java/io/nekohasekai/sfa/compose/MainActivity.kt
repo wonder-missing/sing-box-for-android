@@ -1,7 +1,6 @@
 package io.nekohasekai.sfa.compose
 
 import android.Manifest
-import android.annotation.DrawableRes
 import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.content.Intent
@@ -18,6 +17,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.annotation.RequiresApi
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
