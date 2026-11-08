@@ -702,4 +702,8 @@
     <string name="agent_probe_run">探测</string>
     <string name="agent_confirm_title">确认工具调用</string>
     <string name="agent_confirm_run">执行</string>
+    <string name="shortcut_start_service">启动服务</string>
+    <string name="shortcut_stop_service">停止服务</string>
+    <string name="shortcut_tailscale">Tailscale</string>
+    <string name="shortcut_upload_telemetry">上传遥测</string>
 </resources>

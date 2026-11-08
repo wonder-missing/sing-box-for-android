@@ -11,9 +11,11 @@
 - [x] 增量更新评估：见 [`docs/incremental-update.md`](docs/incremental-update.md)。整包 bsdiff 补丁约 5MB（全量 36MB）；归档感知因 Android 11+ 兼容性与 GPL-2.0 许可证问题暂缓。只规划，未实施
 - [x] Conductor 输入栏按 Lyra 的 [`SPEC.md`](design/conductor/input-bar/SPEC.md) v1.1 改为三颗圆钮 + 矢量图标：36dp 视觉、48dp 触控、Slash–At 视觉间距 12dp；颜色走 MaterialTheme token；运行中进度有 `conductor_running` 描述。工程侧交接约定见 [`docs/design-handoff.md`](docs/design-handoff.md)。已实现，待随 wonder.16 真机验收
 - [x] 远程订阅展示源端 `Last-Modified`：内容仍走 libbox，另发 5s 超时的 HEAD（不支持时回退 GET）只读响应头；失败保留旧值或显示“源端更新时间未知”，不影响订阅更新。展示在仪表盘订阅信息和编辑页。已实现，待随 wonder.16 真机验收
+- [x] 桌面图标长按快捷方式（issue #5）：动态快捷方式提供启动/停止服务（按服务状态换文案和图标）、Tailscale（打开 Tools）、Conduct、上传遥测；上传结果用 Toast 显示。已实现，待随 wonder.16 真机验收
 
 ## 现在待办
 
+- [ ] 日志与 service 解耦（issue #4）：当前日志流来自 libbox 的 `CommandLog`，服务不启动就没有日志；`LogScreen` 的“Service not started”只是这个事实的提示，不是门禁。要真正展示 app 日志，需要新增 app 级日志缓冲并合并进日志页。等主人确认要 app 日志再做
 - [ ] 增量更新（低优先级）：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做
 - [ ] Conductor Phase 1 剩余：`/probe` 命令 + 参数表单 / 确认卡片
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
