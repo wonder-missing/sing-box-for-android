@@ -50,6 +50,7 @@ import androidx.navigation.NavController
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -260,12 +261,19 @@ fun TelemetrySettingsScreen(navController: NavController) {
                         uploading = true
                         uploadResult = null
                         scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                TelemetryRuntime.uploadNow(context)
+                            try {
+                                val result = withContext(Dispatchers.IO) {
+                                    TelemetryRuntime.uploadNow(context)
+                                }
+                                uploadResult = result
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                uploadResult = "Upload failed: ${e.message ?: e.javaClass.simpleName}"
+                            } finally {
+                                lastUploadAt = TelemetryPreferences.lastUploadOkAt(context)
+                                uploading = false
                             }
-                            uploadResult = result
-                            lastUploadAt = TelemetryPreferences.lastUploadOkAt(context)
-                            uploading = false
                         }
                     },
                     enabled = !uploading,

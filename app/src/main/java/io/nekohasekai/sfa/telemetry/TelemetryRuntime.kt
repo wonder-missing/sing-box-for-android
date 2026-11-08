@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -56,6 +57,9 @@ internal object TelemetryRuntime {
     private const val FINAL_READ_TIMEOUT_MS = 8_000
     private const val RETRY_ATTEMPTS = 2
     private const val FINAL_ATTEMPTS = 1
+
+    /** Manual upload gets a short budget so the settings button cannot hang forever. */
+    private const val MANUAL_UPLOAD_BUDGET_MS = 30_000L
 
     /** Background stop flush budget; keeps the upload mutex from starving a restart. */
     private const val FINAL_FLUSH_BUDGET_MS = 45_000L
@@ -109,12 +113,13 @@ internal object TelemetryRuntime {
         val sessionId: String?,
     )
 
-    private data class UploadOutcome(
+    internal data class UploadOutcome(
         val batches: Int,
         val lines: Int,
         val crashReports: Int,
         val hadPending: Boolean,
         val failure: String?,
+        val morePending: Boolean = false,
     )
 
     private data class SendOutcome(
@@ -495,34 +500,54 @@ internal object TelemetryRuntime {
             }
         }
         val outcome = try {
-            val result = uploadContext(
-                flush,
-                "manual",
-                finalFlush = false,
-                maxBatches = TelemetryPayload.MAX_DRAIN_BATCHES,
-            )
-            persistIfCurrent(flush)
-            result
+            val manualDeadline = System.currentTimeMillis() + MANUAL_UPLOAD_BUDGET_MS
+            val result =
+                withTimeoutOrNull(MANUAL_UPLOAD_BUDGET_MS) {
+                    uploadContext(
+                        flush,
+                        "manual",
+                        finalFlush = false,
+                        maxBatches = TelemetryPayload.MAX_DRAIN_BATCHES,
+                        deadline = manualDeadline,
+                    )
+                }
+            if (result != null) {
+                persistIfCurrent(flush)
+                result
+            } else {
+                return "Upload is taking longer than expected; more pending. Try again."
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "manual upload failed", e)
             return "Upload failed: ${e.message ?: e.javaClass.simpleName}"
         }
+        return manualUploadMessage(outcome)
+    }
+
+    internal fun manualUploadMessage(outcome: UploadOutcome): String {
+        val pendingSuffix = if (outcome.morePending) " More pending; tap Upload now again." else ""
         return when {
-            outcome.failure != null && outcome.batches == 0 -> "Upload failed: ${outcome.failure}"
-            outcome.failure != null -> "Uploaded ${outcome.lines} lines, then failed: ${outcome.failure}"
-            !outcome.hadPending -> "Nothing pending."
+            outcome.failure != null && outcome.batches == 0 ->
+                "Upload failed: ${outcome.failure}$pendingSuffix"
+            outcome.batches == 0 && outcome.morePending ->
+                "Upload is busy or timed out; more pending. Try again."
+            outcome.batches == 0 -> "Nothing pending."
+            outcome.failure != null ->
+                "Uploaded ${outcome.lines} lines, then failed: ${outcome.failure}$pendingSuffix"
             else -> {
                 val parts = buildList {
                     if (outcome.lines > 0) add("${outcome.lines} log lines")
                     if (outcome.crashReports > 0) add("${outcome.crashReports} crash report(s)")
                 }
-                if (parts.isEmpty()) {
-                    "Uploaded pending telemetry events."
-                } else {
-                    "Uploaded ${parts.joinToString(" and ")}."
-                }
+                val uploaded =
+                    if (parts.isEmpty()) {
+                        "Uploaded pending telemetry events."
+                    } else {
+                        "Uploaded ${parts.joinToString(" and ")}."
+                    }
+                uploaded + pendingSuffix
             }
         }
     }
@@ -557,7 +582,7 @@ internal object TelemetryRuntime {
         var crashPending = runCatching { CrashReportTelemetry.pending(context) }
             .getOrDefault(emptyList())
         val hadPending = !flush.queue.isEmpty() ||
-            TelemetryEventLog.hasPending(context) ||
+            TelemetryEventLog.hasPendingNonUpload(context) ||
             crashPending.isNotEmpty()
         var batches = 0
         var lines = 0
@@ -567,7 +592,7 @@ internal object TelemetryRuntime {
         // flush sent a single 500-line batch, so a busy log fell behind and the
         // disk cap evicted the oldest lines).
         while (batches < maxBatches && System.currentTimeMillis() < deadline) {
-            if (flush.queue.isEmpty() && !TelemetryEventLog.hasPending(context) && crashPending.isEmpty()) {
+            if (flush.queue.isEmpty() && !TelemetryEventLog.hasPendingNonUpload(context) && crashPending.isEmpty()) {
                 break
             }
             val outcome = sendOne(flush, token, finalFlush, reason, crashPending)
@@ -584,7 +609,17 @@ internal object TelemetryRuntime {
             batches++
             lines += outcome.lines
         }
-        return UploadOutcome(batches, lines, crashReports, hadPending, failure)
+        return UploadOutcome(
+            batches = batches,
+            lines = lines,
+            crashReports = crashReports,
+            hadPending = hadPending,
+            failure = failure,
+            morePending =
+                !flush.queue.isEmpty() ||
+                    TelemetryEventLog.hasPendingNonUpload(context) ||
+                    crashPending.isNotEmpty(),
+        )
     }
 
     private fun persistIfCurrent(flush: FlushContext) {

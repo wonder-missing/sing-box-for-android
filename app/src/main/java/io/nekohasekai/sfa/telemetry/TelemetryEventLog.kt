@@ -93,6 +93,21 @@ internal object TelemetryEventLog {
         events.isNotEmpty() || droppedEvents > 0
     }
 
+    /**
+     * Upload attempts record diagnostics while draining. Those events must not
+     * keep a drain loop alive, or every successful batch would create another
+     * batch forever. They still ride along with the next real payload.
+     */
+    fun hasPendingNonUpload(context: Context): Boolean = synchronized(lock) {
+        ensureLoaded(context)
+        trimLocked(System.currentTimeMillis())
+        events.any { (_, json) -> !isUploadDiagnosticEvent(json) } || droppedEvents > 0
+    }
+
+    internal fun isUploadDiagnosticEvent(json: String): Boolean =
+        json.contains("\"type\":\"telemetry_upload_ok\"") ||
+            json.contains("\"type\":\"telemetry_upload_failed\"")
+
     /** Called after the server accepted a payload containing events up to [seq]. */
     fun ack(context: Context, seq: Long) = synchronized(lock) {
         val f = ensureLoaded(context)

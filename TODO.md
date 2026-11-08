@@ -10,6 +10,10 @@
 - [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
 - [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
 
+## 待发版修复（2026-11-08）
+
+- [x] 手动上传遥测按钮卡在 uploading：上传成功后 `TelemetryUploader` 会记一条 `telemetry_upload_ok` 诊断事件，drain 循环把它当成新积压，形成自循环；现已从 drain 的 pending 判断中排除，并给手动上传加 30s 预算、剩余提示和 `finally` 复位。待下次发版
+
 ## 流程（已落地、随仓库生效）
 
 - [x] Release 只编手机能装的 `arm64-v8a`（libbox 只编 arm64，不打其他 ABI / universal / Android 5 legacy）
