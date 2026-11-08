@@ -945,7 +945,7 @@ class MainActivity :
                 pendingTailscaleShortcut = false
                 Toast.makeText(
                     this@MainActivity,
-                    R.string.shortcut_tailscale_unavailable,
+                    R.string.shortcut_tailscale_timeout,
                     Toast.LENGTH_SHORT,
                 ).show()
             }

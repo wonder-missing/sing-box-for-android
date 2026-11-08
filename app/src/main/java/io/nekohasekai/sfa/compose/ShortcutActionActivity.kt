@@ -49,6 +49,7 @@ class ShortcutActionActivity : AppCompatActivity(), ServiceConnection.Callback {
         }
     private var target: Target? = null
     private var commandSent = false
+    private var startFlowStarted = false
     private var finished = false
     private var timeoutJob: Job? = null
 
@@ -95,7 +96,13 @@ class ShortcutActionActivity : AppCompatActivity(), ServiceConnection.Callback {
                 finishAction()
             }
 
-            Status.Stopped -> startService()
+            Status.Stopped -> {
+                if (!startFlowStarted) {
+                    startFlowStarted = true
+                    startService()
+                }
+            }
+
             Status.Starting, Status.Stopping -> {}
         }
     }

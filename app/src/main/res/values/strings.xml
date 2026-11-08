@@ -791,6 +791,7 @@
     <string name="shortcut_service_stop_failed">Could not stop the service</string>
     <string name="shortcut_tailscale_unavailable">Start the service to open Tailscale</string>
     <string name="shortcut_tailscale_not_configured">No Tailscale endpoint in the current profile</string>
+    <string name="shortcut_tailscale_timeout">Could not load Tailscale status</string>
     <string name="last_fetched_icon">Last fetched</string>
     <string name="source_updated_icon">Source updated</string>
 </resources>
