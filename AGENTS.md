@@ -9,6 +9,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 - Workspace: `~/workspace` on clawdy-mini. CFG repo: `~/workspace/CFG`.
 - The Mini has no JDK/Android emulator; compile and unit tests run in CI. UI changes are compile-checked only and need a device check.
 - `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
+- **The user's "Groups page" is the Dashboard Groups bottom sheet** (`showGroupsSheet`, `GroupsCard(asSheet = true)`); its title/actions row is the `listHeaderContent` in `MainActivity`. `Screen.Groups` is a wide-screen `NavigationRail` destination with no phone entry; do not treat it as the Groups page in UI discussions.
 
 ## Work loop
 1. `git pull --ff-only` on `dev`.
