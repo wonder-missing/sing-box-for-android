@@ -243,7 +243,14 @@ private fun GroupsCardContent(
         modifier
             .fillMaxSize()
             .then(scrollModifier)
-            .padding(scaffoldPadding),
+            // Do not apply the scaffold's horizontal insets here: the Groups
+            // top bar spans the screen, and insetting the list by the end
+            // system inset shifts every group header away from the top bar's
+            // trailing action. Keep only the vertical padding.
+            .padding(
+                top = scaffoldPadding.calculateTopPadding(),
+                bottom = scaffoldPadding.calculateBottomPadding(),
+            ),
         state = lazyListState,
         contentPadding =
         PaddingValues(
