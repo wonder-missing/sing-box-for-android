@@ -293,6 +293,7 @@ class ConductorViewModel(
     fun cancelCommand() {
         pendingCommandConfirmation = null
         removeConfirmationItems()
+        updateUi { copy(isRunning = false) }
         append(ConductorItem.Notice("command", "Cancelled."))
     }
 
@@ -506,6 +507,7 @@ class ConductorViewModel(
         confirmation: io.nekohasekai.sfa.agent.AgentConfirmation,
     ) {
         pendingCommandConfirmation = name to confirmation.argsJson
+        updateUi { copy(isRunning = true) }
         append(
             ConductorItem.Confirmation(
                 ConfirmationRequest(
