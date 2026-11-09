@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -1101,7 +1102,11 @@ class MainActivity :
         val scaffoldContent: @Composable (PaddingValues) -> Unit = { paddingValues ->
             CompositionLocalProvider(LocalScaffoldPadding provides paddingValues) {
                 Box(
-                    modifier = Modifier.fillMaxSize().consumeWindowInsets(paddingValues),
+                    modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .then(if (isConductorRoute) Modifier.imePadding() else Modifier)
+                        .consumeWindowInsets(paddingValues),
                 ) {
                     // Service Status Bar (shown when service is running or stopping);
                     // remote control replaces it with the remote session bar.

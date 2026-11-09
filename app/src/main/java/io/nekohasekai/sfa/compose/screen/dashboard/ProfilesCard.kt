@@ -18,17 +18,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.PublishedWithChanges
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FileUpload
@@ -656,7 +656,7 @@ private fun ProfileInfoRow(profile: Profile?) {
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.CloudDownload,
+                        imageVector = Icons.Default.PublishedWithChanges,
                         contentDescription = stringResource(R.string.source_updated_icon),
                         modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -674,7 +674,7 @@ private fun ProfileInfoRow(profile: Profile?) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Icon(
-                    imageVector = Icons.Default.AccessTime,
+                    imageVector = Icons.Default.Update,
                     contentDescription = stringResource(R.string.last_fetched_icon),
                     modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,

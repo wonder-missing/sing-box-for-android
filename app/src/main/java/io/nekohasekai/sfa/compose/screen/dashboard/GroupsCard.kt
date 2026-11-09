@@ -393,7 +393,9 @@ private fun GroupHeader(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 2.dp),
+            // Keep the trailing 24dp chevron centered 24dp from the edge so it
+            // lines up with the top bar's trailing 48dp action.
+            modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {

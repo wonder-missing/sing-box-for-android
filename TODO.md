@@ -1,133 +1,18 @@
 # WonderSing 待办
 
-改动先记在这里，不默认立刻打 Release。凑一批或主人点头后再发版。
-新增一项就加一条 `- [ ]`；已随某版发出去就勾掉并写上版本号。
-未完成项统一放最上面的「现在待办」，已完成批次留作历史。
-
-## wonder.16 批次（2026-11-08，随 wonder.16 发版）
-
-- [x] 应用内更新下载失败详情：错误文案带请求 URL、时间、App 版本；错误对话框增加「复制详情」按钮（`DownloadErrorDetails`，`AppSettingsScreen.kt`、`MainActivity.kt`）。2026-11-08 复现的 504 下次发版可带上这些信息
-- [x] Release 开启 `isShrinkResources`；Release CI 传 `-PwonderLocales=en`，构建期只保留英文资源，不改 app 代码。实测 wonder.16 APK 36.41→34.42MB，`resources.arsc` 2.21→0.61MB
-- [x] 增量更新评估：见 [`docs/incremental-update.md`](docs/incremental-update.md)。整包 bsdiff 补丁约 5MB（全量 36MB）；归档感知因 Android 11+ 兼容性与 GPL-2.0 许可证问题暂缓。只规划，未实施
-- [x] Conductor 输入栏按 Lyra 的 [`SPEC.md`](design/conductor/input-bar/SPEC.md) v1.1 改为三颗圆钮 + 矢量图标：36dp 视觉、48dp 触控、Slash–At 视觉间距 12dp；颜色走 MaterialTheme token；运行中进度有 `conductor_running` 描述。工程侧交接约定见 [`docs/design-handoff.md`](docs/design-handoff.md)。已实现，待随 wonder.16 真机验收
-- [x] 远程订阅展示源端 `Last-Modified`：内容仍走 libbox，另发 5s 超时的 HEAD（不支持时回退 GET）只读响应头；失败保留旧值或显示“源端更新时间未知”，不影响订阅更新。展示在仪表盘订阅信息和编辑页。已实现，待随 wonder.16 真机验收
-- [x] 桌面图标长按快捷方式（issue #5）：动态快捷方式提供启动/停止服务（按服务状态换文案和图标）、Tailscale（打开 Tools）、Conduct、上传遥测；上传结果用 Toast 显示。已实现，待随 wonder.16 真机验收
-
-## wonder.17 批次（2026-11-08，随 wonder.17 发版）
-
-- [x] 快捷方式 Start/Stop 改为无界面的 `ShortcutActionActivity`：只在后台启动/停止服务并弹 Toast，不再打开主界面
-- [x] Tailscale 快捷方式只在服务运行时出现；点击后解析当前配置里的 Tailscale 端点并直接进入，不写死 tag，多端点时取第一个
-- [x] 远程订阅卡片把源端更新时间和上次拉取时间压成一行，去掉“云朵 + Remote”和文字标签，沿用带箭头的云朵和时钟图标
-
-## wonder.18 批次（2026-11-09，随 wonder.18 发版）
-
-- [x] Conductor 输入栏 v1.2：底部贴边面板、默认 120dp、展开 85%、上圆角 16、右上 ghost 展开钮；发送后自动收回，系统返回先收起
-- [x] 日志与 service 解耦（issue #4）：新增 `AppLog` 本地日志缓冲，持久化 app 启动、服务状态、订阅更新等事件；日志页和仪表盘预览在服务停止时也能显示 app 日志，清空日志同时清 app 日志
-- [x] Conductor `/probe`：`/probe <outbound> <url>` 先出确认按钮，确认后复用现有 `probe_via_node`；无参数时给用法提示
+只放未完成事项。已完成的事项不再长期留在这里，见 GitHub Releases 和 git history。
+新增一项加到「现在待办」；做完就删掉，或在「最近完成」留一行索引。
 
 ## 现在待办
 
-- [ ] 增量更新（低优先级）：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做
-- [ ] CFG Sing-box 订阅里 Tailscale 控制面增加走代理的 detour（只影响连 controlplane，不影响组网）；减轻登录/重连失败。等主人点头再改订阅
-- [ ] 美观瑕疵（先不着急）：分组收起时不如原版好看；面板顶满屏宽后，面板上方的分组标题和控件两侧边距也应跟着收窄。需要再调一轮视觉
+- [ ] **Conductor 键盘遮挡**（2026-11-09 反馈）：软键盘弹出后，输入面板底部被压住，圆钮下部被裁掉一点。落点：`MainActivity` 的 Scaffold 内容区目前先 `consumeWindowInsets(paddingValues)`，Conductor 自己的 `imePadding()` 可能拿不到 IME inset；需要在 Scaffold 内容区给 Conductor 外层先加 `imePadding()`，或等价地保留未被消费的 IME inset。
+- [ ] **分组卡片展开/收起按钮与顶栏最后一个按钮未对齐**（2026-11-09 反馈）：面板顶满屏宽后，Groups 顶栏最后一个按钮和每个分组卡片右侧的 chevron 不在同一竖线上。落点：`GroupsCard.kt` 的 `GroupHeader` 右侧内边距从 8dp 调到 12dp，让 24dp chevron 的中心距右边 24dp，与顶栏 48dp IconButton 的中心对齐。
+- [ ] **远程订阅时间图标换成 profile 图标库里的两个 icon**（2026-11-09 反馈）：上次成功拉取时间用 `Icons.Filled.Update`（profile 图标库的 “Update”）；源端 `Last-Modified` 用 `Icons.Filled.PublishedWithChanges`（“Published”）。落点：`ProfilesCard.kt` 的 `ProfileInfoRow`。
+- [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
+- [ ] **Tailscale 登录/协调流量走代理**：Tailscale 的登录和协调服务器连接（control plane）在某些网络下会失败/重连；让它走现有代理节点，设备之间的实际流量（data plane）不变。需要改 CFG 的 sing-box 订阅，属于订阅配置改动，等主人确认再做。
 
-## wonder.14 批次（2026-11-08，随 wonder.14 发版）
+## 最近完成
 
-- [x] Conductor 输入框改成约两行高的容器：文本默认 1 行、最多 3 行自动长高；`/`、`@`、发送按钮放在容器内部，支持换行输入
-- [x] Conductor 消息流：系统/Agent 输出和命令结果去掉卡片，直接全宽铺在消息流里；用户消息保持气泡
-- [x] 手动上传遥测按钮卡在 uploading：上传成功后 `TelemetryUploader` 会记一条 `telemetry_upload_ok` 诊断事件，drain 循环把它当成新积压，形成自循环；现已从 drain 的 pending 判断中排除，并给手动上传加 30s 预算、剩余提示和 `finally` 复位
-
-## wonder.15 批次（2026-11-08，随 wonder.15 发版）
-
-- [x] Conductor 输入栏杆位：圆角 26→12dp，容器上下 12/8dp 内边距，文本与按钮行 8dp 安全距；左右按钮统一 36dp，发送改对称上箭头居中；移除多余换行按钮，换行交给输入法
-
-## 流程（已落地、随仓库生效）
-
-- [x] Release 只编手机能装的 `arm64-v8a`（libbox 只编 arm64，不打其他 ABI / universal / Android 5 legacy）
-- [x] Release 跑完自动通知主人（成功给 arm64 安装链接，失败给运行记录）—— 经飞书应用 API 直发（`release-notify.yml`）；Actions secrets：`LARK_NOTIFY_CREDENTIALS`、`LARK_NOTIFY_RECIPIENTS`，不再经 Soul webhook
-
-## 边界（主人铁律）
-
-- [x] 不做、也不再规划 Tailscale SSH / 登机器入口（公钥 sshd 授权；WonderSing 不新增 SSH 便利入口，Agent 也不做 `ssh` / `login_host` / shell）。上游 SFA 自带的 Remote Control 与 SSH 终端是既有能力，与 WonderSing 新增入口无关，保持原样。
-
-## 遥测质量（随 wonder.8 发版）
-
-- [x] 不再丢日志：每次上传把积压分多批（每批 500 行）依次传完，本地缓存上限 4000→12000 行，批次带 `dropped_lines`/`more` 便于发现截断（`e2aade9`）
-- [x] 去重：每批带 `batch_id`（内容哈希），成功后立即落盘并记住最后确认的批次；Worker 端同一 `batch_id` 只存一次（旧版 wonder.7 按内容哈希同样去重）（`e2aade9`；Worker 已部署）
-- [x] 结构化事件：随原始日志附带聚合事件（启动/停止、Tailscale 状态/登录成功/登录错误如 http 410、自动选择测速成败与延迟、按出站统计的连接错误、DNS EOF、握手重置等），不含订阅地址和登录链接；Worker 对旧版客户端自动从原始日志推导（`e2aade9`）
-- [x] 上传失败本身记为本地事件（磁盘环形缓存，最多 300 条 / 48 小时），下次上传成功时随 `client_events` 一起带上，服务器确认后才清除；每次上传都记 ok/failed、走哪条路、耗时（`275a676`；Worker 已部署）
-- [x] 上传慢：两台手机每批都固定慢约 16–18 秒（直连 workers.dev 15 秒连接超时后才走 VPN）。改为记住上次成功的路径优先走，备用路径连接超时 6 秒（`275a676`）
-- [x] 补充事件：服务启动（省电/电池优化/Doze）、停止原因、报错类型、VPN 权限被收回、网络切换（仅类型）、订阅更新成败（仅主机名）（`275a676`）
-
-## 功能
-
-- [x] 遥测设置：填完地址和 Token 后有明确保存提示，并加一键连通测试 —— 已满足：Save 后显示 `telemetry_saved`（Saved）；Test connection 按钮调用 `TelemetryRuntime.probe` 显示结果，并展示上次测试时间（`TelemetrySettingsScreen.kt`）
-- [x] 遥测外层入口和文案保持简洁，少堆说明 —— 已满足：Settings 入口只有标题 + 一行 `telemetry_row_summary`；设置页只有开关、地址、Token、Save/Test/Upload 三个按钮和两行时间，说明默认折叠
-- [x] 核对并完善应用内检查更新：已从本仓库 Releases 拉取（`GitHubUpdateChecker.FEED_URL` + `GitHubReleaseFeed`），`downloadAndInstall` 支持一键下载安装。本批只补结果事件，未重做更新 UX
-
-## 遥测下一批（2026-11-06，随 wonder.8 发版）
-
-- [x] 关闭连接 / Stopping 不再等待遥测上报：先落盘，再由 daemon 线程异步冲刷（`detachAndFlushAsync`；不变更 `Stopped` 的时序）
-- [x] 设置页展示最近一次成功上报时间（`last_upload_ok_at`）和上次连通测试时间，并提供「立即上报」按钮（与连通测试分开）
-- [x] 把应用内 Crash Report 摘要纳入上报：`crash_report` 事件带 metadata 摘要 + go/jvm 日志头（每份最多 2500 字符，每次最多 3 份）；不读取/上报 `configuration.json`；服务器接受后才记住报告 id
-- [x] App 侧上报入口改用 `ws-tele.soulfun.fyi`，已保存的旧 `wk-7c41e9.wonderbeyond.workers.dev` 读取时自动规范化；`wrangler.toml` 已加自定义域；Soul 已部署绑定（workers.dev 兜底保留）
-- [x] 核对 ingest KV 仍是 7 天 TTL（`index.js` 中 `TTL = 7 * 86400`，未改动）；远程约 210 条记录 + 152 个去重键
-
-## wonder.10 批次（2026-11-07，已随 wonder.10 发版）
-
-- [x] 应用内检查更新结果事件（github flavor 的 UpdateChecker）：`src/other/.../Vendor.kt` 在每次检查后记 `update_check`（source / ok / has_update / version_code / error，无 token）
-- [x] `vpn_session_id`：每次 `BoxService` 成功 attach 生成 12 位会话 id；`service_start` / `service_stop` / 节点切换 / 上传事件自动携带，下一轮服务换新 id
-- [x] `default_network_id`：`network_change` 与 `service_start` 记录默认上行 `wifi:<hash>` / `cellular:<hash>`（仅 transport + Network hash，无 SSID / 运营商 / IP）
-- [x] `outbound_selected`：复用 CommandClient Groups（与 Agent 同一条命令路径），首次快照和 selected 变化时记 `group` / `from` / `to` / `reason` / `root` / 可选 `ms`；reason = `start` | `urltest` | `user` | `unknown`
-- [x] 异常隔离：选中/网络事件全部 runCatching，写盘失败不得影响 VPN
-- [x] JVM 单测：会话 id 生命周期、选中变化去重、reason 映射、scrub 不含订阅 URL 路径/查询
-- [x] 检查更新不再依赖 GitHub REST API（issue #3）：改用 `releases.atom` + `releases/expanded_assets` 两个普通页面，避开未认证 API 每 IP 的 403 限流；资产名/大小/ABI 从资产页解析，解析层有 JVM 单测。随之移除失效的 GitHub Token 与 Update Track 设置（fork 的 tag 发布都不标记 prerelease，track 已无作用）
-- [x] 组内节点列表支持单列布局（issue #2）：Groups 顶栏、仪表盘组面板标题栏都有单列/双列切换按钮，App 设置里也有「节点列表布局」开关；偏好持久化并跨界面同步，单列时节点名占满整行（`GroupLayout` 有 JVM 单测）
-
-## wonder.11 批次（2026-11-07）
-
-- [x] Groups 面板改为全宽：去掉列表外层 16dp 横向 padding，节点距屏幕边缘只剩面板内一层 16dp；仪表盘组面板标题同步对齐
-
-## wonder.12 批次（2026-11-07）
-
-- [x] 发布链路压缩：Release 的 libbox 复用 Test 在 `dev` 上写的缓存（tag 可读默认分支缓存），省掉每次发版的 Go 构建；APK job 去掉未使用的 sing-box checkout / Go / NDK 安装，直接安装下载的 AAR。实测 wonder.12：libbox job 293s → 7s，整条 Release 13m18s → 8m03s；剩余大头是 APK 的 `assembleOtherRelease`（436s，Kotlin/KSP/R8）
-
-## 整理（2026-11-08，已落地，随下次发版生效）
-
-- [x] README 补 WonderSing fork 说明、Releases/arm64 链接、AGENTS/signing 指针
-- [x] 版本单源：`version.properties` 只保留 `CORE_VERSION`/`WONDER_BUILD`/`GO_VERSION`，`VERSION_CODE`/`VERSION_NAME` 由 Gradle 派生；新增 `WonderVersionTest` 防 base 漂移
-- [x] AGENTS 发版流程去掉硬编码 core 版本；open items 收敛到本文件
-- [x] TODO 修掉失效链接和 stale 符号；未完成项提到顶部「现在待办」
-- [x] `.claude/settings.json` 的 tag 权限从固定 core 版本改为 `v*`
-
-## wonder.13 批次（2026-11-08，随 wonder.13 发版）
-
-- [x] Conductor 命令面板 MVP：沉浸式全屏（无标题栏/底部导航）、`/` 自动补全、消息流、命令注册表；首批 `/help`、`/commands`、`/capabilities`、`/clear`、`/nodes`、`/network`、`/tailscale`、`/telemetry-upload`
-- [x] 底部导航 Logs → Conduct；Logs 移到 Dashboard 卡片（最新 3 条，Dashboard 可见时每 3 秒刷新，点击进入原 Logs 页）
-- [x] Tools 回到 fork 前原版，移除 Agent 入口；旧 POC 的 Agent UI/ViewModel 删除，registry/sanitizer 复用
-- [x] Conductor 命令注册表 JVM 单测
-
-## Tools Agent POC（已随 wonder.9 发版）
-
-定位：个人网络平面 + 资料枢纽的第一块运行时能力。已随 wonder.9 发版（未单独打 Release）。
-
-正式版的愿景、边界和分期见 [`docs/agent-control-plane.md`](docs/agent-control-plane.md)；POC 是验证版，不是最终形态。Phase 1 会把 Tools 恢复到 fork 前原版（无 Agent 入口），POC 能力迁到 Conductor。
-
-- [x] Tools 增加 Agent 入口与对话页，能在运行时按名称动态调用工具（工具注册表 + JSON 参数），而不是写死流程
-- [x] 复用原版 Remote Control 那套已暴露接口（`CommandClient` / `CommandTarget`：Status、Groups、Outbounds、Log、ClashMode、Connections），不要另起查询通道；本机系统网络类型等不在该接口上的能力需标明为本地感知
-- [x] 工具：列出当前配置里的节点/出站组、感知当前设备网络环境（网络类型、VPN/服务状态、当前选中出站）
-- [x] 工具：按需指定某条节点当出口探测 URL（复用已有 outbound / CommandClient / 测速侧能力，不要另起拨号栈）
-- [x] 按主人铁律不包含登机器：WonderSing 不做、也不再规划 Tailscale SSH / 登机器入口；改网络路径若做到了，执行前要有确认点
-- [x] 无模型密钥时仍可手动点选/调用上述工具（证明运行时调用本身能工作）；有可选的 tool-calling 挂钩即可，不要把密钥写进仓库
-- [x] 为注册表、参数校验、权限边界（禁止登机器）和探测请求构造补 JVM 单元测试
-
-## pending.log.tmp 写盘隔离（已随 wonder.9 发版）
-
-主人 2026-11-07：wonder.8 上遥测写 `pending.log.tmp` 失败会带崩 VPN；修完前不要再发版指望它已好。
-
-- [x] 遥测写盘 / `.tmp` rename 失败不得冒泡崩 VPN；`schedulePersist` 等路径全部隔离异常
-- [x] `TelemetryLogBuffer`（及同类 EventLog）对坏文件、半截 tmp、rename 失败可恢复
-- [x] JVM 单测覆盖写失败隔离与 load 韧性
-- [x] 顺查 Worker HTTP 500 与 `client_events_dropped`（有修就修）
-  - Worker 源码 `~/workspace/CFG/telemetry-ingest` 已只读检查，未见明确的代码级 500 路径；服务端未改、未部署。`client_events_dropped` 事件补充 `capped` / `expired` 丢弃原因。
-
+- wonder.18（2026-11-09）：Conductor 输入栏 v1.2、app 日志与日志页解耦、`/probe`
+- wonder.17（2026-11-08）：快捷方式后台启停、Tailscale 直达、订阅时间单行
+- wonder.16（2026-11-08）：APK 收缩/英文过滤、504 错误详情、桌面快捷方式首版
