@@ -1,6 +1,6 @@
 # Conductor：个人设备控制面（愿景与落地规划）
 
-状态：Phase 1 首批已随 wonder.13 发版；wonder.14 打磨输入框与消息流；`/probe` 与参数表单待补。
+状态：Phase 1 已完成并随 wonder.13 起发版；Phase 2a 运行时设计完成，待实现；设计见 [`agent-runtime.md`](agent-runtime.md)。
 最后更新：2026-11-10
 命名：模块/包名 `conductor`；外层底部导航文案 `Conduct`；Conductor 页面进入沉浸模式，不设页面标题。
 
@@ -16,7 +16,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 
 - 不做通用远程 shell / SSH 登录入口。跨设备执行只走 typed capability，不新增 `ssh` / shell / 任意命令。
 - 不做通用远程桌面或通用文件同步器。文件走 Taildrop / rsync / 目标端 HTTP 能力端点，不重造数据面。
-- 不让 LLM 进入数据面：文件内容、订阅链接、日志全文不发给模型，模型只看到元数据和经过 sanitizer 的结果。
+- 不让 LLM 进入数据面：App 不自动附加文件内容、订阅链接、日志全文；用户自然语言输入先做 best-effort 敏感内容拦截，命中即本地阻止。模型只看到元数据、用户主动输入和经过 sanitizer 的 tool 结果。
 - 不管理别人的设备，只管理主人自己的 Tailscale 设备。
 - 第一版不做“万能助手”式的开放式任务。
 
@@ -119,7 +119,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 
 - 只管理主人自己的设备；Tailscale ACL/身份作为第一道边界。
 - 所有写操作/网络状态变更必须确认；审计记录保留在本地。
-- 只把必要元数据发给模型；文件内容、订阅 URL、token、日志全文不发送。
+- 只把必要元数据、用户主动输入和 sanitized tool 结果发给模型；文件内容、订阅 URL、token、日志全文不自动附加，输入命中敏感模式时本地拦截。
 - 设备返回的数据也当不可信输入，防 prompt injection。
 
 ## 9. 分阶段规划
@@ -129,21 +129,21 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 - Agent POC：3 个本机工具、手动调用、确认、sanitizer、单测。
 - 验证了“运行时按名称调用工具”的路径。
 
-### Phase 1：Conductor 命令面板 MVP（首批已随 wonder.13 发版；`/probe` 待补）
+### Phase 1：Conductor 命令面板 MVP（已完成）
 
 范围：
 
 - 新增 Conductor 页面和底部导航入口（`Conduct`），Logs 移到 Dashboard 卡片。
 - Tools 回到 fork 前的上游原版，移除 Agent 入口；Agent 能力迁到 Conductor。
 - 能力注册表、`/` 命令面板、自动补全、参数表单、消息流、确认卡片、命令结果展示。
-- 第一版命令：`/help`、`/commands`、`/capabilities`、`/nodes`、`/tailscale`、`/network`、`/telemetry-upload`、`/clear`。`/probe` 与参数表单/确认卡片是 Phase 1 剩余项，未随首批发版。
+- 第一版命令：`/help`、`/commands`、`/capabilities`、`/nodes`、`/tailscale`、`/network`、`/telemetry-upload`、`/clear`。`/probe` 与确认卡片已随 wonder.18 补齐；参数表单仍未做。
 - Logs 卡片：最新 3 条、Dashboard 可见时每 3 秒刷新、点击进入 Logs 页面。
 - 不接 LLM；非 `/` 文本提示暂不支持。
 
 验收：
 
 - 真机上能完成：从 `Conduct` 进入沉浸式 Conductor（无标题栏/底部导航）→ 输入 `/` 看到命令面板 → 选中/补全 → 执行 → 看到结果/错误 → 系统返回退出。
-- `/tailscale` 能列出节点；`/telemetry-upload` 有异步进度；`/probe` 的确认卡片待补。
+- `/tailscale` 能列出节点；`/telemetry-upload` 有异步进度；`/probe` 的确认卡片已完成。
 - Logs 卡片只在 Dashboard 可见时刷新，点击进入原 Logs 页面。
 - JVM 测试覆盖命令注册表、参数校验、确认、超时/取消、日志预览采样。
 
@@ -174,7 +174,7 @@ Phase 1 的第一场景就是 Conductor 命令面板本身：用真实可用的�
 
 - `Logs` 卡片是否允许在 Dashboard 设置里隐藏/排序，还是固定在 Profiles 下方。
 - Tools 回到上游原版的具体范围：只移除 Agent 入口，还是同时清理其他 fork 新增项。
-- `/probe` 的参数表单/确认卡片交互（Phase 1 剩余）。
+- `/probe` 的参数表单（确认卡片已完成）。
 - 是否需要在 Mini/云电脑上放常驻协调器，还是 App 打开时编排即可。
 
 ## 12. 验收线

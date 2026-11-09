@@ -5,7 +5,7 @@
 
 ## 现在待办
 
-- [ ] **Conductor Agent Phase 2a（进行中）**：DeepSeek BYOK、非 `/` 文本入口、单步 tool calling、确认暂停与恢复；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
+- [ ] **Conductor Agent Phase 2a（设计完成，待实现）**：DeepSeek BYOK、非 `/` 文本入口、单步 tool calling、确认暂停与恢复；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 
 ## 最近完成
