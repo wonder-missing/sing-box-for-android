@@ -1490,7 +1490,9 @@ class MainActivity :
                                 modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
+                                    // The trailing 48dp IconButton center must match
+                                    // the group chevron: 4dp inset + 24dp radius = 28dp.
+                                    .padding(start = 16.dp, end = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {

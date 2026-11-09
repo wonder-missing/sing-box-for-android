@@ -19,9 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
@@ -42,6 +40,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -113,24 +112,9 @@ fun GroupsCard(
     if (showTopBar) {
         val allCollapsed = uiState.expandedGroups.isEmpty()
         OverrideTopBar {
-            Surface(color = MaterialTheme.colorScheme.surface) {
-                Row(
-                    modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .height(64.dp)
-                        .padding(start = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.title_groups),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+            TopAppBar(
+                title = { Text(stringResource(R.string.title_groups)) },
+                actions = {
                     IconButton(onClick = { GroupLayoutPreference.toggle() }) {
                         Icon(
                             imageVector = if (singleColumn) Icons.Default.GridView else Icons.Default.ViewList,
@@ -140,11 +124,10 @@ fun GroupsCard(
                             } else {
                                 stringResource(R.string.use_single_column)
                             },
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     if (uiState.groups.isNotEmpty()) {
-                        TrailingActionSlot(onClick = { actualViewModel.toggleAllGroups() }) {
+                        IconButton(onClick = { actualViewModel.toggleAllGroups() }) {
                             Icon(
                                 imageVector =
                                 if (allCollapsed) {
@@ -158,13 +141,11 @@ fun GroupsCard(
                                 } else {
                                     stringResource(R.string.collapse_all)
                                 },
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
-                }
-            }
+                },
+            )
         }
     }
 
@@ -262,14 +243,7 @@ private fun GroupsCardContent(
         modifier
             .fillMaxSize()
             .then(scrollModifier)
-            // Do not apply the scaffold's horizontal insets here: the Groups
-            // top bar spans the screen, and insetting the list by the end
-            // system inset shifts every group header away from the top bar's
-            // trailing action. Keep only the vertical padding.
-            .padding(
-                top = scaffoldPadding.calculateTopPadding(),
-                bottom = scaffoldPadding.calculateBottomPadding(),
-            ),
+            .padding(scaffoldPadding),
         state = lazyListState,
         contentPadding =
         PaddingValues(
@@ -400,20 +374,6 @@ private fun rememberUrlTestPalette(): UrlTestPalette {
     }
 }
 
-@Composable
-private fun TrailingActionSlot(
-    onClick: (() -> Unit)?,
-    content: @Composable () -> Unit,
-) {
-    val base = Modifier.padding(end = 4.dp).size(48.dp)
-    Box(
-        modifier = if (onClick != null) base.clip(CircleShape).clickable(onClick = onClick) else base,
-        contentAlignment = Alignment.Center,
-    ) {
-        content()
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GroupHeader(
@@ -433,10 +393,9 @@ private fun GroupHeader(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Row(
-            // Mirror the top bar's trailing action structurally: a 48dp slot
-            // with a 4dp end inset, so the 24dp chevron center lands 28dp from
-            // the edge like the top bar's trailing IconButton.
-            modifier = Modifier.padding(start = 16.dp, end = 0.dp, top = 6.dp, bottom = 2.dp),
+            // 16dp end padding puts the 24dp chevron center 28dp from the
+            // edge, matching the Groups sheet header's trailing 48dp action.
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -496,22 +455,20 @@ private fun GroupHeader(
                 animationSpec = tween(200),
                 label = "ExpandIcon",
             )
-            TrailingActionSlot(onClick = null) {
-                Icon(
-                    imageVector = Icons.Default.ExpandMore,
-                    contentDescription =
-                    if (isExpanded) {
-                        stringResource(R.string.collapse)
-                    } else {
-                        stringResource(R.string.expand)
-                    },
-                    modifier =
-                    Modifier
-                        .size(24.dp)
-                        .graphicsLayer { rotationZ = rotationAngle },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Icon(
+                imageVector = Icons.Default.ExpandMore,
+                contentDescription =
+                if (isExpanded) {
+                    stringResource(R.string.collapse)
+                } else {
+                    stringResource(R.string.expand)
+                },
+                modifier =
+                Modifier
+                    .size(24.dp)
+                    .graphicsLayer { rotationZ = rotationAngle },
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
