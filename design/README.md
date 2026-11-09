@@ -51,7 +51,7 @@ Lyra 维护的设计稿与规格。每个组件一个目录，里面放：
 - 输入栏文本区 padding 左 16、上 18、右 60、下 60；按钮行高 60，布局 padding 6dp（48dp 热区外扩 6dp 后视觉圆仍距边 12dp）；展开钮和发送钮圆心距右/底 30dp。
 - 颜色：面板 `surfaceContainerHigh`；圆钮 `surfaceContainerHighest`；发送可用 `primary` / `onPrimary`；命令与提及图标 `onSurface`；发送不可用 `onSurfaceVariant`；展开/收起图标 `onSurfaceVariant`。
 - 圆钮视觉 36dp / 触控 48dp，图标 20dp；发送可用性按 `input.trim()` 是否为空判断。
-- 输入栏行为补充（2026-11-09）：默认态从 120dp 起随文本换行自动长高，最多 5 行；删除文本自动回缩到 120dp。展开态仍为 85%。键盘 inset 变化时面板高度直接跟随，不做 200ms 高度动画，避免收键盘时下塌再回弹。
+- 输入栏行为补充（2026-11-09）：默认态从 120dp 起随文本换行自动长高，最多 5 行；删除文本自动回缩到 120dp。展开态仍为 85%。键盘 inset 变化时以及变化结束后 300ms 内，面板高度一律 `snap`；IME 稳定后，展开/收起与文本增减才走 200ms 高度动画。面板高度取整到物理像素，避免亚像素抖动。placeholder 作为输入框的兄弟节点绘制，不放进 `BasicTextField` 的 decoration，避免面板缩放时跟着文本框内部重排而发虚。
 - 图标直接使用本目录 `icons/` 里的 VectorDrawable 副本；RTL 下整行镜像，图标几何不镜像。
 
 ## 索引

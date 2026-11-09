@@ -129,7 +129,8 @@ fun ConductorScreen(
             .background(MaterialTheme.colorScheme.surface)
             .imePadding(),
     ) {
-        val lineHeightDp = with(LocalDensity.current) {
+        val density = LocalDensity.current
+        val lineHeightDp = with(density) {
             MaterialTheme.typography.bodyLarge.lineHeight.toDp()
         }
         val defaultPanelHeight =
@@ -138,16 +139,26 @@ fun ConductorScreen(
                 InputPanelBottomPadding)
                 .coerceAtLeast(InputPanelMinHeight)
 
-        // When the IME inset changes, snap the panel height. Animating it while
-        // the IME padding is also moving makes the panel dip and bounce back.
+        val rawTarget = if (inputExpanded) maxHeight * 0.85f else defaultPanelHeight
+        // Whole-pixel heights avoid subpixel shimmer while the panel moves.
+        val targetPanelHeight = with(density) { rawTarget.roundToPx().toDp() }
+
+        // During and just after an IME inset change, snap the panel height.
+        // Otherwise the IME animation and the 200ms height animation can
+        // disagree for one frame at the top, which looks like a vibration.
         var lastMaxHeight by remember { mutableStateOf(maxHeight) }
-        val imeResizing = maxHeight != lastMaxHeight
+        var lastImeChangeAt by remember { mutableStateOf(0L) }
+        val maxHeightChanged = maxHeight != lastMaxHeight
         LaunchedEffect(maxHeight) {
             lastMaxHeight = maxHeight
+            lastImeChangeAt = System.currentTimeMillis()
         }
+        val imeSettling =
+            maxHeightChanged ||
+                System.currentTimeMillis() - lastImeChangeAt < 300L
         val panelHeight by animateDpAsState(
-            targetValue = if (inputExpanded) maxHeight * 0.85f else defaultPanelHeight,
-            animationSpec = if (imeResizing) snap() else tween(200),
+            targetValue = targetPanelHeight,
+            animationSpec = if (imeSettling) snap() else tween(200),
             label = "conductorInputPanelHeight",
         )
         val layoutDirection = LocalLayoutDirection.current
@@ -413,6 +424,24 @@ private fun ConductorInputBar(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Box(Modifier.fillMaxSize()) {
+            // The placeholder is a sibling of the text field, not part of its
+            // decoration. BasicTextField relayouts its decoration while the
+            // panel resizes, which can briefly blur the hint during the IME
+            // animation; a plain Text stays put.
+            if (input.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.conductor_input_hint),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier =
+                    Modifier.padding(
+                        start = 16.dp,
+                        top = InputPanelTopPadding,
+                        end = 60.dp,
+                    ),
+                )
+            }
+
             BasicTextField(
                 value = input,
                 onValueChange = onInputChange,
@@ -433,18 +462,6 @@ private fun ConductorInputBar(
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 maxLines = if (expanded) Int.MAX_VALUE else InputPanelMaxLines,
                 onTextLayout = { result -> onLineCountChanged(result.lineCount) },
-                decorationBox = { innerTextField ->
-                    Box(Modifier.fillMaxSize()) {
-                        if (input.isEmpty()) {
-                            Text(
-                                text = stringResource(R.string.conductor_input_hint),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
             )
 
             Box(
