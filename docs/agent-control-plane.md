@@ -1,7 +1,7 @@
 # Conductor：个人设备控制面（愿景与落地规划）
 
 状态：Phase 1 首批已随 wonder.13 发版；wonder.14 打磨输入框与消息流；`/probe` 与参数表单待补。
-最后更新：2026-11-08
+最后更新：2026-11-10
 命名：模块/包名 `conductor`；外层底部导航文案 `Conduct`；Conductor 页面进入沉浸模式，不设页面标题。
 
 ## 1. 愿景
@@ -109,9 +109,10 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 
 ### 模型与密钥
 
+- Phase 2 运行时细节（消息模型、tool schema、状态机、确认暂停、预算、BYOK）：[`agent-runtime.md`](agent-runtime.md)。
 - Phase 2 首选 DeepSeek：`https://api.deepseek.com`，OpenAI-compatible，模型 `deepseek-flash`（V4.1-Flash-1017）。支持 tool calls / streaming tool_calls；thinking 可按需关闭。
 - 第一版用薄自研运行时，不引入 ADK（Gemini-only，Android 工件 0.1.0）或 Koog（等 Agent 长大再评估）。
-- 密钥不进仓库。设备端 BYOK 加密存储或后端代理，二选一。
+- 密钥不进仓库。已定设备端 BYOK，Android Keystore 加密存储；设置入口和存储细节见 [`agent-runtime.md`](agent-runtime.md) 第 12 节。
 - 性能：Conductor 只在进入页面时初始化；流式输出；历史和工具输出有上限；不常驻大对象。
 
 ### 安全与隐私
@@ -174,7 +175,6 @@ Phase 1 的第一场景就是 Conductor 命令面板本身：用真实可用的�
 - `Logs` 卡片是否允许在 Dashboard 设置里隐藏/排序，还是固定在 Profiles 下方。
 - Tools 回到上游原版的具体范围：只移除 Agent 入口，还是同时清理其他 fork 新增项。
 - `/probe` 的参数表单/确认卡片交互（Phase 1 剩余）。
-- DeepSeek key：设备端 BYOK 加密存储，还是后端代理（Phase 2 决策）。
 - 是否需要在 Mini/云电脑上放常驻协调器，还是 App 打开时编排即可。
 
 ## 12. 验收线
