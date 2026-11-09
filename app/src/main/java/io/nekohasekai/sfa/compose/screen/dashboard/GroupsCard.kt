@@ -393,10 +393,10 @@ private fun GroupHeader(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Row(
-            // Material3's top app bar adds a 4dp inset to its 48dp actions;
-            // 16dp here puts the 24dp chevron's center 28dp from the edge,
-            // matching the top bar's trailing action center.
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 2.dp),
+            // Mirror the top bar's trailing action structurally: a 48dp slot
+            // with a 4dp end inset, so the 24dp chevron center lands 28dp from
+            // the edge like the top bar's trailing IconButton.
+            modifier = Modifier.padding(start = 16.dp, end = 0.dp, top = 6.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -456,20 +456,25 @@ private fun GroupHeader(
                 animationSpec = tween(200),
                 label = "ExpandIcon",
             )
-            Icon(
-                imageVector = Icons.Default.ExpandMore,
-                contentDescription =
-                if (isExpanded) {
-                    stringResource(R.string.collapse)
-                } else {
-                    stringResource(R.string.expand)
-                },
-                modifier =
-                Modifier
-                    .size(24.dp)
-                    .graphicsLayer { rotationZ = rotationAngle },
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Box(
+                modifier = Modifier.padding(end = 4.dp).size(48.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ExpandMore,
+                    contentDescription =
+                    if (isExpanded) {
+                        stringResource(R.string.collapse)
+                    } else {
+                        stringResource(R.string.expand)
+                    },
+                    modifier =
+                    Modifier
+                        .size(24.dp)
+                        .graphicsLayer { rotationZ = rotationAngle },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
