@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.conductor
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -52,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -68,6 +70,11 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.utils.RemoteControlManager
+
+private val InputPanelTopPadding = 18.dp
+private val InputPanelBottomPadding = 60.dp
+private val InputPanelMinHeight = 120.dp
+private const val InputPanelMaxLines = 5
 
 @Composable
 fun ConductorScreen(
@@ -91,6 +98,7 @@ fun ConductorScreen(
 
     var input by rememberSaveable { mutableStateOf("") }
     var inputExpanded by rememberSaveable { mutableStateOf(false) }
+    var inputLineCount by remember { mutableStateOf(1) }
     val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
@@ -121,9 +129,25 @@ fun ConductorScreen(
             .background(MaterialTheme.colorScheme.surface)
             .imePadding(),
     ) {
+        val lineHeightDp = with(LocalDensity.current) {
+            MaterialTheme.typography.bodyLarge.lineHeight.toDp()
+        }
+        val defaultPanelHeight =
+            (InputPanelTopPadding +
+                lineHeightDp * inputLineCount.coerceIn(1, InputPanelMaxLines).toFloat() +
+                InputPanelBottomPadding)
+                .coerceAtLeast(InputPanelMinHeight)
+
+        // When the IME inset changes, snap the panel height. Animating it while
+        // the IME padding is also moving makes the panel dip and bounce back.
+        var lastMaxHeight by remember { mutableStateOf(maxHeight) }
+        val imeResizing = maxHeight != lastMaxHeight
+        LaunchedEffect(maxHeight) {
+            lastMaxHeight = maxHeight
+        }
         val panelHeight by animateDpAsState(
-            targetValue = if (inputExpanded) maxHeight * 0.85f else 120.dp,
-            animationSpec = tween(200),
+            targetValue = if (inputExpanded) maxHeight * 0.85f else defaultPanelHeight,
+            animationSpec = if (imeResizing) snap() else tween(200),
             label = "conductorInputPanelHeight",
         )
         val layoutDirection = LocalLayoutDirection.current
@@ -197,6 +221,7 @@ fun ConductorScreen(
             onToggleExpand = { inputExpanded = !inputExpanded },
             input = input,
             onInputChange = { input = it },
+            onLineCountChanged = { inputLineCount = it },
             onSend = { send() },
             isRunning = uiState.isRunning,
             onSlash = {
@@ -372,6 +397,7 @@ private fun ConductorInputBar(
     onToggleExpand: () -> Unit,
     input: String,
     onInputChange: (String) -> Unit,
+    onLineCountChanged: (Int) -> Unit,
     onSend: () -> Unit,
     isRunning: Boolean,
     onSlash: () -> Unit,
@@ -393,13 +419,20 @@ private fun ConductorInputBar(
                 modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(start = 16.dp, top = 18.dp, end = 60.dp, bottom = 60.dp)
+                    .padding(
+                        start = 16.dp,
+                        top = InputPanelTopPadding,
+                        end = 60.dp,
+                        bottom = InputPanelBottomPadding,
+                    )
                     .focusRequester(focusRequester),
                 textStyle =
                 MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurface,
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                maxLines = if (expanded) Int.MAX_VALUE else InputPanelMaxLines,
+                onTextLayout = { result -> onLineCountChanged(result.lineCount) },
                 decorationBox = { innerTextField ->
                     Box(Modifier.fillMaxSize()) {
                         if (input.isEmpty()) {
@@ -443,13 +476,12 @@ private fun ConductorInputBar(
             Row(
                 // 48dp touch targets overhang the 36dp visuals by 6dp on each
                 // side; 6dp row padding keeps the visual circles 12dp from the
-                // panel edges. The 60dp-high row centers them 30dp above the
-                // bottom, as the design requires.
+                // panel edges. The row centers them 30dp above the bottom.
                 modifier =
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .height(60.dp)
+                    .height(InputPanelBottomPadding)
                     .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
