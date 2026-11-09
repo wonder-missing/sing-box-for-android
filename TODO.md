@@ -9,9 +9,9 @@
 
 ## 最近完成
 
-- wonder.22（2026-11-09）：去掉 Groups 列表的横向 scaffold padding，分组面板与顶栏同宽，修掉 chevron 与顶栏 icon 的对齐
+- wonder.23（2026-11-09）：Groups 顶栏改为自绘、外观保持一致；顶栏尾部 icon 与分组 chevron 共用 `TrailingActionSlot`
+- wonder.22（2026-11-09）：去掉 Groups 列表的横向 scaffold padding，分组面板与顶栏同宽
 - wonder.21（2026-11-09）：分组尾部 icon 改成与顶栏同构的 48dp 槽 + 4dp inset；设计文档合并为 `design/README.md`
-- wonder.20（2026-11-09）：分组 chevron 按 Material3 顶栏 4dp action inset 对齐到 28dp 中心；设计文档补充“图标先查 Material 库”
 - wonder.19（2026-11-09）：Conductor 键盘遮挡、分组 chevron 与顶栏对齐、订阅时间改用 Update/Published 图标
 - wonder.18（2026-11-09）：Conductor 输入栏 v1.2、app 日志与日志页解耦、`/probe`
 
