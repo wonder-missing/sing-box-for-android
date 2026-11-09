@@ -1,6 +1,6 @@
 # Conductor：个人设备控制面（愿景与落地规划）
 
-状态：Phase 1 已完成并随 wonder.13 起发版；Phase 2a 运行时设计完成，待实现；设计见 [`agent-runtime.md`](agent-runtime.md)。
+状态：Phase 1 已完成；Phase 2a 已随 wonder.27 实现；Phase 2b 待做；设计见 [`agent-runtime.md`](agent-runtime.md)。
 最后更新：2026-11-10
 命名：模块/包名 `conductor`；外层底部导航文案 `Conduct`；Conductor 页面进入沉浸模式，不设页面标题。
 
@@ -149,7 +149,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 
 不做：LLM、跨设备写操作、文件传输、后台常驻。
 
-### Phase 2：DeepSeek 自然语言 Agent + 设备注册表
+### Phase 2：DeepSeek 自然语言 Agent + 设备注册表（2a 已随 wonder.27 实现）
 
 - 接 DeepSeek 模型客户端、单步/多步 tool calling、流式输出、会话历史、密钥存储。Agent/BYOK 仅 API 24+，`otherLegacy` 降级。
 - 复用 Phase 1 的能力注册表；非 `/` 文本进入 Agent。
