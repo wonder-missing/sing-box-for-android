@@ -26,7 +26,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 - Tailscale 设备身份/连通性，以及现有的 exit node、peer、endpoint、SSH 终端等界面（上游 SFA 能力，保持原样）。
 - Remote Control：CommandClient / CommandTarget 的 Status、Groups、Outbounds、Log、ClashMode、Connections。
 - Agent POC（wonder.9）：
-  - `AgentToolRegistry`：按名称分发的运行时工具注册表，JSON schema 校验、`needsConfirmation`、结果 sanitizer。
+  - `AgentToolRegistry`：按名称分发的运行时工具注册表，JSON schema 校验、确认策略、结果 sanitizer。
   - 工具：`list_nodes`、`network_snapshot`、`probe_via_node`。
   - `AgentIntentParser`：无模型时的确定性兜底。
   - `AgentViewModel` / `AgentScreen`：手动调用、确认弹窗、结果展示。
@@ -70,7 +70,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
   - 异步长任务：`/telemetry-upload`
   - 参数 + 确认：`/probe`
   - UI：`/clear`（`/logs` 可选）
-- 能力注册表：命令和未来 Agent 工具共用一份定义，包含 `name`、`description`、`usage/examples`、参数 schema、权限、`needsConfirmation`、`userInvocable`、`agentInvocable`、`execute`。
+- 能力注册表：命令和未来 Agent 工具共用一份定义，包含 `name`、`description`、`usage/examples`、参数 schema、权限、`confirmationPolicy`、`allowedUrlParameter`、`execute`；命令/Agent 入口由 `InvocationSource` 区分。字段细节见 [`agent-runtime.md`](agent-runtime.md) 第 6 节。
 - 现有 `AgentToolRegistry` 的校验、确认、sanitizer 复用；Conductor 的命令面板是注册表的 UI，不是另一套执行逻辑。
 
 ## 7. Logs 卡片
@@ -151,10 +151,10 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 
 ### Phase 2：DeepSeek 自然语言 Agent + 设备注册表
 
-- 接 DeepSeek 模型客户端、单步/多步 tool calling、流式输出、会话历史、密钥存储。
+- 接 DeepSeek 模型客户端、单步/多步 tool calling、流式输出、会话历史、密钥存储。Agent/BYOK 仅 API 24+，`otherLegacy` 降级。
 - 复用 Phase 1 的能力注册表；非 `/` 文本进入 Agent。
 - 设备注册表：Tailscale peers/status、在线状态、能力。
-- 验收：自然语言能调用只读能力并回答；写操作仍需确认。
+- 验收：自然语言能调用只读能力并回答；写操作仍需确认；敏感输入本地拦截；Agent/BYOK 仅在 API 24+ 构建可用。
 
 ### Phase 3：网络接力
 

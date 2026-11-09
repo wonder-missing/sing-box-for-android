@@ -147,7 +147,8 @@ interface AgentStreamingModelClient {
     ): Flow<AgentModelChunk>
 }
 
-fun interface AgentApiKeyProvider {
+interface AgentApiKeyProvider {
+    val supported: Boolean
     suspend fun apiKey(): String?
 }
 
@@ -297,9 +298,14 @@ enum class InvocationSource {
 `AgentTool.execute` 改成 suspend：
 
 ```kotlin
+interface ToolCancellation {
+    fun isCancelled(): Boolean
+    fun onCancel(action: () -> Unit)
+}
+
 interface AgentTool {
     val definition: AgentToolDefinition
-    suspend fun execute(args: JsonObject): ToolExecution
+    suspend fun execute(args: JsonObject, cancellation: ToolCancellation): ToolExecution
 }
 
 interface AgentToolExecutor {
@@ -326,6 +332,7 @@ interface AgentToolExecutor {
 - `AgentPermission` 增加 `DATA_EGRESS`。新增 tool 时先加权限标签和确认策略，不允许无权限标签的 tool 进入注册表。
 - `confirmationPolicy` 必填，不提供默认值；新工具忘了声明会编译失败，只读工具显式写 `NEVER`。
 - 注册表 `invoke` 用 `try/catch` 包执行，但必须 `catch (e: CancellationException) { throw e }`，不能把取消吞成 `internal_error`；其他异常再转成 sanitized observation。
+- `AgentToolExecutor` 为每次调用创建 `ToolCancellation`；Stop 时标记取消并调用已注册的 `onCancel`，工具必须在 1s 内返回。`probe_via_node`、`telemetry_upload` 的阻塞 HTTP 调用要注册 `onCancel` 来关闭连接。
 - 单轮 tool call 数量上限 `maxToolCallsPerRound`，默认 4。超过的调用不执行，回填 `too_many_tool_calls` observation，并结束本轮。
 
 Sanitizer：
@@ -416,6 +423,7 @@ sealed interface TurnState {
         val request: ConfirmationRequest,
     ) : TurnState
     data class Completed(val answer: String) : TurnState
+    data class Cancelling(val reason: String) : TurnState
     data class Cancelled(val reason: String) : TurnState
     data class Failed(val error: AgentError) : TurnState
 }
@@ -466,6 +474,7 @@ data class AgentConfig(
     val modelTimeoutMs: Long = 60_000,
     val turnTimeoutMs: Long = 300_000,
     val confirmationTimeoutMs: Long = 300_000,
+    val cancelGraceMs: Long = 1_000,
     val maxOutputTokens: Int = 1_024,
     val maxInputTokens: Int = 16_000,
     val maxObservationChars: Int = 4_000,
@@ -475,7 +484,7 @@ data class AgentConfig(
 )
 ```
 
-`AgentRuntime` 不持有 ViewModel，也不直接改 UI。`onEvent` 负责状态展示，`confirm` 是暂停点。`AgentRuntime` 同时只跑一个 turn；ViewModel 在 `isRunning` 时拒绝新输入，避免 `cancel()` 串到下一轮；`cancel()` 在没有活动 turn 时是 no-op。
+`AgentRuntime` 不持有 ViewModel，也不直接改 UI。`onEvent` 负责状态展示，`confirm` 是暂停点。`AgentRuntime` 同时只跑一个 turn；ViewModel 在 `isRunning` 时拒绝新输入。Stop 进入 `Cancelling` 后仍保持 `isRunning`，直到工具确认退出或 `TOOL_CANCEL_TIMEOUT` 处理完，避免 `cancel()` 串到下一轮；`cancel()` 在没有活动 turn 时是 no-op。
 
 ## 8. 确认
 
@@ -500,7 +509,7 @@ ToolCall 需要确认
 - 模型不能自己确认，也不能通过 tool 输出改变确认策略。
 - 用户取消一个 tool call 时，同一条 assistant 消息里尚未执行的 tool call 全部回填 `cancelled`，本 turn 结束，不让模型马上换个工具重试。
 - 确认等待不计入 turn 总超时；确认超时单独计算，默认 5 分钟。进程退到后台或进程死亡时，未完成的确认直接取消，不允许回来后静默执行。
-- 现有 `/probe` 的确认流是 Phase 1 的单工具版本，Phase 2a 把同一套 `AgentConfirmation` 接进运行时，并改用 `displayArgsJson`。
+- 现有 `/probe` 的确认流是 Phase 1 的单工具版本。Phase 2a 保留 `AgentConfirmation` 作为 registry/executor 的内部结果，但 ViewModel 立刻映射成 `ConfirmationRequest`；`ConductorItem` 和 UI 只拿 `ConfirmationRequest`。`/probe` 命令不经过 `AgentRuntime`。
 
 ## 9. 上下文、隐私、敏感输入与 sanitizer
 
@@ -589,9 +598,11 @@ Phase 2b 增加：
 
 - `maxToolRounds = 6`。
 - turn 总超时按 `maxToolRounds × modelTimeout + 工具预算 + 重试预算` 放宽，确认等待仍不计入。
-- 用户点 Stop 调 `AgentRuntime.cancel()`，打断当前模型请求和 tool 执行，返回 partial transcript 和 `TurnOutcome.Cancelled`。
+- 用户点 Stop 调 `AgentRuntime.cancel()`，进入 `Cancelling`，等待当前模型请求和 tool 确认取消。确认后返回 partial transcript 和 `TurnOutcome.Cancelled`，才允许下一轮输入。
 - 模型请求用 OkHttp 的 `Call.cancel()`，保证 Stop 1s 内 UI 可输入。
-- 工具接口是 suspend；executor 用 `withContext(Dispatchers.IO)` + `withTimeout` 包裹，能协作取消的工具在 `finally` 关闭资源。`LibboxProbePort` 的 Go 调用如果无法中断，Phase 2b 必须给它加取消句柄，或者改用可中断的 HTTP 客户端；不能一边写「1s 停止」一边留下 15s 的阻塞 worker。
+- Phase 2b 注册的每个 tool 必须支持取消确认：executor 取消后 1s 内返回并释放资源。不满足这一点的工具不注册，不能用「标注不可取消」绕过。`telemetry_upload` 改用可取消的 HTTP 客户端（OkHttp），`probe_via_node` 改用可中断 HTTP 客户端或加取消句柄；不能一边写 1s 停止，一边留下 15s 或 30s 的阻塞 worker。
+- 如果 1s 内工具仍未确认取消，发 `TOOL_CANCEL_TIMEOUT`，保持 `isRunning` 并禁止新 turn，直到旧 worker 退出；UI 显示「正在停止，后台操作未确认」，审计记录工具名和耗时。这属于实现缺陷，不是正常路径。
+- 工具接口是 suspend；executor 用 `withContext(Dispatchers.IO)` + `withTimeout` 包裹，工具在 `finally` 关闭资源，并通过取消句柄响应 `cancel()`。
 - 工具调用不自动重试；让模型看到错误后自己决定下一步。写操作永远不自动重试。
 - 429 尊重 `Retry-After`，没有就 1s、2s 退避；仍失败就报错。
 - 超时和取消都经过 `finishTurn()`，保证 transcript 配对完整。
@@ -690,8 +701,8 @@ UI 需要新增：
 
 存储：
 
-- `AgentApiKeyProvider` 接口在 `src/main`；Keystore 实现在 `src/minApi24/java`。main 里的 factory 在 API 24+ 返回 Keystore 实现，其他返回 `UnsupportedAgentApiKeyProvider`，main 不直接引用 minApi24 的类。
-- `otherLegacy` 用不支持的实现，返回 `null` 并标记 `agentSupported = false`。
+- `AgentApiKeyProvider` 接口在 `src/main`。`AgentApiKeyProviderFactory` 在 `src/minApi21` 和 `src/minApi24` 各有一份同 FQCN 实现，和现有 `WindowSizeClassCompat` 的做法一致：minApi24 返回 Keystore 实现，minApi21 返回 Unsupported 实现。`src/main` 只调用 factory，不直接引用 Keystore 类。
+- `otherLegacy` 走 minApi21 的 factory，返回 `supported = false` 和 `null` key。
 - 用 Android Keystore 生成不可导出的 AES-256-GCM key，alias `conductor-api-key`。保持 `setRandomizedEncryptionRequired(true)` 默认值。
 - 加密时只调用 `cipher.init(ENCRYPT_MODE, key)`，让 Keystore 生成 IV，读 `cipher.iv`；不要自己传 `GCMParameterSpec`，默认配置会拒绝。
 - 存一个 Base64 blob：`version(1) + ivLength + iv + ciphertext`，放在私有 SharedPreferences `conductor_secrets`，不存明文到 Room。
@@ -719,6 +730,7 @@ enum class AgentTurnErrorCode {
     INVALID_TRANSCRIPT,
     CONFIRMATION_TIMEOUT,
     TURN_CANCELLED,
+    TOOL_CANCEL_TIMEOUT,
     STEP_BUDGET_EXCEEDED,
     CONTENT_FILTERED,
     OUTPUT_TRUNCATED,
@@ -754,6 +766,7 @@ Turn 级 UI 处理：
 | `invalid_transcript` | tool call/observation 配对失败 | 失败关闭，不发送请求 |
 | `confirmation_timeout` | 确认 5 分钟未处理 | 取消 turn |
 | `turn_cancelled` | 用户 Stop/退出 | 回到 Idle |
+| `tool_cancel_timeout` | Stop 1s 内工具未确认取消 | 保持 isRunning，提示正在停止，禁止新 turn |
 | `step_budget_exceeded` | 超过 maxToolRounds | 提示任务未完成，可继续追问 |
 | `content_filtered` | 模型拒绝 | 原样提示，不重试 |
 | `output_truncated` | `finish_reason=length` 且无可执行 tool call | 展示截断回答，提示可重试 |
@@ -784,10 +797,13 @@ app/src/main/java/io/nekohasekai/sfa/agent/
   AgentContext.kt        system prompt、历史裁剪、截断
   AgentToolExecutor.kt   AgentToolRegistry 的 suspend/timeout/cancellation 适配
   AgentUiModels.kt       ToolCallView / ToolResultView / ConductorItem
-  AgentApiKeyProviderFactory.kt  API 24+ 选择 Keystore 或 Unsupported 实现
-  UnsupportedAgentApiKeyProvider.kt  otherLegacy 的降级实现
+
+app/src/minApi21/java/io/nekohasekai/sfa/agent/
+  AgentApiKeyProviderFactory.kt  返回 Unsupported 实现
+  UnsupportedAgentApiKeyProvider.kt
 
 app/src/minApi24/java/io/nekohasekai/sfa/agent/
+  AgentApiKeyProviderFactory.kt  返回 Keystore 实现
   KeystoreAgentApiKeyProvider.kt  Android Keystore AES/GCM（API 24+）
 
 app/src/main/java/io/nekohasekai/sfa/conductor/
@@ -823,6 +839,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 收编 `/tailscale`、`/telemetry-upload` 为 tool；`ConductorAction` 改名。
 - `AgentMessage`、`ToolObservation`、`AgentRuntime`、`AgentInputGuard`、`AgentToolSchema`、`AgentContext`。
 - `AgentTool.execute` / `AgentToolRegistry.invoke` 改成 suspend；registry 重抛 `CancellationException`。
+- `AgentTool.execute` 增加 `ToolCancellation` 参数，现有三个工具签名同步改；`probe_via_node`、`telemetry_upload` 注册取消动作关闭连接。
 - `ConfirmationPolicy` / `InvocationSource`，替换单个 `needsConfirmation` boolean。
 - `DeepSeekModelClient` 非流式，`HttpURLConnection`，超时和关闭。
 - `KeystoreAgentApiKeyProvider` + `Settings > Conductor`，API 24+。
@@ -841,6 +858,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `AgentToolDefinition` 的所有构造点补必填的 `confirmationPolicy`；`probe_via_node` 用 `ALWAYS`，只读工具用 `NEVER`。
 - `AgentTools` 增加 `TailscaleStatusSource`、`TelemetryUploadPort` 及 fake，保持 JVM 可测。
 - `ConductorMessage` / `ConductorMessageKind` 替换成 `ConductorItem`，同步改 `ConductorScreen`、`ConductorViewModel`。
+- `ConductorItem.Confirmation` 只用 `ConfirmationRequest`；`AgentConfirmation` 仅作为 executor 内部类型，不进入 UI。
 - `Navigation.kt`、`strings.xml`、`SettingsScreen.kt` 增加 `settings/conductor` 路由和入口。
 - `ConductorCommands.unknownMessage` 不再回显原始输入，避免把订阅 URL 带回 UI/日志。
 - `/clear` 同时清 UI、transcript、待确认状态，并取消活动 turn。
@@ -866,7 +884,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 - `maxToolRounds = 6`，多轮循环。
 - Stop 真取消：OkHttp `Call.cancel()`、suspend 工具、`withTimeout`、工具资源清理。
-- `probe_via_node` 增加可取消句柄，或改用可中断 HTTP 客户端；不能再留下 15s 阻塞 worker。
+- `telemetry_upload` 改用可取消的 HTTP 客户端；`probe_via_node` 增加可取消句柄，或改用可中断 HTTP 客户端；不能再留下 15s 或 30s 的阻塞 worker。
 - 流式回答：`AgentStreamingModelClient`、`AssistantDelta`、tool call delta 累积。
 - 单轮/turn observation 总预算和上下文摘要。
 - 单测覆盖：多步、工具轮数上限、Stop、流式取消、上下文裁剪。
@@ -874,7 +892,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 验收：
 
 - 多步任务能在 6 轮工具调用内完成，超出时给出明确提示。
-- Stop 后 1s 内 UI 回到可输入状态，模型请求和协作式工具都已取消；不能取消的工具在文档和 UI 里明确标注。
+- 所有注册工具的取消确认 ≤1s，Stop 后 1s 内 UI 回到可输入状态；若超时，UI 保持禁用并显示「正在停止，后台操作未确认」，不允许开新 turn。
 - 流式回答逐字出现，用户上滑后不被强制拉回底部。
 - Stop、超时、流式中断后 transcript 仍然配对。
 - 长工具结果被截断且标记，模型不会因为上下文超限直接失败。
@@ -903,5 +921,5 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 ## 18. 与上位文档的关系
 
 - 上位文档的边界、隐私原则、Phase 3/4 规划不变。
-- 本文只补充 Phase 2 的运行时细节；出现冲突时，安全和数据面边界以上位文档为准，消息/循环细节以本文为准。
+- 工具、消息、确认策略、循环细节以本文为准；安全、数据面边界和跨设备范围以上位文档为准。
 - 实现完成后，把本文状态改为「Phase 2a 已实现」，并把上位文档的 Phase 2 链接到本文。
