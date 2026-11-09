@@ -2,7 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentToolDefinition
 
-enum class ConductorAction {
+enum class ConductorCommandKind {
     HELP,
     CAPABILITIES,
     CLEAR,
@@ -18,7 +18,7 @@ data class ConductorCommand(
     val description: String,
     val usage: String,
     val takesArgs: Boolean = false,
-    val action: ConductorAction,
+    val action: ConductorCommandKind,
 )
 
 data class ConductorInput(
@@ -39,56 +39,56 @@ object ConductorCommands {
                 description = "Show this help, or details for one command.",
                 usage = "/help [command]",
                 takesArgs = true,
-                action = ConductorAction.HELP,
+                action = ConductorCommandKind.HELP,
             ),
             ConductorCommand(
                 name = "commands",
                 description = "List all commands.",
                 usage = "/commands",
-                action = ConductorAction.HELP,
+                action = ConductorCommandKind.HELP,
             ),
             ConductorCommand(
                 name = "capabilities",
                 description = "Show the capability registry: commands and tools.",
                 usage = "/capabilities",
-                action = ConductorAction.CAPABILITIES,
+                action = ConductorCommandKind.CAPABILITIES,
             ),
             ConductorCommand(
                 name = "clear",
                 description = "Clear the conversation.",
                 usage = "/clear",
-                action = ConductorAction.CLEAR,
+                action = ConductorCommandKind.CLEAR,
             ),
             ConductorCommand(
                 name = "nodes",
                 description = "List outbound groups and nodes from the running core.",
                 usage = "/nodes",
-                action = ConductorAction.NODES,
+                action = ConductorCommandKind.NODES,
             ),
             ConductorCommand(
                 name = "network",
                 description = "Show the current network snapshot.",
                 usage = "/network",
-                action = ConductorAction.NETWORK,
+                action = ConductorCommandKind.NETWORK,
             ),
             ConductorCommand(
                 name = "probe",
                 description = "Probe an http(s) URL through an outbound node.",
                 usage = "/probe <outbound> <url>",
                 takesArgs = true,
-                action = ConductorAction.PROBE,
+                action = ConductorCommandKind.PROBE,
             ),
             ConductorCommand(
                 name = "tailscale",
                 description = "List Tailscale endpoints and peers.",
                 usage = "/tailscale",
-                action = ConductorAction.TAILSCALE,
+                action = ConductorCommandKind.TAILSCALE,
             ),
             ConductorCommand(
                 name = "telemetry-upload",
                 description = "Upload pending telemetry now.",
                 usage = "/telemetry-upload",
-                action = ConductorAction.TELEMETRY_UPLOAD,
+                action = ConductorCommandKind.TELEMETRY_UPLOAD,
             ),
         )
 
@@ -140,18 +140,9 @@ object ConductorCommands {
                 appendLine("  ${tool.name} — ${tool.description}")
                 appendLine("    permission: ${tool.permission.label}")
                 appendLine("    params: $params")
-                appendLine("    confirmation: ${if (tool.needsConfirmation) "required" else "no"}")
+                appendLine("    confirmation: ${tool.confirmationPolicy}")
             }
         }
 
-    fun unknownMessage(raw: String): String {
-        val token = raw.trim().removePrefix("/").takeWhile { !it.isWhitespace() }
-        val hint =
-            all
-                .filter { token.isNotEmpty() && it.name.startsWith(token.take(1), ignoreCase = true) }
-                .take(3)
-                .joinToString { "/${it.name}" }
-                .ifBlank { "/help" }
-        return "Unknown command '/$token'. Try $hint."
-    }
+    fun unknownMessage(raw: String): String = "Unknown command. Type /help to see the command list."
 }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsRemote
+import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
@@ -240,6 +241,32 @@ fun SettingsScreen(navController: NavController) {
                     modifier =
                     Modifier
                         .clickable { navController.navigate("settings/privilege") },
+                    colors =
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
+                )
+
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            stringResource(R.string.settings_conductor),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    supportingContent = {
+                        Text(stringResource(R.string.settings_conductor_summary))
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.SmartToy,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    modifier =
+                    Modifier
+                        .clickable { navController.navigate("settings/conductor") },
                     colors =
                     ListItemDefaults.colors(
                         containerColor = Color.Transparent,

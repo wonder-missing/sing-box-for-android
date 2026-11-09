@@ -8,13 +8,33 @@ import io.nekohasekai.libbox.OutboundGroupItem
 import io.nekohasekai.libbox.TailscalePeer
 import io.nekohasekai.libbox.TailscaleStatusHandler
 import io.nekohasekai.libbox.TailscaleStatusUpdate
+import io.nekohasekai.sfa.agent.AgentApiKeyProviderFactory
+import io.nekohasekai.sfa.agent.AgentConfig
+import io.nekohasekai.sfa.agent.AgentError
+import io.nekohasekai.sfa.agent.AgentEvent
+import io.nekohasekai.sfa.agent.AgentInvocationResult
 import io.nekohasekai.sfa.agent.AgentJson
+import io.nekohasekai.sfa.agent.AgentMessage
+import io.nekohasekai.sfa.agent.AgentRuntime
+import io.nekohasekai.sfa.agent.AgentSanitizer
 import io.nekohasekai.sfa.agent.AgentToolRegistry
 import io.nekohasekai.sfa.agent.AgentTools
+import io.nekohasekai.sfa.agent.AgentTurnErrorCode
 import io.nekohasekai.sfa.agent.AndroidDeviceSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeState
+import io.nekohasekai.sfa.agent.ConfirmationRequest
+import io.nekohasekai.sfa.agent.DeepSeekModelClient
+import io.nekohasekai.sfa.agent.DefaultAgentInputGuard
+import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxProbePort
+import io.nekohasekai.sfa.agent.TailscaleStatusSource
+import io.nekohasekai.sfa.agent.TelemetryUploadPort
+import io.nekohasekai.sfa.agent.ToolCallView
+import io.nekohasekai.sfa.agent.ToolResultView
+import io.nekohasekai.sfa.agent.ToolStatus
+import io.nekohasekai.sfa.agent.TurnOutcome
+import io.nekohasekai.sfa.agent.TurnResult
 import io.nekohasekai.sfa.agent.buildCommandNodeState
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
@@ -22,8 +42,10 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +56,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.util.concurrent.atomic.AtomicLong
 
 class ConductorViewModel(
@@ -41,9 +64,10 @@ class ConductorViewModel(
 ) : AndroidViewModel(application),
     CommandClient.Handler {
     data class UiState(
-        val messages: List<ConductorMessage> = emptyList(),
+        val items: List<ConductorItem> = emptyList(),
         val isRunning: Boolean = false,
         val coreConnected: Boolean = false,
+        val agentSupported: Boolean = true,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -60,8 +84,13 @@ class ConductorViewModel(
     @Volatile
     private var localServiceStarted: Boolean? = null
 
+    @Volatile
+    private var remoteControl: Boolean = false
+
     private var wantConnected = false
-    private val confirmationIds = AtomicLong(0)
+    private val commandConfirmationIds = AtomicLong(0)
+
+    private val apiKeyProvider = AgentApiKeyProviderFactory.create(application)
 
     private val commandClient =
         CommandClient(
@@ -89,20 +118,54 @@ class ConductorViewModel(
             appTrafficUsesVpn = { appTrafficUsesVpn() },
         )
 
+    private val tailscaleSource =
+        object : TailscaleStatusSource {
+            override suspend fun status(): String = tailscaleText()
+        }
+
+    private val telemetryPort =
+        object : TelemetryUploadPort {
+            override suspend fun upload(): String = TelemetryRuntime.uploadNow(application)
+        }
+
     private val registry =
         AgentToolRegistry(
             AgentTools(
                 nodeSource = nodeSource,
                 deviceSource = deviceSource,
                 probePort = probePort,
+                tailscaleStatusSource = tailscaleSource,
+                telemetryUploadPort = telemetryPort,
             ).all,
         )
+
+    private val runtime =
+        AgentRuntime(
+            inputGuard = DefaultAgentInputGuard,
+            model = DeepSeekModelClient(),
+            tools = registry,
+            apiKeys = apiKeyProvider,
+            config = AgentConfig(),
+        )
+
+    private var transcript: List<AgentMessage> = emptyList()
+    private var agentJob: Job? = null
+
+    @Volatile
+    private var pendingAgentConfirmation: CompletableDeferred<Boolean>? = null
+
+    private var pendingCommandConfirmation: Pair<String, String>? = null
+
+    init {
+        _uiState.update { it.copy(agentSupported = apiKeyProvider.supported) }
+    }
 
     fun onServiceState(
         serviceStatus: Status,
         remoteControl: Boolean,
         remoteConnected: Boolean,
     ) {
+        this.remoteControl = remoteControl
         localServiceStarted = !remoteControl && serviceStatus == Status.Started
         val shouldConnect = if (remoteControl) remoteConnected else serviceStatus == Status.Started
         val previous =
@@ -113,7 +176,7 @@ class ConductorViewModel(
             }
         if (previous == shouldConnect) return
         if (shouldConnect) {
-            append(ConductorMessageKind.SYSTEM, "core", "Connecting to the core…")
+            append(ConductorItem.Notice("core", "Connecting to the core…"))
             commandClient.connect()
         } else {
             commandClient.disconnect()
@@ -125,59 +188,112 @@ class ConductorViewModel(
         val text = raw.trim()
         if (text.isEmpty()) return
         if (_uiState.value.isRunning) {
-            append(ConductorMessageKind.SYSTEM, "busy", "Wait for the current command to finish.")
+            append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
             return
         }
-
-        append(ConductorMessageKind.USER, "you", text)
 
         if (!text.startsWith("/")) {
-            append(
-                ConductorMessageKind.SYSTEM,
-                "conductor",
-                "Natural-language agent is not connected yet. Type / for commands.",
-            )
+            if (DefaultAgentInputGuard.check(text) is InputGuardResult.Blocked) {
+                append(
+                    ConductorItem.Notice(
+                        "conductor",
+                        "This message may contain a subscription link, token or log excerpt. " +
+                            "It was not sent. Remove the sensitive part and try again.",
+                    ),
+                )
+                return
+            }
+            append(ConductorItem.User(text))
+            submitAgent(text)
             return
         }
+
+        append(ConductorItem.User(text))
 
         val parsed =
             ConductorCommands.parse(text)
                 ?: run {
-                    append(ConductorMessageKind.ERROR, "command", ConductorCommands.unknownMessage(text))
+                    append(ConductorItem.Error("command", ConductorCommands.unknownMessage(text)))
                     return
                 }
         val command =
             parsed.command
                 ?: run {
-                    append(ConductorMessageKind.ERROR, "command", ConductorCommands.unknownMessage(text))
+                    append(ConductorItem.Error("command", ConductorCommands.unknownMessage(text)))
                     return
                 }
 
         when (command.action) {
-            ConductorAction.HELP -> {
+            ConductorCommandKind.HELP -> {
                 val topic = parsed.args.firstOrNull()?.let(ConductorCommands::find)
-                append(ConductorMessageKind.RESULT, "help", ConductorCommands.helpText(topic))
+                append(ConductorItem.Notice("help", ConductorCommands.helpText(topic)))
             }
 
-            ConductorAction.CAPABILITIES ->
+            ConductorCommandKind.CAPABILITIES ->
                 append(
-                    ConductorMessageKind.RESULT,
-                    "capabilities",
-                    ConductorCommands.capabilitiesText(registry.definitions()),
+                    ConductorItem.Notice(
+                        "capabilities",
+                        ConductorCommands.capabilitiesText(registry.definitions()),
+                    ),
                 )
 
-            ConductorAction.CLEAR -> updateUi { copy(messages = emptyList()) }
+            ConductorCommandKind.CLEAR -> {
+                if (_uiState.value.isRunning) {
+                    append(ConductorItem.Notice("clear", "Wait for the current command to finish."))
+                } else {
+                    updateUi { copy(items = emptyList()) }
+                    transcript = emptyList()
+                    pendingCommandConfirmation = null
+                }
+            }
 
-            ConductorAction.NODES -> runTool("list_nodes")
-
-            ConductorAction.NETWORK -> runTool("network_snapshot")
-
-            ConductorAction.TAILSCALE -> runTailscale()
-
-            ConductorAction.TELEMETRY_UPLOAD -> runTelemetryUpload()
-
-            ConductorAction.PROBE -> runProbe(parsed.args)
+            ConductorCommandKind.NODES -> runTool("list_nodes")
+            ConductorCommandKind.NETWORK -> runTool("network_snapshot")
+            ConductorCommandKind.TAILSCALE -> runTailscale()
+            ConductorCommandKind.TELEMETRY_UPLOAD -> runTelemetryUpload()
+            ConductorCommandKind.PROBE -> runProbe(parsed.args)
         }
+    }
+
+    fun confirmAgent() {
+        val pending = pendingAgentConfirmation ?: return
+        removeConfirmationItems()
+        pending.complete(true)
+    }
+
+    fun cancelAgent() {
+        val pending = pendingAgentConfirmation ?: return
+        removeConfirmationItems()
+        pending.complete(false)
+    }
+
+    fun confirmConfirmation() {
+        if (pendingAgentConfirmation != null) {
+            confirmAgent()
+        } else {
+            confirmCommand()
+        }
+    }
+
+    fun cancelConfirmation() {
+        if (pendingAgentConfirmation != null) {
+            cancelAgent()
+        } else {
+            cancelCommand()
+        }
+    }
+
+    fun confirmCommand() {
+        val pending = pendingCommandConfirmation ?: return
+        pendingCommandConfirmation = null
+        removeConfirmationItems()
+        invokeCommandTool(pending.first, pending.second, pending.first)
+    }
+
+    fun cancelCommand() {
+        pendingCommandConfirmation = null
+        removeConfirmationItems()
+        append(ConductorItem.Notice("command", "Cancelled."))
     }
 
     fun disconnect() {
@@ -186,55 +302,250 @@ class ConductorViewModel(
         }
         commandClient.disconnect()
         publishNodeState(CommandNodeState())
+        runtime.cancel()
+        agentJob?.cancel()
     }
 
     override fun onCleared() {
+        runtime.cancel()
+        agentJob?.cancel()
         commandClient.disconnect()
         super.onCleared()
+    }
+
+    private fun submitAgent(text: String) {
+        if (!apiKeyProvider.supported) {
+            append(ConductorItem.Error("agent", "The Conductor agent requires Android 7.0 or newer."))
+            return
+        }
+        updateUi { copy(isRunning = true) }
+        agentJob =
+            viewModelScope.launch {
+                val result =
+                    try {
+                        runtime.runTurn(
+                            userText = text,
+                            history = transcript,
+                            deviceSummary = deviceSummary(),
+                            onEvent = ::handleAgentEvent,
+                            confirm = { awaitAgentConfirmation() },
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        TurnResult(
+                            messages = emptyList(),
+                            outcome =
+                                TurnOutcome.Failed(
+                                    AgentError(
+                                        AgentTurnErrorCode.UNKNOWN,
+                                        e.message ?: "Agent failed.",
+                                    ),
+                                ),
+                        )
+                    }
+                withContext(Dispatchers.Main) {
+                    transcript = transcript + result.messages
+                    updateUi { copy(isRunning = false) }
+                    pendingAgentConfirmation = null
+                    when (val outcome = result.outcome) {
+                        is TurnOutcome.Failed ->
+                            append(
+                                ConductorItem.Error(
+                                    "agent",
+                                    outcome.error.message,
+                                    outcome.error.retryable,
+                                ),
+                            )
+
+                        is TurnOutcome.Cancelled -> Unit
+                        is TurnOutcome.Completed -> Unit
+                    }
+                }
+            }
+    }
+
+    private fun handleAgentEvent(event: AgentEvent) {
+        when (event) {
+            is AgentEvent.AssistantMessage -> append(ConductorItem.Assistant(event.text))
+            is AgentEvent.ToolStarted -> append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
+            is AgentEvent.ToolFinished -> updateToolResult(event.result)
+            is AgentEvent.ConfirmationRequested -> {
+                pendingAgentConfirmation = CompletableDeferred()
+                append(ConductorItem.Confirmation(event.request))
+            }
+
+            is AgentEvent.Notice -> append(ConductorItem.Notice("conductor", event.text))
+            is AgentEvent.AssistantDelta -> Unit
+            is AgentEvent.StateChanged -> Unit
+            is AgentEvent.TurnStarted -> Unit
+            is AgentEvent.TurnFinished -> Unit
+        }
+    }
+
+    private suspend fun awaitAgentConfirmation(): Boolean {
+        val pending = pendingAgentConfirmation ?: return false
+        return try {
+            pending.await()
+        } finally {
+            if (pendingAgentConfirmation === pending) {
+                pendingAgentConfirmation = null
+            }
+        }
+    }
+
+    private fun updateToolResult(result: ToolResultView) {
+        val status =
+            when {
+                result.ok -> ToolStatus.SUCCEEDED
+                result.errorCode == "cancelled" -> ToolStatus.CANCELLED
+                else -> ToolStatus.FAILED
+            }
+        val found =
+            _uiState.value.items.any {
+                it is ConductorItem.Tool && it.call.id == result.callId
+            }
+        if (!found) {
+            append(
+                ConductorItem.Tool(
+                    ToolCallView(result.callId, result.name, ""),
+                    status,
+                    result,
+                ),
+            )
+            return
+        }
+        updateUi {
+            copy(
+                items =
+                    items.map { item ->
+                        if (item is ConductorItem.Tool && item.call.id == result.callId) {
+                            item.copy(status = status, result = result)
+                        } else {
+                            item
+                        }
+                    },
+            )
+        }
     }
 
     private fun runTool(
         name: String,
         argsJson: String = "{}",
-        confirmed: Boolean = false,
+        title: String = name,
     ) {
+        if (_uiState.value.isRunning) {
+            append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
+            return
+        }
         updateUi { copy(isRunning = true) }
-        viewModelScope.launch(Dispatchers.IO) {
-            val result =
-                runCatching { registry.invoke(name, argsJson, confirmed) }
-                    .getOrElse { throwable ->
-                        io.nekohasekai.sfa.agent.AgentInvocationResult(
-                            tool = name,
-                            ok = false,
-                            errorCode = "internal_error",
-                            errorMessage = throwable.message ?: throwable.toString(),
-                        )
-                    }
+        viewModelScope.launch {
+            val result = invokeRegistryUserCommand(name, argsJson)
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
-                if (result.ok) {
-                    append(
-                        ConductorMessageKind.RESULT,
-                        name,
-                        AgentJson.pretty(result.output ?: JsonObject(emptyMap())),
-                    )
+                if (result.confirmation != null) {
+                    showCommandConfirmation(name, result.confirmation!!)
                 } else {
-                    append(
-                        ConductorMessageKind.ERROR,
-                        name,
-                        result.errorMessage ?: "Tool failed.",
-                    )
+                    appendToolResult(title, result)
                 }
             }
+        }
+    }
+
+    private fun invokeCommandTool(
+        name: String,
+        argsJson: String,
+        title: String,
+    ) {
+        updateUi { copy(isRunning = true) }
+        viewModelScope.launch {
+            val result = invokeRegistryConfirmCommand(name, argsJson)
+            withContext(Dispatchers.Main) {
+                updateUi { copy(isRunning = false) }
+                appendToolResult(title, result)
+            }
+        }
+    }
+
+    private suspend fun invokeRegistryUserCommand(
+        name: String,
+        argsJson: String,
+    ): AgentInvocationResult =
+        try {
+            registry.invokeUserCommand(name, argsJson)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AgentInvocationResult(
+                tool = name,
+                ok = false,
+                errorCode = "internal_error",
+                errorMessage = e.message ?: "Tool failed.",
+            )
+        }
+
+    private suspend fun invokeRegistryConfirmCommand(
+        name: String,
+        argsJson: String,
+    ): AgentInvocationResult =
+        try {
+            registry.confirmUserCommand(name, argsJson)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AgentInvocationResult(
+                tool = name,
+                ok = false,
+                errorCode = "internal_error",
+                errorMessage = e.message ?: "Tool failed.",
+            )
+        }
+
+    private fun showCommandConfirmation(
+        name: String,
+        confirmation: io.nekohasekai.sfa.agent.AgentConfirmation,
+    ) {
+        pendingCommandConfirmation = name to confirmation.argsJson
+        append(
+            ConductorItem.Confirmation(
+                ConfirmationRequest(
+                    id = commandConfirmationIds.incrementAndGet(),
+                    toolName = name,
+                    displayArgsJson = confirmation.displayArgsJson,
+                    reason = confirmation.reason,
+                ),
+            ),
+        )
+    }
+
+    private fun appendToolResult(
+        title: String,
+        result: AgentInvocationResult,
+    ) {
+        if (result.ok) {
+            append(
+                ConductorItem.Notice(
+                    title,
+                    AgentJson.pretty(result.output ?: JsonObject(emptyMap())),
+                ),
+            )
+        } else {
+            append(
+                ConductorItem.Error(
+                    title,
+                    AgentSanitizer.sanitizeText(result.errorMessage ?: "Tool failed."),
+                ),
+            )
         }
     }
 
     private fun runProbe(args: List<String>) {
         if (args.size < 2) {
             append(
-                ConductorMessageKind.SYSTEM,
-                "probe",
-                "Usage: /probe <outbound> <url>\nUse /nodes to list outbound tags.",
+                ConductorItem.Notice(
+                    "probe",
+                    "Usage: /probe <outbound> <url>\nUse /nodes to list outbound tags.",
+                ),
             )
             return
         }
@@ -245,92 +556,36 @@ class ConductorViewModel(
                 put("outbound", JsonPrimitive(outbound))
                 put("url", JsonPrimitive(url))
             }.toString()
-        val result = registry.invoke("probe_via_node", argsJson, confirmed = false)
-        val confirmation = result.confirmation
-        if (confirmation == null) {
-            if (result.ok) {
-                append(
-                    ConductorMessageKind.RESULT,
-                    "probe",
-                    AgentJson.pretty(result.output ?: JsonObject(emptyMap())),
-                )
-            } else {
-                append(
-                    ConductorMessageKind.ERROR,
-                    "probe",
-                    result.errorMessage ?: "Probe failed.",
-                )
-            }
-            return
-        }
-        appendMessage(
-            ConductorMessage(
-                kind = ConductorMessageKind.SYSTEM,
-                title = "probe",
-                body = "Outbound: $outbound\nURL: $url\n\n${confirmation.reason}",
-                confirmation = confirmation,
-                confirmationId = confirmationIds.incrementAndGet(),
-            ),
-        )
-    }
-
-    fun confirmProbe(id: Long) {
-        val state = _uiState.value
-        val index = state.messages.indexOfFirst { it.confirmationId == id }
-        if (index < 0) return
-        val argsJson = state.messages[index].confirmation?.argsJson ?: return
-        clearConfirmation(id)
-        append(ConductorMessageKind.SYSTEM, "probe", "Running probe…")
-        runTool("probe_via_node", argsJson, confirmed = true)
-    }
-
-    fun cancelProbe(id: Long) {
-        clearConfirmation(id)
-        append(ConductorMessageKind.SYSTEM, "probe", "Probe cancelled.")
-    }
-
-    private fun clearConfirmation(id: Long) {
-        updateUi {
-            val index = messages.indexOfFirst { it.confirmationId == id }
-            if (index >= 0) {
-                val updated = messages.toMutableList()
-                updated[index] = updated[index].copy(confirmation = null)
-                copy(messages = updated)
-            } else {
-                this
-            }
-        }
+        runTool("probe_via_node", argsJson, "probe")
     }
 
     private fun runTailscale() {
         updateUi { copy(isRunning = true) }
-        append(ConductorMessageKind.SYSTEM, "tailscale", "Reading Tailscale status…")
-        viewModelScope.launch(Dispatchers.IO) {
-            val text =
-                runCatching { fetchTailscale() }
-                    .getOrElse { "Tailscale unavailable: ${it.message ?: it}" }
+        append(ConductorItem.Notice("tailscale", "Reading Tailscale status…"))
+        viewModelScope.launch {
+            val text = runCatching { tailscaleText() }.getOrElse { "Tailscale unavailable: ${it.message ?: it}" }
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
-                append(ConductorMessageKind.RESULT, "tailscale", text)
+                append(ConductorItem.Notice("tailscale", text))
             }
         }
     }
 
     private fun runTelemetryUpload() {
         updateUi { copy(isRunning = true) }
-        append(ConductorMessageKind.SYSTEM, "telemetry-upload", "Uploading pending telemetry…")
-        viewModelScope.launch(Dispatchers.IO) {
+        append(ConductorItem.Notice("telemetry-upload", "Uploading pending telemetry…"))
+        viewModelScope.launch {
             val result =
                 runCatching { TelemetryRuntime.uploadNow(getApplication<Application>()) }
                     .getOrElse { it.message ?: it.toString() }
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
-                append(ConductorMessageKind.RESULT, "telemetry-upload", result)
+                append(ConductorItem.Notice("telemetry-upload", result))
             }
         }
     }
 
-    private suspend fun fetchTailscale(): String {
+    private suspend fun tailscaleText(): String {
         val deferred = CompletableDeferred<String>()
         val subscription =
             CommandTarget.standaloneClient().subscribeTailscaleStatus(
@@ -404,18 +659,17 @@ class ConductorViewModel(
         return ips.joinToString(", ")
     }
 
-    private fun append(
-        kind: ConductorMessageKind,
-        title: String,
-        body: String,
-    ) {
-        appendMessage(ConductorMessage(kind, title, body))
+    private fun deviceSummary(): String {
+        val service = if (localServiceStarted == true) "started" else "stopped"
+        return "service=$service; remoteControl=$remoteControl; coreConnected=${_uiState.value.coreConnected}"
     }
 
-    private fun appendMessage(message: ConductorMessage) {
-        updateUi {
-            copy(messages = (messages + message).takeLast(MAX_MESSAGES))
-        }
+    private fun append(item: ConductorItem) {
+        updateUi { copy(items = (items + item).takeLast(MAX_ITEMS)) }
+    }
+
+    private fun removeConfirmationItems() {
+        updateUi { copy(items = items.filterNot { it is ConductorItem.Confirmation }) }
     }
 
     private fun updateUi(transform: UiState.() -> UiState) {
@@ -479,6 +733,6 @@ class ConductorViewModel(
         }.getOrNull()
 
     companion object {
-        private const val MAX_MESSAGES = 200
+        private const val MAX_ITEMS = 200
     }
 }

@@ -26,6 +26,10 @@ internal object AgentSanitizer {
         Regex(
             """(?i)([?&](?:token|access_token|secret|password|passwd|pwd|api[_-]?key|auth|authorization)=)([^&#\s]+)""",
         )
+    private val URL_USERINFO =
+        Regex(
+            """(?i)\b((?:https?|ss|vmess|vless|trojan|hysteria2?|hy2|tuic|wireguard)://)([^/@\s]+)@""",
+        )
     private val SENSITIVE_KEY =
         Regex(
             """(?i)^(token|access_token|secret|password|passwd|pwd|api[_-]?key|authorization|subscription|sub_url|subscribe_url|configuration)$""",
@@ -54,10 +58,19 @@ internal object AgentSanitizer {
         return result
     }
 
-    fun maskUrlQuery(url: String): String =
-        SENSITIVE_QUERY.replace(url) { match ->
+    fun maskUrlQuery(url: String): String {
+        val maskedUserInfo = URL_USERINFO.replace(url) { match -> match.groupValues[1] + "***@" }
+        return SENSITIVE_QUERY.replace(maskedUserInfo) { match ->
             match.groupValues[1] + "***"
         }
+    }
+
+    fun sanitizeForLog(text: String): String {
+        val withoutUrls = URL_REGEX.replace(text) { "[redacted-url]" }
+        return SENSITIVE_KV.replace(withoutUrls) { match ->
+            "${match.groupValues[1]}=***"
+        }
+    }
 
     fun sanitizeElement(
         element: JsonElement,

@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.utils.RemoteControlManager
@@ -180,7 +181,7 @@ fun ConductorScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (uiState.messages.isEmpty()) {
+                if (uiState.items.isEmpty()) {
                     item(key = "empty") {
                         ConductorEmptyState(
                             onCommand = { command ->
@@ -191,19 +192,19 @@ fun ConductorScreen(
                         )
                     }
                 } else {
-                    items(uiState.messages.size, key = { index -> index }) { index ->
-                        ConductorMessageItem(
-                            message = uiState.messages[index],
-                            onConfirmProbe = viewModel::confirmProbe,
-                            onCancelProbe = viewModel::cancelProbe,
+                    items(uiState.items.size, key = { index -> index }) { index ->
+                        ConductorItemView(
+                            item = uiState.items[index],
+                            onConfirm = viewModel::confirmConfirmation,
+                            onCancel = viewModel::cancelConfirmation,
                         )
                     }
                 }
             }
 
-            LaunchedEffect(uiState.messages.size) {
-                if (uiState.messages.isNotEmpty()) {
-                    listState.animateScrollToItem(uiState.messages.lastIndex)
+            LaunchedEffect(uiState.items.size) {
+                if (uiState.items.isNotEmpty()) {
+                    listState.animateScrollToItem(uiState.items.lastIndex)
                 }
             }
 
@@ -279,13 +280,13 @@ private fun ConductorEmptyState(onCommand: (String) -> Unit) {
 }
 
 @Composable
-private fun ConductorMessageItem(
-    message: ConductorMessage,
-    onConfirmProbe: (Long) -> Unit,
-    onCancelProbe: (Long) -> Unit,
+private fun ConductorItemView(
+    item: ConductorItem,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
 ) {
-    when (message.kind) {
-        ConductorMessageKind.USER ->
+    when (item) {
+        is ConductorItem.User ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -295,7 +296,7 @@ private fun ConductorMessageItem(
                     color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
                     Text(
-                        text = message.body,
+                        text = item.text,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -303,55 +304,165 @@ private fun ConductorMessageItem(
                 }
             }
 
-        ConductorMessageKind.SYSTEM,
-        ConductorMessageKind.RESULT,
-        ConductorMessageKind.ERROR -> {
-            val isError = message.kind == ConductorMessageKind.ERROR
-            val isResult = message.kind == ConductorMessageKind.RESULT
+        is ConductorItem.Assistant ->
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = message.title,
+                    text = "conductor",
                     style = MaterialTheme.typography.labelSmall,
-                    color =
-                    if (isError) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 2.dp),
                 )
                 SelectionContainer {
                     Text(
-                        text = message.body,
-                        style =
-                        if (isResult) {
-                            MaterialTheme.typography.bodySmall
-                        } else {
-                            MaterialTheme.typography.bodyMedium
-                        },
-                        fontFamily = if (isResult) FontFamily.Monospace else FontFamily.Default,
-                        color =
-                        if (isError) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
+                        text = item.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                val confirmationId = message.confirmationId
-                if (message.confirmation != null && confirmationId != null) {
+            }
+
+        is ConductorItem.Notice ->
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+                SelectionContainer {
+                    Text(
+                        text = item.body,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+        is ConductorItem.Error ->
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+                Text(
+                    text = item.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+        is ConductorItem.Tool -> ToolItem(item)
+
+        is ConductorItem.Confirmation ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = stringResource(R.string.agent_confirm_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = item.request.toolName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = item.request.displayArgsJson,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        )
+                    }
+                    Text(
+                        text = item.request.reason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
                     Row(
                         modifier = Modifier.padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        TextButton(onClick = { onConfirmProbe(confirmationId) }) {
-                            Text(stringResource(R.string.conductor_probe_run))
+                        TextButton(onClick = onConfirm) {
+                            Text(stringResource(R.string.agent_confirm_run))
                         }
-                        TextButton(onClick = { onCancelProbe(confirmationId) }) {
+                        TextButton(onClick = onCancel) {
                             Text(stringResource(R.string.conductor_probe_cancel))
                         }
                     }
+                }
+            }
+    }
+}
+
+@Composable
+private fun ToolItem(item: ConductorItem.Tool) {
+    val statusColor =
+        when (item.status) {
+            ToolStatus.SUCCEEDED -> MaterialTheme.colorScheme.primary
+            ToolStatus.FAILED -> MaterialTheme.colorScheme.error
+            ToolStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
+            ToolStatus.RUNNING -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = item.call.name,
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = item.status.name.lowercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = statusColor,
+            )
+        }
+        if (item.call.displayArgsJson.isNotBlank() && item.call.displayArgsJson != "{}") {
+            SelectionContainer {
+                Text(
+                    text = item.call.displayArgsJson,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                )
+            }
+        }
+        val result = item.result
+        if (result != null) {
+            val body =
+                result.output?.toString()
+                    ?: result.message
+                    ?: result.errorCode
+                    ?: ""
+            if (body.isNotBlank()) {
+                SelectionContainer {
+                    Text(
+                        text = if (result.truncated) "$body\n(truncated)" else body,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (result.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    )
                 }
             }
         }

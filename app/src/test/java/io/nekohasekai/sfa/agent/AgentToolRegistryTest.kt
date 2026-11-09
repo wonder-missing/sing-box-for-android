@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
 
@@ -20,7 +21,7 @@ class AgentToolRegistryTest {
 
     @Test
     fun unknownToolFailsWithoutSideEffects() {
-        val result = registry.invoke("ssh", """{"host":"example"}""")
+        val result = registry.userExec("ssh", """{"host":"example"}""")
 
         assertFalse(result.ok)
         assertEquals("unknown_tool", result.errorCode)
@@ -33,7 +34,7 @@ class AgentToolRegistryTest {
         val forbidden = listOf("ssh", "shell", "exec", "login_host", "run_command", "terminal")
         forbidden.forEach { name ->
             assertFalse("tool '$name' must not be registered", names.contains(name))
-            val result = registry.invoke(name, "{}")
+            val result = registry.userExec(name, "{}")
             assertFalse(result.ok)
             assertEquals("unknown_tool", result.errorCode)
         }
@@ -41,7 +42,8 @@ class AgentToolRegistryTest {
             "every registered tool must stay inside the POC permission set",
             registry.definitions().all {
                 it.permission == AgentPermission.READ_NETWORK_STATE ||
-                    it.permission == AgentPermission.NETWORK_PROBE
+                    it.permission == AgentPermission.NETWORK_PROBE ||
+                    it.permission == AgentPermission.DATA_EGRESS
             },
         )
         assertTrue(AgentPermission.values().none { it.label.contains("shell") || it.label.contains("ssh") })
@@ -49,7 +51,7 @@ class AgentToolRegistryTest {
 
     @Test
     fun missingParameterFailsBeforeProbe() {
-        val result = registry.invoke("probe_via_node", """{"url":"https://example.com/"}""", confirmed = true)
+        val result = registry.userExec("probe_via_node", """{"url":"https://example.com/"}""")
 
         assertFalse(result.ok)
         assertEquals("missing_parameter", result.errorCode)
@@ -59,10 +61,9 @@ class AgentToolRegistryTest {
     @Test
     fun wrongParameterTypeFailsBeforeProbe() {
         val result =
-            registry.invoke(
+            registry.userExec(
                 "probe_via_node",
                 """{"outbound":123,"url":"https://example.com/"}""",
-                confirmed = true,
             )
 
         assertFalse(result.ok)
@@ -73,10 +74,9 @@ class AgentToolRegistryTest {
     @Test
     fun blankParameterFailsBeforeProbe() {
         val result =
-            registry.invoke(
+            registry.userExec(
                 "probe_via_node",
                 """{"outbound":"   ","url":"https://example.com/"}""",
-                confirmed = true,
             )
 
         assertFalse(result.ok)
@@ -86,7 +86,7 @@ class AgentToolRegistryTest {
 
     @Test
     fun malformedArgumentsFailBeforeProbe() {
-        val result = registry.invoke("probe_via_node", "not-json", confirmed = true)
+        val result = registry.userExec("probe_via_node", "not-json")
 
         assertFalse(result.ok)
         assertEquals("invalid_arguments", result.errorCode)
@@ -97,14 +97,14 @@ class AgentToolRegistryTest {
     fun confirmationIsRequiredBeforeExecution() {
         val args = """{"outbound":"node-a","url":"https://example.com/health"}"""
 
-        val pending = registry.invoke("probe_via_node", args)
+        val pending = runBlocking { registry.invokeUserCommand("probe_via_node", args) }
         assertFalse(pending.ok)
         assertEquals("confirmation_required", pending.errorCode)
         assertNotNull(pending.confirmation)
         assertEquals("probe_via_node", pending.confirmation?.tool)
         assertTrue(probePort.calls.isEmpty())
 
-        val confirmed = registry.invoke("probe_via_node", args, confirmed = true)
+        val confirmed = runBlocking { registry.confirmUserCommand("probe_via_node", args) }
         assertTrue(confirmed.errorMessage ?: "", confirmed.ok)
         assertEquals(1, probePort.calls.size)
         assertEquals("node-a" to "https://example.com/health", probePort.calls.first())
@@ -115,13 +115,13 @@ class AgentToolRegistryTest {
         val rawUrl = "https://probe.example.com/health?token=SECRET"
         val args = """{"outbound":"node-a","url":"$rawUrl"}"""
 
-        val pending = registry.invoke("probe_via_node", args)
+        val pending = runBlocking { registry.invokeUserCommand("probe_via_node", args) }
         val confirmation = pending.confirmation!!
         assertEquals(args, confirmation.argsJson)
         assertFalse(confirmation.displayArgsJson.contains("SECRET"))
         assertTrue(confirmation.displayArgsJson.contains("token=***"))
 
-        val confirmed = registry.invoke(confirmation.tool, confirmation.argsJson, confirmed = true)
+        val confirmed = runBlocking { registry.confirmUserCommand(confirmation.tool, confirmation.argsJson) }
         assertTrue(confirmed.errorMessage ?: "", confirmed.ok)
         assertEquals(rawUrl, probePort.calls.single().second)
     }
@@ -137,7 +137,7 @@ class AgentToolRegistryTest {
         val properties = schema["properties"] as kotlinx.serialization.json.JsonObject
         assertTrue(properties.containsKey("outbound"))
         assertTrue(properties.containsKey("url"))
-        assertTrue(probe.needsConfirmation)
+        assertEquals(ConfirmationPolicy.ALWAYS, probe.confirmationPolicy)
         assertEquals(AgentPermission.NETWORK_PROBE, probe.permission)
 
         val required = schema["required"] as kotlinx.serialization.json.JsonArray
@@ -146,11 +146,20 @@ class AgentToolRegistryTest {
 
     @Test
     fun resultForUnknownToolHasNoOutput() {
-        val result = registry.invoke("probe_via_node_v2", "{}")
+        val result = registry.userExec("probe_via_node_v2", "{}")
         assertFalse(result.ok)
         assertNull(result.output)
     }
 }
+
+private fun AgentToolRegistry.userExec(
+    name: String,
+    argsJson: String = "{}",
+): AgentInvocationResult =
+    runBlocking {
+        val first = invokeUserCommand(name, argsJson)
+        if (first.confirmation != null) confirmUserCommand(name, argsJson) else first
+    }
 
 private fun kotlinx.serialization.json.JsonObject.stringValue(key: String): String =
     (getValue(key) as kotlinx.serialization.json.JsonPrimitive).content

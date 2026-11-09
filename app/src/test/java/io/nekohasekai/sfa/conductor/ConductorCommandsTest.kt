@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentPermission
 import io.nekohasekai.sfa.agent.AgentToolDefinition
+import io.nekohasekai.sfa.agent.ConfirmationPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -71,12 +72,13 @@ class ConductorCommandsTest {
                 description = "List nodes",
                 permission = AgentPermission.READ_NETWORK_STATE,
                 parameters = emptyList(),
+                confirmationPolicy = ConfirmationPolicy.NEVER,
             )
 
         val text = ConductorCommands.capabilitiesText(listOf(tool))
 
         assertTrue(text.contains("list_nodes"))
         assertTrue(text.contains("read_network_state"))
-        assertTrue(text.contains("confirmation: no"))
+        assertTrue(text.contains("confirmation: NEVER"))
     }
 }

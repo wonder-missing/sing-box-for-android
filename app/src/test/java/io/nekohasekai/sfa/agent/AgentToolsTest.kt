@@ -6,17 +6,27 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.long
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+private fun AgentToolRegistry.userExec(
+    name: String,
+    argsJson: String = "{}",
+): AgentInvocationResult =
+    runBlocking {
+        val first = invokeUserCommand(name, argsJson)
+        if (first.confirmation != null) confirmUserCommand(name, argsJson) else first
+    }
+
 class AgentToolsTest {
     @Test
     fun listNodesReturnsGroupsNodesSelectionAndLatency() {
         val registry = buildTestRegistry()
-        val result = registry.invoke("list_nodes")
+        val result = registry.userExec("list_nodes")
 
         assertTrue(result.errorMessage ?: "", result.ok)
         val output = result.output!!
@@ -58,7 +68,7 @@ class AgentToolsTest {
             )
         val registry = buildTestRegistry(nodeSource = nodeSource)
 
-        val result = registry.invoke("list_nodes")
+        val result = registry.userExec("list_nodes")
 
         assertTrue(result.errorMessage ?: "", result.ok)
         val output = result.output!!
@@ -75,7 +85,7 @@ class AgentToolsTest {
                 nodeSource = FakeNodeSource(sampleNodeSnapshot().copy(remoteControl = true)),
             )
 
-        val output = registry.invoke("list_nodes").output!!
+        val output = registry.userExec("list_nodes").output!!
 
         assertTrue(output.boolean("remoteControl"))
         assertTrue(output.boolean("coreRunning"))
@@ -84,7 +94,7 @@ class AgentToolsTest {
     @Test
     fun networkSnapshotCombinesLocalSignalsAndCommandClientState() {
         val registry = buildTestRegistry()
-        val result = registry.invoke("network_snapshot")
+        val result = registry.userExec("network_snapshot")
 
         assertTrue(result.errorMessage ?: "", result.ok)
         val output = result.output!!
@@ -118,7 +128,7 @@ class AgentToolsTest {
                 nodeSource = FakeNodeSource(sampleNodeSnapshot().copy(remoteControl = true)),
             )
 
-        val output = registry.invoke("network_snapshot").output!!
+        val output = registry.userExec("network_snapshot").output!!
 
         assertTrue(output.obj("core").boolean("remoteControl"))
         assertTrue(output.string("note").contains("not available over Remote Control"))
@@ -130,10 +140,9 @@ class AgentToolsTest {
         val registry = buildTestRegistry(probePort = probe)
 
         val result =
-            registry.invoke(
+            registry.userExec(
                 "probe_via_node",
                 """{"outbound":"node-a","url":"https://example.com/health"}""",
-                confirmed = true,
             )
 
         assertTrue(result.errorMessage ?: "", result.ok)
@@ -161,11 +170,10 @@ class AgentToolsTest {
 
         targets.forEach { target ->
             val result =
-                registry.invoke(
+                registry.userExec(
                     "probe_via_node",
                     """{"outbound":"node-a","url":"$target"}""",
-                    confirmed = true,
-                )
+                    )
             assertFalse("target '$target' must be rejected", result.ok)
             assertEquals("invalid_parameter", result.errorCode)
         }
@@ -185,10 +193,9 @@ class AgentToolsTest {
         val registry = buildTestRegistry(probePort = probe)
 
         val result =
-            registry.invoke(
+            registry.userExec(
                 "probe_via_node",
                 """{"outbound":"node-a","url":"https://probe.example.com/health?token=SECRET"}""",
-                confirmed = true,
             )
 
         assertFalse(result.ok)
@@ -233,7 +240,7 @@ class AgentToolsTest {
             )
         val registry = buildTestRegistry(nodeSource = FakeNodeSource(snapshot))
 
-        val output = registry.invoke("list_nodes").output!!
+        val output = registry.userExec("list_nodes").output!!
         val rendered = output.toString()
 
         assertFalse(rendered.contains("sub.example.com"))
@@ -247,10 +254,9 @@ class AgentToolsTest {
         val registry = buildTestRegistry(probePort = probe)
 
         val result =
-            registry.invoke(
+            registry.userExec(
                 "probe_via_node",
                 """{"outbound":"missing","url":"https://example.com/"}""",
-                confirmed = true,
             )
 
         assertFalse(result.ok)

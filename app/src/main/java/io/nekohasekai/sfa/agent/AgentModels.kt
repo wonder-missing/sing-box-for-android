@@ -12,6 +12,24 @@ enum class AgentPermission(
 ) {
     READ_NETWORK_STATE("read_network_state"),
     NETWORK_PROBE("network_probe"),
+    DATA_EGRESS("data_egress"),
+}
+
+enum class ConfirmationPolicy {
+    NEVER,
+    AGENT_ONLY,
+    ALWAYS,
+}
+
+enum class InvocationSource {
+    COMMAND,
+    AGENT,
+}
+
+interface ToolCancellation {
+    fun isCancelled(): Boolean
+
+    fun onCancel(action: () -> Unit)
 }
 
 enum class AgentParameterType(
@@ -32,11 +50,41 @@ data class AgentToolDefinition(
     val description: String,
     val permission: AgentPermission,
     val parameters: List<AgentParameterSpec>,
-    val needsConfirmation: Boolean = false,
+    val confirmationPolicy: ConfirmationPolicy,
     val confirmationReason: String? = null,
+    val allowedUrlParameter: String? = null,
 ) {
     val parametersSchema: JsonObject
         get() = AgentJson.schema(parameters)
+}
+
+interface AgentToolExecutor {
+    fun definitions(): List<AgentToolDefinition>
+
+    fun cancelActive()
+
+    suspend fun invokeUserCommand(
+        name: String,
+        argsJson: String,
+    ): AgentInvocationResult
+
+    suspend fun confirmUserCommand(
+        name: String,
+        argsJson: String,
+    ): AgentInvocationResult
+
+    suspend fun invokeAgent(
+        call: ToolCall,
+        humanApproved: Boolean,
+    ): AgentInvocationResult
+}
+
+interface TailscaleStatusSource {
+    suspend fun status(): String
+}
+
+interface TelemetryUploadPort {
+    suspend fun upload(): String
 }
 
 /**
@@ -141,5 +189,8 @@ data class ToolExecution(
 interface AgentTool {
     val definition: AgentToolDefinition
 
-    fun execute(args: JsonObject): ToolExecution
+    suspend fun execute(
+        args: JsonObject,
+        cancellation: ToolCancellation,
+    ): ToolExecution
 }

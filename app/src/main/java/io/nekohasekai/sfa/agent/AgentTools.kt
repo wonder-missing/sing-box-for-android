@@ -8,13 +8,15 @@ import kotlinx.serialization.json.putJsonObject
 import java.net.URI
 
 /**
- * The three POC tools. All data goes through the interfaces above so the tool
+ * The built-in tools. All data goes through the interfaces above so the tool
  * layer can be exercised by plain JVM tests without a device or libbox.
  */
 class AgentTools(
     private val nodeSource: NodeSnapshotSource,
     private val deviceSource: DeviceSnapshotSource,
     private val probePort: ProbePort,
+    private val tailscaleStatusSource: TailscaleStatusSource? = null,
+    private val telemetryUploadPort: TelemetryUploadPort? = null,
 ) {
     private val listNodes =
         object : AgentTool {
@@ -26,9 +28,13 @@ class AgentTools(
                             "CommandClient, including selected state and URL-test latency when known.",
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
+                    confirmationPolicy = ConfirmationPolicy.NEVER,
                 )
 
-            override fun execute(args: JsonObject): ToolExecution {
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
                 val snapshot = nodeSource.snapshot()
                 val selectedOutbounds =
                     buildJsonObject {
@@ -106,9 +112,13 @@ class AgentTools(
                             "device-local observations (not visible over Remote Control).",
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
+                    confirmationPolicy = ConfirmationPolicy.NEVER,
                 )
 
-            override fun execute(args: JsonObject): ToolExecution {
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
                 val device = deviceSource.snapshot()
                 val snapshot = nodeSource.snapshot()
                 val selectedOutbounds =
@@ -190,13 +200,17 @@ class AgentTools(
                                 description = "Absolute http:// or https:// URL to probe.",
                             ),
                         ),
-                    needsConfirmation = true,
+                    confirmationPolicy = ConfirmationPolicy.ALWAYS,
                     confirmationReason =
                         "The probe temporarily selects this outbound, sends one HTTP HEAD request, " +
                             "then restores the previous selection. App traffic may briefly use that node.",
+                    allowedUrlParameter = "url",
                 )
 
-            override fun execute(args: JsonObject): ToolExecution {
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
                 val outbound = AgentJson.string(args, "outbound") ?: return invalidArgument("outbound is required")
                 val url = AgentJson.string(args, "url") ?: return invalidArgument("url is required")
                 if (outbound.length > 256) {
@@ -204,6 +218,9 @@ class AgentTools(
                 }
                 if (!isAllowedProbeUrl(url)) {
                     return invalidArgument("url must be an absolute http(s) URL")
+                }
+                if (cancellation.isCancelled()) {
+                    return ToolExecution(errorCode = "cancelled", errorMessage = "probe cancelled")
                 }
                 val outcome = probePort.probe(outbound, url)
                 val error =
@@ -224,7 +241,7 @@ class AgentTools(
                 } else {
                     ToolExecution(
                         output = output,
-                        errorCode = "probe_failed",
+                        errorCode = "tool_failed",
                         errorMessage = error,
                     )
                 }
@@ -233,8 +250,78 @@ class AgentTools(
             private fun invalidArgument(message: String) = ToolExecution(errorCode = "invalid_parameter", errorMessage = message)
         }
 
+    private val tailscaleStatus =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "tailscale_status",
+                    description =
+                        "List Tailscale endpoints and peers visible to the running service. " +
+                            "Read-only; returns the same status text as the /tailscale command.",
+                    permission = AgentPermission.READ_NETWORK_STATE,
+                    parameters = emptyList(),
+                    confirmationPolicy = ConfirmationPolicy.NEVER,
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val source = tailscaleStatusSource ?: return unavailable()
+                if (cancellation.isCancelled()) {
+                    return ToolExecution(errorCode = "cancelled", errorMessage = "tailscale status cancelled")
+                }
+                return runCatching { source.status() }
+                    .fold(
+                        onSuccess = { ToolExecution(output = buildJsonObject { put("result", it) }) },
+                        onFailure = { ToolExecution(errorCode = "tool_failed", errorMessage = it.message ?: it.toString()) },
+                    )
+            }
+        }
+
+    private val telemetryUpload =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "telemetry_upload",
+                    description =
+                        "Upload pending anonymous telemetry now. This sends data off the device; " +
+                            "the Agent must ask for confirmation first.",
+                    permission = AgentPermission.DATA_EGRESS,
+                    parameters = emptyList(),
+                    confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+                    confirmationReason =
+                        "This uploads pending telemetry from this device to the configured ingest endpoint.",
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val port = telemetryUploadPort ?: return unavailable()
+                if (cancellation.isCancelled()) {
+                    return ToolExecution(errorCode = "cancelled", errorMessage = "telemetry upload cancelled")
+                }
+                return runCatching { port.upload() }
+                    .fold(
+                        onSuccess = { ToolExecution(output = buildJsonObject { put("result", it) }) },
+                        onFailure = { ToolExecution(errorCode = "tool_failed", errorMessage = it.message ?: it.toString()) },
+                    )
+            }
+        }
+
     val all: List<AgentTool>
-        get() = listOf(listNodes, networkSnapshot, probeViaNode)
+        get() =
+            buildList {
+                add(listNodes)
+                add(networkSnapshot)
+                add(probeViaNode)
+                if (tailscaleStatusSource != null) add(tailscaleStatus)
+                if (telemetryUploadPort != null) add(telemetryUpload)
+            }
+
+    private fun unavailable(): ToolExecution =
+        ToolExecution(errorCode = "tool_unavailable", errorMessage = "this tool is not available in the current build")
 
     private fun nodeJson(node: AgentNode): JsonObject =
         buildJsonObject {
@@ -252,5 +339,7 @@ internal fun isAllowedProbeUrl(raw: String): Boolean {
     }
     val uri = runCatching { URI(raw) }.getOrNull() ?: return false
     val scheme = uri.scheme?.lowercase() ?: return false
-    return (scheme == "http" || scheme == "https") && !uri.host.isNullOrBlank()
+    return (scheme == "http" || scheme == "https") &&
+        !uri.host.isNullOrBlank() &&
+        uri.userInfo.isNullOrBlank()
 }
