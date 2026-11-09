@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
@@ -40,7 +42,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -112,9 +113,24 @@ fun GroupsCard(
     if (showTopBar) {
         val allCollapsed = uiState.expandedGroups.isEmpty()
         OverrideTopBar {
-            TopAppBar(
-                title = { Text(stringResource(R.string.title_groups)) },
-                actions = {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Row(
+                    modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(64.dp)
+                        .padding(start = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.title_groups),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
                     IconButton(onClick = { GroupLayoutPreference.toggle() }) {
                         Icon(
                             imageVector = if (singleColumn) Icons.Default.GridView else Icons.Default.ViewList,
@@ -124,10 +140,11 @@ fun GroupsCard(
                             } else {
                                 stringResource(R.string.use_single_column)
                             },
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     if (uiState.groups.isNotEmpty()) {
-                        IconButton(onClick = { actualViewModel.toggleAllGroups() }) {
+                        TrailingActionSlot(onClick = { actualViewModel.toggleAllGroups() }) {
                             Icon(
                                 imageVector =
                                 if (allCollapsed) {
@@ -141,11 +158,13 @@ fun GroupsCard(
                                 } else {
                                     stringResource(R.string.collapse_all)
                                 },
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
-                },
-            )
+                }
+            }
         }
     }
 
@@ -381,6 +400,20 @@ private fun rememberUrlTestPalette(): UrlTestPalette {
     }
 }
 
+@Composable
+private fun TrailingActionSlot(
+    onClick: (() -> Unit)?,
+    content: @Composable () -> Unit,
+) {
+    val base = Modifier.padding(end = 4.dp).size(48.dp)
+    Box(
+        modifier = if (onClick != null) base.clip(CircleShape).clickable(onClick = onClick) else base,
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GroupHeader(
@@ -463,10 +496,7 @@ private fun GroupHeader(
                 animationSpec = tween(200),
                 label = "ExpandIcon",
             )
-            Box(
-                modifier = Modifier.padding(end = 4.dp).size(48.dp),
-                contentAlignment = Alignment.Center,
-            ) {
+            TrailingActionSlot(onClick = null) {
                 Icon(
                     imageVector = Icons.Default.ExpandMore,
                     contentDescription =
