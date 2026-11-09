@@ -106,6 +106,9 @@ object Settings {
 
     var activeRemoteServerId by dataStore.long(SettingsKey.ACTIVE_REMOTE_SERVER_ID) { 0L }
 
+    // Conductor
+    var conductorModel by dataStore.string(SettingsKey.CONDUCTOR_MODEL) { "deepseek-v4-flash" }
+
     // Tailscale SSH
     var tailscaleSSHRememberedUsernames by dataStore.map(SettingsKey.TAILSCALE_SSH_REMEMBERED_USERNAMES)
     var tailscaleSSHRememberedTerminalTypes by dataStore.map(SettingsKey.TAILSCALE_SSH_REMEMBERED_TERMINAL_TYPES)

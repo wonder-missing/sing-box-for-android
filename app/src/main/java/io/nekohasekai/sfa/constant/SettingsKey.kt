@@ -43,6 +43,9 @@ object SettingsKey {
     const val DASHBOARD_DISABLED_ITEMS = "dashboard_disabled_items"
     const val GROUP_SINGLE_COLUMN = "group_single_column"
 
+    // Conductor
+    const val CONDUCTOR_MODEL = "conductor_model"
+
     // Remote Control
     const val ACTIVE_REMOTE_SERVER_ID = "active_remote_server_id"
 

@@ -110,7 +110,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 ### 模型与密钥
 
 - Phase 2 运行时细节（消息模型、tool schema、状态机、确认暂停、预算、BYOK）：[`agent-runtime.md`](agent-runtime.md)。
-- Phase 2 首选 DeepSeek：`https://api.deepseek.com`，OpenAI-compatible，模型 `deepseek-flash`（V4.1-Flash-1017）。支持 tool calls / streaming tool_calls；thinking 可按需关闭。
+- Phase 2 首选 DeepSeek：`https://api.deepseek.com`，OpenAI-compatible，模型 `deepseek-v4-flash`（V4.1-Flash-1017，默认值可在 Settings 覆盖）。支持 tool calls / streaming tool_calls；thinking 可按需关闭。
 - 第一版用薄自研运行时，不引入 ADK（Gemini-only，Android 工件 0.1.0）或 Koog（等 Agent 长大再评估）。
 - 密钥不进仓库。已定设备端 BYOK，Android Keystore 加密存储；设置入口和存储细节见 [`agent-runtime.md`](agent-runtime.md) 第 12 节。
 - 性能：Conductor 只在进入页面时初始化；流式输出；历史和工具输出有上限；不常驻大对象。

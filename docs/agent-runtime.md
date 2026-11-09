@@ -196,7 +196,7 @@ Phase 2a 只实现 `AgentModelClient.complete`。Phase 2b 实现 `AgentStreaming
 
 - Base URL：`https://api.deepseek.com`，路径 `/chat/completions`。
 - Header：`Authorization: Bearer <key>`、`Content-Type: application/json`。
-- 模型 ID 只放在一个常量里，当前沿用上位文档的 `deepseek-flash`；实现时以 DeepSeek 控制台为准，不散落在 UI 和测试里。
+- 默认模型 ID 是 `deepseek-v4-flash`，只放在一个常量里；Settings > Conductor 可以覆盖，不散落在 UI 和测试里。
 - 请求字段：`model`、`messages`、`tools`、`tool_choice: "auto"`、`temperature: 0.2`、`max_tokens`、`stream`。
 - Phase 2a 用 `HttpURLConnection`，连接超时 10s，读超时由 `AgentConfig.modelTimeoutMs` 控制，响应体上限 2MB；不跟随重定向，`disconnect()` 和流关闭放在 `finally`。
 - Phase 2b 引入 OkHttp，只用于 `Call.cancel()` 和 SSE。`HttpURLConnection` 的 `disconnect()` 不能保证打断 DNS/TLS/阻塞读，达不到 Stop 1s 的验收，不在这里省依赖。
@@ -211,7 +211,7 @@ DeepSeek 请求形态：
 
 ```json
 {
-  "model": "deepseek-flash",
+  "model": "deepseek-v4-flash",
   "messages": [
     {"role": "system", "content": "..."},
     {"role": "user", "content": "看看现在有哪些节点"},
@@ -692,6 +692,7 @@ UI 需要新增：
 入口：`Settings > Conductor`，新增 `ConductorSettingsScreen`。只在 API 24+ 显示；`otherLegacy` 不显示自然语言入口，`/` 命令保留。
 
 - API key 输入框：密码样式，可显示/隐藏，保存后清空输入框。
+- 模型输入框：默认 `deepseek-v4-flash`，允许改成账号实际可用的模型 ID。
 - 输入框用 `remember`，不用 `rememberSaveable`；保存或离开页面后清掉 Compose 状态，避免密码原文进入 saved state。
 - 状态：`Configured (sk-...abcd)` / `Not configured`；只显示尾部 4 位。
 - 按钮：Save、Clear、Test connection。
@@ -911,7 +912,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 待定：
 
-- `deepseek-flash` 的准确模型 ID 和 `/models` 是否可用，实现时以控制台为准。
+- 默认 `deepseek-v4-flash` 是否适用于当前账号；Settings > Conductor 可以改模型 ID。
 - 模型请求走系统网络还是强制走某个出站；Phase 2a 先用系统网络，失败时给明确错误，不静默切换。
 - Telemetry upload 从 Agent 调用时的确认文案。
 - 会话历史是否跨进程保留；Phase 2a 只放内存，退出 Conductor 或进程死亡就丢。

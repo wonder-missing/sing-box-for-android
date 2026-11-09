@@ -47,6 +47,7 @@ import io.nekohasekai.sfa.agent.AgentModelException
 import io.nekohasekai.sfa.agent.DeepSeekModelClient
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
+import io.nekohasekai.sfa.database.Settings
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,7 +70,6 @@ fun ConductorSettingsScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val provider = remember { AgentApiKeyProviderFactory.create(context) }
-    val client = remember { DeepSeekModelClient() }
     val scaffoldPadding = LocalScaffoldPadding.current
 
     var apiKey by remember { mutableStateOf("") }
@@ -77,6 +77,8 @@ fun ConductorSettingsScreen(navController: NavController) {
     var configuredHint by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var model by remember { mutableStateOf(Settings.conductorModel) }
+    var savedModel by remember { mutableStateOf(Settings.conductorModel) }
 
     LaunchedEffect(provider) {
         configuredHint = provider.apiKey()?.takeLast(4)
@@ -143,29 +145,43 @@ fun ConductorSettingsScreen(navController: NavController) {
                         }
                     },
                 )
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = { model = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.conductor_model_title)) },
+                    placeholder = { Text(stringResource(R.string.conductor_model_hint)) },
+                    supportingText = { Text(stringResource(R.string.conductor_model_help)) },
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Button(
                         onClick = {
+                            if (busy) return@Button
                             val key = apiKey.trim()
-                            if (key.isEmpty() || busy) return@Button
+                            val nextModel = model.trim().ifBlank { DeepSeekModelClient.DEFAULT_MODEL }
+                            if (key.isEmpty() && nextModel == savedModel) return@Button
                             busy = true
                             scope.launch {
                                 try {
-                                    provider.save(key)
+                                    if (key.isNotEmpty()) provider.save(key)
+                                    Settings.conductorModel = nextModel
+                                    model = nextModel
+                                    savedModel = nextModel
                                     apiKey = ""
                                     configuredHint = provider.apiKey()?.takeLast(4)
                                     status = null
                                 } catch (e: Exception) {
-                                    status = e.message ?: "Could not save the key."
+                                    status = e.message ?: "Could not save the settings."
                                 } finally {
                                     busy = false
                                 }
                             }
                         },
-                        enabled = apiKey.isNotBlank() && !busy,
+                        enabled = (apiKey.isNotBlank() || model.trim().ifBlank { DeepSeekModelClient.DEFAULT_MODEL } != savedModel) && !busy,
                     ) {
                         Text(stringResource(R.string.conductor_api_key_save))
                     }
@@ -181,12 +197,14 @@ fun ConductorSettingsScreen(navController: NavController) {
                                     busy = false
                                     return@launch
                                 }
+                                val testModel = model.trim().ifBlank { DeepSeekModelClient.DEFAULT_MODEL }
                                 status =
-                                    runCatching { client.testConnection(key) }
-                                        .fold(
-                                            onSuccess = { it },
-                                            onFailure = { it.message ?: "Connection failed." },
-                                        )
+                                    runCatching {
+                                        DeepSeekModelClient(modelProvider = { testModel }).testConnection(key)
+                                    }.fold(
+                                        onSuccess = { it },
+                                        onFailure = { it.message ?: "Connection failed." },
+                                    )
                                 busy = false
                             }
                         },

@@ -142,7 +142,7 @@ class ConductorViewModel(
     private val runtime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
-            model = DeepSeekModelClient(),
+            model = DeepSeekModelClient(modelProvider = { Settings.conductorModel }),
             tools = registry,
             apiKeys = apiKeyProvider,
             config = AgentConfig(),

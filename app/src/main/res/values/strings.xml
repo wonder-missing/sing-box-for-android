@@ -804,6 +804,9 @@
     <string name="conductor_settings_title">Conductor</string>
     <string name="conductor_api_key_title">DeepSeek API key</string>
     <string name="conductor_api_key_hint">sk-...</string>
+    <string name="conductor_model_title">Model</string>
+    <string name="conductor_model_hint">deepseek-v4-flash</string>
+    <string name="conductor_model_help">Change only if your DeepSeek account uses a different model ID.</string>
     <string name="conductor_api_key_saved">Configured (…%1$s)</string>
     <string name="conductor_api_key_not_configured">Not configured</string>
     <string name="conductor_api_key_save">Save</string>

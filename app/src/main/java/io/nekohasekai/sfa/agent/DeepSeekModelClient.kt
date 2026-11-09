@@ -24,8 +24,10 @@ import java.util.UUID
 
 class DeepSeekModelClient(
     private val baseUrl: String = DEFAULT_BASE_URL,
-    private val model: String = DEFAULT_MODEL,
+    private val modelProvider: () -> String = { DEFAULT_MODEL },
 ) : AgentModelClient {
+    private fun currentModel(): String = modelProvider().trim().ifBlank { DEFAULT_MODEL }
+
     override suspend fun complete(
         request: AgentModelRequest,
         apiKey: String,
@@ -36,7 +38,7 @@ class DeepSeekModelClient(
             }
             val payload =
                 buildJsonObject {
-                    put("model", model)
+                    put("model", currentModel())
                     put("messages", buildMessages(request.messages))
                     if (request.tools.isNotEmpty()) {
                         put(
@@ -68,7 +70,7 @@ class DeepSeekModelClient(
             ),
             apiKey,
         )
-        return "Connection OK ($model)"
+        return "Connection OK (${currentModel()})"
     }
 
     private fun buildMessages(messages: List<AgentMessage>): JsonArray =
@@ -297,7 +299,7 @@ class DeepSeekModelClient(
 
     companion object {
         const val DEFAULT_BASE_URL = "https://api.deepseek.com"
-        const val DEFAULT_MODEL = "deepseek-flash"
+        const val DEFAULT_MODEL = "deepseek-v4-flash"
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
         private const val MAX_ERROR_BYTES = 4 * 1024
