@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.conductor
 
 import android.app.Application
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.nekohasekai.libbox.OutboundGroup
@@ -36,6 +37,7 @@ import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.agent.TurnOutcome
 import io.nekohasekai.sfa.agent.TurnResult
 import io.nekohasekai.sfa.agent.buildCommandNodeState
+import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
@@ -57,6 +59,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicLong
 
 class ConductorViewModel(
@@ -687,7 +693,25 @@ class ConductorViewModel(
 
     private fun deviceSummary(): String {
         val service = if (localServiceStarted == true) "started" else "stopped"
-        return "service=$service; remoteControl=$remoteControl; coreConnected=${_uiState.value.coreConnected}"
+        val configuration = getApplication<Application>().resources.configuration
+        val language =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && configuration.locales.size() > 0) {
+                configuration.locales[0].toLanguageTag()
+            } else {
+                Locale.getDefault().toLanguageTag()
+            }
+        val localTime = SimpleDateFormat("yyyy-MM-dd HH:mm z", Locale.getDefault()).format(Date())
+        return buildString {
+            append("service=$service; ")
+            append("remoteControl=$remoteControl; ")
+            append("coreConnected=${_uiState.value.coreConnected}; ")
+            append("preferredLanguage=$language; ")
+            append("timeZone=${TimeZone.getDefault().id}; ")
+            append("localTime=$localTime; ")
+            append("appVersion=${BuildConfig.VERSION_NAME}; ")
+            append("android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}); ")
+            append("device=${Build.MANUFACTURER} ${Build.MODEL}")
+        }
     }
 
     private fun append(item: ConductorItem) {

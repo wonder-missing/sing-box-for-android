@@ -15,7 +15,8 @@ object AgentContext {
                 appendLine("Do not expose internal reasoning; give the conclusion and the necessary details.")
                 appendLine("Use short plain-text paragraphs. **bold** and `inline code` are allowed; do not use Markdown tables, headings or code fences.")
                 if (!deviceSummary.isNullOrBlank()) {
-                    appendLine("Current device context: $deviceSummary")
+                    appendLine("Current device context (trusted metadata): $deviceSummary")
+                    appendLine("Use the device context when the user asks about language, time, app version, device or service state.")
                 }
             }.trim(),
         )
