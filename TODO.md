@@ -5,16 +5,14 @@
 
 ## 现在待办
 
-- [ ] **Conductor Agent Phase 2b**：工具目录与路由、Stop 真取消、流式回答、上下文压缩、probe/telemetry 可取消；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
-  - [ ] 2b-1 缓存修正：滞后批量裁剪、`toolChoice = NONE`、usage/cache token 字段。
-  - [ ] 2b-2 工具目录与路由：`route_call` / `search_tools`、静态 roster、搜索排序、unwrap、单测；开关 `toolRoutingEnabled`。
-  - [ ] 2b-3 Stop、流式、上下文压缩。
+- [ ] **Conductor Agent Phase 2b 剩余**：Stop 真取消、流式回答、上下文压缩、probe/telemetry 可取消；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - [ ] **节点探测并发/批量**：当前 `probe_via_node` 串行切换全局出站，不能直接并发。需要 `probe_many` 或 libbox per-request outbound binding；URLTest 只能测分组配置 URL，不能测任意 GitHub 地址。先验证 libbox HTTP API，再定方案。
 - [ ] **模型供应商抽象**：system prompt 已去 DeepSeek 品牌；client 和 Settings 仍是 DeepSeek 专用，后续抽 base URL/model/key/provider。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 
 ## 最近完成
 
+- dev（2026-11-10）：2B 工具目录与路由 + 缓存修正：静态 `route_call` / `search_tools`、目录 roster、分发前 unwrap、滞后裁剪、`toolChoice = NONE`、cache usage 字段；Test CI 绿
 - wonder.32（2026-11-10）：IME 收起后清焦点、system prompt 去 DeepSeek 品牌、probe HEAD 说明、2A 文档/TODO 与实现对齐
 - wonder.31（2026-11-10）：横三点对话菜单、Markdown 对话复制、Copy API trace（headers 脱敏）、用户消息自由选择、8 次/轮与 12 轮的宽松 guard、Telemetry 冗余说明删除
 - wonder.30（2026-11-10）：系统提示改为稳定前缀并持久化 transcript，提高缓存命中；对话复制改到最后消息下方三点菜单；Settings Conductor 入口瘦身、设置按钮改为纵向满宽；服务状态条为内容预留底部空间；工具步数耗尽后仍给出最终回答
