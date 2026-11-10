@@ -12,7 +12,7 @@ data class AgentConfig(
     val modelTimeoutMs: Long = 60_000,
     val turnTimeoutMs: Long = 300_000,
     val confirmationTimeoutMs: Long = 300_000,
-    val maxOutputTokens: Int = 1_024,
+    val maxOutputTokens: Int = 4_096,
     val maxInputTokens: Int = 16_000,
     val maxMessages: Int = 12,
     val maxObservationChars: Int = 4_000,

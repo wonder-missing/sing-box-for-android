@@ -1,23 +1,34 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+@Serializable
 sealed interface AgentMessage {
+    @Serializable
+    @SerialName("system")
     data class System(
         val content: String,
     ) : AgentMessage
 
+    @Serializable
+    @SerialName("user")
     data class User(
         val content: String,
     ) : AgentMessage
 
+    @Serializable
+    @SerialName("assistant")
     data class Assistant(
         val content: String?,
         val toolCalls: List<ToolCall> = emptyList(),
     ) : AgentMessage
 
+    @Serializable
+    @SerialName("tool")
     data class Tool(
         val toolCallId: String,
         val name: String,
@@ -25,6 +36,7 @@ sealed interface AgentMessage {
     ) : AgentMessage
 }
 
+@Serializable
 data class ToolCall(
     val id: String,
     val name: String,

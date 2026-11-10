@@ -37,6 +37,7 @@ import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.agent.TurnOutcome
 import io.nekohasekai.sfa.agent.TurnResult
 import io.nekohasekai.sfa.agent.buildCommandNodeState
+import io.nekohasekai.sfa.agent.validateTranscriptPairing
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
@@ -97,6 +98,7 @@ class ConductorViewModel(
     private val commandConfirmationIds = AtomicLong(0)
 
     private val apiKeyProvider = AgentApiKeyProviderFactory.create(application)
+    private val sessionStore = ConductorSessionStore(application)
 
     private val commandClient =
         CommandClient(
@@ -163,6 +165,7 @@ class ConductorViewModel(
     private var pendingCommandConfirmation: Pair<String, String>? = null
 
     init {
+        restoreSession()
         _uiState.update { it.copy(agentSupported = apiKeyProvider.supported) }
     }
 
@@ -185,7 +188,7 @@ class ConductorViewModel(
             if (remoteControl) {
                 append(ConductorItem.Notice("remote", "Connecting to Remote Control…"))
             } else {
-                append(ConductorItem.Notice("service", "Service started, connecting…"))
+                append(ConductorItem.Notice("startup", "Service started. Waiting for the core…"))
             }
             commandClient.connect()
         } else {
@@ -224,12 +227,14 @@ class ConductorViewModel(
             ConductorCommands.parse(text)
                 ?: run {
                     append(ConductorItem.Error("command", ConductorCommands.unknownMessage(text)))
+                    persistSession()
                     return
                 }
         val command =
             parsed.command
                 ?: run {
                     append(ConductorItem.Error("command", ConductorCommands.unknownMessage(text)))
+                    persistSession()
                     return
                 }
 
@@ -237,6 +242,7 @@ class ConductorViewModel(
             ConductorCommandKind.HELP -> {
                 val topic = parsed.args.firstOrNull()?.let(ConductorCommands::find)
                 append(ConductorItem.Notice("help", ConductorCommands.helpText(topic)))
+                persistSession()
             }
 
             ConductorCommandKind.CAPABILITIES ->
@@ -246,6 +252,7 @@ class ConductorViewModel(
                         ConductorCommands.capabilitiesText(registry.definitions()),
                     ),
                 )
+                persistSession()
 
             ConductorCommandKind.CLEAR -> {
                 if (_uiState.value.isRunning) {
@@ -254,6 +261,7 @@ class ConductorViewModel(
                     updateUi { copy(items = emptyList()) }
                     transcript = emptyList()
                     pendingCommandConfirmation = null
+                    sessionStore.clear()
                 }
             }
 
@@ -305,9 +313,13 @@ class ConductorViewModel(
         removeConfirmationItems()
         updateUi { copy(isRunning = false) }
         append(ConductorItem.Notice("command", "Cancelled."))
+        persistSession()
     }
 
     fun disconnect() {
+        if (!_uiState.value.isRunning) {
+            persistSession()
+        }
         synchronized(stateLock) {
             wantConnected = false
         }
@@ -318,6 +330,9 @@ class ConductorViewModel(
     }
 
     override fun onCleared() {
+        if (!_uiState.value.isRunning) {
+            persistSession()
+        }
         runtime.cancel()
         agentJob?.cancel()
         commandClient.disconnect()
@@ -372,6 +387,7 @@ class ConductorViewModel(
                         is TurnOutcome.Cancelled -> Unit
                         is TurnOutcome.Completed -> Unit
                     }
+                    persistSession()
                 }
             }
     }
@@ -459,6 +475,7 @@ class ConductorViewModel(
                 } else {
                     appendToolResult(title, result)
                 }
+                persistSession()
             }
         }
     }
@@ -474,6 +491,7 @@ class ConductorViewModel(
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
                 appendToolResult(title, result)
+                persistSession()
             }
         }
     }
@@ -581,6 +599,7 @@ class ConductorViewModel(
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
                 append(ConductorItem.Notice("tailscale", text))
+                persistSession()
             }
         }
     }
@@ -595,6 +614,7 @@ class ConductorViewModel(
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
                 append(ConductorItem.Notice("telemetry-upload", result))
+                persistSession()
             }
         }
     }
@@ -689,6 +709,80 @@ class ConductorViewModel(
         } else {
             "Tailscale error: ${AgentSanitizer.sanitizeText(message)}"
         }
+    }
+
+    fun conversationTranscript(): String =
+        buildString {
+            _uiState.value.items.forEach { item ->
+                when (item) {
+                    is ConductorItem.User -> appendLine("User: ${item.text}")
+                    is ConductorItem.Assistant -> appendLine("Conductor: ${item.text}")
+                    is ConductorItem.Tool -> {
+                        appendLine("Tool ${item.call.name} [${item.status.name.lowercase()}]")
+                        if (item.call.displayArgsJson.isNotBlank() && item.call.displayArgsJson != "{}") {
+                            appendLine(item.call.displayArgsJson)
+                        }
+                        item.result?.let { result ->
+                            val body =
+                                result.output?.let { AgentJson.pretty(it) }
+                                    ?: result.message
+                                    ?: result.errorCode
+                            if (!body.isNullOrBlank()) appendLine(body)
+                            if (result.truncated) appendLine("(truncated)")
+                        }
+                    }
+
+                    is ConductorItem.Notice -> appendLine("[${item.title}] ${item.body}")
+                    is ConductorItem.Error -> appendLine("[${item.title} error] ${item.message}")
+                    is ConductorItem.Confirmation ->
+                        appendLine("[confirmation pending] ${item.request.toolName} ${item.request.displayArgsJson}")
+                }
+                appendLine()
+            }
+        }.trim()
+
+    private fun restoreSession() {
+        val session = sessionStore.load() ?: return
+        transcript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
+        val restoredItems =
+            session.items.mapNotNull { item ->
+                when (item) {
+                    is ConductorItem.Confirmation -> null
+                    is ConductorItem.Tool ->
+                        if (item.status == ToolStatus.RUNNING) {
+                            item.copy(
+                                status = ToolStatus.CANCELLED,
+                                result =
+                                    ToolResultView(
+                                        callId = item.call.id,
+                                        name = item.call.name,
+                                        ok = false,
+                                        output = null,
+                                        errorCode = "interrupted",
+                                        message = "Session resumed after the page was left.",
+                                        truncated = false,
+                                    ),
+                            )
+                        } else {
+                            item
+                        }
+
+                    else -> item
+                }
+            }
+        if (restoredItems.isNotEmpty()) {
+            _uiState.update { it.copy(items = restoredItems) }
+        }
+    }
+
+    private fun persistSession() {
+        val items = _uiState.value.items.filterNot { it is ConductorItem.Confirmation }
+        if (transcript.isEmpty() && items.isEmpty()) {
+            sessionStore.clear()
+            return
+        }
+        if (!validateTranscriptPairing(transcript)) return
+        sessionStore.save(transcript, items)
     }
 
     private fun deviceSummary(): String {

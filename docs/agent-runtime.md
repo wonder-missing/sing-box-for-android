@@ -224,7 +224,7 @@ DeepSeek 请求形态：
   "tools": [{"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}],
   "tool_choice": "auto",
   "temperature": 0.2,
-  "max_tokens": 1024,
+  "max_tokens": 4096,
   "stream": false
 }
 ```
@@ -475,7 +475,7 @@ data class AgentConfig(
     val turnTimeoutMs: Long = 300_000,
     val confirmationTimeoutMs: Long = 300_000,
     val cancelGraceMs: Long = 1_000,
-    val maxOutputTokens: Int = 1_024,
+    val maxOutputTokens: Int = 4_096,
     val maxInputTokens: Int = 16_000,
     val maxObservationChars: Int = 4_000,
     val maxObservationCharsPerRound: Int = 8_000,
@@ -585,7 +585,7 @@ Phase 2a 默认值：
 | 每 turn 模型调用 | 最多 2 次，另有最多 2 次瞬态重试 |
 | 模型调用超时 | 60s |
 | turn 总超时 | 300s，确认等待不计入 |
-| 单次输出 | 1,024 tokens |
+| 单次输出 | 4,096 tokens |
 | 输入估算 | 16k tokens |
 | 单轮 tool call | 最多 4 个 |
 | 单条 observation | 4,000 字符 |

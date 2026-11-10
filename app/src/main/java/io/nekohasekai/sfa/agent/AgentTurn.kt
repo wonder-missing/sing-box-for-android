@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 enum class AgentTurnErrorCode {
@@ -58,6 +59,7 @@ sealed interface TurnOutcome {
     data class Failed(val error: AgentError) : TurnOutcome
 }
 
+@Serializable
 enum class ToolStatus {
     RUNNING,
     SUCCEEDED,
@@ -65,12 +67,14 @@ enum class ToolStatus {
     CANCELLED,
 }
 
+@Serializable
 data class ToolCallView(
     val id: String,
     val name: String,
     val displayArgsJson: String,
 )
 
+@Serializable
 data class ToolResultView(
     val callId: String,
     val name: String,
@@ -82,6 +86,7 @@ data class ToolResultView(
     val degraded: Boolean = false,
 )
 
+@Serializable
 data class ConfirmationRequest(
     val id: Long,
     val toolName: String,

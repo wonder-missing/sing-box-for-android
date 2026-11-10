@@ -40,7 +40,10 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -81,6 +84,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.constant.Status
@@ -192,7 +198,13 @@ fun ConductorScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                contentPadding =
+                PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = if (uiState.items.isEmpty()) 12.dp else 60.dp,
+                    bottom = 12.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (uiState.items.isEmpty()) {
@@ -265,6 +277,37 @@ fun ConductorScreen(
             },
             focusRequester = focusRequester,
         )
+
+        if (uiState.items.isNotEmpty()) {
+            val clipboard = LocalClipboardManager.current
+            val context = LocalContext.current
+            Surface(
+                modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = scaffoldPadding.calculateTopPadding() + 8.dp, end = 8.dp)
+                    .size(48.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                IconButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(viewModel.conversationTranscript()))
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.conductor_conversation_copied),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.ContentCopy,
+                        contentDescription = stringResource(R.string.conductor_copy_conversation),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -555,7 +598,14 @@ private fun ToolItem(item: ConductorItem.Tool) {
                     }
                 }
             } else {
-                val summary = result.message ?: result.errorCode ?: stringResource(R.string.conductor_tool_details_hint)
+                val outputMessage =
+                    (result.output?.get("message") as? JsonPrimitive)?.contentOrNull
+                        ?: ((result.output?.get("core") as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
+                val summary =
+                    result.message
+                        ?: outputMessage
+                        ?: result.errorCode
+                        ?: stringResource(R.string.conductor_tool_details_hint)
                 Text(
                     text = summary,
                     style = MaterialTheme.typography.bodySmall,
