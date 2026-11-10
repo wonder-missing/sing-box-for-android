@@ -45,6 +45,7 @@ object SettingsKey {
 
     // Conductor
     const val CONDUCTOR_MODEL = "conductor_model"
+    const val CONDUCTOR_TOOL_ROUTING = "conductor_tool_routing"
 
     // Remote Control
     const val ACTIVE_REMOTE_SERVER_ID = "active_remote_server_id"

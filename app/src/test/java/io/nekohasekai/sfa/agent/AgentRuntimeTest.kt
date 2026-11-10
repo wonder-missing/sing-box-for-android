@@ -352,6 +352,32 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun routingCanBeToggledBetweenTurns() {
+        var enabled = false
+        val model = ScriptedModel(mutableListOf(response("one"), response("two")))
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime =
+            AgentRuntime(
+                inputGuard = DefaultAgentInputGuard,
+                model = model,
+                tools = executor,
+                apiKeys = FakeKeyProvider("sk-test"),
+                config = AgentConfig(maxToolRounds = 1),
+                toolRoutingEnabled = { enabled },
+            )
+
+        runBlocking { runtime.runTurn("one", emptyList(), onEvent = {}, confirm = { true }) }
+        assertEquals(listOf("list_nodes"), model.requests[0].tools.map { it.name })
+
+        enabled = true
+        runBlocking { runtime.runTurn("two", emptyList(), onEvent = {}, confirm = { true }) }
+        assertEquals(
+            listOf(AgentMetaTools.ROUTE_CALL, AgentMetaTools.SEARCH_TOOLS),
+            model.requests[1].tools.map { it.name },
+        )
+    }
+
+    @Test
     fun nativeModeStillSendsEveryToolSchema() {
         val model = ScriptedModel(mutableListOf(response("hello")))
         val executor = FakeExecutor(listOf(listNodes, probe)) { call, _ -> ok(call.name) }

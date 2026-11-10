@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -33,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -79,6 +81,7 @@ fun ConductorSettingsScreen(navController: NavController) {
     var busy by remember { mutableStateOf(false) }
     var model by remember { mutableStateOf(Settings.conductorModel) }
     var savedModel by remember { mutableStateOf(Settings.conductorModel) }
+    var toolRouting by remember { mutableStateOf(Settings.conductorToolRouting) }
 
     LaunchedEffect(provider) {
         configuredHint = provider.apiKey()?.takeLast(4)
@@ -154,6 +157,30 @@ fun ConductorSettingsScreen(navController: NavController) {
                     placeholder = { Text(stringResource(R.string.conductor_model_hint)) },
                     supportingText = { Text(stringResource(R.string.conductor_model_help)) },
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.conductor_tool_routing_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = stringResource(R.string.conductor_tool_routing_help),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = toolRouting,
+                        onCheckedChange = {
+                            toolRouting = it
+                            Settings.conductorToolRouting = it
+                        },
+                    )
+                }
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),

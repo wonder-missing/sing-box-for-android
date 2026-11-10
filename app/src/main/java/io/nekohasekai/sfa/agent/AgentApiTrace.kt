@@ -2,6 +2,9 @@ package io.nekohasekai.sfa.agent
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Date
@@ -59,6 +62,7 @@ object AgentApiTrace {
                     appendLine("- time: ${formatTime(entry.timestamp)}")
                     entry.status?.let { appendLine("- status: $it") }
                     entry.error?.let { appendLine("- error: $it") }
+                    entry.responseBody?.let { body -> usageLine(body)?.let { appendLine("- usage: $it") } }
                     appendLine()
                     appendLine("### Request headers")
                     appendLine()
@@ -129,6 +133,18 @@ object AgentApiTrace {
             val element = Json.parseToJsonElement(body) as JsonElement
             prettyJson.encodeToString(JsonElement.serializer(), element)
         }.getOrElse { body }
+
+    private fun usageLine(body: String): String? {
+        val root = runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null
+        val usage = root["usage"] as? JsonObject ?: return null
+        val prompt = (usage["prompt_tokens"] as? JsonPrimitive)?.intOrNull ?: return null
+        return buildString {
+            append("prompt=$prompt")
+            (usage["completion_tokens"] as? JsonPrimitive)?.intOrNull?.let { append(" completion=$it") }
+            (usage["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull?.let { append(" cache_hit=$it") }
+            (usage["prompt_cache_miss_tokens"] as? JsonPrimitive)?.intOrNull?.let { append(" cache_miss=$it") }
+        }
+    }
 
     private fun formatTime(timestamp: Long): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(timestamp))

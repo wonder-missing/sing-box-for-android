@@ -43,6 +43,7 @@ class AgentRuntime(
     private val tools: AgentToolExecutor,
     private val apiKeys: AgentApiKeyProvider,
     private val config: AgentConfig = AgentConfig(),
+    private val toolRoutingEnabled: () -> Boolean = { config.toolRoutingEnabled },
 ) {
     private val confirmationIds = AtomicLong(0)
 
@@ -105,14 +106,15 @@ class AgentRuntime(
 
         val transcript = (history + AgentMessage.User(userText)).toMutableList()
         val startSize = history.size
+        val routingEnabled = toolRoutingEnabled()
         val catalog = AgentToolCatalog(tools.definitions())
         val systemMessage =
             AgentContext.systemPrompt(
                 deviceSummary,
-                if (config.toolRoutingEnabled) catalog.promptSection() else null,
+                if (routingEnabled) catalog.promptSection() else null,
             )
         val requestTools =
-            if (config.toolRoutingEnabled) {
+            if (routingEnabled) {
                 AgentMetaTools.schemas()
             } else {
                 catalog.definitions.map { it.toToolSchema() }
@@ -295,7 +297,7 @@ class AgentRuntime(
                     return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
                 }
                 val prepared =
-                    if (config.toolRoutingEnabled) {
+                    if (routingEnabled) {
                         prepareToolCall(call, catalog)
                     } else {
                         PreparedCall.Direct(call)

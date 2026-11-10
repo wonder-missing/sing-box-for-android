@@ -108,6 +108,7 @@ object Settings {
 
     // Conductor
     var conductorModel by dataStore.string(SettingsKey.CONDUCTOR_MODEL) { "deepseek-v4-flash" }
+    var conductorToolRouting by dataStore.boolean(SettingsKey.CONDUCTOR_TOOL_ROUTING) { true }
 
     // Tailscale SSH
     var tailscaleSSHRememberedUsernames by dataStore.map(SettingsKey.TAILSCALE_SSH_REMEMBERED_USERNAMES)

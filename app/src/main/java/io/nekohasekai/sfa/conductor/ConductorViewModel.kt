@@ -153,6 +153,7 @@ class ConductorViewModel(
             tools = registry,
             apiKeys = apiKeyProvider,
             config = AgentConfig(),
+            toolRoutingEnabled = { Settings.conductorToolRouting },
         )
 
     private var transcript: List<AgentMessage> = emptyList()

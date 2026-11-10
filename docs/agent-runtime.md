@@ -726,7 +726,7 @@ Never target route_call or search_tools with route_call.
 
 | 项 | 默认值 | 说明 |
 |---|---|---|
-| `toolRoutingEnabled` | `true` | 路由开关；保留原生模式用于回退和 A/B |
+| `toolRoutingEnabled` | `true` | 路由开关；Settings > Conductor 可切换，下一轮生效；保留原生模式用于回退和 A/B |
 | `searchLimit` | 5 | 单次搜索返回的工具数上限 |
 | `maxSearchesPerRound` | 2 | 单轮搜索次数上限；超限回 `search_budget_exceeded` |
 | `maxMessages` | 48 | 裁剪高水位 |
