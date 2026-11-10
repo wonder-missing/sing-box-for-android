@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -66,6 +68,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -79,6 +82,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
@@ -123,7 +128,30 @@ fun ConductorScreen(
     val focusManager = LocalFocusManager.current
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val density = LocalDensity.current
     val scaffoldPadding = LocalScaffoldPadding.current
+
+    // If the IME is dismissed while the field still has focus, clear focus so the
+    // cursor stops blinking and the IME does not pop back when the app resumes.
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    var wasImeVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(imeVisible) {
+        if (wasImeVisible && !imeVisible) {
+            focusManager.clearFocus()
+        }
+        wasImeVisible = imeVisible
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_PAUSE) {
+                    focusManager.clearFocus()
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val suggestions = ConductorCommands.suggestions(input)
 
     fun focusInput() {
@@ -160,8 +188,8 @@ fun ConductorScreen(
             .background(MaterialTheme.colorScheme.surface)
             .imePadding(),
     ) {
-        val density = LocalDensity.current
-        val lineHeightDp = with(density) {
+        val panelDensity = LocalDensity.current
+        val lineHeightDp = with(panelDensity) {
             MaterialTheme.typography.bodyLarge.lineHeight.toDp()
         }
         val defaultPanelHeight =
@@ -172,7 +200,7 @@ fun ConductorScreen(
 
         val rawTarget = if (inputExpanded) maxHeight * 0.85f else defaultPanelHeight
         // Whole-pixel heights avoid subpixel shimmer while the panel moves.
-        val targetPanelHeight = with(density) { rawTarget.roundToPx().toDp() }
+        val targetPanelHeight = with(panelDensity) { rawTarget.roundToPx().toDp() }
 
         // During and just after an IME inset change, snap the panel height.
         // Otherwise the IME animation and the 200ms height animation can

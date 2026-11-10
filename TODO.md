@@ -5,11 +5,14 @@
 
 ## 现在待办
 
-- [ ] **Conductor Agent Phase 2b**：多轮循环、Stop 真取消、流式回答、probe/telemetry 可取消；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
+- [ ] **Conductor Agent Phase 2b**：Stop 真取消、流式回答、上下文压缩、probe/telemetry 可取消；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
+- [ ] **节点探测并发/批量**：当前 `probe_via_node` 串行切换全局出站，不能直接并发。需要 `probe_many` 或 libbox per-request outbound binding；URLTest 只能测分组配置 URL，不能测任意 GitHub 地址。先验证 libbox HTTP API，再定方案。
+- [ ] **模型供应商抽象**：system prompt 已去 DeepSeek 品牌；client 和 Settings 仍是 DeepSeek 专用，后续抽 base URL/model/key/provider。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 
 ## 最近完成
 
+- wonder.31（2026-11-10）：横三点对话菜单、Markdown 对话复制、Copy API trace（headers 脱敏）、用户消息自由选择、8 次/轮与 12 轮的宽松 guard、Telemetry 冗余说明删除
 - wonder.30（2026-11-10）：系统提示改为稳定前缀并持久化 transcript，提高缓存命中；对话复制改到最后消息下方三点菜单；Settings Conductor 入口瘦身、设置按钮改为纵向满宽；服务状态条为内容预留底部空间；工具步数耗尽后仍给出最终回答
 - wonder.29（2026-11-10）：Conductor 会话跨页面/进程持久化、顶部一键复制整段对话、模型输出上限 1024→4096、服务启动文案与工具摘要优化
 - wonder.28（2026-11-10）：Conductor 2A 打磨：用户消息长按复制、轻量 Markdown 渲染、工具卡片折叠与美化、Tailscale 友好错误、服务连接文案、基础设备上下文（语言/时区/版本）
