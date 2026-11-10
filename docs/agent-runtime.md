@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30 实现；Phase 2b 待做
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 待做
 最后更新：2026-11-10
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -9,7 +9,7 @@
 摘要：
 
 - Phase 2a：最多 12 轮工具调用作为防死循环 guard，已经支持多步；2B 再补 Stop、真取消和流式。
-- Phase 2b：最多 6 轮工具调用，带 Stop、真取消和流式回答。
+- Phase 2b：补 Stop、真取消、流式回答和上下文压缩；工具轮数仍由 12 轮 guard 控制。
 - 使用结构化 tool call，不解析文本 ReAct。
 - `AgentRuntime` 是手写薄层，纯 Kotlin/JVM 可测；DeepSeek key 走 App Settings 的 BYOK 入口，Android Keystore 加密。
 - 确认是运行时的暂停状态，模型无法绕过。
@@ -811,6 +811,7 @@ app/src/main/java/io/nekohasekai/sfa/agent/
   AgentContext.kt        system prompt、历史裁剪、截断
   AgentToolExecutor.kt   AgentToolRegistry 的 suspend/timeout/cancellation 适配
   AgentUiModels.kt       ToolCallView / ToolResultView / ConductorItem
+  AgentApiTrace.kt       API 请求/响应调试 trace（headers 脱敏）
 
 app/src/minApi21/java/io/nekohasekai/sfa/agent/
   AgentApiKeyProviderFactory.kt  返回 Unsupported 实现
@@ -841,6 +842,8 @@ app/src/test/java/io/nekohasekai/sfa/agent/
   DeepSeekModelClientTest.kt
   AgentToolSchemaTest.kt
   AgentContextTest.kt
+  AgentApiTraceTest.kt
+  ConductorSessionSerializationTest.kt
 ```
 
 `DeepSeekModelClientTest` 用本地 loopback HTTP server，不连真实 API；`AgentRuntimeTest` 用 fake model client、fake tool executor 和可控 clock。测试依赖加 `org.jetbrains.kotlinx:kotlinx-coroutines-test`。
@@ -897,7 +900,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 范围：
 
-- `maxToolRounds = 6`，多轮循环。
+- 工具轮数 guard 默认 12，保持宽松。
 - Stop 真取消：OkHttp `Call.cancel()`、suspend 工具、`withTimeout`、工具资源清理。
 - `telemetry_upload` 改用可取消的 HTTP 客户端；`probe_via_node` 增加可取消句柄，或改用可中断 HTTP 客户端；不能再留下 15s 或 30s 的阻塞 worker。
 - 流式回答：`AgentStreamingModelClient`、`AssistantDelta`、tool call delta 累积。
@@ -906,7 +909,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 验收：
 
-- 多步任务能在 6 轮工具调用内完成，超出时给出明确提示。
+- 多步任务能在 guard 内完成；超出时给出明确提示和已有结论。
 - 所有注册工具的取消确认 ≤1s，Stop 后 1s 内 UI 回到可输入状态；若超时，UI 保持禁用并显示「正在停止，后台操作未确认」，不允许开新 turn。
 - 流式回答逐字出现，用户上滑后不被强制拉回底部。
 - Stop、超时、流式中断后 transcript 仍然配对。
@@ -932,6 +935,16 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 会话历史的保留期限、清理入口和导出格式；当前已本地持久化，尚无自动过期。
 - 是否展示模型推理文本；默认不展示，只展示工具状态和最终回答。
 - 精确的预算数值和输入拦截误报率，需要真机数据后再调。
+
+## 17.1 2A 复盘与 2B 调整
+
+- 2A 证明了“模型 + typed tools + 确认”的链路成立；主要瓶颈在工具粒度，不在循环。
+- 下一版把能力抬高一层：`network_overview`、`probe_many`、`url_test` 等聚合工具；默认返回稳定摘要，详情按需取，避免把 66 个节点的原始 JSON 全塞进上下文。
+- 限制改成预算而不是小步数门槛：保留 12 轮防死循环 guard、超时和费用/Token 预算；产品体验靠 Stop、流式和“继续”，不要靠 4 次/1 轮这类硬卡点。
+- 上下文保持稳定前缀：system prompt 只放稳定信息，动态时间和状态走 tool；历史超过窗口时做压缩/摘要，减少 trim 造成的缓存断裂。
+- 工具并发加元数据：只读且不共享全局状态的工具可以并行，probe 这种改全局选择的必须串行；无论并行与否，下一轮模型请求都要等整批 observation 完成。
+- 供应商抽象：system prompt 不写品牌；后续抽 base URL、model、key 和 provider 名称，当前 DeepSeek 实现只是其中一种。
+- 可观测性：API trace 继续保留，并补 usage、cache hit/miss token、tool 耗时，用于判断问题出在模型还是工具。
 
 ## 18. 与上位文档的关系
 
