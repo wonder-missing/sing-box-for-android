@@ -7,6 +7,7 @@ import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogEntry
 import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.sfa.BuildConfig
+import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.utils.CommandClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -478,7 +479,10 @@ internal object TelemetryRuntime {
     }
 
     /** Manual "upload now": drains logs, client events and unsent crash summaries. */
-    suspend fun uploadNow(context: Context): String {
+    suspend fun uploadNow(
+        context: Context,
+        cancellation: ToolCancellation? = null,
+    ): String {
         val app = context.applicationContext
         if (!TelemetryPreferences.isEnabled(app)) return "Upload is off."
         if (!TelemetryPreferences.canUpload(app)) return "Save an https endpoint and token first."
@@ -509,6 +513,7 @@ internal object TelemetryRuntime {
                         finalFlush = false,
                         maxBatches = TelemetryPayload.MAX_DRAIN_BATCHES,
                         deadline = manualDeadline,
+                        cancellation = cancellation,
                     )
                 }
             if (result != null) {
@@ -558,8 +563,9 @@ internal object TelemetryRuntime {
         finalFlush: Boolean,
         maxBatches: Int,
         deadline: Long = Long.MAX_VALUE,
+        cancellation: ToolCancellation? = null,
     ): UploadOutcome = uploadMutex.withLock {
-        drainLocked(flush, reason, finalFlush, maxBatches, deadline)
+        drainLocked(flush, reason, finalFlush, maxBatches, deadline, cancellation)
     }
 
     private suspend fun drainLocked(
@@ -568,6 +574,7 @@ internal object TelemetryRuntime {
         finalFlush: Boolean,
         maxBatches: Int,
         deadline: Long,
+        cancellation: ToolCancellation?,
     ): UploadOutcome {
         val context = flush.context
         if (!TelemetryPreferences.canUpload(context)) {
@@ -592,10 +599,14 @@ internal object TelemetryRuntime {
         // flush sent a single 500-line batch, so a busy log fell behind and the
         // disk cap evicted the oldest lines).
         while (batches < maxBatches && System.currentTimeMillis() < deadline) {
+            if (cancellation?.isCancelled() == true) {
+                failure = "cancelled"
+                break
+            }
             if (flush.queue.isEmpty() && !TelemetryEventLog.hasPendingNonUpload(context) && crashPending.isEmpty()) {
                 break
             }
-            val outcome = sendOne(flush, token, finalFlush, reason, crashPending)
+            val outcome = sendOne(flush, token, finalFlush, reason, crashPending, cancellation)
             if (!outcome.sent) {
                 failure = outcome.detail
                 break
@@ -635,7 +646,9 @@ internal object TelemetryRuntime {
         finalFlush: Boolean,
         reason: String,
         crashEvents: List<CrashReportTelemetry.PendingEvent>,
+        cancellation: ToolCancellation?,
     ): SendOutcome {
+        if (cancellation?.isCancelled() == true) return SendOutcome(false, detail = "cancelled")
         val context = flush.context
         val queue = flush.queue
         val endpoint = TelemetryPreferences.endpointUrl(context)
@@ -706,8 +719,10 @@ internal object TelemetryRuntime {
                 // already cleared; keep the producing session on the upload event.
                 flush.sessionId?.let { put(TelemetryClientEvent.SESSION_FIELD, it) }
             }
-            val result = postWithRetry(flush.uploader, endpoint, token, body, finalFlush, tags)
+            val result = postWithRetry(flush.uploader, endpoint, token, body, finalFlush, tags, cancellation)
             when (result) {
+                UploadResult.Cancelled -> return SendOutcome(false, detail = "cancelled")
+
                 UploadResult.Success -> {
                     // The server accepted the payload: this is the time the settings
                     // page must show, even if a later local disk write fails.
@@ -790,6 +805,7 @@ internal object TelemetryRuntime {
         body: ByteArray,
         finalFlush: Boolean,
         tags: Map<String, Any?>,
+        cancellation: ToolCancellation?,
     ): UploadResult {
         val attempts = if (finalFlush) FINAL_ATTEMPTS else RETRY_ATTEMPTS
         val connectTimeout = if (finalFlush) FINAL_CONNECT_TIMEOUT_MS else CONNECT_TIMEOUT_MS
@@ -797,11 +813,26 @@ internal object TelemetryRuntime {
         var delayMs = 15_000L
         var last: UploadResult = UploadResult.Failed(true, "not sent")
         repeat(attempts) { attempt ->
-            val result = uploader.post(endpoint, token, body, connectTimeout, readTimeout, tags + ("attempt" to attempt + 1))
+            if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
+            val result =
+                uploader.post(
+                    endpoint,
+                    token,
+                    body,
+                    connectTimeout,
+                    readTimeout,
+                    tags + ("attempt" to attempt + 1),
+                    cancellation,
+                )
             last = result
+            if (result is UploadResult.Cancelled) return result
             val retry = result is UploadResult.Failed && result.retryable && attempt < attempts - 1
             if (!retry) return result
-            delay(delayMs)
+            val until = System.currentTimeMillis() + delayMs
+            while (System.currentTimeMillis() < until) {
+                if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
+                delay(minOf(200L, (until - System.currentTimeMillis()).coerceAtLeast(1L)))
+            }
             delayMs = (delayMs * 2).coerceAtMost(TelemetryPayload.FLUSH_INTERVAL_MS)
         }
         return last

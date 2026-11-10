@@ -24,6 +24,7 @@ data class AgentConfig(
     val maxInputTokens: Int = 64_000,
     val maxMessages: Int = 48,
     val trimTargetMessages: Int = 36,
+    val maxHistoricalObservationChars: Int = 4_000,
     val toolRoutingEnabled: Boolean = true,
     val searchLimit: Int = 5,
     val maxSearchesPerRound: Int = 2,
@@ -36,6 +37,7 @@ data class AgentConfig(
 data class TurnResult(
     val messages: List<AgentMessage>,
     val outcome: TurnOutcome,
+    val compactedHistory: List<AgentMessage>? = null,
 )
 
 class AgentRuntime(
@@ -52,6 +54,9 @@ class AgentRuntime(
     @Volatile
     private var cancelRequested = false
 
+    @Volatile
+    private var preparedHistoryForTurn: List<AgentMessage>? = null
+
     fun cancel(reason: String = "user") {
         cancelRequested = true
         streamingModel?.cancel()
@@ -66,6 +71,7 @@ class AgentRuntime(
         confirm: suspend (ConfirmationRequest) -> Boolean,
     ): TurnResult {
         cancelRequested = false
+        preparedHistoryForTurn = null
         val turnId = UUID.randomUUID().toString()
         onEvent(AgentEvent.TurnStarted(turnId))
 
@@ -107,8 +113,11 @@ class AgentRuntime(
             )
         }
 
-        val transcript = (history + AgentMessage.User(userText)).toMutableList()
-        val startSize = history.size
+        val preparedHistory =
+            AgentContext.compactOldObservations(history, config.maxHistoricalObservationChars)
+        preparedHistoryForTurn = preparedHistory.takeIf { it !== history }
+        val transcript = (preparedHistory + AgentMessage.User(userText)).toMutableList()
+        val startSize = preparedHistory.size
         val routingEnabled = toolRoutingEnabled()
         val catalog = AgentToolCatalog(tools.definitions())
         val systemMessage =
@@ -799,6 +808,6 @@ class AgentRuntime(
                 )
         }
         onEvent(AgentEvent.TurnFinished(finalOutcome))
-        return TurnResult(transcript.drop(startSize), finalOutcome)
+        return TurnResult(transcript.drop(startSize), finalOutcome, preparedHistoryForTurn)
     }
 }

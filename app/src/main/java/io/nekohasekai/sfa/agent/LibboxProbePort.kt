@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.agent
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.utils.CommandTarget
 import io.nekohasekai.sfa.utils.HTTPClient
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -25,7 +26,9 @@ class LibboxProbePort(
     override fun probe(
         outbound: String,
         url: String,
+        cancellation: ToolCancellation?,
     ): ProbeOutcome {
+        if (cancellation?.isCancelled() == true) return ProbeOutcome(error = "cancelled")
         val snapshot = nodeSource.snapshot()
         if (!snapshot.coreRunning) {
             return ProbeOutcome(error = "sing-box core is not running; start the service before probing")
@@ -60,14 +63,22 @@ class LibboxProbePort(
             Executors.newSingleThreadExecutor { runnable ->
                 Thread(runnable, "agent-probe").apply { isDaemon = true }
             }
+        cancellation?.onCancel { executor.shutdownNow() }
+        if (cancellation?.isCancelled() == true) {
+            executor.shutdownNow()
+            return ProbeOutcome(error = "cancelled")
+        }
         return try {
             executor
-                .submit<ProbeOutcome> { runProbe(group, outbound, url) }
+                .submit<ProbeOutcome> { runProbe(group, outbound, url, cancellation) }
                 .get(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (e: TimeoutException) {
             // Best effort: the worker may still be blocked in the Go HTTP call.
             restoreSelection(group.tag, group.selected)
             ProbeOutcome(error = "probe timed out after ${timeoutMs}ms")
+        } catch (e: CancellationException) {
+            restoreSelection(group.tag, group.selected)
+            ProbeOutcome(error = "cancelled")
         } catch (e: ExecutionException) {
             ProbeOutcome(error = e.cause?.message ?: e.message ?: "probe failed")
         } catch (e: InterruptedException) {
@@ -82,16 +93,20 @@ class LibboxProbePort(
         group: AgentGroup,
         outbound: String,
         url: String,
+        cancellation: ToolCancellation?,
     ): ProbeOutcome {
         val client = CommandTarget.standaloneClient()
         var selectionChanged = false
         try {
+            if (cancellation?.isCancelled() == true) return ProbeOutcome(error = "cancelled")
             if (group.selected != outbound) {
                 client.selectOutbound(group.tag, outbound)
                 selectionChanged = true
             }
             val http = Libbox.newHTTPClient()
+            cancellation?.onCancel { runCatching { http.close() } }
             try {
+                if (cancellation?.isCancelled() == true) return ProbeOutcome(error = "cancelled")
                 val request = http.newRequest()
                 request.setURL(url)
                 request.setUserAgent(HTTPClient.userAgent)
@@ -101,13 +116,21 @@ class LibboxProbePort(
                     request.execute()
                     ProbeOutcome(statusCode = 200, latencyMs = elapsedMs(started))
                 } catch (e: Exception) {
-                    classifyProbeFailure(e.message, elapsedMs(started))
+                    if (cancellation?.isCancelled() == true) {
+                        ProbeOutcome(error = "cancelled")
+                    } else {
+                        classifyProbeFailure(e.message, elapsedMs(started))
+                    }
                 }
             } finally {
                 runCatching { http.close() }
             }
         } catch (e: Exception) {
-            return ProbeOutcome(error = e.message ?: e.toString())
+            return if (cancellation?.isCancelled() == true) {
+                ProbeOutcome(error = "cancelled")
+            } else {
+                ProbeOutcome(error = e.message ?: e.toString())
+            }
         } finally {
             if (selectionChanged) {
                 restoreSelection(group.tag, group.selected)

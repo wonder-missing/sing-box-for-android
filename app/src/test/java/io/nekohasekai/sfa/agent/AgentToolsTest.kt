@@ -268,6 +268,58 @@ class AgentToolsTest {
     }
 
     @Test
+    fun probeCancellationAfterPortReturnsIsReportedAsCancelled() {
+        lateinit var registry: AgentToolRegistry
+        val probe =
+            object : ProbePort {
+                override fun probe(
+                    outbound: String,
+                    url: String,
+                    cancellation: ToolCancellation?,
+                ): ProbeOutcome {
+                    registry.cancelActive()
+                    return ProbeOutcome(statusCode = 200, latencyMs = 1)
+                }
+            }
+        registry = buildTestRegistry(probePort = probe)
+
+        val result =
+            registry.userExec(
+                "probe_via_node",
+                """{"outbound":"node-a","url":"https://example.com/"}""",
+            )
+
+        assertFalse(result.ok)
+        assertEquals("cancelled", result.errorCode)
+    }
+
+    @Test
+    fun telemetryCancellationAfterPortReturnsIsReportedAsCancelled() {
+        lateinit var registry: AgentToolRegistry
+        val telemetry =
+            object : TelemetryUploadPort {
+                override suspend fun upload(cancellation: ToolCancellation?): String {
+                    registry.cancelActive()
+                    return "uploaded"
+                }
+            }
+        registry =
+            AgentToolRegistry(
+                AgentTools(
+                    nodeSource = FakeNodeSource(),
+                    deviceSource = FakeDeviceSource(),
+                    probePort = FakeProbePort(),
+                    telemetryUploadPort = telemetry,
+                ).all,
+            )
+
+        val result = registry.userExec("telemetry_upload")
+
+        assertFalse(result.ok)
+        assertEquals("cancelled", result.errorCode)
+    }
+
+    @Test
     fun probePortFailureReturnsStructuredError() {
         val probe = FakeProbePort(ProbeOutcome(error = "outbound not selectable"))
         val registry = buildTestRegistry(probePort = probe)

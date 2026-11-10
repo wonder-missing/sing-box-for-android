@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -279,7 +280,10 @@ class AgentTools(
                 if (cancellation.isCancelled()) {
                     return ToolExecution(errorCode = "cancelled", errorMessage = "probe cancelled")
                 }
-                val outcome = probePort.probe(outbound, url)
+                val outcome = probePort.probe(outbound, url, cancellation)
+                if (cancellation.isCancelled()) {
+                    return ToolExecution(errorCode = "cancelled", errorMessage = "probe cancelled")
+                }
                 val error =
                     outcome.error
                         ?: if (outcome.statusCode == null) "probe returned no HTTP status" else null
@@ -363,11 +367,18 @@ class AgentTools(
                 if (cancellation.isCancelled()) {
                     return ToolExecution(errorCode = "cancelled", errorMessage = "telemetry upload cancelled")
                 }
-                return runCatching { port.upload() }
-                    .fold(
-                        onSuccess = { ToolExecution(output = buildJsonObject { put("result", it) }) },
-                        onFailure = { ToolExecution(errorCode = "tool_failed", errorMessage = it.message ?: it.toString()) },
-                    )
+                val result =
+                    try {
+                        port.upload(cancellation)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        return ToolExecution(errorCode = "tool_failed", errorMessage = e.message ?: e.toString())
+                    }
+                if (cancellation.isCancelled()) {
+                    return ToolExecution(errorCode = "cancelled", errorMessage = "telemetry upload cancelled")
+                }
+                return ToolExecution(output = buildJsonObject { put("result", result) })
             }
         }
 

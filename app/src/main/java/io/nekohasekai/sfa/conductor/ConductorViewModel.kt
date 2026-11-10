@@ -33,6 +33,7 @@ import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.TailscaleStatusSource
 import io.nekohasekai.sfa.agent.TelemetryUploadPort
 import io.nekohasekai.sfa.agent.ToolCallView
+import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.agent.TurnOutcome
@@ -133,7 +134,8 @@ class ConductorViewModel(
 
     private val telemetryPort =
         object : TelemetryUploadPort {
-            override suspend fun upload(): String = TelemetryRuntime.uploadNow(application)
+            override suspend fun upload(cancellation: ToolCancellation?): String =
+                TelemetryRuntime.uploadNow(application, cancellation)
         }
 
     private val registry =
@@ -396,7 +398,7 @@ class ConductorViewModel(
                     }
                 withContext(Dispatchers.Main) {
                     finishStreamingAssistant()
-                    transcript = transcript + result.messages
+                    transcript = (result.compactedHistory ?: transcript) + result.messages
                     updateUi { copy(isRunning = false) }
                     pendingAgentConfirmation = null
                     when (val outcome = result.outcome) {

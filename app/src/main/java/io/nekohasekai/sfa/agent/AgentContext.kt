@@ -1,6 +1,11 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
 object AgentContext {
@@ -56,6 +61,54 @@ object AgentContext {
             start--
         }
         return history.subList(start.coerceAtLeast(0), history.size)
+    }
+
+    /**
+     * Keeps the last user turn fully intact and replaces older, oversized tool
+     * observations with a compact marker. The UI keeps the full result; only the
+     * model transcript is compacted. Compaction happens at a turn boundary.
+     */
+    fun compactOldObservations(
+        history: List<AgentMessage>,
+        maxChars: Int,
+    ): List<AgentMessage> {
+        if (maxChars <= 0) return history
+        val lastUserIndex = history.indexOfLast { it is AgentMessage.User }
+        if (lastUserIndex < 0) return history
+        var changed = false
+        val compacted =
+            history.mapIndexed { index, message ->
+                if (index >= lastUserIndex) return@mapIndexed message
+                if (message !is AgentMessage.Tool) return@mapIndexed message
+                if (message.content.length <= maxChars) return@mapIndexed message
+                changed = true
+                message.copy(content = compactToolObservation(message.content, message.name))
+            }
+        return if (changed) compacted else history
+    }
+
+    internal fun compactToolObservation(
+        content: String,
+        fallbackTool: String,
+    ): String {
+        val root =
+            runCatching { Json.parseToJsonElement(content) as? JsonObject }.getOrNull()
+        val tool =
+            (root?.get("tool") as? JsonPrimitive)?.contentOrNull
+                ?.takeIf { it.isNotBlank() }
+                ?: fallbackTool
+        val ok = (root?.get("ok") as? JsonPrimitive)?.booleanOrNull ?: false
+        val errorCode = (root?.get("errorCode") as? JsonPrimitive)?.contentOrNull
+        val message = (root?.get("message") as? JsonPrimitive)?.contentOrNull
+        return buildJsonObject {
+            put("ok", ok)
+            put("tool", tool)
+            put("compacted", true)
+            put("originalChars", content.length)
+            errorCode?.let { put("errorCode", it) }
+            message?.take(240)?.let { put("message", it) }
+            put("note", "Earlier tool output was compacted. Call the tool again if you need current details.")
+        }.toString()
     }
 
     fun truncateObservation(

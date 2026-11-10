@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.util.Log
+import io.nekohasekai.sfa.agent.ToolCancellation
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -30,6 +31,8 @@ internal sealed class UploadResult {
     data object Unauthorized : UploadResult()
 
     data object TooLarge : UploadResult()
+
+    data object Cancelled : UploadResult()
 
     data class Failed(val retryable: Boolean, val detail: String) : UploadResult()
 }
@@ -60,7 +63,9 @@ internal class TelemetryUploader(
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
         tags: Map<String, Any?> = emptyMap(),
+        cancellation: ToolCancellation? = null,
     ): UploadResult {
+        if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
         val gzipped = gzip(body)
         if (gzipped.size > TelemetryPayload.MAX_GZIP_BYTES) {
             return UploadResult.TooLarge
@@ -71,18 +76,23 @@ internal class TelemetryUploader(
         val order = if (preferred == PATH_VPN) listOf(PATH_VPN, PATH_DIRECT) else listOf(PATH_DIRECT, PATH_VPN)
         var last: UploadResult = UploadResult.Failed(true, "not sent")
         order.forEachIndexed { index, path ->
+            if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
             // The non-preferred path gets a shorter connect timeout so a blocked
             // route does not add a full 15 s to every upload.
             val connectTimeout = if (index == 0 && preferred != null) connectTimeoutMs else minOf(connectTimeoutMs, SECONDARY_CONNECT_TIMEOUT_MS)
             val started = System.currentTimeMillis()
             val result = try {
                 if (path == PATH_DIRECT) {
-                    mapStatus(execute(target, token, gzipped, connectTimeout, readTimeoutMs))
+                    execute(target, token, gzipped, connectTimeout, readTimeoutMs, cancellation)
                 } else {
-                    postDirect(normalized, token, gzipped, connectTimeout, readTimeoutMs)
+                    postDirect(normalized, token, gzipped, connectTimeout, readTimeoutMs, cancellation)
                 }
             } catch (e: Exception) {
-                UploadResult.Failed(true, describeFailure(e))
+                if (cancellation?.isCancelled() == true) {
+                    UploadResult.Cancelled
+                } else {
+                    UploadResult.Failed(true, describeFailure(e))
+                }
             }
             val elapsed = System.currentTimeMillis() - started
             recordAttempt(path, index + 1, result, elapsed, gzipped.size, tags)
@@ -90,6 +100,7 @@ internal class TelemetryUploader(
             val definitive = result is UploadResult.Success ||
                 result is UploadResult.Unauthorized ||
                 result is UploadResult.TooLarge ||
+                result is UploadResult.Cancelled ||
                 (result is UploadResult.Failed && result.detail.startsWith("HTTP "))
             if (result is UploadResult.Success && path != preferred) {
                 rememberPath(context, path)
@@ -118,6 +129,7 @@ internal class TelemetryUploader(
             UploadResult.Success -> TelemetryEventLog.record(context, "telemetry_upload_ok", fields)
             UploadResult.Unauthorized -> TelemetryEventLog.record(context, "telemetry_upload_failed", fields + ("status" to 401))
             UploadResult.TooLarge -> TelemetryEventLog.record(context, "telemetry_upload_failed", fields + ("status" to 413))
+            UploadResult.Cancelled -> TelemetryEventLog.record(context, "telemetry_upload_cancelled", fields)
             is UploadResult.Failed -> {
                 val status = Regex("^HTTP (\\d+)").find(result.detail)?.groupValues?.get(1)?.toIntOrNull()
                 TelemetryEventLog.record(
@@ -150,6 +162,7 @@ internal class TelemetryUploader(
         gzipped: ByteArray,
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
+        cancellation: ToolCancellation?,
     ): UploadResult {
         val connection = (URL(url).openConnection() as HttpsURLConnection).apply {
             connectTimeout = connectTimeoutMs
@@ -163,8 +176,11 @@ internal class TelemetryUploader(
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "WonderSing")
         }
+        cancellation?.onCancel { runCatching { connection.disconnect() } }
         try {
+            if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
             connection.outputStream.use { it.write(gzipped) }
+            if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
             val status = connection.responseCode
             Log.i(TAG, "upload HTTP $status via default network (${gzipped.size} gzipped bytes)")
             return mapStatus(status)
@@ -200,10 +216,13 @@ internal class TelemetryUploader(
         gzipped: ByteArray,
         connectTimeoutMs: Int,
         readTimeoutMs: Int,
-    ): Int {
+        cancellation: ToolCancellation?,
+    ): UploadResult {
+        if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
         val network = underlyingNetwork()
         val address = resolve(target.host, network)
         val socket = Socket()
+        cancellation?.onCancel { runCatching { socket.close() } }
         try {
             runCatching { protect?.protect(socket) }
             if (network != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -213,8 +232,11 @@ internal class TelemetryUploader(
             socket.soTimeout = readTimeoutMs
             socket.tcpNoDelay = true
             socket.connect(InetSocketAddress(address, target.port), connectTimeoutMs)
+            if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
             val ssl = handshake(socket, target.host, target.port)
+            cancellation?.onCancel { runCatching { ssl.close() } }
             try {
+                if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
                 val header = buildString {
                     append("POST ").append(target.path).append(" HTTP/1.1\r\n")
                     append("Host: ").append(hostHeader(target)).append("\r\n")
@@ -231,9 +253,11 @@ internal class TelemetryUploader(
                 output.write(header.toByteArray(Charsets.US_ASCII))
                 output.write(gzipped)
                 output.flush()
+                if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
                 val (status, _) = readResponse(ssl.inputStream)
+                if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
                 Log.i(TAG, "upload HTTP $status via protected socket (${gzipped.size} gzipped bytes)")
-                return status
+                return mapStatus(status)
             } finally {
                 runCatching { ssl.close() }
             }

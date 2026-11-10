@@ -19,6 +19,30 @@ class AgentContextTest {
     }
 
     @Test
+    fun compactOldObservationsKeepsTheLastTurnAndShrinksOldOutput() {
+        val big = "x".repeat(5_000)
+        val history =
+            listOf(
+                AgentMessage.User("old"),
+                AgentMessage.Assistant(null, listOf(ToolCall("c1", "list_nodes", "{}"))),
+                AgentMessage.Tool("c1", "list_nodes", """{"ok":true,"tool":"list_nodes","output":{"data":"$big"}}"""),
+                AgentMessage.Assistant("old answer"),
+                AgentMessage.User("new"),
+                AgentMessage.Assistant(null, listOf(ToolCall("c2", "list_nodes", "{}"))),
+                AgentMessage.Tool("c2", "list_nodes", """{"ok":true,"tool":"list_nodes","output":{"data":"$big"}}"""),
+            )
+
+        val compacted = AgentContext.compactOldObservations(history, 4_000)
+
+        assertEquals(history.size, compacted.size)
+        val oldTool = compacted[2] as AgentMessage.Tool
+        assertTrue(oldTool.content.length < 1_000)
+        assertTrue(oldTool.content.contains("\"compacted\":true"))
+        assertEquals(history[6], compacted[6])
+        assertTrue(validateTranscriptPairing(compacted))
+    }
+
+    @Test
     fun trimNeverStartsInsideAToolBatch() {
         val history = mutableListOf<AgentMessage>()
         repeat(15) { history.add(AgentMessage.User("u$it")) }

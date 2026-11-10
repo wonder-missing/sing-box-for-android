@@ -29,6 +29,7 @@ class FakeProbePort(
     override fun probe(
         outbound: String,
         url: String,
+        cancellation: ToolCancellation?,
     ): ProbeOutcome {
         calls.add(outbound to url)
         return outcome
@@ -64,7 +65,7 @@ fun sampleNodeSnapshot(): NodeSnapshot =
 fun buildTestRegistry(
     nodeSource: NodeSnapshotSource = FakeNodeSource(),
     deviceSource: DeviceSnapshotSource = FakeDeviceSource(),
-    probePort: FakeProbePort = FakeProbePort(),
+    probePort: ProbePort = FakeProbePort(),
 ): AgentToolRegistry =
     AgentToolRegistry(
         AgentTools(

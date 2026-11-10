@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -441,6 +442,35 @@ class AgentRuntimeTest {
         assertEquals(first.messages.first(), second.messages.first())
         assertEquals(first.tools, second.tools)
         assertEquals(firstTurn.messages, second.messages.drop(1).take(firstTurn.messages.size))
+    }
+
+    @Test
+    fun turnResultCarriesCompactedHistory() {
+        val big = "x".repeat(5_000)
+        val history =
+            listOf(
+                AgentMessage.User("old"),
+                AgentMessage.Assistant(null, listOf(ToolCall("c1", "list_nodes", "{}"))),
+                AgentMessage.Tool("c1", "list_nodes", """{"ok":true,"tool":"list_nodes","output":{"data":"$big"}}"""),
+                AgentMessage.Assistant("old answer"),
+                AgentMessage.User("new"),
+            )
+        val model = ScriptedModel(mutableListOf(response("done")))
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime =
+            runtime(
+                model,
+                executor,
+                key = "sk-test",
+                config = AgentConfig(maxToolRounds = 1, maxHistoricalObservationChars = 4_000),
+            )
+
+        val result = runBlocking { runtime.runTurn("again", history, onEvent = {}, confirm = { true }) }
+
+        assertNotNull(result.compactedHistory)
+        val compactedTool = result.compactedHistory!![2] as AgentMessage.Tool
+        assertTrue(compactedTool.content.length < 1_000)
+        assertTrue(validateTranscriptPairing(result.compactedHistory!!))
     }
 
     @Test

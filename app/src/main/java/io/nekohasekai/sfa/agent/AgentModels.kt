@@ -87,7 +87,7 @@ interface TailscaleStatusSource {
 }
 
 interface TelemetryUploadPort {
-    suspend fun upload(): String
+    suspend fun upload(cancellation: ToolCancellation? = null): String
 }
 
 /**
@@ -162,6 +162,7 @@ interface ProbePort {
     fun probe(
         outbound: String,
         url: String,
+        cancellation: ToolCancellation? = null,
     ): ProbeOutcome
 }
 
