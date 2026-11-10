@@ -327,6 +327,8 @@ enum class InvocationSource {
 
 探测会临时切换 outbound，`finally` 里恢复原选择；App 进程在探测中被杀时，运行中的 core 可能停留在探测节点，直到重启。工具描述要写清这条边界。
 
+`list_nodes` 默认只回 group 摘要（tag、selected、selectedDelayMs、itemCount、groupCount/outboundCount），不展开 `groups[].items` 和 flat `outbounds`；传 `group=<tag>` 才回该组的节点明细。这样模型先看摘要，需要时再取一组，避免把 55 个节点全塞进上下文。
+
 `AgentTool.execute` 改成 suspend：
 
 ```kotlin
@@ -698,7 +700,7 @@ Registered capabilities for this app version:
 - telemetry: telemetry_upload
 
 Core tools. Call them directly with route_call; do not search first:
-- list_nodes(): ...
+- list_nodes(group: string?): ...
 - network_snapshot(): ...
 - probe_via_node(outbound: string, url: string): ...
 
@@ -1259,9 +1261,18 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 5 次模型请求，system/tools 逐字节一致，messages 严格追加；#3/#5 命中 97%/93%，#4 间隔 2 分钟只命中 1,024（约等于公共前缀），#5 间隔 4 分 38 秒命中 93%。因此 #4 的低命中是 provider 侧缓存淘汰，不是前缀变化；间隔不是决定因素。
 
-- `list_nodes` 单条 14,308 字符（5 groups、93 group items、55 outbounds），首轮 prompt 从 1,067 涨到 7,061，并且一直留在后续请求。下一步 P1 做 `network_overview` / `list_nodes(group, detail)`。
+- `list_nodes` 单条 14,308 字符（5 groups、93 group items、55 outbounds），首轮 prompt 从 1,067 涨到 7,061，并且一直留在后续请求。wonder.35 改成默认摘要 + `group` 明细。
 - `probe_via_node` 把 204 的 libbox 异常判成 `tool_failed`；wonder.34 已修，按解析出的 HTTP 状态判定可达。请求前缀不变量单测也随 wonder.34 加上。
 - 本次 trace 没有触发 `search_tools`（唯一带参工具是 core），搜索路径仍缺真机覆盖。
+
+### wonder.33/34 跨版本 trace 复盘（2026-11-10）
+
+34 的首请求 prompt 8,884、cache hit 0（system prompt 从 33 换成 34，预期）；12 分 40 秒后的第二请求 hit 8,832/9,118 = 96.9%。10 次请求 system/tools 完全相同，messages 严格追加，没有 trim。跨版本只断一次，之后重新稳定。
+
+- 旧 33 的 `probe_via_node` 204 失败结果和 14,308 字符的 `list_nodes` 仍在 34 的 transcript 里；模型在 #10 用旧 204 结果评论框架，还把 payload 的 `ok` 读成 `true`（旧结果实际是 `false`）。保留跨版本 transcript 的代价是旧 observation 会被当成当前证据。
+- 34 的 6 次 probe 全失败是出口节点不健康（订阅在 CFG 项目打磨），不是 Conductor 回归；204 分类待出口健康后复测。
+- `search_tools` 两次宽泛查询都返回同样的三个 network 工具，没有 no-match 信号；模型自己判断出能力不存在，但多花了约 3.5k 字符。
+- 模型 #10 指出的「信封和 payload 各有一套 `ok`」方向成立：`ToolObservation.ok` 与工具 `output.ok` 语义重复，容易误读。
 
 ## 18. 与上位文档的关系
 

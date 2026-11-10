@@ -24,10 +24,21 @@ class AgentTools(
                 AgentToolDefinition(
                     name = "list_nodes",
                     description =
-                        "List outbound groups and nodes reported by the running core through " +
-                            "CommandClient, including selected state and URL-test latency when known.",
+                        "List outbound groups and nodes reported by the running core through CommandClient. " +
+                            "With no arguments, returns a compact summary: group tags, selected outbounds, " +
+                            "counts and the selected node's URL-test latency. " +
+                            "Pass group=<tag> to list that group's nodes with their tags and latencies. " +
+                            "Use the summary first, then request one group's detail before probe_via_node.",
                     permission = AgentPermission.READ_NETWORK_STATE,
-                    parameters = emptyList(),
+                    parameters =
+                        listOf(
+                            AgentParameterSpec(
+                                name = "group",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description = "Optional outbound group tag. Omit for a compact summary of all groups.",
+                            ),
+                        ),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "network",
                     aliases = listOf("nodes", "outbounds", "节点", "出站", "节点列表"),
@@ -39,6 +50,9 @@ class AgentTools(
                 cancellation: ToolCancellation,
             ): ToolExecution {
                 val snapshot = nodeSource.snapshot()
+                val requestedGroup = AgentJson.string(args, "group")?.trim()?.takeIf { it.isNotBlank() }
+                val selectedOutbound =
+                    snapshot.groups.firstOrNull { it.selected.isNotBlank() }?.selected ?: ""
                 val selectedOutbounds =
                     buildJsonObject {
                         snapshot.groups.forEach { group ->
@@ -48,57 +62,83 @@ class AgentTools(
                         }
                     }
                 val output =
-                    buildJsonObject {
-                        put("source", "command_client")
-                        put("coreRunning", snapshot.coreRunning)
-                        put("remoteControl", snapshot.remoteControl)
-                        if (!snapshot.coreRunning) {
+                    if (requestedGroup == null || !snapshot.coreRunning) {
+                        buildJsonObject {
+                            put("source", "command_client")
+                            put("coreRunning", snapshot.coreRunning)
+                            put("remoteControl", snapshot.remoteControl)
+                            if (!snapshot.coreRunning) {
+                                put(
+                                    "message",
+                                    "sing-box core is not running or not reachable. " +
+                                        "Start the service (or enter Remote Control) and try again.",
+                                )
+                            } else if (snapshot.groups.isEmpty() && snapshot.outbounds.isEmpty()) {
+                                put(
+                                    "message",
+                                    "Core connected, but no Groups/Outbounds data has arrived yet. " +
+                                        "Try again in a moment.",
+                                )
+                            }
+                            put("selectedOutbound", selectedOutbound)
+                            put("selectedOutbounds", selectedOutbounds)
+                            put("groupCount", snapshot.groups.size)
+                            put("outboundCount", snapshot.outbounds.size)
                             put(
-                                "message",
-                                "sing-box core is not running or not reachable. " +
-                                    "Start the service (or enter Remote Control) and try again.",
+                                "groups",
+                                buildJsonArray {
+                                    snapshot.groups.forEach { group ->
+                                        add(
+                                            buildJsonObject {
+                                                put("tag", group.tag)
+                                                put("type", group.type)
+                                                put("displayType", group.displayType)
+                                                put("selectable", group.selectable)
+                                                put("selected", group.selected)
+                                                put("itemCount", group.items.size)
+                                                group.items
+                                                    .firstOrNull { it.tag == group.selected }
+                                                    ?.urlTestDelayMs
+                                                    ?.let { put("selectedDelayMs", it) }
+                                            },
+                                        )
+                                    }
+                                },
                             )
-                        } else if (snapshot.groups.isEmpty() && snapshot.outbounds.isEmpty()) {
-                            put(
-                                "message",
-                                "Core connected, but no Groups/Outbounds data has arrived yet. " +
-                                    "Try again in a moment.",
+                            snapshot.error?.let { put("error", it) }
+                        }
+                    } else {
+                        val group = snapshot.groups.firstOrNull { it.tag == requestedGroup }
+                        if (group == null) {
+                            return ToolExecution(
+                                errorCode = "invalid_parameter",
+                                errorMessage =
+                                    "Unknown group '$requestedGroup'. " +
+                                        "Call list_nodes with no arguments to list group tags.",
                             )
                         }
-                        put(
-                            "selectedOutbound",
-                            snapshot.groups.firstOrNull { it.selected.isNotBlank() }?.selected ?: "",
-                        )
-                        put("selectedOutbounds", selectedOutbounds)
-                        put(
-                            "groups",
-                            buildJsonArray {
-                                snapshot.groups.forEach { group ->
-                                    add(
-                                        buildJsonObject {
-                                            put("tag", group.tag)
-                                            put("type", group.type)
-                                            put("displayType", group.displayType)
-                                            put("selectable", group.selectable)
-                                            put("selected", group.selected)
-                                            put(
-                                                "items",
-                                                buildJsonArray {
-                                                    group.items.forEach { add(nodeJson(it)) }
-                                                },
-                                            )
-                                        },
-                                    )
-                                }
-                            },
-                        )
-                        put(
-                            "outbounds",
-                            buildJsonArray {
-                                snapshot.outbounds.forEach { add(nodeJson(it)) }
-                            },
-                        )
-                        snapshot.error?.let { put("error", it) }
+                        buildJsonObject {
+                            put("source", "command_client")
+                            put("coreRunning", snapshot.coreRunning)
+                            put("remoteControl", snapshot.remoteControl)
+                            put("selectedOutbound", selectedOutbound)
+                            put("selectedOutbounds", selectedOutbounds)
+                            putJsonObject("group") {
+                                put("tag", group.tag)
+                                put("type", group.type)
+                                put("displayType", group.displayType)
+                                put("selectable", group.selectable)
+                                put("selected", group.selected)
+                                put("itemCount", group.items.size)
+                                put(
+                                    "items",
+                                    buildJsonArray {
+                                        group.items.forEach { add(nodeJson(it)) }
+                                    },
+                                )
+                            }
+                            snapshot.error?.let { put("error", it) }
+                        }
                     }
                 return ToolExecution(output = output, degraded = !snapshot.coreRunning)
             }

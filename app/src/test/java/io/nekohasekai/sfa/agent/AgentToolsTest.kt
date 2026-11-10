@@ -24,18 +24,18 @@ private fun AgentToolRegistry.userExec(
 
 class AgentToolsTest {
     @Test
-    fun listNodesReturnsGroupsNodesSelectionAndLatency() {
+    fun listNodesSummaryAndGroupDetail() {
         val registry = buildTestRegistry()
-        val result = registry.userExec("list_nodes")
 
-        assertTrue(result.errorMessage ?: "", result.ok)
-        val output = result.output!!
-        assertEquals("command_client", output.string("source"))
-        assertTrue(output.boolean("coreRunning"))
-        assertFalse(output.boolean("remoteControl"))
-        assertEquals("node-b", output.string("selectedOutbound"))
+        val summary = registry.userExec("list_nodes").output!!
+        assertEquals("command_client", summary.string("source"))
+        assertTrue(summary.boolean("coreRunning"))
+        assertFalse(summary.boolean("remoteControl"))
+        assertEquals("node-b", summary.string("selectedOutbound"))
+        assertEquals(1, summary.int("groupCount"))
+        assertEquals(2, summary.int("outboundCount"))
 
-        val groups = output.array("groups")
+        val groups = summary.array("groups")
         assertEquals(1, groups.size)
         val group = groups[0] as JsonObject
         assertEquals("proxy", group.string("tag"))
@@ -43,8 +43,18 @@ class AgentToolsTest {
         assertEquals("Selector", group.string("displayType"))
         assertTrue(group.boolean("selectable"))
         assertEquals("node-b", group.string("selected"))
+        assertEquals(2, group.int("itemCount"))
+        assertNull(group["items"])
+        assertNull(summary["outbounds"])
 
-        val items = group.array("items")
+        val detail = registry.userExec("list_nodes", """{"group":"proxy"}""").output!!
+        assertEquals("node-b", detail.string("selectedOutbound"))
+        val detailGroup = detail.obj("group")
+        assertEquals("proxy", detailGroup.string("tag"))
+        assertEquals("node-b", detailGroup.string("selected"))
+        assertEquals(2, detailGroup.int("itemCount"))
+
+        val items = detailGroup.array("items")
         assertEquals(2, items.size)
         val nodeA = items[0] as JsonObject
         assertEquals("node-a", nodeA.string("tag"))
@@ -54,10 +64,18 @@ class AgentToolsTest {
         val nodeB = items[1] as JsonObject
         assertTrue(nodeB.boolean("selected"))
         assertNull(nodeB["urlTestDelayMs"])
+        assertNull(detail["outbounds"])
+    }
 
-        val outbounds = output.array("outbounds")
-        assertEquals(2, outbounds.size)
-        assertEquals(88, (outbounds[1] as JsonObject).int("urlTestDelayMs"))
+    @Test
+    fun listNodesRejectsUnknownGroup() {
+        val registry = buildTestRegistry()
+
+        val result = registry.userExec("list_nodes", """{"group":"missing"}""")
+
+        assertFalse(result.ok)
+        assertEquals("invalid_parameter", result.errorCode)
+        assertTrue(result.errorMessage.orEmpty().contains("Unknown group"))
     }
 
     @Test
@@ -74,8 +92,9 @@ class AgentToolsTest {
         val output = result.output!!
         assertFalse(output.boolean("coreRunning"))
         assertTrue(output.string("message").contains("not running"))
+        assertEquals(0, output.int("groupCount"))
+        assertEquals(0, output.int("outboundCount"))
         assertEquals(0, output.array("groups").size)
-        assertEquals(0, output.array("outbounds").size)
     }
 
     @Test
@@ -240,7 +259,7 @@ class AgentToolsTest {
             )
         val registry = buildTestRegistry(nodeSource = FakeNodeSource(snapshot))
 
-        val output = registry.userExec("list_nodes").output!!
+        val output = registry.userExec("list_nodes", """{"group":"proxy"}""").output!!
         val rendered = output.toString()
 
         assertFalse(rendered.contains("sub.example.com"))
