@@ -323,6 +323,10 @@ enum class InvocationSource {
 | `probe_via_node` | `NETWORK_PROBE` | `ALWAYS` |
 | `telemetry_upload` | `DATA_EGRESS` | `AGENT_ONLY` |
 
+`probe_via_node` 的 `ok` 语义：只要收到任何 HTTP 状态码（1xx–5xx，包括 204、3xx、4xx、5xx），就表示链路可达，`ok = true`，`statusCode` 原样回填；只有 DNS、连接失败、超时、EOF 这类没有状态码的传输错误才是 `ok = false`。libbox 的 HTTP 客户端对 204 等非 200 响应会抛异常，异常消息里带 `HTTP <code>`；`LibboxProbePort` 必须解析状态码并按上述规则归类，不能把异常本身当成失败。
+
+探测会临时切换 outbound，`finally` 里恢复原选择；App 进程在探测中被杀时，运行中的 core 可能停留在探测节点，直到重启。工具描述要写清这条边界。
+
 `AgentTool.execute` 改成 suspend：
 
 ```kotlin
@@ -698,7 +702,7 @@ Core tools. Call them directly with route_call; do not search first:
 - network_snapshot(): ...
 - probe_via_node(outbound: string, url: string): ...
 
-For any other capability, call search_tools first to fetch its parameter schema.
+If you need a capability's parameter schema, call search_tools.
 Run a capability with route_call(tool=<name>, args=<arguments object>).
 Never target route_call or search_tools with route_call.
 ```
@@ -1250,6 +1254,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 2. 加目录、元工具、unwrap、搜索、roster，放在 `toolRoutingEnabled` 后面。
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. 继续 Stop、流式、上下文压缩。
+
+### wonder.33 真机 trace 复盘（2026-11-10）
+
+5 次模型请求，system/tools 逐字节一致，messages 严格追加；#3/#5 命中 97%/93%，#4 间隔 2 分钟只命中 1,024（约等于公共前缀），#5 间隔 4 分 38 秒命中 93%。因此 #4 的低命中是 provider 侧缓存淘汰，不是前缀变化；间隔不是决定因素。
+
+- `list_nodes` 单条 14,308 字符（5 groups、93 group items、55 outbounds），首轮 prompt 从 1,067 涨到 7,061，并且一直留在后续请求。下一步 P1 做 `network_overview` / `list_nodes(group, detail)`。
+- `probe_via_node` 把 204 的 libbox 异常判成 `tool_failed`；wonder.34 修。
+- 本次 trace 没有触发 `search_tools`（唯一带参工具是 core），搜索路径仍缺真机覆盖。
 
 ## 18. 与上位文档的关系
 

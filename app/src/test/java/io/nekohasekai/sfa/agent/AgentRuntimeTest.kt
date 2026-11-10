@@ -397,6 +397,48 @@ class AgentRuntimeTest {
         )
     }
 
+    @Test
+    fun requestsKeepAnAppendOnlyPrefixWithinATurn() {
+        val route = ToolCall("call_1", AgentMetaTools.ROUTE_CALL, """{"tool":"list_nodes","args":{}}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(route), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime = runtime(model, executor, key = "sk-test", config = AgentConfig(maxToolRounds = 2))
+
+        runBlocking { runtime.runTurn("nodes", emptyList(), onEvent = {}, confirm = { true }) }
+
+        val first = model.requests[0]
+        val second = model.requests[1]
+        assertEquals(first.messages.first(), second.messages.first())
+        assertEquals(first.tools, second.tools)
+        assertEquals(first.messages, second.messages.take(first.messages.size))
+        assertEquals(
+            listOf(AgentMetaTools.ROUTE_CALL, AgentMetaTools.SEARCH_TOOLS),
+            first.tools.map { it.name },
+        )
+    }
+
+    @Test
+    fun nextTurnKeepsTheSameSystemAndToolsPrefix() {
+        val model = ScriptedModel(mutableListOf(response("one"), response("two")))
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime = runtime(model, executor, key = "sk-test", config = AgentConfig(maxToolRounds = 1))
+
+        val firstTurn = runBlocking { runtime.runTurn("one", emptyList(), onEvent = {}, confirm = { true }) }
+        runBlocking { runtime.runTurn("two", firstTurn.messages, onEvent = {}, confirm = { true }) }
+
+        val first = model.requests[0]
+        val second = model.requests[1]
+        assertEquals(first.messages.first(), second.messages.first())
+        assertEquals(first.tools, second.tools)
+        assertEquals(firstTurn.messages, second.messages.drop(1).take(firstTurn.messages.size))
+    }
+
     private fun runtime(
         model: AgentModelClient,
         executor: AgentToolExecutor,

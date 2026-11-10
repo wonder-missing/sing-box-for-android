@@ -101,11 +101,7 @@ class LibboxProbePort(
                     request.execute()
                     ProbeOutcome(statusCode = 200, latencyMs = elapsedMs(started))
                 } catch (e: Exception) {
-                    ProbeOutcome(
-                        statusCode = parseHttpStatus(e.message),
-                        latencyMs = elapsedMs(started),
-                        error = e.message ?: e.toString(),
-                    )
+                    classifyProbeFailure(e.message, elapsedMs(started))
                 }
             } finally {
                 runCatching { http.close() }
@@ -135,15 +131,5 @@ class LibboxProbePort(
 
     companion object {
         private const val DEFAULT_TIMEOUT_MS = 15_000L
-        private val HTTP_STATUS = Regex("""\bHTTP\s+(\d{3})\b""")
-
-        fun parseHttpStatus(message: String?): Int? =
-            message?.let {
-                HTTP_STATUS
-                    .find(it)
-                    ?.groupValues
-                    ?.get(1)
-                    ?.toIntOrNull()
-            }
     }
 }

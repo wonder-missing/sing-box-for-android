@@ -31,6 +31,7 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("Registered capabilities"))
         assertTrue(first.contains("network_snapshot"))
         assertTrue(first.contains("locale=zh"))
+        assertTrue(first.contains("If you know a capability's exact name and arguments"))
     }
 
     @Test

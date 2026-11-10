@@ -111,7 +111,7 @@ class AgentToolCatalog(
                 }
             }
             appendLine()
-            appendLine("For any other capability, call search_tools first to fetch its parameter schema.")
+            appendLine("If you need a capability's parameter schema, call search_tools.")
             appendLine("Run a capability with route_call(tool=<name>, args=<arguments object>).")
             appendLine("Never target route_call or search_tools with route_call.")
         }.trim()

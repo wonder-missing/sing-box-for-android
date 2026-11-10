@@ -5,8 +5,25 @@
 
 ## 现在待办
 
+### P0
+
+- [ ] **`probe_via_node` 204/HTTP 状态判定**：libbox HTTP 客户端对 204 抛异常，当前被当成 `tool_failed`；改为任何 1xx–5xx 状态都算链路可达，只有无状态码的传输错误才算失败。wonder.34 修。
+
+### P1
+
+- [ ] **`list_nodes` 输出体量**：默认只回组、当前选中、统计；新增 `network_overview`，或改成 `list_nodes(group, detail=false)`，去掉 `groups[].items` 与 `outbounds[]` 的重复。wonder.33 trace 里单条 14,308 字符，是首轮 prompt 从 1,067 涨到 7,061 的主因。
+- [ ] **请求前缀不变量单测**：同一 turn 内 system/tools/messages 只能追加；跨 turn 保持 system/tools 不变。wonder.34 加。
 - [ ] **Conductor Agent Phase 2b 剩余**：Stop 真取消、流式回答、上下文压缩、probe/telemetry 可取消；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - [ ] **节点探测并发/批量**：当前 `probe_via_node` 串行切换全局出站，不能直接并发。需要 `probe_many` 或 libbox per-request outbound binding；URLTest 只能测分组配置 URL，不能测任意 GitHub 地址。先验证 libbox HTTP API，再定方案。
+- [ ] **`search_tools` 真机覆盖**：当前 5 个工具里唯一带参的 `probe_via_node` 是 core，搜索路径无法触发；加一个非核心带参工具，或把 probe 从 core 拿掉。
+
+### P2
+
+- [ ] **每条消息的极简 token/cache 用量可视化**：API 响应已有 usage；UI 设计待定。
+- [ ] **`tailscale_status` 结构化 + 最后在线时间**：现在是纯文本块，模型能读但不能程序化处理。
+- [ ] **probe 临时改道副作用契约**：`temporary_outbound_selection` 的恢复和进程被杀边界写进工具描述；wonder.34 先补描述。
+- [ ] **`network_snapshot` / `list_nodes` 重叠**：core 字段重复，随 `list_nodes` 重构一起收。
+- [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
 - [ ] **模型供应商抽象**：system prompt 已去 DeepSeek 品牌；client 和 Settings 仍是 DeepSeek 专用，后续抽 base URL/model/key/provider。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 

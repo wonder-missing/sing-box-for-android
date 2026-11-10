@@ -190,7 +190,11 @@ class AgentTools(
                     description =
                         "Check HTTP HEAD reachability of an http(s) URL through the given outbound. " +
                             "Returns status and latency only; it does not fetch page content. " +
-                            "Some servers reject HEAD requests, so EOF does not always mean the node cannot reach the URL.",
+                            "Any HTTP status (including 204, 3xx, 4xx, 5xx) means the URL was reached. " +
+                            "Transport failures such as DNS, timeout or EOF, and local precheck failures, return ok=false. " +
+                            "Some servers reject HEAD requests, so EOF does not always mean the node cannot reach the URL. " +
+                            "The previous outbound selection is restored in a finally block; " +
+                            "killing the app process mid-probe can leave the running core on the probe node until it restarts.",
                     permission = AgentPermission.NETWORK_PROBE,
                     parameters =
                         listOf(
@@ -213,7 +217,8 @@ class AgentTools(
                     core = true,
                     confirmationReason =
                         "The probe temporarily selects this outbound, sends one HTTP HEAD request, " +
-                            "then restores the previous selection. App traffic may briefly use that node.",
+                            "then restores the previous selection. App traffic may briefly use that node. " +
+                            "If the app process is killed mid-probe, the core can stay on the probe node until it restarts.",
                     allowedUrlParameter = "url",
                 )
 
