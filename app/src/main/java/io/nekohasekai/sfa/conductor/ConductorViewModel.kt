@@ -446,40 +446,40 @@ class ConductorViewModel(
 
     private fun appendAssistantDelta(text: String) {
         if (text.isEmpty()) return
-        updateUi { state ->
-            val items = state.items.toMutableList()
-            val last = items.lastOrNull()
+        updateUi {
+            val updated = this.items.toMutableList()
+            val last = updated.lastOrNull()
             if (last is ConductorItem.Assistant && last.streaming) {
-                items[items.lastIndex] = last.copy(text = last.text + text)
+                updated[updated.lastIndex] = last.copy(text = last.text + text)
             } else {
-                items.add(ConductorItem.Assistant(text, streaming = true))
+                updated.add(ConductorItem.Assistant(text, streaming = true))
             }
-            copy(items = items.takeLast(MAX_ITEMS))
+            copy(items = updated.takeLast(MAX_ITEMS))
         }
     }
 
     private fun appendAssistantMessage(text: String) {
-        updateUi { state ->
-            val items = state.items.toMutableList()
-            val last = items.lastOrNull()
+        updateUi {
+            val updated = this.items.toMutableList()
+            val last = updated.lastOrNull()
             if (last is ConductorItem.Assistant && last.streaming) {
-                items[items.lastIndex] = last.copy(text = text, streaming = false)
+                updated[updated.lastIndex] = last.copy(text = text, streaming = false)
             } else {
-                items.add(ConductorItem.Assistant(text))
+                updated.add(ConductorItem.Assistant(text))
             }
-            copy(items = items.takeLast(MAX_ITEMS))
+            copy(items = updated.takeLast(MAX_ITEMS))
         }
     }
 
     private fun finishStreamingAssistant() {
-        updateUi { state ->
-            val items = state.items.toMutableList()
-            val last = items.lastOrNull()
+        updateUi {
+            val updated = this.items.toMutableList()
+            val last = updated.lastOrNull()
             if (last is ConductorItem.Assistant && last.streaming) {
-                items[items.lastIndex] = last.copy(streaming = false)
-                copy(items = items)
+                updated[updated.lastIndex] = last.copy(streaming = false)
+                copy(items = updated)
             } else {
-                state
+                this
             }
         }
     }
