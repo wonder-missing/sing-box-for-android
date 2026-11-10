@@ -79,6 +79,7 @@ data class ToolResultView(
     val errorCode: String?,
     val message: String?,
     val truncated: Boolean,
+    val degraded: Boolean = false,
 )
 
 data class ConfirmationRequest(

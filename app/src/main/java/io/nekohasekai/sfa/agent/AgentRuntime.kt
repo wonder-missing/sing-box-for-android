@@ -297,6 +297,7 @@ class AgentRuntime(
                             errorCode = observation.errorCode,
                             message = observation.message,
                             truncated = observation.truncated,
+                            degraded = observation.degraded,
                         ),
                     ),
                 )
@@ -361,6 +362,7 @@ class AgentRuntime(
             output = output,
             errorCode = errorCode,
             message = errorMessage,
+            degraded = degraded,
         )
 
     private fun appendCancelled(

@@ -804,6 +804,12 @@
     <string name="conductor_settings_title">Conductor</string>
     <string name="conductor_api_key_title">DeepSeek API key</string>
     <string name="conductor_api_key_hint">sk-...</string>
+    <string name="conductor_copy">Copy</string>
+    <string name="conductor_copied">Copied</string>
+    <string name="conductor_tool_details">Details</string>
+    <string name="conductor_tool_hide_details">Hide details</string>
+    <string name="conductor_tool_details_hint">Tap Details to view the tool output.</string>
+    <string name="conductor_tool_degraded">degraded</string>
     <string name="conductor_model_title">Model</string>
     <string name="conductor_model_hint">deepseek-v4-flash</string>
     <string name="conductor_model_help">Change only if your DeepSeek account uses a different model ID.</string>

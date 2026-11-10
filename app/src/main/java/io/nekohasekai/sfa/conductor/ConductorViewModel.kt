@@ -176,7 +176,11 @@ class ConductorViewModel(
             }
         if (previous == shouldConnect) return
         if (shouldConnect) {
-            append(ConductorItem.Notice("core", "Connecting to the core…"))
+            if (remoteControl) {
+                append(ConductorItem.Notice("remote", "Connecting to Remote Control…"))
+            } else {
+                append(ConductorItem.Notice("service", "Service started, connecting…"))
+            }
             commandClient.connect()
         } else {
             commandClient.disconnect()
@@ -565,7 +569,9 @@ class ConductorViewModel(
         updateUi { copy(isRunning = true) }
         append(ConductorItem.Notice("tailscale", "Reading Tailscale status…"))
         viewModelScope.launch {
-            val text = runCatching { tailscaleText() }.getOrElse { "Tailscale unavailable: ${it.message ?: it}" }
+            val text =
+                runCatching { tailscaleText() }
+                    .getOrElse { friendlyTailscaleError(it.message ?: it.toString()) }
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
                 append(ConductorItem.Notice("tailscale", text))
@@ -590,21 +596,25 @@ class ConductorViewModel(
     private suspend fun tailscaleText(): String {
         val deferred = CompletableDeferred<String>()
         val subscription =
-            CommandTarget.standaloneClient().subscribeTailscaleStatus(
-                object : TailscaleStatusHandler {
-                    override fun onStatusUpdate(status: TailscaleStatusUpdate) {
-                        if (!deferred.isCompleted) {
-                            deferred.complete(formatTailscale(status))
+            try {
+                CommandTarget.standaloneClient().subscribeTailscaleStatus(
+                    object : TailscaleStatusHandler {
+                        override fun onStatusUpdate(status: TailscaleStatusUpdate) {
+                            if (!deferred.isCompleted) {
+                                deferred.complete(formatTailscale(status))
+                            }
                         }
-                    }
 
-                    override fun onError(message: String) {
-                        if (!deferred.isCompleted) {
-                            deferred.complete("Tailscale error: $message")
+                        override fun onError(message: String) {
+                            if (!deferred.isCompleted) {
+                                deferred.complete(friendlyTailscaleError(message))
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            } catch (e: Exception) {
+                return friendlyTailscaleError(e.message ?: e.toString())
+            }
         return try {
             withTimeoutOrNull(5_000) { deferred.await() } ?: "Timed out waiting for Tailscale status."
         } finally {
@@ -659,6 +669,20 @@ class ConductorViewModel(
             ips.add(iterator.next())
         }
         return ips.joinToString(", ")
+    }
+
+    private fun friendlyTailscaleError(message: String): String {
+        val lower = message.lowercase()
+        return if (
+            "command.sock" in lower ||
+            "no such file" in lower ||
+            "connection refused" in lower ||
+            "unavailable" in lower
+        ) {
+            "Service is not running. Start the service to read Tailscale status."
+        } else {
+            "Tailscale error: ${AgentSanitizer.sanitizeText(message)}"
+        }
     }
 
     private fun deviceSummary(): String {

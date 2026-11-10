@@ -39,6 +39,7 @@ data class ToolObservation(
     val message: String? = null,
     val truncated: Boolean = false,
     val originalChars: Int? = null,
+    val degraded: Boolean = false,
 ) {
     fun toJson(): JsonObject =
         buildJsonObject {
@@ -48,6 +49,7 @@ data class ToolObservation(
             errorCode?.let { put("errorCode", it) }
             message?.let { put("message", it) }
             if (truncated) put("truncated", true)
+            if (degraded) put("degraded", true)
             originalChars?.let { put("originalChars", it) }
         }
 

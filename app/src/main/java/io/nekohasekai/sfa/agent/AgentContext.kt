@@ -13,6 +13,7 @@ object AgentContext {
                 appendLine("Do not ask for or repeat subscription URLs, tokens, passwords, full logs or file contents.")
                 appendLine("If no tool fits, say so plainly. Keep answers concise and match the user's language.")
                 appendLine("Do not expose internal reasoning; give the conclusion and the necessary details.")
+                appendLine("Use short plain-text paragraphs. **bold** and `inline code` are allowed; do not use Markdown tables, headings or code fences.")
                 if (!deviceSummary.isNullOrBlank()) {
                     appendLine("Current device context: $deviceSummary")
                 }

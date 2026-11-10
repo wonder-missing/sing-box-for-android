@@ -175,12 +175,14 @@ data class AgentInvocationResult(
     val errorCode: String? = null,
     val errorMessage: String? = null,
     val confirmation: AgentConfirmation? = null,
+    val degraded: Boolean = false,
 )
 
 data class ToolExecution(
     val output: JsonObject? = null,
     val errorCode: String? = null,
     val errorMessage: String? = null,
+    val degraded: Boolean = false,
 ) {
     val ok: Boolean
         get() = errorCode == null

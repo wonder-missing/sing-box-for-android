@@ -132,6 +132,7 @@ class AgentToolRegistry(
                     tool = name,
                     ok = true,
                     output = AgentSanitizer.sanitizeElement(output, allowedUrls) as JsonObject,
+                    degraded = execution.degraded,
                 )
             } else {
                 AgentInvocationResult(

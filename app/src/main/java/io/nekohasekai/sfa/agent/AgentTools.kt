@@ -97,7 +97,7 @@ class AgentTools(
                         )
                         snapshot.error?.let { put("error", it) }
                     }
-                return ToolExecution(output = output)
+                return ToolExecution(output = output, degraded = !snapshot.coreRunning)
             }
         }
 
@@ -171,7 +171,7 @@ class AgentTools(
                             )
                         }
                     }
-                return ToolExecution(output = output)
+                return ToolExecution(output = output, degraded = !snapshot.coreRunning)
             }
         }
 

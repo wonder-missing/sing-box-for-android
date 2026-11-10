@@ -1,11 +1,14 @@
 package io.nekohasekai.sfa.conductor
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -27,12 +31,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -53,6 +60,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -60,13 +69,18 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.constant.Status
@@ -291,17 +305,7 @@ private fun ConductorItemView(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                ) {
-                    Text(
-                        text = item.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    )
-                }
+                UserMessage(item.text)
             }
 
         is ConductorItem.Assistant ->
@@ -314,7 +318,7 @@ private fun ConductorItemView(
                 )
                 SelectionContainer {
                     Text(
-                        text = item.text,
+                        text = markdownAnnotated(item.text),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.fillMaxWidth(),
@@ -409,8 +413,79 @@ private fun ConductorItemView(
     }
 }
 
+private val InlineMarkdown = Regex("""\*\*(.+?)\*\*|`([^`]+)`""")
+
+private fun markdownAnnotated(text: String): AnnotatedString =
+    buildAnnotatedString {
+        var cursor = 0
+        InlineMarkdown.findAll(text).forEach { match ->
+            if (match.range.first > cursor) {
+                append(text.substring(cursor, match.range.first))
+            }
+            val bold = match.groups[1]?.value
+            val code = match.groups[2]?.value
+            when {
+                bold != null ->
+                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                        append(bold)
+                    }
+
+                code != null ->
+                    withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) {
+                        append(code)
+                    }
+            }
+            cursor = match.range.last + 1
+        }
+        if (cursor < text.length) {
+            append(text.substring(cursor))
+        }
+    }
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun UserMessage(text: String) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Box {
+        Surface(
+            modifier =
+            Modifier.combinedClickable(
+                onClick = {},
+                onLongClick = { menuExpanded = true },
+            ),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.conductor_copy)) },
+                onClick = {
+                    clipboard.setText(AnnotatedString(text))
+                    menuExpanded = false
+                    Toast.makeText(context, context.getString(R.string.conductor_copied), Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+    }
+}
+
 @Composable
 private fun ToolItem(item: ConductorItem.Tool) {
+    var expanded by remember { mutableStateOf(false) }
+    val result = item.result
     val statusColor =
         when (item.status) {
             ToolStatus.SUCCEEDED -> MaterialTheme.colorScheme.primary
@@ -418,6 +493,14 @@ private fun ToolItem(item: ConductorItem.Tool) {
             ToolStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
             ToolStatus.RUNNING -> MaterialTheme.colorScheme.onSurfaceVariant
         }
+    val degradedLabel = stringResource(R.string.conductor_tool_degraded)
+    val statusText =
+        if (result?.degraded == true) {
+            "${item.status.name.lowercase()} · $degradedLabel"
+        } else {
+            item.status.name.lowercase()
+        }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -431,7 +514,7 @@ private fun ToolItem(item: ConductorItem.Tool) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = item.status.name.lowercase(),
+                text = statusText,
                 style = MaterialTheme.typography.labelSmall,
                 color = statusColor,
             )
@@ -447,23 +530,47 @@ private fun ToolItem(item: ConductorItem.Tool) {
                 )
             }
         }
-        val result = item.result
         if (result != null) {
-            val body =
-                result.output?.toString()
+            val details =
+                result.output?.let { AgentJson.pretty(it) }
                     ?: result.message
                     ?: result.errorCode
                     ?: ""
-            if (body.isNotBlank()) {
+            if (expanded) {
                 SelectionContainer {
-                    Text(
-                        text = if (result.truncated) "$body\n(truncated)" else body,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = if (result.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    )
+                    Box(
+                        modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
+                        Text(
+                            text = if (result.truncated) "$details\n(truncated)" else details,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (result.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                            softWrap = false,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
+            } else {
+                val summary = result.message ?: result.errorCode ?: stringResource(R.string.conductor_tool_details_hint)
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (result.ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
+            }
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(
+                    stringResource(
+                        if (expanded) R.string.conductor_tool_hide_details else R.string.conductor_tool_details,
+                    ),
+                )
             }
         }
     }
