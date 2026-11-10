@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -100,5 +101,48 @@ class DeepSeekModelClientTest {
         assertTrue(requestBody.contains("\"tool_choice\":\"none\""))
         assertEquals(100, response.usage?.cacheHitTokens ?: 0)
         assertEquals(20, response.usage?.cacheMissTokens ?: 0)
+    }
+
+    @Test
+    fun parsesSseContentToolCallsAndUsage() {
+        responseBody =
+            """
+            data: {"choices":[{"delta":{"content":"Hel"}}]}
+            data: {"choices":[{"delta":{"content":"lo"}}]}
+            data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"list_nodes","arguments":"{}"}}]}}]}
+            data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+            data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"prompt_cache_hit_tokens":4,"prompt_cache_miss_tokens":6}}
+            data: [DONE]
+            """.trimIndent()
+
+        val client = DeepSeekModelClient(baseUrl = "http://127.0.0.1:${server.localPort}")
+        val chunks =
+            runBlocking {
+                client
+                    .stream(
+                        AgentModelRequest(
+                            messages = listOf(AgentMessage.User("hi")),
+                            tools = emptyList(),
+                            maxOutputTokens = 16,
+                            timeoutMs = 5_000,
+                        ),
+                        apiKey = "sk-test",
+                    ).toList()
+            }
+
+        assertEquals(
+            listOf("Hel", "lo"),
+            chunks.filterIsInstance<AgentModelChunk.ContentDelta>().map { it.text },
+        )
+        val toolCall = chunks.filterIsInstance<AgentModelChunk.ToolCallDelta>().single()
+        assertEquals(0, toolCall.index)
+        assertEquals("call_1", toolCall.id)
+        assertEquals("list_nodes", toolCall.name)
+        assertEquals("{}", toolCall.argumentsDelta)
+
+        val completed = chunks.filterIsInstance<AgentModelChunk.Completed>().single()
+        assertEquals(FinishReason.TOOL_CALLS, completed.finishReason)
+        assertEquals(4, completed.usage?.cacheHitTokens ?: 0)
+        assertEquals(6, completed.usage?.cacheMissTokens ?: 0)
     }
 }

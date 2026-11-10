@@ -1,5 +1,9 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -439,6 +443,77 @@ class AgentRuntimeTest {
         assertEquals(firstTurn.messages, second.messages.drop(1).take(firstTurn.messages.size))
     }
 
+    @Test
+    fun streamingAccumulatesContentAndToolCallDeltas() {
+        val streaming =
+            StreamingScriptedModel(
+                mutableListOf(
+                    listOf(
+                        AgentModelChunk.ContentDelta("Hel"),
+                        AgentModelChunk.ContentDelta("lo"),
+                        AgentModelChunk.ToolCallDelta(0, id = "call_1", name = "list_nodes", argumentsDelta = "{}"),
+                        AgentModelChunk.Completed(FinishReason.TOOL_CALLS, null),
+                    ),
+                    listOf(
+                        AgentModelChunk.ContentDelta("done"),
+                        AgentModelChunk.Completed(FinishReason.STOP, null),
+                    ),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime =
+            AgentRuntime(
+                inputGuard = DefaultAgentInputGuard,
+                model = ScriptedModel(mutableListOf()),
+                tools = executor,
+                apiKeys = FakeKeyProvider("sk-test"),
+                config = AgentConfig(maxToolRounds = 2),
+                streamingModel = streaming,
+            )
+
+        val events = mutableListOf<AgentEvent>()
+        val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = { events += it }, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals(
+            listOf("Hel", "lo", "done"),
+            events.filterIsInstance<AgentEvent.AssistantDelta>().map { it.text },
+        )
+        assertTrue(result.messages.any { it is AgentMessage.Assistant && it.content == "Hello" })
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun stopCancelsAStreamingTurn() {
+        val streaming = BlockingStreamingModel()
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime =
+            AgentRuntime(
+                inputGuard = DefaultAgentInputGuard,
+                model = ScriptedModel(mutableListOf()),
+                tools = executor,
+                apiKeys = FakeKeyProvider("sk-test"),
+                config = AgentConfig(maxToolRounds = 1),
+                streamingModel = streaming,
+            )
+
+        val events = mutableListOf<AgentEvent>()
+        val result =
+            runBlocking {
+                val turn =
+                    async {
+                        runtime.runTurn("hi", emptyList(), onEvent = { events += it }, confirm = { true })
+                    }
+                streaming.started.await()
+                runtime.cancel()
+                turn.await()
+            }
+
+        assertTrue(result.outcome is TurnOutcome.Cancelled)
+        assertEquals(listOf("partial"), events.filterIsInstance<AgentEvent.AssistantDelta>().map { it.text })
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
     private fun runtime(
         model: AgentModelClient,
         executor: AgentToolExecutor,
@@ -500,6 +575,37 @@ private class FakeExecutor(
         call: ToolCall,
         humanApproved: Boolean,
     ): AgentInvocationResult = execute(call, humanApproved)
+}
+
+private class StreamingScriptedModel(
+    private val responses: MutableList<List<AgentModelChunk>>,
+) : AgentStreamingModelClient {
+    override fun stream(
+        request: AgentModelRequest,
+        apiKey: String,
+    ): Flow<AgentModelChunk> =
+        flow {
+            responses.removeAt(0).forEach { emit(it) }
+        }
+}
+
+private class BlockingStreamingModel : AgentStreamingModelClient {
+    val started = CompletableDeferred<Unit>()
+    private val stopped = CompletableDeferred<Unit>()
+
+    override fun stream(
+        request: AgentModelRequest,
+        apiKey: String,
+    ): Flow<AgentModelChunk> =
+        flow {
+            emit(AgentModelChunk.ContentDelta("partial"))
+            started.complete(Unit)
+            stopped.await()
+        }
+
+    override fun cancel() {
+        stopped.complete(Unit)
+    }
 }
 
 private class FakeKeyProvider(

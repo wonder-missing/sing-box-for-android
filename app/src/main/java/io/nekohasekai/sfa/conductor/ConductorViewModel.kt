@@ -50,6 +50,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -146,13 +147,16 @@ class ConductorViewModel(
             ).all,
         )
 
+    private val modelClient = DeepSeekModelClient(modelProvider = { Settings.conductorModel })
+
     private val runtime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
-            model = DeepSeekModelClient(modelProvider = { Settings.conductorModel }),
+            model = modelClient,
             tools = registry,
             apiKeys = apiKeyProvider,
             config = AgentConfig(),
+            streamingModel = modelClient,
             toolRoutingEnabled = { Settings.conductorToolRouting },
         )
 
@@ -287,6 +291,24 @@ class ConductorViewModel(
         pending.complete(false)
     }
 
+    fun stopAgent() {
+        if (!_uiState.value.isRunning) return
+        pendingAgentConfirmation?.complete(false)
+        removeConfirmationItems()
+        runtime.cancel()
+        viewModelScope.launch {
+            delay(1_000)
+            if (_uiState.value.isRunning) {
+                append(
+                    ConductorItem.Notice(
+                        "conductor",
+                        "Stopping… the current tool has not confirmed cancellation yet.",
+                    ),
+                )
+            }
+        }
+    }
+
     fun confirmConfirmation() {
         if (pendingAgentConfirmation != null) {
             confirmAgent()
@@ -373,6 +395,7 @@ class ConductorViewModel(
                         )
                     }
                 withContext(Dispatchers.Main) {
+                    finishStreamingAssistant()
                     transcript = transcript + result.messages
                     updateUi { copy(isRunning = false) }
                     pendingAgentConfirmation = null
@@ -396,19 +419,68 @@ class ConductorViewModel(
 
     private fun handleAgentEvent(event: AgentEvent) {
         when (event) {
-            is AgentEvent.AssistantMessage -> append(ConductorItem.Assistant(event.text))
-            is AgentEvent.ToolStarted -> append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
+            is AgentEvent.AssistantMessage -> appendAssistantMessage(event.text)
+            is AgentEvent.AssistantDelta -> appendAssistantDelta(event.text)
+            is AgentEvent.ToolStarted -> {
+                finishStreamingAssistant()
+                append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
+            }
+
             is AgentEvent.ToolFinished -> updateToolResult(event.result)
             is AgentEvent.ConfirmationRequested -> {
+                finishStreamingAssistant()
                 pendingAgentConfirmation = CompletableDeferred()
                 append(ConductorItem.Confirmation(event.request))
             }
 
-            is AgentEvent.Notice -> append(ConductorItem.Notice("conductor", event.text))
-            is AgentEvent.AssistantDelta -> Unit
+            is AgentEvent.Notice -> {
+                finishStreamingAssistant()
+                append(ConductorItem.Notice("conductor", event.text))
+            }
+
             is AgentEvent.StateChanged -> Unit
             is AgentEvent.TurnStarted -> Unit
-            is AgentEvent.TurnFinished -> Unit
+            is AgentEvent.TurnFinished -> finishStreamingAssistant()
+        }
+    }
+
+    private fun appendAssistantDelta(text: String) {
+        if (text.isEmpty()) return
+        updateUi { state ->
+            val items = state.items.toMutableList()
+            val last = items.lastOrNull()
+            if (last is ConductorItem.Assistant && last.streaming) {
+                items[items.lastIndex] = last.copy(text = last.text + text)
+            } else {
+                items.add(ConductorItem.Assistant(text, streaming = true))
+            }
+            copy(items = items.takeLast(MAX_ITEMS))
+        }
+    }
+
+    private fun appendAssistantMessage(text: String) {
+        updateUi { state ->
+            val items = state.items.toMutableList()
+            val last = items.lastOrNull()
+            if (last is ConductorItem.Assistant && last.streaming) {
+                items[items.lastIndex] = last.copy(text = text, streaming = false)
+            } else {
+                items.add(ConductorItem.Assistant(text))
+            }
+            copy(items = items.takeLast(MAX_ITEMS))
+        }
+    }
+
+    private fun finishStreamingAssistant() {
+        updateUi { state ->
+            val items = state.items.toMutableList()
+            val last = items.lastOrNull()
+            if (last is ConductorItem.Assistant && last.streaming) {
+                items[items.lastIndex] = last.copy(streaming = false)
+                copy(items = items)
+            } else {
+                state
+            }
         }
     }
 
@@ -813,6 +885,9 @@ class ConductorViewModel(
             session.items.mapNotNull { item ->
                 when (item) {
                     is ConductorItem.Confirmation -> null
+                    is ConductorItem.Assistant ->
+                        if (item.streaming) item.copy(streaming = false) else item
+
                     is ConductorItem.Tool ->
                         if (item.status == ToolStatus.RUNNING) {
                             item.copy(

@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -43,6 +44,7 @@ class AgentRuntime(
     private val tools: AgentToolExecutor,
     private val apiKeys: AgentApiKeyProvider,
     private val config: AgentConfig = AgentConfig(),
+    private val streamingModel: AgentStreamingModelClient? = null,
     private val toolRoutingEnabled: () -> Boolean = { config.toolRoutingEnabled },
 ) {
     private val confirmationIds = AtomicLong(0)
@@ -52,6 +54,7 @@ class AgentRuntime(
 
     fun cancel(reason: String = "user") {
         cancelRequested = true
+        streamingModel?.cancel()
         tools.cancelActive()
     }
 
@@ -161,7 +164,11 @@ class AgentRuntime(
             onEvent(AgentEvent.StateChanged(TurnState.CallingModel(step)))
             val response =
                 try {
-                    callModelWithRetry(request, apiKey)
+                    if (streamingModel != null) {
+                        streamModelWithRetry(request, apiKey, onEvent)
+                    } else {
+                        callModelWithRetry(request, apiKey)
+                    }
                 } catch (e: AgentModelException) {
                     return finish(
                         transcript,
@@ -176,6 +183,10 @@ class AgentRuntime(
                     throw e
                 }
             step += 1
+
+            if (cancelRequested) {
+                return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
+            }
 
             if (response.finishReason == FinishReason.CONTENT_FILTER) {
                 return finish(
@@ -569,6 +580,79 @@ class AgentRuntime(
                 delay(500L * attempt)
             }
         }
+    }
+
+    private suspend fun streamModelWithRetry(
+        request: AgentModelRequest,
+        apiKey: String,
+        onEvent: (AgentEvent) -> Unit,
+    ): AgentModelResponse {
+        var attempt = 0
+        while (true) {
+            try {
+                return collectStream(request, apiKey, onEvent)
+            } catch (e: AgentModelException) {
+                if (!e.retryable || attempt >= config.maxRetries || cancelRequested) throw e
+                attempt += 1
+                delay(500L * attempt)
+            }
+        }
+    }
+
+    private suspend fun collectStream(
+        request: AgentModelRequest,
+        apiKey: String,
+        onEvent: (AgentEvent) -> Unit,
+    ): AgentModelResponse {
+        val client = streamingModel ?: error("streaming model is not configured")
+        val content = StringBuilder()
+        val calls = LinkedHashMap<Int, MutableToolCall>()
+        var finishReason = FinishReason.UNKNOWN
+        var usage: TokenUsage? = null
+        client.stream(request, apiKey).collect { chunk ->
+            when (chunk) {
+                is AgentModelChunk.ContentDelta -> {
+                    content.append(chunk.text)
+                    onEvent(AgentEvent.AssistantDelta(chunk.text))
+                }
+
+                is AgentModelChunk.ToolCallDelta -> {
+                    val call = calls.getOrPut(chunk.index) { MutableToolCall() }
+                    chunk.id?.let { call.id = it }
+                    chunk.name?.let { call.name = it }
+                    chunk.argumentsDelta?.let { call.arguments.append(it) }
+                }
+
+                is AgentModelChunk.Completed -> {
+                    finishReason = chunk.finishReason
+                    usage = chunk.usage
+                }
+            }
+        }
+        val toolCalls =
+            calls
+                .toSortedMap()
+                .values
+                .mapNotNull { call ->
+                    val name = call.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    ToolCall(
+                        id = call.id?.takeIf { it.isNotBlank() } ?: "call_${UUID.randomUUID()}",
+                        name = name,
+                        argumentsJson = call.arguments.toString().ifBlank { "{}" },
+                    )
+                }
+        return AgentModelResponse(
+            content = content.toString().takeIf { it.isNotBlank() },
+            toolCalls = toolCalls,
+            finishReason = finishReason,
+            usage = usage,
+        )
+    }
+
+    private class MutableToolCall {
+        var id: String? = null
+        var name: String? = null
+        val arguments = StringBuilder()
     }
 
     private fun displayArgs(

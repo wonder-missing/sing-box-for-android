@@ -1,6 +1,10 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -16,17 +20,42 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import okhttp3.Call
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 class DeepSeekModelClient(
     private val baseUrl: String = DEFAULT_BASE_URL,
     private val modelProvider: () -> String = { DEFAULT_MODEL },
-) : AgentModelClient {
+) : AgentModelClient,
+    AgentStreamingModelClient {
+    private val okHttp =
+        OkHttpClient
+            .Builder()
+            .connectTimeout(CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+            .build()
+    private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+
+    @Volatile
+    private var activeCall: Call? = null
+
+    @Volatile
+    private var cancelled = false
+
     private fun currentModel(): String = modelProvider().trim().ifBlank { DEFAULT_MODEL }
+
+    override fun cancel() {
+        cancelled = true
+        activeCall?.cancel()
+    }
 
     override suspend fun complete(
         request: AgentModelRequest,
@@ -36,35 +65,115 @@ class DeepSeekModelClient(
             if (apiKey.isBlank()) {
                 throw AgentModelException(AgentTurnErrorCode.NO_API_KEY, "DeepSeek API key is not configured.")
             }
-            val payload =
-                buildJsonObject {
-                    put("model", currentModel())
-                    put("messages", buildMessages(request.messages))
-                    if (request.tools.isNotEmpty()) {
-                        put(
-                            "tools",
-                            buildJsonArray {
-                                request.tools.forEach { add(it.toOpenAiJson()) }
-                            },
-                        )
-                        put(
-                            "tool_choice",
-                            when (request.toolChoice) {
-                                AgentToolChoice.AUTO -> "auto"
-                                AgentToolChoice.NONE -> "none"
-                            },
-                        )
-                    }
-                    put("temperature", request.temperature)
-                    put("max_tokens", request.maxOutputTokens)
-                    put("stream", false)
-                }
-            val (status, body) = post("/chat/completions", payload.toString(), apiKey, request.timeoutMs)
+            val payload = buildPayload(request, stream = false)
+            val (status, body) = post("/chat/completions", payload, apiKey, request.timeoutMs)
             if (status !in 200..299) {
                 throw httpError(status, body)
             }
             parseResponse(body)
         }
+
+    override fun stream(
+        request: AgentModelRequest,
+        apiKey: String,
+    ): Flow<AgentModelChunk> =
+        flow {
+            if (apiKey.isBlank()) {
+                throw AgentModelException(AgentTurnErrorCode.NO_API_KEY, "DeepSeek API key is not configured.")
+            }
+            cancelled = false
+            val payload = buildPayload(request, stream = true)
+            val httpRequest =
+                Request
+                    .Builder()
+                    .url(baseUrl.trimEnd('/') + "/chat/completions")
+                    .header("Authorization", "Bearer $apiKey")
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "text/event-stream")
+                    .post(payload.toRequestBody(jsonMediaType))
+                    .build()
+            val client =
+                okHttp
+                    .newBuilder()
+                    .readTimeout(request.timeoutMs.coerceAtLeast(1_000L), TimeUnit.MILLISECONDS)
+                    .build()
+            val call = client.newCall(httpRequest)
+            activeCall = call
+            if (cancelled) call.cancel()
+            val requestHeaders = AgentApiTrace.sanitizeHeaders(httpRequest.headers.toMultimap())
+            var status: Int? = null
+            var responseHeaders: Map<String, String> = emptyMap()
+            val responseBody = StringBuilder()
+            var traceError: String? = null
+            try {
+                call.execute().use { response ->
+                    status = response.code
+                    responseHeaders = AgentApiTrace.sanitizeHeaders(response.headers.toMultimap())
+                    if (!response.isSuccessful) {
+                        val body = response.body?.string().orEmpty().take(MAX_ERROR_BYTES)
+                        traceError = "HTTP ${response.code}"
+                        throw httpError(response.code, body)
+                    }
+                    val source =
+                        response.body?.source()
+                            ?: throw AgentModelException(
+                                AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
+                                "DeepSeek returned an empty stream.",
+                                retryable = true,
+                            )
+                    var finish: FinishReason? = null
+                    var usage: TokenUsage? = null
+                    while (true) {
+                        if (cancelled) throw CancellationException("cancelled")
+                        val line = source.readUtf8Line() ?: break
+                        if (!line.startsWith("data:")) continue
+                        val data = line.removePrefix("data:").trim()
+                        if (data.isEmpty()) continue
+                        if (data == "[DONE]") break
+                        responseBody.append(data).append('\n')
+                        val chunk = parseStreamChunk(data) ?: continue
+                        finish = chunk.finishReason ?: finish
+                        usage = chunk.usage ?: usage
+                        chunk.content?.let { emit(AgentModelChunk.ContentDelta(it)) }
+                        chunk.toolCalls.forEach { emit(it) }
+                    }
+                    emit(AgentModelChunk.Completed(finish ?: FinishReason.UNKNOWN, usage))
+                }
+            } catch (e: CancellationException) {
+                traceError = "cancelled"
+                throw e
+            } catch (e: AgentModelException) {
+                traceError = e.message
+                throw e
+            } catch (e: IOException) {
+                if (cancelled) {
+                    traceError = "cancelled"
+                    throw CancellationException("cancelled")
+                }
+                traceError = e.message ?: "network error"
+                throw AgentModelException(
+                    AgentTurnErrorCode.MODEL_UNAVAILABLE,
+                    AgentSanitizer.sanitizeText(e.message ?: "network error"),
+                    retryable = true,
+                )
+            } finally {
+                if (activeCall === call) activeCall = null
+                cancelled = false
+                AgentApiTrace.record(
+                    ApiTraceEntry(
+                        timestamp = System.currentTimeMillis(),
+                        method = "POST",
+                        url = httpRequest.url.toString(),
+                        requestHeaders = requestHeaders,
+                        requestBody = AgentApiTrace.truncateBody(payload) ?: payload,
+                        status = status,
+                        responseHeaders = responseHeaders,
+                        responseBody = AgentApiTrace.truncateBody(responseBody.toString()),
+                        error = traceError,
+                    ),
+                )
+            }
+        }.flowOn(Dispatchers.IO)
 
     suspend fun testConnection(apiKey: String): String {
         complete(
@@ -78,6 +187,33 @@ class DeepSeekModelClient(
         )
         return "Connection OK (${currentModel()})"
     }
+
+    private fun buildPayload(
+        request: AgentModelRequest,
+        stream: Boolean,
+    ): String =
+        buildJsonObject {
+            put("model", currentModel())
+            put("messages", buildMessages(request.messages))
+            if (request.tools.isNotEmpty()) {
+                put(
+                    "tools",
+                    buildJsonArray {
+                        request.tools.forEach { add(it.toOpenAiJson()) }
+                    },
+                )
+                put(
+                    "tool_choice",
+                    when (request.toolChoice) {
+                        AgentToolChoice.AUTO -> "auto"
+                        AgentToolChoice.NONE -> "none"
+                    },
+                )
+            }
+            put("temperature", request.temperature)
+            put("max_tokens", request.maxOutputTokens)
+            put("stream", stream)
+        }.toString()
 
     private fun buildMessages(messages: List<AgentMessage>): JsonArray =
         buildJsonArray {
@@ -145,6 +281,57 @@ class DeepSeekModelClient(
             }
         }
 
+    private data class StreamChunk(
+        val content: String?,
+        val toolCalls: List<AgentModelChunk.ToolCallDelta>,
+        val finishReason: FinishReason?,
+        val usage: TokenUsage?,
+    )
+
+    private fun parseStreamChunk(data: String): StreamChunk? {
+        val root = runCatching { Json.parseToJsonElement(data) as? JsonObject }.getOrNull() ?: return null
+        val choice = (root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
+        val delta = choice?.get("delta") as? JsonObject
+        val content = (delta?.get("content") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
+        val toolCalls =
+            (delta?.get("tool_calls") as? JsonArray)
+                ?.mapNotNull { parseToolCallDelta(it as? JsonObject) }
+                .orEmpty()
+        val finish = (choice?.get("finish_reason") as? JsonPrimitive)?.contentOrNull
+        return StreamChunk(
+            content = content,
+            toolCalls = toolCalls,
+            finishReason = finish?.let { finishReason(it) },
+            usage = parseUsage(root["usage"] as? JsonObject),
+        )
+    }
+
+    private fun parseToolCallDelta(element: JsonObject?): AgentModelChunk.ToolCallDelta? {
+        if (element == null) return null
+        val function = element["function"] as? JsonObject
+        val index = (element["index"] as? JsonPrimitive)?.intOrNull ?: 0
+        val id = (element["id"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        val name = (function?.get("name") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        val arguments =
+            when (val raw = function?.get("arguments")) {
+                is JsonPrimitive -> raw.contentOrNull
+                is JsonObject -> raw.toString()
+                else -> null
+            }
+        if (id == null && name == null && arguments == null) return null
+        return AgentModelChunk.ToolCallDelta(index, id, name, arguments)
+    }
+
+    private fun parseUsage(usage: JsonObject?): TokenUsage? =
+        usage?.let {
+            TokenUsage(
+                inputTokens = (it["prompt_tokens"] as? JsonPrimitive)?.intOrNull,
+                outputTokens = (it["completion_tokens"] as? JsonPrimitive)?.intOrNull,
+                cacheHitTokens = (it["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull,
+                cacheMissTokens = (it["prompt_cache_miss_tokens"] as? JsonPrimitive)?.intOrNull,
+            )
+        }
+
     private fun parseResponse(body: String): AgentModelResponse {
         val root =
             runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull()
@@ -167,15 +354,7 @@ class DeepSeekModelClient(
                 ?.mapNotNull { element -> parseToolCall(element as? JsonObject) }
                 .orEmpty()
         val finishReason = finishReason((choice["finish_reason"] as? JsonPrimitive)?.contentOrNull)
-        val usage =
-            (root["usage"] as? JsonObject)?.let {
-                TokenUsage(
-                    inputTokens = (it["prompt_tokens"] as? JsonPrimitive)?.intOrNull,
-                    outputTokens = (it["completion_tokens"] as? JsonPrimitive)?.intOrNull,
-                    cacheHitTokens = (it["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull,
-                    cacheMissTokens = (it["prompt_cache_miss_tokens"] as? JsonPrimitive)?.intOrNull,
-                )
-            }
+        val usage = parseUsage(root["usage"] as? JsonObject)
         if (content.isNullOrBlank() && toolCalls.isEmpty()) {
             throw AgentModelException(
                 AgentTurnErrorCode.INVALID_MODEL_RESPONSE,

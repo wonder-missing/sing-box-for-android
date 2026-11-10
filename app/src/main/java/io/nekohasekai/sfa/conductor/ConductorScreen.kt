@@ -296,6 +296,7 @@ fun ConductorScreen(
             onInputChange = { input = it },
             onLineCountChanged = { inputLineCount = it },
             onSend = { send() },
+            onStop = viewModel::stopAgent,
             isRunning = uiState.isRunning,
             onSlash = {
                 input = if (input.startsWith("/")) input else "/" + input
@@ -393,12 +394,22 @@ private fun ConductorItemView(
 
         is ConductorItem.Assistant ->
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "conductor",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Row(
                     modifier = Modifier.padding(bottom = 2.dp),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "conductor",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (item.streaming) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(start = 6.dp).size(10.dp),
+                            strokeWidth = 1.5.dp,
+                        )
+                    }
+                }
                 SelectionContainer {
                     Text(
                         text = markdownAnnotated(item.text),
@@ -695,13 +706,14 @@ private fun ConductorInputBar(
     onInputChange: (String) -> Unit,
     onLineCountChanged: (Int) -> Unit,
     onSend: () -> Unit,
+    onStop: () -> Unit,
     isRunning: Boolean,
     onSlash: () -> Unit,
     onAt: () -> Unit,
     focusRequester: FocusRequester,
 ) {
     val sendLabel = stringResource(R.string.conductor_send)
-    val runningLabel = stringResource(R.string.conductor_running)
+    val stopLabel = stringResource(R.string.stop)
     val expandLabel = stringResource(if (expanded) R.string.conductor_collapse else R.string.conductor_expand)
     Surface(
         modifier = modifier.fillMaxWidth().height(height),
@@ -800,16 +812,29 @@ private fun ConductorInputBar(
                 Spacer(modifier = Modifier.weight(1f))
                 if (isRunning) {
                     Box(
-                        modifier = Modifier.size(48.dp),
+                        modifier =
+                        Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onStop)
+                            .semantics { contentDescription = stopLabel },
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator(
+                        Box(
                             modifier =
                             Modifier
-                                .size(20.dp)
-                                .semantics { contentDescription = runningLabel },
-                            strokeWidth = 2.dp,
-                        )
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.errorContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_stop_24),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 } else {
                     val enabled = input.isNotBlank()

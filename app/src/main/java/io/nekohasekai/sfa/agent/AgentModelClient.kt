@@ -24,6 +24,8 @@ interface AgentStreamingModelClient {
         request: AgentModelRequest,
         apiKey: String,
     ): Flow<AgentModelChunk>
+
+    fun cancel() = Unit
 }
 
 enum class FinishReason {
