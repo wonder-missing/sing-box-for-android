@@ -118,7 +118,7 @@ object AgentApiTrace {
             body
         }
 
-    private fun appendHeaders(headers: Map<String, String>) {
+    private fun StringBuilder.appendHeaders(headers: Map<String, String>) {
         headers
             .toSortedMap { left, right -> left.compareTo(right, ignoreCase = true) }
             .forEach { (name, value) -> appendLine("$name: $value") }
