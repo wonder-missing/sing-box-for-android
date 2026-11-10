@@ -60,8 +60,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicLong
@@ -787,7 +785,6 @@ class ConductorViewModel(
     }
 
     private fun deviceSummary(): String {
-        val service = if (localServiceStarted == true) "started" else "stopped"
         val configuration = getApplication<Application>().resources.configuration
         val language =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && configuration.locales.size() > 0) {
@@ -795,14 +792,9 @@ class ConductorViewModel(
             } else {
                 Locale.getDefault().toLanguageTag()
             }
-        val localTime = SimpleDateFormat("yyyy-MM-dd HH:mm z", Locale.getDefault()).format(Date())
         return buildString {
-            append("service=$service; ")
-            append("remoteControl=$remoteControl; ")
-            append("coreConnected=${_uiState.value.coreConnected}; ")
             append("preferredLanguage=$language; ")
             append("timeZone=${TimeZone.getDefault().id}; ")
-            append("localTime=$localTime; ")
             append("appVersion=${BuildConfig.VERSION_NAME}; ")
             append("android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}); ")
             append("device=${Build.MANUFACTURER} ${Build.MODEL}")

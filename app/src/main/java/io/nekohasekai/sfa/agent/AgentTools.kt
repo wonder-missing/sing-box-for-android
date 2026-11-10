@@ -136,6 +136,7 @@ class AgentTools(
                             put("source", "local_sense")
                             put("deviceOnly", true)
                             put("networkType", device.networkType)
+                            device.localTime?.let { put("localTime", it) }
                             device.metered?.let { put("metered", it) }
                             device.vpnActive?.let { put("vpnActive", it) }
                             device.serviceMode?.let { put("serviceMode", it) }

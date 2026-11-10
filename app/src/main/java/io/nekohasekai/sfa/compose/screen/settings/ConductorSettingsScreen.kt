@@ -154,11 +154,12 @@ fun ConductorSettingsScreen(navController: NavController) {
                     placeholder = { Text(stringResource(R.string.conductor_model_hint)) },
                     supportingText = { Text(stringResource(R.string.conductor_model_help)) },
                 )
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Button(
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             if (busy) return@Button
                             val key = apiKey.trim()
@@ -186,6 +187,7 @@ fun ConductorSettingsScreen(navController: NavController) {
                         Text(stringResource(R.string.conductor_api_key_save))
                     }
                     FilledTonalButton(
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             if (busy) return@FilledTonalButton
                             busy = true
@@ -217,6 +219,7 @@ fun ConductorSettingsScreen(navController: NavController) {
                         )
                     }
                     TextButton(
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             if (busy) return@TextButton
                             busy = true

@@ -131,6 +131,7 @@ interface NodeSnapshotSource {
  */
 data class DeviceSnapshot(
     val networkType: String = "unknown",
+    val localTime: String? = null,
     val metered: Boolean? = null,
     val vpnActive: Boolean? = null,
     val serviceMode: String? = null,

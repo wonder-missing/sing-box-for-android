@@ -6,6 +6,9 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.telemetry.TelemetrySignals
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Device-local observations only. Nothing here is sent through CommandClient,
@@ -33,6 +36,7 @@ class AndroidDeviceSnapshotSource(
             val started = runCatching { serviceStarted() }.getOrNull()
             DeviceSnapshot(
                 networkType = describeNetwork(capabilities),
+                localTime = SimpleDateFormat("yyyy-MM-dd HH:mm z", Locale.getDefault()).format(Date()),
                 metered = connectivityManager?.isActiveNetworkMetered,
                 vpnActive =
                     when {

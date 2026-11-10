@@ -41,7 +41,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -123,6 +123,8 @@ fun ConductorScreen(
     val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val scaffoldPadding = LocalScaffoldPadding.current
     val suggestions = ConductorCommands.suggestions(input)
 
@@ -137,6 +139,11 @@ fun ConductorScreen(
         input = ""
         inputExpanded = false
         focusManager.clearFocus()
+    }
+
+    fun copyConversation() {
+        clipboard.setText(AnnotatedString(viewModel.conversationTranscript()))
+        Toast.makeText(context, context.getString(R.string.conductor_conversation_copied), Toast.LENGTH_SHORT).show()
     }
 
     BackHandler(enabled = inputExpanded) {
@@ -198,13 +205,7 @@ fun ConductorScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding =
-                PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (uiState.items.isEmpty()) 12.dp else 60.dp,
-                    bottom = 12.dp,
-                ),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (uiState.items.isEmpty()) {
@@ -224,6 +225,9 @@ fun ConductorScreen(
                             onConfirm = viewModel::confirmConfirmation,
                             onCancel = viewModel::cancelConfirmation,
                         )
+                    }
+                    item(key = "conversation-actions") {
+                        ConversationActions(onCopy = ::copyConversation)
                     }
                 }
             }
@@ -277,36 +281,31 @@ fun ConductorScreen(
             },
             focusRequester = focusRequester,
         )
+    }
+}
 
-        if (uiState.items.isNotEmpty()) {
-            val clipboard = LocalClipboardManager.current
-            val context = LocalContext.current
-            Surface(
-                modifier =
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = scaffoldPadding.calculateTopPadding() + 8.dp, end = 8.dp)
-                    .size(48.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ) {
-                IconButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(viewModel.conversationTranscript()))
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.conductor_conversation_copied),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = stringResource(R.string.conductor_copy_conversation),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+@Composable
+private fun ConversationActions(onCopy: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = stringResource(R.string.conductor_conversation_actions),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.conductor_copy_conversation)) },
+                onClick = {
+                    expanded = false
+                    onCopy()
+                },
+            )
         }
     }
 }

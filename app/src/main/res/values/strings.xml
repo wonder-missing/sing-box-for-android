@@ -800,10 +800,10 @@
     <string name="last_fetched_icon">Last fetched</string>
     <string name="source_updated_icon">Source updated</string>
     <string name="settings_conductor">Conductor</string>
-    <string name="settings_conductor_summary">DeepSeek API key and natural-language agent</string>
     <string name="conductor_settings_title">Conductor</string>
     <string name="conductor_api_key_title">DeepSeek API key</string>
     <string name="conductor_api_key_hint">sk-...</string>
+    <string name="conductor_conversation_actions">Conversation actions</string>
     <string name="conductor_copy_conversation">Copy conversation</string>
     <string name="conductor_conversation_copied">Conversation copied</string>
     <string name="conductor_copy">Copy</string>

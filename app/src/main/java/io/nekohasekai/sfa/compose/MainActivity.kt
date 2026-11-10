@@ -82,6 +82,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -1115,6 +1117,9 @@ class MainActivity :
                     val showStatusBar = isRemote || serviceRunning || currentServiceStatus == Status.Stopping
                     val showStartFab = !isRemote && !serviceRunning && dashboardUiState.selectedProfileId != -1L
                     val bottomOverlayPadding = paddingValues.calculateBottomPadding()
+                    val statusBarVisible = showStatusBar && !isSubScreen
+                    var statusBarHeightPx by remember { mutableStateOf(0) }
+                    val statusBarHeight = with(LocalDensity.current) { statusBarHeightPx.toDp() }
 
                     NavHost(
                         navController = navController,
@@ -1133,7 +1138,17 @@ class MainActivity :
                         usbIPStatusViewModel = usbIPStatusViewModel,
                         openConnectStatusViewModel = openConnectStatusViewModel,
                         openVPNStatusViewModel = openVPNStatusViewModel,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(
+                                bottom =
+                                if (statusBarVisible && !useNavigationRail) {
+                                    statusBarHeight
+                                } else {
+                                    0.dp
+                                },
+                            ),
                     )
                     if (!useNavigationRail) {
                         if (isRemote) {
@@ -1148,7 +1163,11 @@ class MainActivity :
                                 connectionsCount = dashboardUiState.connectionsCount,
                                 onConnectionsClick = { showConnectionsSheet = true },
                                 onDisconnectClick = { RemoteControlManager.exitRemoteControl() },
-                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottomOverlayPadding),
+                                modifier =
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = bottomOverlayPadding)
+                                    .onSizeChanged { statusBarHeightPx = it.height },
                             )
                         } else {
                             ServiceStatusBar(
@@ -1161,7 +1180,11 @@ class MainActivity :
                                 connectionsCount = dashboardUiState.connectionsCount,
                                 onConnectionsClick = { showConnectionsSheet = true },
                                 onStopClick = { dashboardViewModel.toggleService() },
-                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottomOverlayPadding),
+                                modifier =
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = bottomOverlayPadding)
+                                    .onSizeChanged { statusBarHeightPx = it.height },
                             )
                         }
                     }

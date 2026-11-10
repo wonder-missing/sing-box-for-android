@@ -254,9 +254,6 @@ fun SettingsScreen(navController: NavController) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     },
-                    supportingContent = {
-                        Text(stringResource(R.string.settings_conductor_summary))
-                    },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.SmartToy,
