@@ -3,6 +3,13 @@ package io.nekohasekai.sfa.agent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
@@ -15,6 +22,10 @@ data class AgentConfig(
     val maxOutputTokens: Int = 4_096,
     val maxInputTokens: Int = 64_000,
     val maxMessages: Int = 48,
+    val trimTargetMessages: Int = 36,
+    val toolRoutingEnabled: Boolean = true,
+    val searchLimit: Int = 5,
+    val maxSearchesPerRound: Int = 2,
     val maxObservationChars: Int = 24_000,
     val maxObservationCharsPerRound: Int = 64_000,
     val maxObservationCharsPerTurn: Int = 128_000,
@@ -94,6 +105,18 @@ class AgentRuntime(
 
         val transcript = (history + AgentMessage.User(userText)).toMutableList()
         val startSize = history.size
+        val catalog = AgentToolCatalog(tools.definitions())
+        val systemMessage =
+            AgentContext.systemPrompt(
+                deviceSummary,
+                if (config.toolRoutingEnabled) catalog.promptSection() else null,
+            )
+        val requestTools =
+            if (config.toolRoutingEnabled) {
+                AgentMetaTools.schemas()
+            } else {
+                catalog.definitions.map { it.toToolSchema() }
+            }
         val startedAt = System.currentTimeMillis()
         var confirmationPausedMs = 0L
         var step = 0
@@ -123,13 +146,15 @@ class AgentRuntime(
                 )
             }
 
-            val definitions = tools.definitions()
             val request =
                 AgentModelRequest(
-                    messages = listOf(AgentContext.systemPrompt(deviceSummary)) + AgentContext.trim(transcript, config.maxMessages),
-                    tools = if (toolsEnabled) definitions.map { it.toToolSchema() } else emptyList(),
+                    messages =
+                        listOf(systemMessage) +
+                            AgentContext.trim(transcript, config.maxMessages, config.trimTargetMessages),
+                    tools = requestTools,
                     maxOutputTokens = config.maxOutputTokens,
                     timeoutMs = config.modelTimeoutMs,
+                    toolChoice = if (toolsEnabled) AgentToolChoice.AUTO else AgentToolChoice.NONE,
                 )
             onEvent(AgentEvent.StateChanged(TurnState.CallingModel(step)))
             val response =
@@ -223,6 +248,45 @@ class AgentRuntime(
             val executable = calls.take(config.maxToolCallsPerRound)
             val extra = calls.drop(config.maxToolCallsPerRound)
             var roundObservationChars = 0
+            var searchesThisRound = 0
+
+            fun recordObservation(
+                call: ToolCall,
+                raw: ToolObservation,
+            ) {
+                val remainingTurn = (config.maxObservationCharsPerTurn - turnObservationChars).coerceAtLeast(0)
+                val remainingRound = (config.maxObservationCharsPerRound - roundObservationChars).coerceAtLeast(0)
+                val budget = minOf(config.maxObservationChars, remainingTurn, remainingRound)
+                val observation =
+                    if (budget <= 0) {
+                        ToolObservation(
+                            ok = false,
+                            tool = call.name,
+                            errorCode = "observation_budget_exceeded",
+                            message = "Tool output was not sent because the context budget is exhausted.",
+                        )
+                    } else {
+                        AgentContext.truncateObservation(raw, budget)
+                    }
+                transcript.add(observation.asToolMessage(call.name, call.id))
+                val observationChars = observation.toJson().toString().length
+                roundObservationChars += observationChars
+                turnObservationChars += observationChars
+                onEvent(
+                    AgentEvent.ToolFinished(
+                        ToolResultView(
+                            callId = call.id,
+                            name = call.name,
+                            ok = observation.ok,
+                            output = observation.output,
+                            errorCode = observation.errorCode,
+                            message = observation.message,
+                            truncated = observation.truncated,
+                            degraded = observation.degraded,
+                        ),
+                    ),
+                )
+            }
 
             for (index in executable.indices) {
                 val call = executable[index]
@@ -230,20 +294,70 @@ class AgentRuntime(
                     appendCancelled(transcript, executable.drop(index), "cancelled", onEvent)
                     return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
                 }
-                val displayArgs = displayArgs(call, definitions)
-                val view = ToolCallView(call.id, call.name, displayArgs)
+                val prepared =
+                    if (config.toolRoutingEnabled) {
+                        prepareToolCall(call, catalog)
+                    } else {
+                        PreparedCall.Direct(call)
+                    }
+
+                if (prepared is PreparedCall.Search) {
+                    searchesThisRound += 1
+                    val view =
+                        ToolCallView(
+                            call.id,
+                            AgentMetaTools.SEARCH_TOOLS,
+                            displayArgs(call, catalog.definitions),
+                        )
+                    onEvent(AgentEvent.ToolStarted(view))
+                    onEvent(AgentEvent.StateChanged(TurnState.RunningTool(step, view)))
+                    val observation =
+                        if (searchesThisRound > config.maxSearchesPerRound) {
+                            ToolObservation(
+                                ok = false,
+                                tool = AgentMetaTools.SEARCH_TOOLS,
+                                errorCode = "search_budget_exceeded",
+                                message = "Only ${config.maxSearchesPerRound} tool searches are allowed per round.",
+                            )
+                        } else {
+                            ToolObservation(
+                                ok = true,
+                                tool = AgentMetaTools.SEARCH_TOOLS,
+                                output =
+                                    catalog.searchOutput(
+                                        prepared.query,
+                                        config.searchLimit,
+                                        config.maxObservationChars,
+                                    ),
+                            )
+                        }
+                    recordObservation(call, observation)
+                    continue
+                }
+
+                if (prepared is PreparedCall.Invalid) {
+                    val view = ToolCallView(call.id, call.name, displayArgs(call, catalog.definitions))
+                    onEvent(AgentEvent.ToolStarted(view))
+                    onEvent(AgentEvent.StateChanged(TurnState.RunningTool(step, view)))
+                    recordObservation(call, prepared.observation)
+                    continue
+                }
+
+                val executed = (prepared as PreparedCall.Direct).call
+                val displayArgsJson = displayArgs(executed, catalog.definitions)
+                val view = ToolCallView(executed.id, executed.name, displayArgsJson)
                 onEvent(AgentEvent.ToolStarted(view))
                 onEvent(AgentEvent.StateChanged(TurnState.RunningTool(step, view)))
 
                 var result =
                     try {
-                        tools.invokeAgent(call, humanApproved = false)
+                        tools.invokeAgent(executed, humanApproved = false)
                     } catch (e: CancellationException) {
                         appendCancelled(transcript, executable.drop(index), "cancelled", onEvent)
                         return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
                     } catch (e: Exception) {
                         AgentInvocationResult(
-                            tool = call.name,
+                            tool = executed.name,
                             ok = false,
                             errorCode = "internal_error",
                             errorMessage = e.message ?: "tool failed",
@@ -254,7 +368,7 @@ class AgentRuntime(
                     val request =
                         ConfirmationRequest(
                             id = confirmationIds.incrementAndGet(),
-                            toolName = call.name,
+                            toolName = executed.name,
                             displayArgsJson = result.confirmation!!.displayArgsJson,
                             reason = result.confirmation!!.reason,
                         )
@@ -278,42 +392,10 @@ class AgentRuntime(
                         appendCancelled(transcript, executable.drop(index), "cancelled by user", onEvent)
                         return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled by user"), onEvent)
                     }
-                    result = tools.invokeAgent(call, humanApproved = true)
+                    result = tools.invokeAgent(executed, humanApproved = true)
                 }
 
-                val rawObservation = result.toObservation()
-                val remainingTurn = (config.maxObservationCharsPerTurn - turnObservationChars).coerceAtLeast(0)
-                val remainingRound = (config.maxObservationCharsPerRound - roundObservationChars).coerceAtLeast(0)
-                val budget = minOf(config.maxObservationChars, remainingTurn, remainingRound)
-                val observation =
-                    if (budget <= 0) {
-                        ToolObservation(
-                            ok = false,
-                            tool = call.name,
-                            errorCode = "observation_budget_exceeded",
-                            message = "Tool output was not sent because the context budget is exhausted.",
-                        )
-                    } else {
-                        AgentContext.truncateObservation(rawObservation, budget)
-                    }
-                transcript.add(observation.asToolMessage(call.name, call.id))
-                val observationChars = observation.toJson().toString().length
-                roundObservationChars += observationChars
-                turnObservationChars += observationChars
-                onEvent(
-                    AgentEvent.ToolFinished(
-                        ToolResultView(
-                            callId = call.id,
-                            name = call.name,
-                            ok = observation.ok,
-                            output = observation.output,
-                            errorCode = observation.errorCode,
-                            message = observation.message,
-                            truncated = observation.truncated,
-                            degraded = observation.degraded,
-                        ),
-                    ),
-                )
+                recordObservation(executed, result.toObservation())
             }
 
             extra.forEach { call ->
@@ -334,6 +416,141 @@ class AgentRuntime(
 
             toolRounds += 1
         }
+    }
+
+    private sealed interface PreparedCall {
+        data class Direct(val call: ToolCall) : PreparedCall
+
+        data class Search(val query: String) : PreparedCall
+
+        data class Invalid(val observation: ToolObservation) : PreparedCall
+    }
+
+    private fun prepareToolCall(
+        call: ToolCall,
+        catalog: AgentToolCatalog,
+    ): PreparedCall {
+        if (call.name == AgentMetaTools.SEARCH_TOOLS) {
+            val args =
+                AgentJson.parseObject(call.argumentsJson)
+                    ?: return PreparedCall.Invalid(
+                        metaError(
+                            AgentMetaTools.SEARCH_TOOLS,
+                            "invalid_arguments",
+                            "search_tools arguments must be a JSON object.",
+                        ),
+                    )
+            val query = AgentJson.string(args, "query")?.trim().orEmpty()
+            if (query.isBlank()) {
+                return PreparedCall.Invalid(
+                    metaError(
+                        AgentMetaTools.SEARCH_TOOLS,
+                        "missing_parameter",
+                        "search_tools requires a non-blank 'query'.",
+                    ),
+                )
+            }
+            return PreparedCall.Search(query)
+        }
+        if (call.name != AgentMetaTools.ROUTE_CALL) return PreparedCall.Direct(call)
+
+        val args =
+            AgentJson.parseObject(call.argumentsJson)
+                ?: return PreparedCall.Invalid(
+                    metaError(
+                        AgentMetaTools.ROUTE_CALL,
+                        "invalid_arguments",
+                        "route_call arguments must be a JSON object.",
+                    ),
+                )
+        val target = AgentJson.string(args, "tool")?.trim().orEmpty()
+        if (target.isBlank()) {
+            return PreparedCall.Invalid(
+                metaError(
+                    AgentMetaTools.ROUTE_CALL,
+                    "missing_parameter",
+                    "route_call requires a non-blank 'tool'.",
+                ),
+            )
+        }
+        if (AgentMetaTools.isMetaTool(target)) {
+            return PreparedCall.Invalid(
+                metaError(
+                    AgentMetaTools.ROUTE_CALL,
+                    "unknown_tool",
+                    "route_call cannot target $target.",
+                ),
+            )
+        }
+        val definition =
+            catalog.get(target)
+                ?: return PreparedCall.Invalid(
+                    metaError(
+                        AgentMetaTools.ROUTE_CALL,
+                        "unknown_tool",
+                        "No tool named '$target'.",
+                        target = target,
+                        suggestions = catalog.suggestions(target),
+                    ),
+                )
+        val rawArgs = args["args"]
+        val innerArgs =
+            when (rawArgs) {
+                null, is JsonNull -> "{}"
+                is JsonObject -> rawArgs.toString()
+                is JsonPrimitive ->
+                    if (rawArgs.isString) {
+                        rawArgs.content
+                    } else {
+                        return PreparedCall.Invalid(
+                            metaError(
+                                AgentMetaTools.ROUTE_CALL,
+                                "invalid_arguments",
+                                "route_call 'args' must be an object.",
+                                target = target,
+                            ),
+                        )
+                    }
+
+                else ->
+                    return PreparedCall.Invalid(
+                        metaError(
+                            AgentMetaTools.ROUTE_CALL,
+                            "invalid_arguments",
+                            "route_call 'args' must be an object.",
+                            target = target,
+                        ),
+                    )
+            }
+        return PreparedCall.Direct(ToolCall(call.id, definition.name, innerArgs))
+    }
+
+    private fun metaError(
+        tool: String,
+        code: String,
+        message: String,
+        target: String? = null,
+        suggestions: List<String> = emptyList(),
+    ): ToolObservation {
+        val output =
+            buildJsonObject {
+                if (target != null) put("target", target)
+                if (suggestions.isNotEmpty()) {
+                    put(
+                        "suggestions",
+                        buildJsonArray {
+                            suggestions.forEach { add(it) }
+                        },
+                    )
+                }
+            }
+        return ToolObservation(
+            ok = false,
+            tool = tool,
+            errorCode = code,
+            message = message,
+            output = output.takeIf { it.isNotEmpty() },
+        )
     }
 
     private suspend fun callModelWithRetry(

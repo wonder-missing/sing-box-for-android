@@ -29,6 +29,9 @@ class AgentTools(
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
+                    category = "network",
+                    aliases = listOf("nodes", "outbounds", "节点", "出站", "节点列表"),
+                    core = true,
                 )
 
             override suspend fun execute(
@@ -113,6 +116,9 @@ class AgentTools(
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
+                    category = "network",
+                    aliases = listOf("network", "status", "snapshot", "网络状态", "网络快照"),
+                    core = true,
                 )
 
             override suspend fun execute(
@@ -202,6 +208,9 @@ class AgentTools(
                             ),
                         ),
                     confirmationPolicy = ConfirmationPolicy.ALWAYS,
+                    category = "network",
+                    aliases = listOf("probe", "latency", "url test", "探测", "测速", "延迟"),
+                    core = true,
                     confirmationReason =
                         "The probe temporarily selects this outbound, sends one HTTP HEAD request, " +
                             "then restores the previous selection. App traffic may briefly use that node.",
@@ -264,6 +273,8 @@ class AgentTools(
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
+                    category = "devices",
+                    aliases = listOf("tailscale", "devices", "peers", "设备", "设备列表"),
                 )
 
             override suspend fun execute(
@@ -293,6 +304,8 @@ class AgentTools(
                     permission = AgentPermission.DATA_EGRESS,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+                    category = "telemetry",
+                    aliases = listOf("telemetry", "upload", "遥测", "上传"),
                     confirmationReason =
                         "This uploads pending telemetry from this device to the configured ingest endpoint.",
                 )

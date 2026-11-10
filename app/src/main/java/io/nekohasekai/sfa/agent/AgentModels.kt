@@ -51,6 +51,9 @@ data class AgentToolDefinition(
     val permission: AgentPermission,
     val parameters: List<AgentParameterSpec>,
     val confirmationPolicy: ConfirmationPolicy,
+    val category: String,
+    val aliases: List<String> = emptyList(),
+    val core: Boolean = false,
     val confirmationReason: String? = null,
     val allowedUrlParameter: String? = null,
 ) {

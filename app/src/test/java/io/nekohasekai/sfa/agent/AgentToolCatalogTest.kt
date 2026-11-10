@@ -1,0 +1,90 @@
+package io.nekohasekai.sfa.agent
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AgentToolCatalogTest {
+    private val listNodes = definition("list_nodes", "network", listOf("nodes", "节点"), core = true)
+    private val probe =
+        definition(
+            "probe_via_node",
+            "network",
+            listOf("probe", "探测"),
+            confirmationPolicy = ConfirmationPolicy.ALWAYS,
+        )
+    private val tailscale = definition("tailscale_status", "devices", listOf("devices", "设备"))
+    private val catalog = AgentToolCatalog(listOf(tailscale, probe, listNodes))
+
+    @Test
+    fun definitionsAreSortedByName() {
+        assertEquals(
+            listOf("list_nodes", "probe_via_node", "tailscale_status"),
+            catalog.definitions.map { it.name },
+        )
+    }
+
+    @Test
+    fun exactNameAndChineseAliasBothWork() {
+        assertEquals("probe_via_node", catalog.search("probe_via_node").first().name)
+        assertEquals("list_nodes", catalog.search("节点").first().name)
+        assertEquals("tailscale_status", catalog.search("设备").first().name)
+    }
+
+    @Test
+    fun suggestionsCoverNearMisses() {
+        assertTrue(catalog.suggestions("list_node").contains("list_nodes"))
+    }
+
+    @Test
+    fun promptSectionGroupsByCategoryAndMarksCoreTools() {
+        val text = catalog.promptSection()
+        assertTrue(text.contains("- devices: tailscale_status"))
+        assertTrue(text.contains("- network: list_nodes, probe_via_node"))
+        assertTrue(text.contains("Core tools."))
+        assertTrue(text.contains("list_nodes()"))
+    }
+
+    @Test
+    fun searchOutputCarriesSchemasAndConfirmationFlag() {
+        val output = catalog.searchOutput("probe", limit = 5)
+        val matches = output["matches"] as JsonArray
+        assertEquals(1, matches.size)
+        val first = matches.first() as JsonObject
+        assertEquals("probe_via_node", (first["name"] as JsonPrimitive).content)
+        assertTrue(first.containsKey("parameters"))
+        assertEquals("true", (first["requiresConfirmation"] as JsonPrimitive).content)
+    }
+
+    @Test
+    fun searchOutputDropsMatchesToStayInsideBudget() {
+        val big =
+            definition("big_tool", "network", listOf("big"))
+                .copy(description = "x".repeat(1_000))
+        val smallCatalog = AgentToolCatalog(listOf(listNodes, probe, big))
+        val output = smallCatalog.searchOutput("network", limit = 5, maxChars = 1_400)
+        assertTrue(output.toString().length <= 1_400)
+        assertEquals("true", (output["truncated"] as JsonPrimitive).content)
+    }
+
+    private fun definition(
+        name: String,
+        category: String,
+        aliases: List<String>,
+        core: Boolean = false,
+        confirmationPolicy: ConfirmationPolicy = ConfirmationPolicy.NEVER,
+    ): AgentToolDefinition =
+        AgentToolDefinition(
+            name = name,
+            description = "Description for $name",
+            permission = AgentPermission.READ_NETWORK_STATE,
+            parameters = emptyList(),
+            confirmationPolicy = confirmationPolicy,
+            category = category,
+            aliases = aliases,
+            core = core,
+        )
+}

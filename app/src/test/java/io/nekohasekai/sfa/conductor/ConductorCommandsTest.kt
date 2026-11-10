@@ -73,6 +73,7 @@ class ConductorCommandsTest {
                 permission = AgentPermission.READ_NETWORK_STATE,
                 parameters = emptyList(),
                 confirmationPolicy = ConfirmationPolicy.NEVER,
+                category = "network",
             )
 
         val text = ConductorCommands.capabilitiesText(listOf(tool))

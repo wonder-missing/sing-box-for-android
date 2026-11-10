@@ -5,7 +5,10 @@
 
 ## 现在待办
 
-- [ ] **Conductor Agent Phase 2b**：Stop 真取消、流式回答、上下文压缩、probe/telemetry 可取消；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
+- [ ] **Conductor Agent Phase 2b**：工具目录与路由、Stop 真取消、流式回答、上下文压缩、probe/telemetry 可取消；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
+  - [ ] 2b-1 缓存修正：滞后批量裁剪、`toolChoice = NONE`、usage/cache token 字段。
+  - [ ] 2b-2 工具目录与路由：`route_call` / `search_tools`、静态 roster、搜索排序、unwrap、单测；开关 `toolRoutingEnabled`。
+  - [ ] 2b-3 Stop、流式、上下文压缩。
 - [ ] **节点探测并发/批量**：当前 `probe_via_node` 串行切换全局出站，不能直接并发。需要 `probe_many` 或 libbox per-request outbound binding；URLTest 只能测分组配置 URL，不能测任意 GitHub 地址。先验证 libbox HTTP API，再定方案。
 - [ ] **模型供应商抽象**：system prompt 已去 DeepSeek 品牌；client 和 Settings 仍是 DeepSeek 专用，后续抽 base URL/model/key/provider。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。

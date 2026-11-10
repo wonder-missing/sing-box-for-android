@@ -15,6 +15,7 @@ class AgentRuntimeTest {
             permission = AgentPermission.READ_NETWORK_STATE,
             parameters = emptyList(),
             confirmationPolicy = ConfirmationPolicy.NEVER,
+            category = "network",
         )
 
     private val probe =
@@ -24,6 +25,7 @@ class AgentRuntimeTest {
             permission = AgentPermission.NETWORK_PROBE,
             parameters = emptyList(),
             confirmationPolicy = ConfirmationPolicy.ALWAYS,
+            category = "network",
         )
 
     @Test
@@ -84,7 +86,12 @@ class AgentRuntimeTest {
         assertTrue(result.outcome is TurnOutcome.Completed)
         assertEquals("done", (result.outcome as TurnOutcome.Completed).answer)
         assertEquals(3, model.requests.size)
-        assertTrue(model.requests.last().tools.isEmpty())
+        assertTrue(model.requests.last().tools.isNotEmpty())
+        assertEquals(AgentToolChoice.NONE, model.requests.last().toolChoice)
+        assertEquals(
+            model.requests.first().tools.map { it.name },
+            model.requests.last().tools.map { it.name },
+        )
         assertTrue(validateTranscriptPairing(result.messages))
         assertTrue(
             result.messages
@@ -157,17 +164,225 @@ class AgentRuntimeTest {
         assertTrue(model.requests.isEmpty())
     }
 
+    @Test
+    fun routingModeSendsStaticMetaToolsAndUnwrapsRouteCall() {
+        val search = ToolCall("call_1", AgentMetaTools.SEARCH_TOOLS, """{"query":"nodes"}""")
+        val route = ToolCall("call_2", AgentMetaTools.ROUTE_CALL, """{"tool":"list_nodes","args":{}}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(search), FinishReason.TOOL_CALLS, null),
+                    AgentModelResponse(null, listOf(route), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executed = mutableListOf<ToolCall>()
+        val executor =
+            FakeExecutor(listOf(listNodes)) { call, _ ->
+                executed += call
+                ok(call.name)
+            }
+        val runtime = runtime(model, executor, key = "sk-test", config = AgentConfig(maxToolRounds = 3))
+
+        val result = runBlocking { runtime.runTurn("show nodes", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals(
+            listOf(AgentMetaTools.ROUTE_CALL, AgentMetaTools.SEARCH_TOOLS),
+            model.requests.first().tools.map { it.name },
+        )
+        assertTrue(
+            (model.requests.first().messages.first() as AgentMessage.System)
+                .content
+                .contains("list_nodes"),
+        )
+        assertEquals(listOf("list_nodes"), executed.map { it.name })
+        assertTrue(
+            result.messages
+                .filterIsInstance<AgentMessage.Tool>()
+                .any { it.toolCallId == "call_1" && it.content.contains("list_nodes") },
+        )
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun unknownRouteTargetReturnsSuggestionsWithoutExecuting() {
+        val route = ToolCall("call_1", AgentMetaTools.ROUTE_CALL, """{"tool":"list_node","args":{}}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(route), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        var executed = false
+        val executor =
+            FakeExecutor(listOf(listNodes)) { call, _ ->
+                executed = true
+                ok(call.name)
+            }
+        val runtime = runtime(model, executor, key = "sk-test", config = AgentConfig(maxToolRounds = 2))
+
+        val result = runBlocking { runtime.runTurn("show nodes", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(!executed)
+        val observation = result.messages.filterIsInstance<AgentMessage.Tool>().single().content
+        assertTrue(observation.contains("unknown_tool"))
+        assertTrue(observation.contains("list_nodes"))
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun routeCallCannotTargetMetaTools() {
+        val route = ToolCall("call_1", AgentMetaTools.ROUTE_CALL, """{"tool":"search_tools","args":{}}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(route), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        var executed = false
+        val executor =
+            FakeExecutor(listOf(listNodes)) { call, _ ->
+                executed = true
+                ok(call.name)
+            }
+        val runtime = runtime(model, executor, key = "sk-test", config = AgentConfig(maxToolRounds = 2))
+
+        val result = runBlocking { runtime.runTurn("x", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(!executed)
+        assertTrue(
+            result.messages
+                .filterIsInstance<AgentMessage.Tool>()
+                .single()
+                .content
+                .contains("unknown_tool"),
+        )
+    }
+
+    @Test
+    fun routeCallPreservesConfirmationForInnerTool() {
+        val route =
+            ToolCall(
+                "call_1",
+                AgentMetaTools.ROUTE_CALL,
+                """{"tool":"probe_via_node","args":{"outbound":"node-a","url":"https://example.com/"}}""",
+            )
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(route), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        var confirmationTool: String? = null
+        var approved = false
+        val executor =
+            FakeExecutor(listOf(probe)) { call, humanApproved ->
+                if (!humanApproved) {
+                    AgentInvocationResult(
+                        tool = call.name,
+                        ok = false,
+                        errorCode = "confirmation_required",
+                        confirmation =
+                            AgentConfirmation(
+                                tool = call.name,
+                                argsJson = call.argumentsJson,
+                                displayArgsJson = call.argumentsJson,
+                                reason = "test",
+                            ),
+                    )
+                } else {
+                    approved = true
+                    ok(call.name)
+                }
+            }
+        val runtime = runtime(model, executor, key = "sk-test", config = AgentConfig(maxToolRounds = 2))
+
+        val result =
+            runBlocking {
+                runtime.runTurn(
+                    "probe",
+                    emptyList(),
+                    onEvent = { event ->
+                        if (event is AgentEvent.StateChanged && event.state is TurnState.AwaitingConfirmation) {
+                            confirmationTool = (event.state as TurnState.AwaitingConfirmation).request.toolName
+                        }
+                    },
+                    confirm = { true },
+                )
+            }
+
+        assertEquals("probe_via_node", confirmationTool)
+        assertTrue(approved)
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun searchBudgetStopsRunawaySearching() {
+        val searches =
+            (1..3).map {
+                ToolCall("call_$it", AgentMetaTools.SEARCH_TOOLS, """{"query":"nodes"}""")
+            }
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, searches, FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime =
+            runtime(
+                model,
+                executor,
+                key = "sk-test",
+                config = AgentConfig(maxToolRounds = 2, maxSearchesPerRound = 2),
+            )
+
+        val result = runBlocking { runtime.runTurn("x", emptyList(), onEvent = {}, confirm = { true }) }
+
+        val toolMessages = result.messages.filterIsInstance<AgentMessage.Tool>()
+        assertEquals(3, toolMessages.size)
+        assertTrue(toolMessages.last().content.contains("search_budget_exceeded"))
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun nativeModeStillSendsEveryToolSchema() {
+        val model = ScriptedModel(mutableListOf(response("hello")))
+        val executor = FakeExecutor(listOf(listNodes, probe)) { call, _ -> ok(call.name) }
+        val runtime =
+            runtime(
+                model,
+                executor,
+                key = "sk-test",
+                config = AgentConfig(maxToolRounds = 1, toolRoutingEnabled = false),
+            )
+
+        runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertEquals(
+            listOf("list_nodes", "probe_via_node"),
+            model.requests.single().tools.map { it.name },
+        )
+    }
+
     private fun runtime(
         model: AgentModelClient,
         executor: AgentToolExecutor,
         key: String?,
+        config: AgentConfig = AgentConfig(maxToolRounds = 1),
     ): AgentRuntime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
             model = model,
             tools = executor,
             apiKeys = FakeKeyProvider(key),
-            config = AgentConfig(maxToolRounds = 1),
+            config = config,
         )
 
     private fun response(text: String): AgentModelResponse =

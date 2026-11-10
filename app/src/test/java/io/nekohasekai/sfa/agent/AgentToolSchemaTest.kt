@@ -22,6 +22,7 @@ class AgentToolSchemaTest {
                         ),
                     ),
                 confirmationPolicy = ConfirmationPolicy.ALWAYS,
+                category = "network",
                 allowedUrlParameter = "url",
             )
 

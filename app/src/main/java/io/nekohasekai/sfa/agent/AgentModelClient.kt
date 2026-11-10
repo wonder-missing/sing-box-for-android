@@ -37,7 +37,14 @@ enum class FinishReason {
 data class TokenUsage(
     val inputTokens: Int?,
     val outputTokens: Int?,
+    val cacheHitTokens: Int? = null,
+    val cacheMissTokens: Int? = null,
 )
+
+enum class AgentToolChoice {
+    AUTO,
+    NONE,
+}
 
 data class AgentModelRequest(
     val messages: List<AgentMessage>,
@@ -45,6 +52,7 @@ data class AgentModelRequest(
     val maxOutputTokens: Int,
     val temperature: Double = 0.2,
     val timeoutMs: Long,
+    val toolChoice: AgentToolChoice = AgentToolChoice.AUTO,
 )
 
 data class AgentModelResponse(

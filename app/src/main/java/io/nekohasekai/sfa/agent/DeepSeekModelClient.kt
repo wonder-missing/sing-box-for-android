@@ -47,7 +47,13 @@ class DeepSeekModelClient(
                                 request.tools.forEach { add(it.toOpenAiJson()) }
                             },
                         )
-                        put("tool_choice", "auto")
+                        put(
+                            "tool_choice",
+                            when (request.toolChoice) {
+                                AgentToolChoice.AUTO -> "auto"
+                                AgentToolChoice.NONE -> "none"
+                            },
+                        )
                     }
                     put("temperature", request.temperature)
                     put("max_tokens", request.maxOutputTokens)
@@ -166,6 +172,8 @@ class DeepSeekModelClient(
                 TokenUsage(
                     inputTokens = (it["prompt_tokens"] as? JsonPrimitive)?.intOrNull,
                     outputTokens = (it["completion_tokens"] as? JsonPrimitive)?.intOrNull,
+                    cacheHitTokens = (it["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull,
+                    cacheMissTokens = (it["prompt_cache_miss_tokens"] as? JsonPrimitive)?.intOrNull,
                 )
             }
         if (content.isNullOrBlank() && toolCalls.isEmpty()) {
