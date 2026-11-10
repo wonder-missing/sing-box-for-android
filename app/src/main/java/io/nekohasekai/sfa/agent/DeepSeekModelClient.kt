@@ -225,11 +225,17 @@ class DeepSeekModelClient(
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer $apiKey")
             }
+        val requestHeaders = AgentApiTrace.sanitizeHeaders(connection.requestProperties)
+        var status: Int? = null
+        var responseHeaders: Map<String, String> = emptyMap()
+        var responseBody: String? = null
+        var error: String? = null
         return try {
             val bytes = body.toByteArray(Charsets.UTF_8)
             connection.setFixedLengthStreamingMode(bytes.size)
             connection.outputStream.use { it.write(bytes) }
-            val status = connection.responseCode
+            status = connection.responseCode
+            responseHeaders = AgentApiTrace.sanitizeHeaders(connection.headerFields)
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val response =
                 stream?.use { input ->
@@ -251,16 +257,35 @@ class DeepSeekModelClient(
                     }
                     output.toString(Charsets.UTF_8.name())
                 }.orEmpty()
+            responseBody = AgentApiTrace.truncateBody(response)
             status to response.take(if (status in 200..299) MAX_RESPONSE_BYTES else MAX_ERROR_BYTES)
         } catch (e: AgentModelException) {
+            error = e.message
             throw e
         } catch (e: IOException) {
+            error = e.message ?: "network error"
             throw AgentModelException(
                 AgentTurnErrorCode.MODEL_UNAVAILABLE,
                 AgentSanitizer.sanitizeText(e.message ?: "network error"),
                 retryable = true,
             )
+        } catch (e: Exception) {
+            error = e.message ?: e.toString()
+            throw e
         } finally {
+            AgentApiTrace.record(
+                ApiTraceEntry(
+                    timestamp = System.currentTimeMillis(),
+                    method = "POST",
+                    url = connection.url.toString(),
+                    requestHeaders = requestHeaders,
+                    requestBody = AgentApiTrace.truncateBody(body) ?: body,
+                    status = status,
+                    responseHeaders = responseHeaders,
+                    responseBody = responseBody,
+                    error = error,
+                ),
+            )
             connection.disconnect()
         }
     }

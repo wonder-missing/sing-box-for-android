@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="telemetry_title">Telemetry</string>
-    <string name="telemetry_row_summary">Upload VPN logs</string>
     <string name="telemetry_summary">Logs are sent only while the VPN is running, about every 5 minutes.</string>
     <string name="telemetry_enabled_summary">Off until you turn this on and save an endpoint and token.</string>
     <string name="telemetry_endpoint">Endpoint URL</string>

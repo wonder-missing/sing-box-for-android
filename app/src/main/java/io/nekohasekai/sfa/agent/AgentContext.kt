@@ -14,7 +14,6 @@ object AgentContext {
                 appendLine("If no tool fits, say so plainly. Keep answers concise and match the user's language.")
                 appendLine("Do not expose internal reasoning; give the conclusion and the necessary details.")
                 appendLine("Use short plain-text paragraphs. **bold** and `inline code` are allowed; do not use Markdown tables, headings or code fences.")
-                appendLine("You cannot browse or search the web. probe_via_node only checks HTTP HEAD reachability; it returns no page content and cannot search GitHub or read source code. If asked to search or read code, say you cannot and offer the capabilities you do have.")
                 if (!deviceSummary.isNullOrBlank()) {
                     appendLine("Current device context (trusted metadata): $deviceSummary")
                     appendLine("Use the device context for language, app version, device and timezone. For current time, service state or network state, call network_snapshot.")

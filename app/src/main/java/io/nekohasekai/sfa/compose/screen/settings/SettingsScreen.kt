@@ -277,9 +277,6 @@ fun SettingsScreen(navController: NavController) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     },
-                    supportingContent = {
-                        Text(stringResource(R.string.telemetry_row_summary))
-                    },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.CloudUpload,

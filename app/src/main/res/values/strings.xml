@@ -805,9 +805,9 @@
     <string name="conductor_api_key_hint">sk-...</string>
     <string name="conductor_conversation_actions">Conversation actions</string>
     <string name="conductor_copy_conversation">Copy conversation</string>
+    <string name="conductor_copy_api_trace">Copy API trace</string>
+    <string name="conductor_api_trace_copied">API trace copied</string>
     <string name="conductor_conversation_copied">Conversation copied</string>
-    <string name="conductor_copy">Copy</string>
-    <string name="conductor_copied">Copied</string>
     <string name="conductor_tool_details">Details</string>
     <string name="conductor_tool_hide_details">Hide details</string>
     <string name="conductor_tool_details_hint">Tap Details to view the tool output.</string>

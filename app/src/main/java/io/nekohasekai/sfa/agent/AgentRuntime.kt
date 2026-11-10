@@ -7,18 +7,18 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 data class AgentConfig(
-    val maxToolRounds: Int = 1,
-    val maxToolCallsPerRound: Int = 4,
-    val modelTimeoutMs: Long = 60_000,
-    val turnTimeoutMs: Long = 300_000,
+    val maxToolRounds: Int = 12,
+    val maxToolCallsPerRound: Int = 8,
+    val modelTimeoutMs: Long = 120_000,
+    val turnTimeoutMs: Long = 1_800_000,
     val confirmationTimeoutMs: Long = 300_000,
     val maxOutputTokens: Int = 4_096,
-    val maxInputTokens: Int = 24_000,
-    val maxMessages: Int = 24,
-    val maxObservationChars: Int = 4_000,
-    val maxObservationCharsPerRound: Int = 8_000,
-    val maxObservationCharsPerTurn: Int = 24_000,
-    val maxRetries: Int = 2,
+    val maxInputTokens: Int = 64_000,
+    val maxMessages: Int = 48,
+    val maxObservationChars: Int = 24_000,
+    val maxObservationCharsPerRound: Int = 64_000,
+    val maxObservationCharsPerTurn: Int = 128_000,
+    val maxRetries: Int = 3,
 )
 
 data class TurnResult(

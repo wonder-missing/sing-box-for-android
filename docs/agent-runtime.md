@@ -8,7 +8,7 @@
 
 摘要：
 
-- Phase 2a：最多 1 轮工具调用，加 1 次最终回答。
+- Phase 2a：最多 12 轮工具调用作为防死循环 guard，已经支持多步；2B 再补 Stop、真取消和流式。
 - Phase 2b：最多 6 轮工具调用，带 Stop、真取消和流式回答。
 - 使用结构化 tool call，不解析文本 ReAct。
 - `AgentRuntime` 是手写薄层，纯 Kotlin/JVM 可测；DeepSeek key 走 App Settings 的 BYOK 入口，Android Keystore 加密。
@@ -20,8 +20,8 @@
 目标：
 
 - 非 `/` 文本进入模型，模型只能调用注册表里的 tool。
-- Phase 2a 只允许一轮 tool call：模型调工具，App 执行，结果回模型，模型给最终回答。
-- Phase 2b 允许多轮有界循环，默认最多 6 轮工具调用，可取消、可超时、可计预算。
+- Phase 2a 允许最多 12 轮 tool call，作为防死循环 guard；模型调工具，App 执行，结果回模型，模型继续或给最终回答。
+- Phase 2b 补 Stop、真取消和流式；工具轮数仍由运行时 guard 控制。
 - 所有写操作和网络状态变更必须经过 App 侧确认，模型不能绕过。
 - DeepSeek API key 由用户在 App Settings 里填写，Android Keystore 加密保存。
 - 用户输入在发送前做 best-effort 敏感内容检查，命中即本地拦截并提示改写。
@@ -46,7 +46,7 @@
 | `Tool` | 给模型用的能力适配器：name、description、JSON schema、权限、确认策略、executor |
 | `ToolCall` | 模型发起的一次具体调用，带 `id`、`name`、`arguments` |
 | `Observation` | ToolCall 执行后经过 sanitizer 的结果，回给模型和 UI |
-| `ToolRound` | 一次 assistant 消息触发的 tool call 批次：执行、回填 observation；Phase 2a 最多 1 轮 |
+| `ToolRound` | 一次 assistant 消息触发的 tool call 批次：执行、回填 observation；轮数由运行时 guard 控制 |
 | `Step` | 一次模型调用的序号，包含该次响应及其 tool call/observation |
 | `Turn` | 一次用户输入，到最终回答/取消/失败为止 |
 | `Transcript` | 模型可见的消息序列，角色是 system / user / assistant / tool |
@@ -333,7 +333,7 @@ interface AgentToolExecutor {
 - `confirmationPolicy` 必填，不提供默认值；新工具忘了声明会编译失败，只读工具显式写 `NEVER`。
 - 注册表 `invoke` 用 `try/catch` 包执行，但必须 `catch (e: CancellationException) { throw e }`，不能把取消吞成 `internal_error`；其他异常再转成 sanitized observation。
 - `AgentToolExecutor` 为每次调用创建 `ToolCancellation`；Stop 时标记取消并调用已注册的 `onCancel`，工具必须在 1s 内返回。`probe_via_node`、`telemetry_upload` 的阻塞 HTTP 调用要注册 `onCancel` 来关闭连接。
-- 单轮 tool call 数量上限 `maxToolCallsPerRound`，默认 4。超过的调用不执行，回填 `too_many_tool_calls` observation，并结束本轮。
+- 单轮 tool call 数量上限 `maxToolCallsPerRound`，默认 8。超过的调用不执行，回填 `too_many_tool_calls` observation，并结束本轮。
 
 Sanitizer：
 
@@ -367,7 +367,7 @@ Phase 2a：
  → 模型调用 #2
     → 有最终文本：完成
     → 又出现 tool call：把这些调用标成 `step_budget_exceeded`，禁用工具，
-      再发一次最终回答请求（仍只执行过一轮工具）
+      再发一次最终回答请求（被拒绝的那一轮不会执行）
 ```
 
 Phase 2b：
@@ -387,7 +387,7 @@ Turn 开始
     toolRounds += 1
 ```
 
-`step` 是模型调用序号，`maxToolRounds` 是工具轮数上限。Phase 2a 的 `maxToolRounds = 1`，所以最多一次工具调用批次，加一次最终回答，最多 2 次模型调用。
+`step` 是模型调用序号，`maxToolRounds` 是工具轮数上限。当前默认 12，作为防死循环 guard，不按轮数卡产品体验。
 
 ### Turn 收尾不变量
 
@@ -470,18 +470,18 @@ data class TurnResult(
 )
 
 data class AgentConfig(
-    val maxToolRounds: Int = 1,
-    val maxToolCallsPerRound: Int = 4,
-    val modelTimeoutMs: Long = 60_000,
-    val turnTimeoutMs: Long = 300_000,
+    val maxToolRounds: Int = 12,
+    val maxToolCallsPerRound: Int = 8,
+    val modelTimeoutMs: Long = 120_000,
+    val turnTimeoutMs: Long = 1_800_000,
     val confirmationTimeoutMs: Long = 300_000,
     val cancelGraceMs: Long = 1_000,
     val maxOutputTokens: Int = 4_096,
-    val maxInputTokens: Int = 24_000,
-    val maxObservationChars: Int = 4_000,
-    val maxObservationCharsPerRound: Int = 8_000,
-    val maxObservationCharsPerTurn: Int = 24_000,
-    val maxRetries: Int = 2,
+    val maxInputTokens: Int = 64_000,
+    val maxObservationChars: Int = 24_000,
+    val maxObservationCharsPerRound: Int = 64_000,
+    val maxObservationCharsPerTurn: Int = 128_000,
+    val maxRetries: Int = 3,
 )
 ```
 
@@ -523,7 +523,7 @@ System prompt 固定写在代码里，包含：
 - 风格：简洁，跟随用户语言，先给结论再给必要细节。
 - 设备上下文只放**稳定**元数据：首选语言、时区、App 版本、Android 版本、设备型号。服务状态、当前本地时间、网络状态走 `network_snapshot` tool，不放进 system prompt。
 - System prompt 在同一个 App 版本、语言、时区和设备下保持不变；transcript 只追加不重排，并随会话持久化。这样同一轮内的多次模型调用、以及离开页面再回来后的请求，前缀都保持稳定，DeepSeek 的前缀缓存才有机会命中。
-- `AgentContext.trim` 丢弃旧消息时会改变前缀；Phase 2a 的 24 条上限是缓存与上下文长度的折中，后续再调。
+- `AgentContext.trim` 丢弃旧消息时会改变前缀；Phase 2a 的 48 条上限是缓存与上下文长度的折中，后续再调。
 
 ### 用户输入检查
 
@@ -557,10 +557,10 @@ fun interface AgentInputGuard {
 
 ### 历史裁剪
 
-- 只保留最近 N 轮，Phase 2a 默认 24 条消息，尽量保住前缀缓存。
+- 只保留最近 N 轮，Phase 2a 默认 48 条消息，尽量保住前缀缓存。
 - 单条 observation 上限 `maxObservationChars`，超出截断并标记 `truncated: true`。截断只影响发给模型的 transcript；UI 可以保留完整 sanitized 结果供展开查看。
 - 单轮 observation 总字符上限 `maxObservationCharsPerRound`，单 turn 总上限 `maxObservationCharsPerTurn`。
-- 单次请求总输入估算上限 24k tokens；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。
+- 单次请求总输入估算上限 64k tokens；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。
 - 裁剪顺序：先删最老的 user/assistant/tool 对，保留 system 和最近一轮完整工具结果。不拆开 assistant tool call 和对应 tool observation。
 - Phase 2a 不做摘要；历史超限就截断，UI 可以提示「较早对话未发送给模型」。
 
@@ -585,21 +585,21 @@ Phase 2a 默认值：
 
 | 项 | 值 |
 |---|---|
-| 每 turn 模型调用 | 最多 2 次，另有最多 2 次瞬态重试 |
-| 模型调用超时 | 60s |
-| turn 总超时 | 300s，确认等待不计入 |
+| 每 turn 模型调用 | 由 12 轮工具 guard 和 3 次瞬态重试控制 |
+| 模型调用超时 | 120s |
+| turn 总超时 | 1,800s，确认等待不计入 |
 | 单次输出 | 4,096 tokens |
-| 输入估算 | 24k tokens |
-| 单轮 tool call | 最多 4 个 |
-| 单条 observation | 4,000 字符 |
-| 单轮 observation | 8,000 字符 |
-| 单 turn observation | 24,000 字符 |
+| 输入估算 | 64k tokens |
+| 单轮 tool call | 最多 8 个 |
+| 单条 observation | 24,000 字符 |
+| 单轮 observation | 64,000 字符 |
+| 单 turn observation | 128,000 字符 |
 | 确认等待 | 5 分钟，单独计时 |
-| 瞬态重试 | 429/5xx/网络错误最多 2 次，指数退避 |
+| 瞬态重试 | 429/5xx/网络错误最多 3 次，指数退避 |
 
 Phase 2b 增加：
 
-- `maxToolRounds = 6`。
+- 工具轮数 guard 保持运行时配置，默认 12。
 - turn 总超时按 `maxToolRounds × modelTimeout + 工具预算 + 重试预算` 放宽，确认等待仍不计入。
 - 用户点 Stop 调 `AgentRuntime.cancel()`，进入 `Cancelling`，等待当前模型请求和 tool 确认取消。确认后返回 partial transcript 和 `TurnOutcome.Cancelled`，才允许下一轮输入。
 - 模型请求用 OkHttp 的 `Call.cancel()`，保证 Stop 1s 内 UI 可输入。
@@ -695,7 +695,8 @@ UI 需要新增：
 - `ConductorSessionStore` 用私有 SharedPreferences `conductor_session` 保存模型 transcript 和 UI items；离开 Conductor、回到主界面或进程重启后恢复。
 - 恢复时丢弃未完成的 confirmation；残留的 `RUNNING` tool 标为 `CANCELLED`，避免旧状态继续执行。
 - `/clear` 同时清 store。
-- Conductor 最后一条消息下方的左侧三点菜单提供 Copy conversation，把当前 user、assistant、tool、notice、error 导出为纯文本；tool output 用 pretty JSON。
+- Conductor 最后一条消息下方的左侧横三点菜单提供 Copy conversation，把当前 user、assistant、tool、notice、error 导出为 Markdown；tool output 用 pretty JSON 代码块。
+- 同一菜单的 Copy API trace 导出当前会话每一次模型请求和响应，包含请求/响应 headers 和 body；Authorization、Cookie 等敏感 header 在进入 trace 前已经打码。trace 只放内存，`/clear` 清空。
 - 持久化只保存 sanitized 后的 UI/transcript 内容；原始 tool 参数和 pending confirmation 不落盘。
 
 ## 12. BYOK 与设置入口
@@ -846,7 +847,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 ## 16. 分阶段、迁移清单与验收
 
-### Phase 2a：单轮 tool call
+### Phase 2a：多步 tool call（宽松 guard）
 
 范围：
 
@@ -857,7 +858,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `ConfirmationPolicy` / `InvocationSource`，替换单个 `needsConfirmation` boolean。
 - `DeepSeekModelClient` 非流式，`HttpURLConnection`，超时和关闭。
 - `KeystoreAgentApiKeyProvider` + `Settings > Conductor`，API 24+。
-- Conductor 非 `/` 文本进模型；一轮工具调用 + 最终回答。
+- Conductor 非 `/` 文本进模型；多轮工具调用 + 最终回答，由宽松 guard 防死循环。
 - 现有 `/probe` 命令继续走 ViewModel，但确认卡片和工具执行改用 `ConfirmationRequest` / `AgentToolExecutor`，不经过 `AgentRuntime`；参数显示用 `displayArgsJson`。
 - 预算、turn 超时、历史裁剪、observation 截断、瞬态重试。
 - UI 消息模型改成 `ConductorItem`，支持 assistant、tool、confirmation、error。
@@ -921,7 +922,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - Agent/BYOK 只支持 API 24+，`otherLegacy` 降级。
 - 确认策略用 `ConfirmationPolicy` / `InvocationSource`，不用单个 boolean。
 - DeepSeek key 走 App Settings 的 BYOK 入口，Android Keystore 加密。
-- Phase 2a 单轮，Phase 2b 多轮加流式。
+- Phase 2a 多步 + 宽松 guard；Phase 2b 补 Stop、流式、真取消。
 
 待定：
 

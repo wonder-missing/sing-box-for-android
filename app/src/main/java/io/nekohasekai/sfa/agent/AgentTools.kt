@@ -183,8 +183,7 @@ class AgentTools(
                     name = "probe_via_node",
                     description =
                         "Check HTTP HEAD reachability of an http(s) URL through the given outbound. " +
-                            "This is not a web search or page reader: it returns status/latency only, " +
-                            "not page content, and cannot search GitHub or read source code.",
+                            "Returns status and latency only; it does not fetch page content.",
                     permission = AgentPermission.NETWORK_PROBE,
                     parameters =
                         listOf(

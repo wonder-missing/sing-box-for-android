@@ -10,6 +10,7 @@ import io.nekohasekai.libbox.TailscalePeer
 import io.nekohasekai.libbox.TailscaleStatusHandler
 import io.nekohasekai.libbox.TailscaleStatusUpdate
 import io.nekohasekai.sfa.agent.AgentApiKeyProviderFactory
+import io.nekohasekai.sfa.agent.AgentApiTrace
 import io.nekohasekai.sfa.agent.AgentConfig
 import io.nekohasekai.sfa.agent.AgentError
 import io.nekohasekai.sfa.agent.AgentEvent
@@ -261,6 +262,7 @@ class ConductorViewModel(
                     transcript = emptyList()
                     pendingCommandConfirmation = null
                     sessionStore.clear()
+                    AgentApiTrace.clear()
                 }
             }
 
@@ -712,33 +714,96 @@ class ConductorViewModel(
 
     fun conversationTranscript(): String =
         buildString {
+            appendLine("# Conductor conversation")
+            appendLine()
             _uiState.value.items.forEach { item ->
                 when (item) {
-                    is ConductorItem.User -> appendLine("User: ${item.text}")
-                    is ConductorItem.Assistant -> appendLine("Conductor: ${item.text}")
+                    is ConductorItem.User -> {
+                        appendLine("## User")
+                        appendLine()
+                        appendLine(item.text)
+                        appendLine()
+                    }
+
+                    is ConductorItem.Assistant -> {
+                        appendLine("## Conductor")
+                        appendLine()
+                        appendLine(item.text)
+                        appendLine()
+                    }
+
                     is ConductorItem.Tool -> {
-                        appendLine("Tool ${item.call.name} [${item.status.name.lowercase()}]")
-                        if (item.call.displayArgsJson.isNotBlank() && item.call.displayArgsJson != "{}") {
-                            appendLine(item.call.displayArgsJson)
+                        appendLine("## Tool: ${item.call.name}")
+                        appendLine()
+                        appendLine("- status: ${item.status.name.lowercase()}")
+                        if (item.result?.degraded == true) appendLine("- degraded: true")
+                        appendLine()
+                        val args = item.call.displayArgsJson
+                        if (args.isNotBlank() && args != "{}") {
+                            appendLine("~~~json")
+                            appendLine(AgentJson.parseObject(args)?.let { AgentJson.pretty(it) } ?: args)
+                            appendLine("~~~")
+                            appendLine()
                         }
                         item.result?.let { result ->
-                            val body =
-                                result.output?.let { AgentJson.pretty(it) }
-                                    ?: result.message
-                                    ?: result.errorCode
-                            if (!body.isNullOrBlank()) appendLine(body)
-                            if (result.truncated) appendLine("(truncated)")
+                            result.output?.let { output ->
+                                appendLine("~~~json")
+                                appendLine(AgentJson.pretty(output))
+                                appendLine("~~~")
+                                appendLine()
+                            }
+                            result.message?.takeIf { it.isNotBlank() }?.let { message ->
+                                appendLine("~~~text")
+                                appendLine(message)
+                                appendLine("~~~")
+                                appendLine()
+                            }
+                            result.errorCode
+                                ?.takeIf { result.output == null && result.message.isNullOrBlank() }
+                                ?.let {
+                                    appendLine("- errorCode: $it")
+                                    appendLine()
+                                }
+                            if (result.truncated) {
+                                appendLine("(truncated)")
+                                appendLine()
+                            }
                         }
                     }
 
-                    is ConductorItem.Notice -> appendLine("[${item.title}] ${item.body}")
-                    is ConductorItem.Error -> appendLine("[${item.title} error] ${item.message}")
-                    is ConductorItem.Confirmation ->
-                        appendLine("[confirmation pending] ${item.request.toolName} ${item.request.displayArgsJson}")
+                    is ConductorItem.Notice -> {
+                        appendLine("## ${item.title}")
+                        appendLine()
+                        appendLine(item.body)
+                        appendLine()
+                    }
+
+                    is ConductorItem.Error -> {
+                        appendLine("## Error: ${item.title}")
+                        appendLine()
+                        appendLine(item.message)
+                        appendLine()
+                    }
+
+                    is ConductorItem.Confirmation -> {
+                        appendLine("## Pending confirmation: ${item.request.toolName}")
+                        appendLine()
+                        appendLine(item.request.reason)
+                        appendLine()
+                        appendLine("~~~json")
+                        appendLine(
+                            AgentJson.parseObject(item.request.displayArgsJson)
+                                ?.let { AgentJson.pretty(it) }
+                                ?: item.request.displayArgsJson,
+                        )
+                        appendLine("~~~")
+                        appendLine()
+                    }
                 }
-                appendLine()
             }
         }.trim()
+
+    fun apiTraceMarkdown(): String = AgentApiTrace.asMarkdown()
 
     private fun restoreSession() {
         val session = sessionStore.load() ?: return

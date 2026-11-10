@@ -6,9 +6,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,7 +39,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -146,6 +144,11 @@ fun ConductorScreen(
         Toast.makeText(context, context.getString(R.string.conductor_conversation_copied), Toast.LENGTH_SHORT).show()
     }
 
+    fun copyApiTrace() {
+        clipboard.setText(AnnotatedString(viewModel.apiTraceMarkdown()))
+        Toast.makeText(context, context.getString(R.string.conductor_api_trace_copied), Toast.LENGTH_SHORT).show()
+    }
+
     BackHandler(enabled = inputExpanded) {
         inputExpanded = false
     }
@@ -227,7 +230,7 @@ fun ConductorScreen(
                         )
                     }
                     item(key = "conversation-actions") {
-                        ConversationActions(onCopy = ::copyConversation)
+                        ConversationActions(onCopyConversation = ::copyConversation, onCopyApiTrace = ::copyApiTrace)
                     }
                 }
             }
@@ -285,12 +288,15 @@ fun ConductorScreen(
 }
 
 @Composable
-private fun ConversationActions(onCopy: () -> Unit) {
+private fun ConversationActions(
+    onCopyConversation: () -> Unit,
+    onCopyApiTrace: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
             Icon(
-                imageVector = Icons.Default.MoreVert,
+                imageVector = Icons.Default.MoreHoriz,
                 contentDescription = stringResource(R.string.conductor_conversation_actions),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -303,7 +309,14 @@ private fun ConversationActions(onCopy: () -> Unit) {
                 text = { Text(stringResource(R.string.conductor_copy_conversation)) },
                 onClick = {
                     expanded = false
-                    onCopy()
+                    onCopyConversation()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.conductor_copy_api_trace)) },
+                onClick = {
+                    expanded = false
+                    onCopyApiTrace()
                 },
             )
         }
@@ -484,41 +497,18 @@ private fun markdownAnnotated(text: String): AnnotatedString =
         }
     }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UserMessage(text: String) {
-    val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
-    var menuExpanded by remember { mutableStateOf(false) }
-
-    Box {
-        Surface(
-            modifier =
-            Modifier.combinedClickable(
-                onClick = {},
-                onLongClick = { menuExpanded = true },
-            ),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-        ) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        SelectionContainer {
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            )
-        }
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.conductor_copy)) },
-                onClick = {
-                    clipboard.setText(AnnotatedString(text))
-                    menuExpanded = false
-                    Toast.makeText(context, context.getString(R.string.conductor_copied), Toast.LENGTH_SHORT).show()
-                },
             )
         }
     }
