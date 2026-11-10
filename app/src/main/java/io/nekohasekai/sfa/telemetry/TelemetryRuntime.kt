@@ -310,6 +310,7 @@ internal object TelemetryRuntime {
         UploadResult.Success -> "Connected. The server accepted the probe."
         UploadResult.Unauthorized -> "HTTP 401. The ingest token was rejected."
         UploadResult.TooLarge -> "HTTP 413. The server rejected the payload size."
+        UploadResult.Cancelled -> "Cancelled."
         is UploadResult.Failed -> result.detail
     }
 
