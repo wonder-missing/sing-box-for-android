@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 进行中
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）
 最后更新：2026-11-10
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -9,7 +9,7 @@
 摘要：
 
 - Phase 2a：最多 12 轮工具调用作为防死循环 guard，已经支持多步；2B 再补 Stop、真取消和流式。
-- Phase 2b：补 Stop、真取消、流式回答和上下文压缩；同时把工具暴露收敛为 `route_call` / `search_tools` 两个静态元工具，真实工具 schema 通过目录搜索按需注入（§7.1），并修正会打断前缀缓存的裁剪和 `tools` 置空问题。
+- Phase 2b：Stop、真取消、流式回答、上下文压缩、probe/telemetry 可取消已随 wonder.36 完成；同时把工具暴露收敛为 `route_call` / `search_tools` 两个静态元工具，真实工具 schema 通过目录搜索按需注入（§7.1），并修正会打断前缀缓存的裁剪和 `tools` 置空问题。
 - 使用结构化 tool call，不解析文本 ReAct。
 - `AgentRuntime` 是手写薄层，纯 Kotlin/JVM 可测；DeepSeek key 走 App Settings 的 BYOK 入口，Android Keystore 加密。
 - 确认是运行时的暂停状态，模型无法绕过。
@@ -211,7 +211,7 @@ API key 作为 `complete` / `stream` 的参数传入，不放进 `AgentModelRequ
 
 `TokenUsage` 解析 DeepSeek 的 `prompt_tokens` / `completion_tokens`，以及 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`。没有这些字段的兼容服务返回 null，不影响主流程。
 
-Phase 2a 只实现 `AgentModelClient.complete`。Phase 2b 实现 `AgentStreamingModelClient`，流式 tool call 按 `index` 累积，`Completed` 时再交给运行时执行。2a 的 UI 事件已经按「最终消息」设计，2b 增加 delta 不需要重写运行时。Phase 2b 的 `AgentRuntime` 增加可选 `streamingModel: AgentStreamingModelClient?`，为 null 时走 `complete`；`DeepSeekModelClient` 同时实现两个接口。
+Phase 2a 只实现 `AgentModelClient.complete`。Phase 2b 实现 `AgentStreamingModelClient`，流式 tool call 按 `index` 累积，`Completed` 时再交给运行时执行。2a 的 UI 事件已经按「最终消息」设计，2b 增加 delta 不需要重写运行时。Phase 2b 的 `AgentRuntime` 增加可选 `streamingModel: AgentStreamingModelClient?`，为 null 时走 `complete`；`DeepSeekModelClient` 同时实现两个接口。wonder.36 起生产路径使用 OkHttp SSE；`AgentStreamingModelClient.cancel()` 取消当前 `Call`，运行时 Stop 时先置取消标志再调用它。`AgentRuntime` 累积 `ContentDelta` 和 `ToolCallDelta`，内容增量发 `AssistantDelta`，最终仍发 `AssistantMessage` 让 UI 用完整文本收尾。
 
 `DeepSeekModelClient`：
 
@@ -327,6 +327,8 @@ enum class InvocationSource {
 
 探测会临时切换 outbound，`finally` 里恢复原选择；App 进程在探测中被杀时，运行中的 core 可能停留在探测节点，直到重启。工具描述要写清这条边界。
 
+`ProbePort.probe` 和 `TelemetryUploadPort.upload` 都接受可选 `ToolCancellation`。Stop 时 probe 关闭 libbox HTTP client 和 worker executor，telemetry 关闭 socket/connection，uploader 返回 `UploadResult.Cancelled`；工具在调用返回后再检查一次取消标志，返回 `cancelled` observation。
+
 `list_nodes` 默认只回 group 摘要（tag、selected、selectedDelayMs、itemCount、groupCount/outboundCount），不展开 `groups[].items` 和 flat `outbounds`；传 `group=<tag>` 才回该组的节点明细。这样模型先看摘要，需要时再取一组，避免把 55 个节点全塞进上下文。
 
 `AgentTool.execute` 改成 suspend：
@@ -424,6 +426,11 @@ Turn 开始
 ```
 
 路由的完整规则见 §7.1。工具轮数耗尽时 `tools` 保持不变，`toolChoice = NONE`。
+
+wonder.36 的 2B 运行时补充：
+
+- 模型调用优先走 `streamingModel`；内容 delta 发 `AssistantDelta`，最终 `AssistantMessage` 用完整文本收尾。Stop 调 `AgentRuntime.cancel()`，先置取消标志，再取消 OkHttp `Call`、probe/telemetry 的阻塞 IO。
+- 每个 turn 开始前对旧的大 tool observation 做确定性压缩，保留最近 user turn；压缩后的历史通过 `TurnResult.compactedHistory` 回传 ViewModel 并持久化。UI items 仍保留完整结果。
 
 `step` 是模型调用序号，`maxToolRounds` 是工具轮数上限。当前默认 12，作为防死循环 guard，不按轮数卡产品体验。
 
@@ -838,6 +845,7 @@ fun interface AgentInputGuard {
 ### 历史裁剪
 
 - 只保留最近 N 轮，Phase 2a 默认 48 条消息，尽量保住前缀缓存。
+- 每个 turn 开始前，`AgentContext.compactOldObservations` 把最近 user turn 之前、超过 `maxHistoricalObservationChars`（默认 4,000 字符）的 tool observation 替换为 `{"ok":...,"tool":...,"compacted":true,"originalChars":...}`。UI items 保留完整结果；模型需要时重新调用工具。压缩只在 turn 边界发生。
 - 单条 observation 上限 `maxObservationChars`，超出截断并标记 `truncated: true`。截断只影响发给模型的 transcript；UI 可以保留完整 sanitized 结果供展开查看。
 - 单轮 observation 总字符上限 `maxObservationCharsPerRound`，单 turn 总上限 `maxObservationCharsPerTurn`。
 - 单次请求总输入估算上限 64k tokens；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。
@@ -877,6 +885,7 @@ Phase 2a 默认值：
 | 单次搜索返回 | 5 个工具，按条目截断 |
 | 单轮搜索次数 | 2 次 |
 | 上下文裁剪 | 48 条高水位，裁到 36 条 |
+| 旧 observation 压缩 | 超过 4,000 字符且早于最近 user turn |
 | 确认等待 | 5 分钟，单独计时 |
 | 瞬态重试 | 429/5xx/网络错误最多 3 次，指数退避 |
 
@@ -967,7 +976,8 @@ UI 需要新增：
 - tool 卡片：工具名、参数摘要、running/success/failed/cancelled、结果摘要；长结果可展开。路由模式下显示内层工具名和参数，不显示 `route_call` envelope。
 - `search_tools` 显示为一条紧凑的「查找工具」记录，可以展开看匹配数，不默认铺开 schema。
 - 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`。
-- 运行中的 Stop 按钮（Phase 2b）。
+- 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。
+- 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。
 - 错误：错误码转成人话，可重试的显示 Retry。
 - 无 key：提示去 `Settings > Conductor` 填写，不在 Conductor 里放 key 输入框。
 - 敏感输入拦截：显示通用提示，不回显原文。
@@ -1188,7 +1198,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `otherLegacy` 不显示自然语言入口，`/` 命令仍可用。
 - CI 编译和 JVM 单测全绿；UI 需要真机验收。
 
-### Phase 2b：工具目录、有界循环、Stop 与流式
+### Phase 2b：工具目录、有界循环、Stop 与流式（已完成，wonder.36）
 
 范围：
 
@@ -1255,7 +1265,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 1. 修 `AgentContext.trim` 和工具轮数耗尽时的 `tools` 置空，加 usage/cache token 字段。
 2. 加目录、元工具、unwrap、搜索、roster，放在 `toolRoutingEnabled` 后面。
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
-4. 继续 Stop、流式、上下文压缩。
+4. Stop、流式、上下文压缩已完成（wonder.36）。
 
 ### wonder.33 真机 trace 复盘（2026-11-10）
 

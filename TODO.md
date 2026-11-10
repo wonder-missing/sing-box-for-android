@@ -7,7 +7,6 @@
 
 ### P1
 
-- [ ] **Conductor Agent Phase 2b 剩余**：Stop 真取消、流式回答、上下文压缩、probe/telemetry 可取消；设计见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - [ ] **节点探测并发/批量**：当前 `probe_via_node` 串行切换全局出站，不能直接并发。需要 `probe_many` 或 libbox per-request outbound binding；URLTest 只能测分组配置 URL，不能测任意 GitHub 地址。先验证 libbox HTTP API，再定方案。`probe_many` 同时给 `search_tools` 一个非核心带参工具做真机验证。
 
 ### P2
@@ -18,6 +17,7 @@
 - [ ] **`search_tools` 相关性与 no-match 信号**：宽泛查询总是返回 top-3 弱相关工具；加分数/置信度或阈值，避免模型误以为有专用能力。
 - [ ] **`ToolObservation.ok` 与工具 `output.ok` 的契约**：两层 `ok` 语义重复，模型会误读；去掉 probe 内层 `ok` 或改名 `reachable`，定义单一成败层。
 - [ ] **确认与事务语义可见性**：模型看不到确认事件；多步调用没有框架级事务。先记着，等 2B 流式和 Phase 3 再评估。
+- [ ] **Stop 1s 未确认的 `TOOL_CANCEL_TIMEOUT` 错误码**：当前 UI 保持禁用并提示「正在停止」，但未把该错误码作为 turn error 输出；等出现无法 1s 取消的工具再补。
 - [ ] **跨版本会话的版本边界提示（以后考虑）**：旧 tool observation 会被模型当成当前证据；当前决定保留现状，先记着。
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康（订阅在 CFG 项目打磨），不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
@@ -26,6 +26,7 @@
 
 ## 最近完成
 
+- wonder.36（2026-11-10）：Phase 2b 全部收尾：OkHttp SSE 流式回答、Stop 真取消、probe/telemetry 可取消、旧大 tool observation 的 turn 边界压缩、请求前缀/SSE/Stop/压缩单测
 - wonder.35（2026-11-10）：`list_nodes` 默认只回 group 摘要（tag/selected/itemCount/selectedDelayMs、groupCount/outboundCount），传 `group=<tag>` 才回该组节点明细；去掉 flat `outbounds` 与 `groups[].items` 的重复
 - wonder.34（2026-11-10）：`probe_via_node` 按 HTTP 状态判定可达（204/3xx/4xx/5xx 不再误报 `tool_failed`）、probe 回滚边界写进描述、请求前缀不变量单测、prompt 允许知识迁移（知道名字和参数就直接调）
 - wonder.33（2026-11-10）：2B 工具目录与路由 + 缓存修正：静态 `route_call` / `search_tools`、目录 roster、分发前 unwrap、滞后裁剪、`toolChoice = NONE`、Settings 路由开关、API trace cache usage
