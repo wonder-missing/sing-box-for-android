@@ -182,9 +182,9 @@ class AgentTools(
                 AgentToolDefinition(
                     name = "probe_via_node",
                     description =
-                        "Probe an http(s) URL through the given outbound. Uses the existing " +
-                            "CommandClient to select the node and the existing libbox HTTP client " +
-                            "for one HEAD request, then restores the previous selection.",
+                        "Check HTTP HEAD reachability of an http(s) URL through the given outbound. " +
+                            "This is not a web search or page reader: it returns status/latency only, " +
+                            "not page content, and cannot search GitHub or read source code.",
                     permission = AgentPermission.NETWORK_PROBE,
                     parameters =
                         listOf(
@@ -212,8 +212,10 @@ class AgentTools(
                 args: JsonObject,
                 cancellation: ToolCancellation,
             ): ToolExecution {
-                val outbound = AgentJson.string(args, "outbound") ?: return invalidArgument("outbound is required")
-                val url = AgentJson.string(args, "url") ?: return invalidArgument("url is required")
+                val outbound = AgentJson.string(args, "outbound")?.trim()?.takeIf { it.isNotBlank() }
+                    ?: return invalidArgument("outbound is required")
+                val url = AgentJson.string(args, "url")?.trim()?.takeIf { it.isNotBlank() }
+                    ?: return invalidArgument("url is required")
                 if (outbound.length > 256) {
                     return invalidArgument("outbound tag is too long")
                 }

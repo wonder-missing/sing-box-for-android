@@ -366,7 +366,8 @@ Phase 2a：
     → 有 tool call：校验、确认、执行，回填 observation
  → 模型调用 #2
     → 有最终文本：完成
-    → 又出现 tool call：提示「多步尚未启用」，结束
+    → 又出现 tool call：把这些调用标成 `step_budget_exceeded`，禁用工具，
+      再发一次最终回答请求（仍只执行过一轮工具）
 ```
 
 Phase 2b：
@@ -754,7 +755,8 @@ Tool observation 用独立字符串 code，不混进 turn 错误：
 |---|---|---|
 | `unknown_tool` | 模型调了未注册工具 | 作为 observation 回模型 |
 | `invalid_arguments` | 参数校验失败 | 作为 observation 回模型 |
-| `too_many_tool_calls` | 超过单轮上限 | 不执行，回模型 |
+| `too_many_tool_calls` | 超过单轮 tool call 数 | 不执行，回模型 |
+| `step_budget_exceeded` | 超过工具轮数，或工具禁用后仍请求 | 不执行，回模型，让模型用已有信息回答 |
 | `tool_timeout` | 工具超时 | observation 回模型 |
 | `tool_failed` | 工具返回失败 | observation 回模型 |
 | `cancelled` | 用户 Stop/取消/确认拒绝 | observation，结束 turn |
@@ -778,7 +780,7 @@ Turn 级 UI 处理：
 | `confirmation_timeout` | 确认 5 分钟未处理 | 取消 turn |
 | `turn_cancelled` | 用户 Stop/退出 | 回到 Idle |
 | `tool_cancel_timeout` | Stop 1s 内工具未确认取消 | 保持 isRunning，提示正在停止，禁止新 turn |
-| `step_budget_exceeded` | 超过 maxToolRounds | 提示任务未完成，可继续追问 |
+| `step_budget_exceeded` | 超过 maxToolRounds，或禁用工具后仍请求工具 | 提示任务未完成，可继续追问 |
 | `content_filtered` | 模型拒绝 | 原样提示，不重试 |
 | `output_truncated` | `finish_reason=length` 且无可执行 tool call | 展示截断回答，提示可重试 |
 

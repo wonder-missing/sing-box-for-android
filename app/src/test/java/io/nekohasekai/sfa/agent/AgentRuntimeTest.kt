@@ -65,6 +65,35 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun stepBudgetStillProducesAnAnswer() {
+        val first = ToolCall("call_1", "list_nodes", "{}")
+        val second = ToolCall("call_2", "list_nodes", "{}")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(first), FinishReason.TOOL_CALLS, null),
+                    AgentModelResponse(null, listOf(second), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime = runtime(model, executor, key = "sk-test")
+
+        val result = runBlocking { runtime.runTurn("show nodes", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals("done", (result.outcome as TurnOutcome.Completed).answer)
+        assertEquals(3, model.requests.size)
+        assertTrue(model.requests.last().tools.isEmpty())
+        assertTrue(validateTranscriptPairing(result.messages))
+        assertTrue(
+            result.messages
+                .filterIsInstance<AgentMessage.Tool>()
+                .any { it.content.contains("step_budget_exceeded") },
+        )
+    }
+
+    @Test
     fun cancellationAfterConfirmationLeavesPairedTranscript() {
         val call = ToolCall("call_1", "probe_via_node", """{"url":"https://example.com/"}""")
         val model = ScriptedModel(mutableListOf(AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null)))

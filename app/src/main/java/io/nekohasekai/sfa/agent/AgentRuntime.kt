@@ -99,6 +99,7 @@ class AgentRuntime(
         var step = 0
         var toolRounds = 0
         var turnObservationChars = 0
+        var toolsEnabled = true
 
         while (true) {
             if (cancelRequested) {
@@ -126,7 +127,7 @@ class AgentRuntime(
             val request =
                 AgentModelRequest(
                     messages = listOf(AgentContext.systemPrompt(deviceSummary)) + AgentContext.trim(transcript, config.maxMessages),
-                    tools = definitions.map { it.toToolSchema() },
+                    tools = if (toolsEnabled) definitions.map { it.toToolSchema() } else emptyList(),
                     maxOutputTokens = config.maxOutputTokens,
                     timeoutMs = config.modelTimeoutMs,
                 )
@@ -195,7 +196,8 @@ class AgentRuntime(
                 return finish(transcript, startSize, outcome, onEvent)
             }
 
-            if (toolRounds >= config.maxToolRounds) {
+            if (!toolsEnabled) {
+                appendBudgetObservations(transcript, response.toolCalls, onEvent)
                 return finish(
                     transcript,
                     startSize,
@@ -204,6 +206,17 @@ class AgentRuntime(
                     ),
                     onEvent,
                 )
+            }
+
+            if (toolRounds >= config.maxToolRounds) {
+                appendBudgetObservations(transcript, response.toolCalls, onEvent)
+                onEvent(
+                    AgentEvent.Notice(
+                        "No more tool steps are available. Answering with the information already collected.",
+                    ),
+                )
+                toolsEnabled = false
+                continue
             }
 
             val calls = response.toolCalls
@@ -364,6 +377,36 @@ class AgentRuntime(
             message = errorMessage,
             degraded = degraded,
         )
+
+    private fun appendBudgetObservations(
+        transcript: MutableList<AgentMessage>,
+        calls: List<ToolCall>,
+        onEvent: (AgentEvent) -> Unit,
+    ) {
+        calls.forEach { call ->
+            val observation =
+                ToolObservation(
+                    ok = false,
+                    tool = call.name,
+                    errorCode = "step_budget_exceeded",
+                    message = "No more tool steps are available. Answer with the information already collected.",
+                )
+            transcript.add(observation.asToolMessage(call.name, call.id))
+            onEvent(
+                AgentEvent.ToolFinished(
+                    ToolResultView(
+                        callId = call.id,
+                        name = call.name,
+                        ok = false,
+                        output = null,
+                        errorCode = observation.errorCode,
+                        message = observation.message,
+                        truncated = false,
+                    ),
+                ),
+            )
+        }
+    }
 
     private fun appendCancelled(
         transcript: MutableList<AgentMessage>,
