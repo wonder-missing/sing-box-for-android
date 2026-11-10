@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27 实现；Phase 2b 待做
+状态：Phase 2a 已随 wonder.27/28 实现；Phase 2b 待做
 最后更新：2026-11-10
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
