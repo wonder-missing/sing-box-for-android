@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28 实现；Phase 2b 待做
+状态：Phase 2a 已随 wonder.27/28/29 实现；Phase 2b 待做
 最后更新：2026-11-10
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -687,6 +687,14 @@ UI 需要新增：
 
 `/probe` 现有确认卡片里的 raw URL 要改成 `displayArgsJson`，不能直接拼 `url`。
 
+### 会话持久化与复制
+
+- `ConductorSessionStore` 用私有 SharedPreferences `conductor_session` 保存模型 transcript 和 UI items；离开 Conductor、回到主界面或进程重启后恢复。
+- 恢复时丢弃未完成的 confirmation；残留的 `RUNNING` tool 标为 `CANCELLED`，避免旧状态继续执行。
+- `/clear` 同时清 store。
+- Conductor 顶部提供 Copy conversation，把当前 user、assistant、tool、notice、error 导出为纯文本；tool output 用 pretty JSON。
+- 持久化只保存 sanitized 后的 UI/transcript 内容；原始 tool 参数和 pending confirmation 不落盘。
+
 ## 12. BYOK 与设置入口
 
 入口：`Settings > Conductor`，新增 `ConductorSettingsScreen`。只在 API 24+ 显示；`otherLegacy` 不显示自然语言入口，`/` 命令保留。
@@ -809,7 +817,8 @@ app/src/minApi24/java/io/nekohasekai/sfa/agent/
 
 app/src/main/java/io/nekohasekai/sfa/conductor/
   ConductorViewModel.kt  接 AgentRuntime、保存 transcript、确认 gate、事件转 ConductorItem
-  ConductorScreen.kt     assistant / tool / confirmation / stop
+  ConductorSessionStore.kt  transcript/items 本地持久化
+  ConductorScreen.kt     assistant / tool / confirmation / stop / copy conversation
 
 app/src/main/java/io/nekohasekai/sfa/compose/screen/settings/
   ConductorSettingsScreen.kt  API key、状态、测试连接
@@ -915,7 +924,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 默认 `deepseek-v4-flash` 是否适用于当前账号；Settings > Conductor 可以改模型 ID。
 - 模型请求走系统网络还是强制走某个出站；Phase 2a 先用系统网络，失败时给明确错误，不静默切换。
 - Telemetry upload 从 Agent 调用时的确认文案。
-- 会话历史是否跨进程保留；Phase 2a 只放内存，退出 Conductor 或进程死亡就丢。
+- 会话历史的保留期限、清理入口和导出格式；当前已本地持久化，尚无自动过期。
 - 是否展示模型推理文本；默认不展示，只展示工具状态和最终回答。
 - 精确的预算数值和输入拦截误报率，需要真机数据后再调。
 

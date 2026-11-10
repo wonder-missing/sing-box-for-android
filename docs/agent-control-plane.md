@@ -1,6 +1,6 @@
 # Conductor：个人设备控制面（愿景与落地规划）
 
-状态：Phase 1 已完成；Phase 2a 已随 wonder.27/28 实现；Phase 2b 待做；设计见 [`agent-runtime.md`](agent-runtime.md)。
+状态：Phase 1 已完成；Phase 2a 已随 wonder.27/28/29 实现；Phase 2b 待做；设计见 [`agent-runtime.md`](agent-runtime.md)。
 最后更新：2026-11-10
 命名：模块/包名 `conductor`；外层底部导航文案 `Conduct`；Conductor 页面进入沉浸模式，不设页面标题。
 
