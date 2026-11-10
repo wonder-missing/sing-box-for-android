@@ -245,7 +245,7 @@ class ConductorViewModel(
                 persistSession()
             }
 
-            ConductorCommandKind.CAPABILITIES ->
+            ConductorCommandKind.CAPABILITIES -> {
                 append(
                     ConductorItem.Notice(
                         "capabilities",
@@ -253,6 +253,7 @@ class ConductorViewModel(
                     ),
                 )
                 persistSession()
+            }
 
             ConductorCommandKind.CLEAR -> {
                 if (_uiState.value.isRunning) {
