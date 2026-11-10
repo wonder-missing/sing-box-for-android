@@ -183,7 +183,8 @@ class AgentTools(
                     name = "probe_via_node",
                     description =
                         "Check HTTP HEAD reachability of an http(s) URL through the given outbound. " +
-                            "Returns status and latency only; it does not fetch page content.",
+                            "Returns status and latency only; it does not fetch page content. " +
+                            "Some servers reject HEAD requests, so EOF does not always mean the node cannot reach the URL.",
                     permission = AgentPermission.NETWORK_PROBE,
                     parameters =
                         listOf(
