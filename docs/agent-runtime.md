@@ -521,7 +521,7 @@ data class AgentConfig(
 
 ## 7.1 工具目录与路由（Phase 2b）
 
-状态：目录、元工具、分发前 unwrap、roster、缓存修正已实现于 `dev`；真机 A/B、搜索卡片 UI 和核心工具 promote 待做。
+状态：目录、元工具、分发前 unwrap、roster、缓存修正和 Settings 开关已随 wonder.33 发布；真机 A/B、搜索卡片 UI 和核心工具 promote 待做。
 
 这一节把「工具暴露」从「每次请求发送全部 schema」改成「静态元工具 + 按需目录搜索」。目标是三件事：降低首请求 token、让请求前缀在会话内稳定、让工具目录能随 Phase 3/4 的设备能力增长而不撑爆 `tools` 参数。省 token 是结果，不是唯一目的。
 
