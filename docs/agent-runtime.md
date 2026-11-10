@@ -1261,7 +1261,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 5 次模型请求，system/tools 逐字节一致，messages 严格追加；#3/#5 命中 97%/93%，#4 间隔 2 分钟只命中 1,024（约等于公共前缀），#5 间隔 4 分 38 秒命中 93%。因此 #4 的低命中是 provider 侧缓存淘汰，不是前缀变化；间隔不是决定因素。
 
-- `list_nodes` 单条 14,308 字符（5 groups、93 group items、55 outbounds），首轮 prompt 从 1,067 涨到 7,061，并且一直留在后续请求。wonder.35 改成默认摘要 + `group` 明细。
+- `list_nodes` 单条 14,308 字符（5 groups、93 group items、55 outbounds），首轮 prompt 从 1,067 涨到 7,061，并且一直留在后续请求。wonder.35 已改成默认摘要 + `group` 明细。
 - `probe_via_node` 把 204 的 libbox 异常判成 `tool_failed`；wonder.34 已修，按解析出的 HTTP 状态判定可达。请求前缀不变量单测也随 wonder.34 加上。
 - 本次 trace 没有触发 `search_tools`（唯一带参工具是 core），搜索路径仍缺真机覆盖。
 
