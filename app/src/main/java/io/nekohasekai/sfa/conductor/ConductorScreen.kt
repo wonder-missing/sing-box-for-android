@@ -114,6 +114,8 @@ private val InputPanelMinHeight = 120.dp
 private const val InputPanelMaxLines = 5
 private const val MaxInputChars = 8_000
 
+private enum class ConductorExport { Conversation, ApiTrace }
+
 @Composable
 fun ConductorScreen(
     serviceStatus: Status = Status.Stopped,
@@ -140,6 +142,7 @@ fun ConductorScreen(
     var inputExpanded by rememberSaveable { mutableStateOf(false) }
     var inputLineCount by remember { mutableStateOf(1) }
     var inputTooLongWarned by remember { mutableStateOf(false) }
+    var pendingExport by remember { mutableStateOf<ConductorExport?>(null) }
     val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
@@ -207,50 +210,104 @@ fun ConductorScreen(
         Toast.makeText(context, context.getString(R.string.conductor_api_trace_copied), Toast.LENGTH_SHORT).show()
     }
 
-    val apiTraceExportLauncher =
+    val exportLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("text/plain"),
             onResult = { uri ->
-                if (uri == null) {
-                    // The document picker was dismissed.
-                } else if (!viewModel.hasApiTrace()) {
-                    Toast.makeText(context, context.getString(R.string.conductor_api_trace_empty), Toast.LENGTH_LONG).show()
-                } else {
-                    coroutineScope.launch {
-                        try {
-                            withContext(Dispatchers.IO) {
-                                val markdown = viewModel.apiTraceMarkdown()
-                                val output = checkNotNull(context.contentResolver.openOutputStream(uri))
-                                output.use { it.write(markdown.toByteArray(Charsets.UTF_8)) }
+                val export = pendingExport
+                pendingExport = null
+                if (uri != null && export != null) {
+                    val empty =
+                        if (export == ConductorExport.ApiTrace) {
+                            !viewModel.hasApiTrace()
+                        } else {
+                            uiState.items.isEmpty()
+                        }
+                    if (empty) {
+                        Toast.makeText(
+                            context,
+                            context.getString(
+                                if (export == ConductorExport.ApiTrace) {
+                                    R.string.conductor_api_trace_empty
+                                } else {
+                                    R.string.conductor_conversation_empty
+                                },
+                            ),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } else {
+                        coroutineScope.launch {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    val text =
+                                        when (export) {
+                                            ConductorExport.Conversation -> viewModel.conversationTranscript()
+                                            ConductorExport.ApiTrace -> viewModel.apiTraceMarkdown()
+                                        }
+                                    val output = checkNotNull(context.contentResolver.openOutputStream(uri))
+                                    output.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                                }
+                                val saved =
+                                    when (export) {
+                                        ConductorExport.Conversation -> R.string.conductor_conversation_saved
+                                        ConductorExport.ApiTrace -> R.string.conductor_api_trace_saved
+                                    }
+                                Toast.makeText(context, context.getString(saved), Toast.LENGTH_SHORT).show()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                val failed =
+                                    when (export) {
+                                        ConductorExport.Conversation -> R.string.conductor_conversation_save_failed
+                                        ConductorExport.ApiTrace -> R.string.conductor_api_trace_save_failed
+                                    }
+                                Toast.makeText(
+                                    context,
+                                    context.getString(failed, e.message.orEmpty()),
+                                    Toast.LENGTH_LONG,
+                                ).show()
                             }
-                            Toast.makeText(context, context.getString(R.string.conductor_api_trace_saved), Toast.LENGTH_SHORT).show()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.conductor_api_trace_save_failed, e.message.orEmpty()),
-                                Toast.LENGTH_LONG,
-                            ).show()
                         }
                     }
                 }
             },
         )
 
+    fun export(
+        kind: ConductorExport,
+        fileName: String,
+    ) {
+        pendingExport = kind
+        runCatching { exportLauncher.launch(fileName) }
+            .onFailure {
+                pendingExport = null
+                val failed =
+                    when (kind) {
+                        ConductorExport.Conversation -> R.string.conductor_conversation_save_failed
+                        ConductorExport.ApiTrace -> R.string.conductor_api_trace_save_failed
+                    }
+                Toast.makeText(
+                    context,
+                    context.getString(failed, it.message.orEmpty()),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+    }
+
+    fun exportConversation() {
+        if (uiState.items.isEmpty()) {
+            Toast.makeText(context, context.getString(R.string.conductor_conversation_empty), Toast.LENGTH_LONG).show()
+            return
+        }
+        export(ConductorExport.Conversation, "conductor-conversation.md")
+    }
+
     fun exportApiTrace() {
         if (!viewModel.hasApiTrace()) {
             Toast.makeText(context, context.getString(R.string.conductor_api_trace_empty), Toast.LENGTH_LONG).show()
             return
         }
-        runCatching { apiTraceExportLauncher.launch("conductor-api-trace.md") }
-            .onFailure {
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.conductor_api_trace_save_failed, it.message.orEmpty()),
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
+        export(ConductorExport.ApiTrace, "conductor-api-trace.md")
     }
 
     BackHandler(enabled = inputExpanded) {
@@ -337,6 +394,7 @@ fun ConductorScreen(
                     item(key = "conversation-actions") {
                         ConversationActions(
                             onCopyConversation = ::copyConversation,
+                            onExportConversation = ::exportConversation,
                             onCopyApiTrace = ::copyApiTrace,
                             onExportApiTrace = ::exportApiTrace,
                         )
@@ -415,6 +473,7 @@ fun ConductorScreen(
 @Composable
 private fun ConversationActions(
     onCopyConversation: () -> Unit,
+    onExportConversation: () -> Unit,
     onCopyApiTrace: () -> Unit,
     onExportApiTrace: () -> Unit,
 ) {
@@ -436,6 +495,13 @@ private fun ConversationActions(
                 onClick = {
                     expanded = false
                     onCopyConversation()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.conductor_export_conversation)) },
+                onClick = {
+                    expanded = false
+                    onExportConversation()
                 },
             )
             DropdownMenuItem(

@@ -137,6 +137,7 @@ class AgentRuntime(
         var toolRounds = 0
         var turnObservationChars = 0
         var toolsEnabled = true
+        val partialContent = StringBuilder()
 
         while (true) {
             if (cancelRequested) {
@@ -174,11 +175,12 @@ class AgentRuntime(
             val response =
                 try {
                     if (streamingModel != null) {
-                        streamModelWithRetry(request, apiKey, onEvent)
+                        streamModelWithRetry(request, apiKey, onEvent, partialContent)
                     } else {
                         callModelWithRetry(request, apiKey)
                     }
                 } catch (e: AgentModelException) {
+                    appendPartialAssistant(transcript, partialContent)
                     return finish(
                         transcript,
                         startSize,
@@ -187,6 +189,7 @@ class AgentRuntime(
                     )
                 } catch (e: CancellationException) {
                     if (cancelRequested) {
+                        appendPartialAssistant(transcript, partialContent)
                         return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
                     }
                     throw e
@@ -194,6 +197,7 @@ class AgentRuntime(
             step += 1
 
             if (cancelRequested) {
+                appendPartialAssistant(transcript, partialContent)
                 return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
             }
 
@@ -223,6 +227,7 @@ class AgentRuntime(
             }
 
             transcript.add(AgentMessage.Assistant(response.content, response.toolCalls))
+            partialContent.clear()
             response.content?.takeIf { it.isNotBlank() }?.let { onEvent(AgentEvent.AssistantMessage(it)) }
 
             if (response.toolCalls.isEmpty()) {
@@ -596,11 +601,13 @@ class AgentRuntime(
         request: AgentModelRequest,
         apiKey: String,
         onEvent: (AgentEvent) -> Unit,
+        partialContent: StringBuilder,
     ): AgentModelResponse {
         var attempt = 0
         while (true) {
+            partialContent.clear()
             try {
-                return collectStream(request, apiKey, onEvent)
+                return collectStream(request, apiKey, onEvent, partialContent)
             } catch (e: AgentModelException) {
                 if (!e.retryable || attempt >= config.maxRetries || cancelRequested) throw e
                 attempt += 1
@@ -613,6 +620,7 @@ class AgentRuntime(
         request: AgentModelRequest,
         apiKey: String,
         onEvent: (AgentEvent) -> Unit,
+        partialContent: StringBuilder,
     ): AgentModelResponse {
         val client = streamingModel ?: error("streaming model is not configured")
         val content = StringBuilder()
@@ -627,6 +635,7 @@ class AgentRuntime(
 
                 is AgentModelChunk.ContentDelta -> {
                     content.append(chunk.text)
+                    partialContent.append(chunk.text)
                     onEvent(AgentEvent.AssistantDelta(chunk.text))
                 }
 
@@ -796,6 +805,7 @@ class AgentRuntime(
                 is TurnOutcome.Failed -> outcome.error.message
             }
         ensurePairing(transcript, reason)
+        closeUnfinishedTurn(transcript, startSize, outcome)
         var finalOutcome = outcome
         if (!validateTranscriptPairing(transcript)) {
             val assistantIndex = transcript.indexOfLast { it is AgentMessage.Assistant && it.toolCalls.isNotEmpty() }
@@ -814,5 +824,41 @@ class AgentRuntime(
         }
         onEvent(AgentEvent.TurnFinished(finalOutcome))
         return TurnResult(transcript.drop(startSize), finalOutcome, preparedHistoryForTurn)
+    }
+
+    private fun appendPartialAssistant(
+        transcript: MutableList<AgentMessage>,
+        partialContent: StringBuilder,
+    ) {
+        val text = partialContent.toString()
+        if (text.isNotBlank()) {
+            transcript.add(AgentMessage.Assistant(text, emptyList()))
+        }
+    }
+
+    /**
+     * A cancelled or failed turn can end with an unanswered user message or a
+     * cancelled tool observation. Chat completions expects the next request to
+     * see a closed turn, so add a synthetic assistant message. Without it the
+     * next user message becomes a second consecutive user turn and models tend
+     * to answer both. Input-guard and missing-key exits never added the user
+     * message, so their transcript is not touched.
+     */
+    private fun closeUnfinishedTurn(
+        transcript: MutableList<AgentMessage>,
+        startSize: Int,
+        outcome: TurnOutcome,
+    ) {
+        if (outcome is TurnOutcome.Completed) return
+        if (transcript.size <= startSize) return
+        val last = transcript.lastOrNull()
+        if (last !is AgentMessage.User && last !is AgentMessage.Tool) return
+        val marker =
+            when (outcome) {
+                is TurnOutcome.Cancelled -> "Stopped."
+                is TurnOutcome.Failed -> "[The turn ended before an answer.]"
+                is TurnOutcome.Completed -> return
+            }
+        transcript.add(AgentMessage.Assistant(marker, emptyList()))
     }
 }

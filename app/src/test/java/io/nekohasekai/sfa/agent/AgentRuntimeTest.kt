@@ -141,6 +141,9 @@ class AgentRuntimeTest {
                 .content
                 .contains("cancelled"),
         )
+        val last = result.messages.last() as AgentMessage.Assistant
+        assertEquals("Stopped.", last.content)
+        assertTrue(last.toolCalls.isEmpty())
     }
 
     @Test
@@ -598,6 +601,64 @@ class AgentRuntimeTest {
 
         assertTrue(result.outcome is TurnOutcome.Cancelled)
         assertEquals(listOf("partial"), events.filterIsInstance<AgentEvent.AssistantDelta>().map { it.text })
+        val last = result.messages.last() as AgentMessage.Assistant
+        assertEquals("partial", last.content)
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun stopBeforeContentClosesTheTurnWithAMarker() {
+        val streaming = ReasoningOnlyStreamingModel()
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime =
+            AgentRuntime(
+                inputGuard = DefaultAgentInputGuard,
+                model = ScriptedModel(mutableListOf()),
+                tools = executor,
+                apiKeys = FakeKeyProvider("sk-test"),
+                config = AgentConfig(maxToolRounds = 1),
+                streamingModel = streaming,
+            )
+
+        val result =
+            runBlocking {
+                val turn =
+                    async {
+                        runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true })
+                    }
+                streaming.started.await()
+                runtime.cancel()
+                turn.await()
+            }
+
+        assertTrue(result.outcome is TurnOutcome.Cancelled)
+        val last = result.messages.last() as AgentMessage.Assistant
+        assertEquals("Stopped.", last.content)
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun failedModelTurnClosesTheOpenUserTurn() {
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val model =
+            object : AgentModelClient {
+                override suspend fun complete(
+                    request: AgentModelRequest,
+                    apiKey: String,
+                ): AgentModelResponse =
+                    throw AgentModelException(
+                        AgentTurnErrorCode.MODEL_UNAVAILABLE,
+                        "offline",
+                        retryable = false,
+                    )
+            }
+        val runtime = runtime(model, executor, key = "sk-test")
+
+        val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Failed)
+        val last = result.messages.last() as AgentMessage.Assistant
+        assertEquals("[The turn ended before an answer.]", last.content)
         assertTrue(validateTranscriptPairing(result.messages))
     }
 
@@ -686,6 +747,25 @@ private class BlockingStreamingModel : AgentStreamingModelClient {
     ): Flow<AgentModelChunk> =
         flow {
             emit(AgentModelChunk.ContentDelta("partial"))
+            started.complete(Unit)
+            stopped.await()
+        }
+
+    override fun cancel() {
+        stopped.complete(Unit)
+    }
+}
+
+private class ReasoningOnlyStreamingModel : AgentStreamingModelClient {
+    val started = CompletableDeferred<Unit>()
+    private val stopped = CompletableDeferred<Unit>()
+
+    override fun stream(
+        request: AgentModelRequest,
+        apiKey: String,
+    ): Flow<AgentModelChunk> =
+        flow {
+            emit(AgentModelChunk.ReasoningDelta("thinking"))
             started.complete(Unit)
             stopped.await()
         }

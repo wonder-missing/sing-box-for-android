@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出
 最后更新：2026-11-11
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -461,6 +461,8 @@ wonder.36 的 2B 运行时补充：
 - 还没执行的调用，同样回填 `cancelled`，或整组丢弃；两种策略选一种，但必须一致。
 - 发下一次模型请求前、返回 `TurnResult` 前，调用 `validateTranscriptPairing()`。失败时返回 `INVALID_TRANSCRIPT`，不发送请求。
 - `TurnResult.messages` 包含本轮 `User` 和后续 assistant/tool 消息；ViewModel 不重复追加用户消息。被输入检查拦截的输入不进入 transcript，只显示 UI 提示。
+- 取消或失败的 turn 如果最后一条是 `User` 或 `Tool`，`finish()` 在 `ensurePairing()` 之后补一条合成 `Assistant` 结束消息：取消用 `Stopped.`，失败用 `[The turn ended before an answer.]`。这样下一次请求不会看到两个连续 user 消息，模型不会把上一轮未回答的问题和本轮新问题当成一个复合问题。输入拦截和缺 key 的提前退出没有加入本轮 user，不补标记。
+- Stop 发生在流式回答中途时，已生成的 assistant 正文先写入 transcript，再按上面的规则收尾；只有完全没有正文时才用 `Stopped.` 标记。这样模型下一轮能看到停在哪里，不会把半截回答丢掉。
 - Retry 只重试失败的模型调用，复用已有 transcript；绝不重跑已经产生 observation 的工具。工具执行后 UI 不显示 Retry，或 Retry 只重发模型请求。
 - `/clear` 同时清 UI 消息、模型 transcript、待确认状态，并取消活动 turn。
 
@@ -1004,6 +1006,7 @@ UI 需要新增：
 - Conductor 最后一条消息下方的左侧横三点菜单提供 Copy conversation，把当前 user、assistant、tool、notice、error 导出为 Markdown；tool output 用 pretty JSON 代码块。
 - 同一菜单的 Copy API trace 导出当前会话每一次模型请求和响应，包含请求/响应 headers 和 body；Authorization、Cookie 等敏感 header 在进入 trace 前已经打码。trace 只放内存，`/clear` 清空。
 - wonder.38 起同一菜单增加 Save API trace to file：通过系统 CreateDocument 选择落点，把同一份 sanitized Markdown 写到文件，避免 2MB 文本走剪贴板后无法粘贴。trace 仍只放内存，`/clear` 清空。
+- wonder.40 起同一菜单增加 Save conversation to file：和 Copy conversation 使用同一份 Markdown 生成器，和 API trace 共用一个 CreateDocument 导出通道。文件写入在 IO 线程；空会话和空 trace 只提示，不落文件。
 - 持久化只保存 sanitized 后的 UI/transcript 内容；原始 tool 参数和 pending confirmation 不落盘。
 
 ## 12. BYOK 与设置入口
@@ -1248,8 +1251,9 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 流式回答逐字出现，用户上滑后不被强制拉回底部。
 - 正文开始输出、工具开始或 turn 结束时，所有 Reasoning spinner 都停止；空 Thinking 占位不出现在 UI。
 - 同一 assistant 消息的多个确认只弹一张卡时，Run all 能一次跑完；取消仍结束整个 turn。
-- API trace 可以通过 Save API trace to file 落盘，空 trace 不生成文件。
-- Stop、超时、流式中断后 transcript 仍然配对。
+- API trace 可以通过 Save API trace to file 落盘，空 trace 不生成文件；对话也可以通过 Save conversation to file 落盘。
+- Stop、超时、流式中断后 transcript 仍然配对；未完成 turn 的事件序列不会以两个连续 user 消息进入下一轮。
+- 取消/失败的 turn 在 transcript 末尾有合成 assistant 结束消息，模型能看到上一轮已闭合；输入拦截和缺 key 不产生该消息。
 - 长工具结果被截断且标记，模型不会因为上下文超限直接失败。
 - usage 里能看到 cache hit/miss token，用于判断路由模式和裁剪策略是否达到预期。
 
@@ -1318,6 +1322,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 两个 Thinking spinner 同时转、turn 结束后还在转：原因是结算函数只看列表最后一项；正文 delta 先追加 Assistant 后，Reasoning 不再是最后一项，永远不会被结算。wonder.38 把 UI 列表变换抽成 `ConductorStreaming.kt` 的纯函数，正文开始、工具开始、确认、notice、turn 结束和下一步 CallingModel 都结算**所有** streaming Reasoning/Assistant 项；空占位直接删除。
 - 连续审批太慢：同一 assistant 消息带多个需要确认的 tool call 时，第一张卡增加 `Run all`；`batchRemaining` 由运行时给，ViewModel 只在本 turn 内自动通过后续确认。运行时仍逐个显式确认，安全边界不变。
 - API trace 2MB 无法粘贴：菜单增加 Save API trace to file，走 `ActivityResultContracts.CreateDocument("text/plain")`，在 IO 线程写 Markdown；空 trace 仍然只提示不落文件。
+
+### wonder.40 中断 turn 收尾与对话导出（2026-11-11）
+
+- 真机实验：第一句在 reasoning 阶段被 Stop；第二次请求的 messages 是 `system → user(第一句) → user(第二句)`，中间没有 assistant，模型把两句当成一个复合问题。修复：Stop 时先保留已经流出的 assistant 正文；如果没有正文，`finish()` 对未完成的 turn 补合成 assistant 结束消息，取消为 `Stopped.`，失败为 `[The turn ended before an answer.]`。只在本轮已经加入 user 时补，输入拦截/缺 key 不补。
+- `AgentRuntimeTest` 增加停止（有正文和只有 reasoning 两种）、确认取消和模型失败四条断言，检查结束标记和 transcript pairing。
+- 对话导出与 API trace 导出共用同一个 CreateDocument 通道，新增 Save conversation to file；空会话/空 trace 只提示。
 
 ### wonder.39 多 Provider（2026-11-11）
 

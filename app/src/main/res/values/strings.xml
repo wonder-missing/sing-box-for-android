@@ -814,6 +814,10 @@
     <string name="conductor_api_key_hint">sk-...</string>
     <string name="conductor_conversation_actions">Conversation actions</string>
     <string name="conductor_copy_conversation">Copy conversation</string>
+    <string name="conductor_export_conversation">Save conversation to file</string>
+    <string name="conductor_conversation_saved">Conversation saved</string>
+    <string name="conductor_conversation_save_failed">Could not save conversation: %1$s</string>
+    <string name="conductor_conversation_empty">No conversation to save.</string>
     <string name="conductor_copy_api_trace">Copy API trace</string>
     <string name="conductor_export_api_trace">Save API trace to file</string>
     <string name="conductor_api_trace_copied">API trace copied</string>
