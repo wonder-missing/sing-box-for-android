@@ -15,10 +15,45 @@ data class ConductorSession(
     val pendingEvent: TurnEvent? = null,
 )
 
-class ConductorSessionStore(
+internal interface ConductorPreferenceStore {
+    fun getString(key: String): String?
+
+    fun putString(
+        key: String,
+        value: String,
+    )
+
+    fun remove(key: String)
+}
+
+private class AndroidConductorPreferenceStore(
     context: Context,
+) : ConductorPreferenceStore {
+    private val prefs =
+        context.applicationContext.getSharedPreferences(
+            ConductorSessionStore.PREFS,
+            Context.MODE_PRIVATE,
+        )
+
+    override fun getString(key: String): String? = prefs.getString(key, null)
+
+    override fun putString(
+        key: String,
+        value: String,
+    ) {
+        prefs.edit().putString(key, value).apply()
+    }
+
+    override fun remove(key: String) {
+        prefs.edit().remove(key).apply()
+    }
+}
+
+class ConductorSessionStore internal constructor(
+    private val prefs: ConductorPreferenceStore,
 ) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    constructor(context: Context) : this(AndroidConductorPreferenceStore(context))
+
     private val json =
         Json {
             ignoreUnknownKeys = true
@@ -26,9 +61,9 @@ class ConductorSessionStore(
         }
 
     fun load(): ConductorSession? =
-        prefs
-            .getString(KEY, null)
-            ?.let { raw -> runCatching { json.decodeFromString<ConductorSession>(raw) }.getOrNull() }
+        prefs.getString(KEY)?.let { raw ->
+            runCatching { json.decodeFromString<ConductorSession>(raw) }.getOrNull()
+        }
 
     fun save(
         transcript: List<AgentMessage>,
@@ -42,17 +77,32 @@ class ConductorSessionStore(
                 pendingEvent = pendingEvent,
             )
         runCatching {
-            prefs.edit().putString(KEY, json.encodeToString(session)).apply()
+            prefs.putString(KEY, json.encodeToString(session))
         }
     }
 
+    fun loadDraft(): String = prefs.getString(DRAFT_KEY).orEmpty().take(MAX_DRAFT)
+
+    /** Unsent composer text. Kept apart from [clear] so wiping a session does not drop a draft. */
+    fun saveDraft(text: String) {
+        val normalized = text.take(MAX_DRAFT)
+        if (normalized.isEmpty()) {
+            if (prefs.getString(DRAFT_KEY) != null) prefs.remove(DRAFT_KEY)
+            return
+        }
+        if (prefs.getString(DRAFT_KEY) == normalized) return
+        prefs.putString(DRAFT_KEY, normalized)
+    }
+
     fun clear() {
-        prefs.edit().remove(KEY).apply()
+        prefs.remove(KEY)
     }
 
     companion object {
-        private const val PREFS = "conductor_session"
+        internal const val PREFS = "conductor_session"
+        internal const val MAX_DRAFT = 8_000
         private const val KEY = "session_v1"
+        private const val DRAFT_KEY = "draft_v1"
         private const val MAX_TRANSCRIPT = 120
         private const val MAX_ITEMS = 200
     }

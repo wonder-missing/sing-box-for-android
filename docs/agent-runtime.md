@@ -1009,6 +1009,7 @@ UI 需要新增：
 ### 会话持久化与复制
 
 - `ConductorSessionStore` 用私有 SharedPreferences `conductor_session` 保存模型 transcript 和 UI items；离开 Conductor、回到主界面或进程重启后恢复。
+- 未发送的输入另存在 `draft_v1`，不进会话 JSON。离开页面后再进入会恢复；发送或把输入清空后删掉。`/clear` 只删会话，不删这份草稿。上限与输入框一样是 8,000 字符。
 - 恢复时丢弃未完成的 confirmation；残留的 `RUNNING` tool 标为 `CANCELLED`，避免旧状态继续执行。
 - `/clear` 同时清 store。
 - Conductor 最后一条消息下方的左侧横三点菜单提供 Copy conversation，把当前 user、assistant、tool、notice、error 导出为 Markdown；tool output 用 pretty JSON 代码块。
@@ -1372,6 +1373,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - Settings > Conductor 增加 Reasoning effort。Default 不传 `reasoning_effort`；Low / Medium / High 原样写入 chat completions 请求。
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
+- 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
 
 ### wonder.33/34 跨版本 trace 复盘（2026-11-10）
 

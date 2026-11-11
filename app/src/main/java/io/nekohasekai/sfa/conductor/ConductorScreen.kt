@@ -112,7 +112,7 @@ private val InputPanelTopPadding = 18.dp
 private val InputPanelBottomPadding = 60.dp
 private val InputPanelMinHeight = 120.dp
 private const val InputPanelMaxLines = 5
-private const val MaxInputChars = 8_000
+private const val MaxInputChars = ConductorSessionStore.MAX_DRAFT
 
 private enum class ConductorExport { Conversation, ApiTrace }
 
@@ -138,7 +138,16 @@ fun ConductorScreen(
 
     var input by rememberSaveable(
         stateSaver = Saver(save = { it }, restore = { it.take(MaxInputChars) }),
-    ) { mutableStateOf("") }
+    ) { mutableStateOf(viewModel.currentDraft()) }
+
+    fun setInput(next: String) {
+        input = next
+        viewModel.saveDraft(next)
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.saveDraft(input)
+    }
     var inputExpanded by rememberSaveable { mutableStateOf(false) }
     var inputLineCount by remember { mutableStateOf(1) }
     var inputTooLongWarned by remember { mutableStateOf(false) }
@@ -191,7 +200,7 @@ fun ConductorScreen(
             return
         }
         viewModel.submit(text)
-        input = ""
+        setInput("")
         inputExpanded = false
         focusManager.clearFocus()
     }
@@ -376,7 +385,7 @@ fun ConductorScreen(
                     item(key = "empty") {
                         ConductorEmptyState(
                             onCommand = { command ->
-                                input = ""
+                                setInput("")
                                 inputExpanded = false
                                 viewModel.submit(command)
                             },
@@ -413,10 +422,10 @@ fun ConductorScreen(
                     commands = suggestions,
                     onPick = { command ->
                         if (command.takesArgs) {
-                            input = "/${command.name} "
+                            setInput("/${command.name} ")
                             focusInput()
                         } else {
-                            input = ""
+                            setInput("")
                             inputExpanded = false
                             viewModel.submit("/${command.name}")
                             focusManager.clearFocus()
@@ -442,9 +451,9 @@ fun ConductorScreen(
                         ).show()
                         inputTooLongWarned = true
                     }
-                    input = next.take(MaxInputChars)
+                    setInput(next.take(MaxInputChars))
                 } else {
-                    input = next
+                    setInput(next)
                     if (next.length < MaxInputChars - 256) inputTooLongWarned = false
                 }
             },
@@ -453,16 +462,17 @@ fun ConductorScreen(
             onStop = viewModel::stopAgent,
             isRunning = uiState.isRunning,
             onSlash = {
-                input = if (input.startsWith("/")) input else "/" + input
+                setInput(if (input.startsWith("/")) input else "/" + input)
                 focusInput()
             },
             onAt = {
-                input =
+                setInput(
                     when {
                         input.isBlank() -> "@"
                         input.last().isWhitespace() -> input + "@"
                         else -> "$input @"
-                    }
+                    },
+                )
                 focusInput()
             },
             focusRequester = focusRequester,

@@ -213,6 +213,12 @@ class ConductorViewModel(
         }
     }
 
+    fun currentDraft(): String = sessionStore.loadDraft()
+
+    fun saveDraft(text: String) {
+        sessionStore.saveDraft(text)
+    }
+
     fun submit(raw: String) {
         val text = raw.trim()
         if (text.isEmpty()) return
