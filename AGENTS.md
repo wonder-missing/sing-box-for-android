@@ -42,6 +42,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 - Releases are **arm64-v8a only**.
 - `release.yml` restores the `libbox.aar` cache that `test.yml` writes on `dev` (tag runs may read the default-branch cache). Keep the cache key and trailing recipe version in sync between the two workflows; bump both when the libbox build recipe changes.
 - Never delete/move tags or releases; never force-push; push only to `dev` (and release tags).
+- In `.claude/settings.json`, the delete-refspec deny is `Bash(git push origin ::*)`. A trailing `:*` is consumed as the prefix wildcard, so `Bash(git push origin :*)` matches every command that starts with `git push origin `, including `dev` and release tags. Leave the double colon in place.
 
 ## Signing & private files
 - Never change signing config, `app/release.keystore`, or GitHub Actions signing secrets. CI signs releases.

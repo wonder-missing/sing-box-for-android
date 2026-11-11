@@ -11,7 +11,7 @@
     ],
     "deny": [
       "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(git push --force-with-lease:*)", "Bash(git push origin +*)",
-      "Bash(git push origin --tags:*)", "Bash(git push --delete:*)", "Bash(git push origin --delete:*)", "Bash(git push origin :*)",
+      "Bash(git push origin --tags:*)", "Bash(git push --delete:*)", "Bash(git push origin --delete:*)", "Bash(git push origin ::*)",
       "Bash(git tag -d:*)", "Bash(git tag --delete:*)", "Bash(git tag -f:*)",
       "Bash(gh release delete:*)", "Bash(gh release edit:*)", "Bash(gh secret:*)",
       "Read(~/workspace/CFG/private/**)", "Bash(cat ~/workspace/CFG/private/*)"

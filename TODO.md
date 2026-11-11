@@ -28,25 +28,25 @@
 
 ## 下个会话接手
 
-- 当前 `dev` 版本号 41，wonder.41 已发布。下一次发版从 42 开始。
-- wonder.41 已包含：传输错误边界、单调用 `Approve rest of turn`、`conductor:event` 中断信封、A7 app icon。
-- 发版前真机重点：
-  - 中断 reasoning 后发第二问，API trace 的下一次请求应是 `system → user([conductor:event turn_interrupted ...] + 正文)`，且没有被打断的第一问。
-  - 中断前已有 partial assistant 或 tool 结果时，它们应保留，事件挂在下一问。
-  - 确认卡单调用也有 `Approve rest of turn`，点一次后续不再弹卡。
-  - xAI/Custom provider 的传输错误提示应是可读文案，不出现 fake-IP。
-  - 桌面图标检查 square / round / adaptive / Android 13 themed icon；旧图标缓存可能需要重启启动器。
+- 当前 `dev` 版本号 42，wonder.42 已发布。下一次发版从 43 开始。
+- wonder.42 已包含：设置页 App 行版本号和「更新」；Conductor Reasoning effort；飞书发版卡片（单测条数 + 短 changelog）；离开 Conductor 再进入保留未发送草稿；启动图标按新稿垂直居中。
+- 发版前真机重点（wonder.42 只过了 CI 单测，没有真机）：
+  - 设置顶行 App：副标题是版本号；右侧「更新」。已有新版本时直接确认安装；没有时先检查。下载前仍有确认框。
+  - 设置 → Conductor → Reasoning effort：Default / Low / Medium / High。立刻写入，下一条消息生效。Default 不传该字段。
+  - Conductor 输入不发送，系统返回再进入，草稿还在。发送或清空后消失。`/clear` 只清会话，不清草稿。
+  - 桌面图标 square / round / adaptive / Android 13 themed。旧图标缓存可能要重启启动器。前景图按 `translate(0,-25)` 垂直居中。
 - 仍未做，按阻塞原因：
   - `probe_many`（P1，需要 libbox 验证；当前 probe 串行切全局出站）。
   - usage 极简可视化（UI 设计未定）。
   - 批量确认整批参数预览（现在只有当前工具参数）。
-  - Provider capability（`stream_options`、`max_completion_tokens`、Azure 类鉴权；reasoning effort 的 low/medium/high 从 wonder.42 起可选，`none`/`max`/`xhigh` 仍不做）。
+  - Provider capability（`stream_options`、`max_completion_tokens`、Azure 类鉴权；`none`/`max`/`xhigh` 仍不做。low/medium/high 已在 wonder.42）。
   - 跨版本会话边界提示（之前决定保留现状）。
   - probe 链路复测（等出口健康）；Stop 1s `TOOL_CANCEL_TIMEOUT`（等出现无法取消的工具）。
   - 搜索 no-match、`ToolObservation.ok` 契约、确认/事务可见性、LLM 摘要、增量更新等 backlog。
 
 ## 最近完成
 
+- wonder.42（2026-11-12）：设置页 App 行版本号与「更新」；Conductor Reasoning effort（low/medium/high，默认不传）；飞书通知带单测条数和短 changelog（超过 320 字或 8 行用卡片）；Conductor 未发送草稿跨页面保留；启动图标垂直居中
 - wonder.41（2026-11-11）：A7 app icon（adaptive / legacy / round / monochrome / playstore）；传输错误边界；单调用 `Approve rest of turn`；`conductor:event` 中断信封与空 turn 回滚
 - wonder.40（2026-11-11）：中断/失败 turn 收尾：Stop 保留已流出的 assistant 正文，没有正文时在 transcript 末尾补合成 assistant 结束消息，避免下一次请求出现两个连续 user；对话与 API trace 共用文件导出，新增 Save conversation to file
 - wonder.39（2026-11-11）：多 Provider：DeepSeek / xAI / Custom（OpenAI-compatible）预设、按 provider 独立 model/key/base URL、turn 级 provider 快照、OpenAI cached_tokens 与 reasoning 字段兼容
