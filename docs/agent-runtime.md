@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；dev 另含未发的传输错误边界、审批/批处理调整和 `conductor:event` 中断信封
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon
 最后更新：2026-11-11
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -1340,7 +1340,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 ### wonder.37 真机反馈（wonder.38 修复）
 
 - 两个 Thinking spinner 同时转、turn 结束后还在转：原因是结算函数只看列表最后一项；正文 delta 先追加 Assistant 后，Reasoning 不再是最后一项，永远不会被结算。wonder.38 把 UI 列表变换抽成 `ConductorStreaming.kt` 的纯函数，正文开始、工具开始、确认、notice、turn 结束和下一步 CallingModel 都结算**所有** streaming Reasoning/Assistant 项；空占位直接删除。
-- 连续审批太慢：同一 assistant 消息带多个需要确认的 tool call 时，第一张卡增加 `Run all`；`batchRemaining` 由运行时给，ViewModel 只在本 turn 内自动通过后续确认。运行时仍逐个显式确认，安全边界不变。后续发现模型常把 probe 分步调用，单调用卡也需要同样的本 turn 批准，见“下一版（未发）”。
+- 连续审批太慢：同一 assistant 消息带多个需要确认的 tool call 时，第一张卡增加 `Run all`；`batchRemaining` 由运行时给，ViewModel 只在本 turn 内自动通过后续确认。运行时仍逐个显式确认，安全边界不变。后续发现模型常把 probe 分步调用，单调用卡也需要同样的本 turn 批准，见 wonder.41。
 - API trace 2MB 无法粘贴：菜单增加 Save API trace to file，走 `ActivityResultContracts.CreateDocument("text/plain")`，在 IO 线程写 Markdown；空 trace 仍然只提示不落文件。
 
 ### wonder.40 中断 turn 收尾与对话导出（2026-11-11）
@@ -1357,7 +1357,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `TokenUsage` 增加 OpenAI `prompt_tokens_details.cached_tokens` 兼容；SSE reasoning 同时识别 `reasoning_content` 和 `reasoning`。
 - 未做 provider 私有 capability；`stream_options`、`max_completion_tokens`、Azure 类鉴权、provider 私有 reasoning 字段留待真机验证。
 
-### 下一版（未发）：传输错误边界与审批/批处理（2026-11-11）
+### wonder.41：传输错误边界、审批与中断事件（2026-11-11）
 
 - xAI 实验：第一次请求在 HTTP/2 握手处失败后被 Stop；第二次同一错误重试 4 次；第三次连接 `api.x.ai/198.18.0.4:443` 失败。`198.18.0.0/15` 是本地代理常用的 fake-IP 段，不是 xAI 的地址；根因在本地 VPN/代理的路由，不是 xAI token 或模型。
 - UI 之前直接显示 OkHttp 原文（`Required SETTINGS preface not received`、fake-IP），且对所有 `IOException` 都重试。现在按 `ModelTransportErrors.kt` 分类：协议握手/DNS/连接拒绝/TLS 失败不重试，超时和一般 IO 可重试；用户消息只显示 provider host 和可操作建议，原始异常和解析 IP 只留在 API trace。

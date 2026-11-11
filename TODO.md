@@ -12,7 +12,7 @@
 ### P2
 
 - [ ] **每条消息的极简 token/cache 用量可视化**：API 响应已有 usage；UI 设计待定。
-- [ ] **批量确认的整批预览**：wonder.38 的 Run all 只显示当前工具参数，本批后续工具在运行时逐个自动通过；以后可让运行时预检整批、合成一张含全部工具与参数的确认卡。
+- [ ] **批量确认的整批预览**：wonder.41 的 `Approve rest of turn` 只显示当前工具参数，后续工具仍由模型逐轮声明；以后可让运行时预检整批、合成一张含全部工具与参数的确认卡。
 - [ ] **`tailscale_status` 结构化 + 最后在线时间**：现在是纯文本块，模型能读但不能程序化处理。
 - [ ] **`network_snapshot` / `list_nodes` 重叠**：core 字段重复，随 `list_nodes` 摘要一起收。
 - [ ] **`search_tools` 相关性与 no-match 信号**：宽泛查询总是返回 top-3 弱相关工具；加分数/置信度或阈值，避免模型误以为有专用能力。
@@ -26,20 +26,16 @@
 - [ ] **Provider capability 矩阵**：wonder.39 只覆盖 OpenAI-compatible Bearer + Chat Completions；`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权、provider 私有 reasoning 字段等按真机验证结果再抽。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 
-## 下一版待发（未发，当前 dev）
-
-- 传输错误边界：协议握手/DNS/连接拒绝/TLS 失败不盲重试，用户提示不显示原始异常和解析 IP；可重试错误显示 Notice；Stop 后不再发起新请求。对应 `ModelTransportErrors.kt` 和 `AgentRuntime.streamModelWithRetry`。
-- 审批与批处理：确认卡对单调用也提供 `Approve rest of turn`；system prompt 说明同一响应内工具串行执行；probe 描述说明多 probe 串行且只接受 selector 组里可选节点。
-- 中断事件：`TurnEvent` + 下一条 user 的 `[conductor:event ...]` 前缀；空 turn 从模型 transcript 回滚，partial assistant/tool 结果保留；pending event 存在 `ConductorSession.pendingEvent`，跨进程保留；用户伪造前缀会转义。
-
 ## 下个会话接手
 
-- 当前 `dev` 版本号仍是 `WONDER_BUILD=40`（wonder.40 是已发布版本）。下次发版先升到 41，跑 Test CI，绿后打 tag/build Release，确认 arm64 APK 和 Feishu notify。
+- 当前 `dev` 版本号 41，wonder.41 已发布。下一次发版从 42 开始。
+- wonder.41 已包含：传输错误边界、单调用 `Approve rest of turn`、`conductor:event` 中断信封、A7 app icon。
 - 发版前真机重点：
   - 中断 reasoning 后发第二问，API trace 的下一次请求应是 `system → user([conductor:event turn_interrupted ...] + 正文)`，且没有被打断的第一问。
   - 中断前已有 partial assistant 或 tool 结果时，它们应保留，事件挂在下一问。
   - 确认卡单调用也有 `Approve rest of turn`，点一次后续不再弹卡。
   - xAI/Custom provider 的传输错误提示应是可读文案，不出现 fake-IP。
+  - 桌面图标检查 square / round / adaptive / Android 13 themed icon；旧图标缓存可能需要重启启动器。
 - 仍未做，按阻塞原因：
   - `probe_many`（P1，需要 libbox 验证；当前 probe 串行切全局出站）。
   - usage 极简可视化（UI 设计未定）。
@@ -51,6 +47,7 @@
 
 ## 最近完成
 
+- wonder.41（2026-11-11）：A7 app icon（adaptive / legacy / round / monochrome / playstore）；传输错误边界；单调用 `Approve rest of turn`；`conductor:event` 中断信封与空 turn 回滚
 - wonder.40（2026-11-11）：中断/失败 turn 收尾：Stop 保留已流出的 assistant 正文，没有正文时在 transcript 末尾补合成 assistant 结束消息，避免下一次请求出现两个连续 user；对话与 API trace 共用文件导出，新增 Save conversation to file
 - wonder.39（2026-11-11）：多 Provider：DeepSeek / xAI / Custom（OpenAI-compatible）预设、按 provider 独立 model/key/base URL、turn 级 provider 快照、OpenAI cached_tokens 与 reasoning 字段兼容
 - wonder.38（2026-11-11）：Thinking 生命周期修复（结算所有 streaming 项，正文开始即停 spinner）、两行自动上滚 Reasoning ticker + Show/Hide、批量确认 Run all、API trace 保存为文件
