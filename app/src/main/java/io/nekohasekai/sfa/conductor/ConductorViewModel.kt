@@ -170,6 +170,9 @@ class ConductorViewModel(
     @Volatile
     private var pendingAgentConfirmation: CompletableDeferred<Boolean>? = null
 
+    @Volatile
+    private var autoApproveAgentConfirmation = false
+
     private var pendingCommandConfirmation: Pair<String, String>? = null
 
     init {
@@ -289,7 +292,19 @@ class ConductorViewModel(
         pending.complete(true)
     }
 
+    /**
+     * Approve this tool call and every later confirmation prompt in the same
+     * assistant batch. The runtime still asks once per call; the ViewModel
+     * answers those prompts without drawing another card.
+     */
+    fun confirmAllAgent() {
+        if (pendingAgentConfirmation == null) return
+        autoApproveAgentConfirmation = true
+        confirmAgent()
+    }
+
     fun cancelAgent() {
+        autoApproveAgentConfirmation = false
         val pending = pendingAgentConfirmation ?: return
         removeConfirmationItems()
         pending.complete(false)
@@ -298,6 +313,7 @@ class ConductorViewModel(
     fun stopAgent() {
         if (!_uiState.value.isRunning || stopRequested) return
         stopRequested = true
+        autoApproveAgentConfirmation = false
         pendingAgentConfirmation?.complete(false)
         removeConfirmationItems()
         runtime.cancel()
@@ -374,6 +390,7 @@ class ConductorViewModel(
             return
         }
         stopRequested = false
+        autoApproveAgentConfirmation = false
         updateUi { copy(isRunning = true) }
         agentJob =
             viewModelScope.launch {
@@ -407,6 +424,7 @@ class ConductorViewModel(
                     updateUi { copy(isRunning = false) }
                     pendingAgentConfirmation = null
                     stopRequested = false
+                    autoApproveAgentConfirmation = false
                     when (val outcome = result.outcome) {
                         is TurnOutcome.Failed ->
                             append(
@@ -444,10 +462,15 @@ class ConductorViewModel(
 
             is AgentEvent.ToolFinished -> updateToolResult(event.result)
             is AgentEvent.ConfirmationRequested -> {
-                finishReasoning()
-                finishStreamingAssistant()
-                pendingAgentConfirmation = CompletableDeferred()
-                append(ConductorItem.Confirmation(event.request))
+                if (autoApproveAgentConfirmation) {
+                    pendingAgentConfirmation =
+                        CompletableDeferred<Boolean>().apply { complete(true) }
+                } else {
+                    finishReasoning()
+                    finishStreamingAssistant()
+                    pendingAgentConfirmation = CompletableDeferred()
+                    append(ConductorItem.Confirmation(event.request))
+                }
             }
 
             is AgentEvent.Notice -> {
@@ -471,85 +494,39 @@ class ConductorViewModel(
 
     private fun appendReasoningPlaceholder() {
         updateUi {
-            val updated = this.items.toMutableList()
-            val last = updated.lastOrNull()
-            if (last is ConductorItem.Reasoning && last.streaming) {
-                this
-            } else {
-                updated.add(ConductorItem.Reasoning("", streaming = true))
-                copy(items = updated.takeLast(MAX_ITEMS))
-            }
+            copy(items = this.items.withReasoningPlaceholder().takeLast(MAX_ITEMS))
         }
     }
 
     private fun appendReasoningDelta(text: String) {
         if (text.isEmpty()) return
         updateUi {
-            val updated = this.items.toMutableList()
-            val last = updated.lastOrNull()
-            if (last is ConductorItem.Reasoning && last.streaming) {
-                updated[updated.lastIndex] = last.copy(text = last.text + text)
-            } else {
-                updated.add(ConductorItem.Reasoning(text, streaming = true))
-            }
-            copy(items = updated.takeLast(MAX_ITEMS))
+            copy(items = this.items.withReasoningDelta(text).takeLast(MAX_ITEMS))
         }
     }
 
     private fun finishReasoning() {
         updateUi {
-            val updated = this.items.toMutableList()
-            val last = updated.lastOrNull()
-            if (last is ConductorItem.Reasoning && last.streaming) {
-                if (last.text.isBlank()) {
-                    updated.removeAt(updated.lastIndex)
-                } else {
-                    updated[updated.lastIndex] = last.copy(streaming = false)
-                }
-                copy(items = updated)
-            } else {
-                this
-            }
+            copy(items = this.items.settleReasoning())
         }
     }
 
     private fun appendAssistantDelta(text: String) {
         if (text.isEmpty()) return
         updateUi {
-            val updated = this.items.toMutableList()
-            val last = updated.lastOrNull()
-            if (last is ConductorItem.Assistant && last.streaming) {
-                updated[updated.lastIndex] = last.copy(text = last.text + text)
-            } else {
-                updated.add(ConductorItem.Assistant(text, streaming = true))
-            }
-            copy(items = updated.takeLast(MAX_ITEMS))
+            copy(items = this.items.withAssistantDelta(text).takeLast(MAX_ITEMS))
         }
     }
 
     private fun appendAssistantMessage(text: String) {
         updateUi {
-            val updated = this.items.toMutableList()
-            val last = updated.lastOrNull()
-            if (last is ConductorItem.Assistant && last.streaming) {
-                updated[updated.lastIndex] = last.copy(text = text, streaming = false)
-            } else {
-                updated.add(ConductorItem.Assistant(text))
-            }
-            copy(items = updated.takeLast(MAX_ITEMS))
+            copy(items = this.items.withAssistantFinal(text).takeLast(MAX_ITEMS))
         }
     }
 
     private fun finishStreamingAssistant() {
         updateUi {
-            val updated = this.items.toMutableList()
-            val last = updated.lastOrNull()
-            if (last is ConductorItem.Assistant && last.streaming) {
-                updated[updated.lastIndex] = last.copy(streaming = false)
-                copy(items = updated)
-            } else {
-                this
-            }
+            copy(items = this.items.settleStreamingAssistants())
         }
     }
 

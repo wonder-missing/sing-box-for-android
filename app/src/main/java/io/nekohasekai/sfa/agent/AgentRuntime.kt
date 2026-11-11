@@ -393,6 +393,7 @@ class AgentRuntime(
                             toolName = executed.name,
                             displayArgsJson = result.confirmation!!.displayArgsJson,
                             reason = result.confirmation!!.reason,
+                            batchRemaining = executable.size - index,
                         )
                     onEvent(AgentEvent.ConfirmationRequested(request))
                     onEvent(AgentEvent.StateChanged(TurnState.AwaitingConfirmation(step, request)))

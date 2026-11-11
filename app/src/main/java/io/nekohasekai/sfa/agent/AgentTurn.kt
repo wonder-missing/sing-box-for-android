@@ -92,6 +92,8 @@ data class ConfirmationRequest(
     val toolName: String,
     val displayArgsJson: String,
     val reason: String,
+    /** Tool calls left in this assistant batch, including the current one. */
+    val batchRemaining: Int = 1,
 )
 
 sealed interface AgentEvent {

@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37 收真机反馈
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈
 最后更新：2026-11-11
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -213,7 +213,7 @@ API key 作为 `complete` / `stream` 的参数传入，不放进 `AgentModelRequ
 
 Phase 2a 只实现 `AgentModelClient.complete`。Phase 2b 实现 `AgentStreamingModelClient`，流式 tool call 按 `index` 累积，`Completed` 时再交给运行时执行。2a 的 UI 事件已经按「最终消息」设计，2b 增加 delta 不需要重写运行时。Phase 2b 的 `AgentRuntime` 增加可选 `streamingModel: AgentStreamingModelClient?`，为 null 时走 `complete`；`DeepSeekModelClient` 同时实现两个接口。wonder.36 起生产路径使用 OkHttp SSE；`AgentStreamingModelClient.cancel()` 取消当前 `Call`，运行时 Stop 时先置取消标志再调用它。`AgentRuntime` 累积 `ContentDelta` 和 `ToolCallDelta`，内容增量发 `AssistantDelta`，最终仍发 `AssistantMessage` 让 UI 用完整文本收尾。
 
-wonder.37 起同时解析 SSE 的 `reasoning_content`，发 `ReasoningDelta`；UI 显示为 `Thinking` 块，不写回 transcript，也不进入下一次模型请求。
+wonder.37 起同时解析 SSE 的 `reasoning_content`，发 `ReasoningDelta`；UI 显示为 `Thinking` 块，不写回 transcript，也不进入下一次模型请求。wonder.38 把 Reasoning 改成两行高的自动上滚视窗，并在正文开始输出或进入下一步时结算所有仍在 streaming 的 Reasoning 项，避免多个 spinner 同时转。
 
 `DeepSeekModelClient`：
 
@@ -797,6 +797,8 @@ ToolCall 需要确认
 - 运行时内部用 `callId` 保存原始 `ToolCall`；`ConfirmationRequest` 不带原始参数，ViewModel 也不需要回传原始参数。
 - 模型不能自己确认，也不能通过 tool 输出改变确认策略。
 - 用户取消一个 tool call 时，同一条 assistant 消息里尚未执行的 tool call 全部回填 `cancelled`，本 turn 结束，不让模型马上换个工具重试。
+- 一条 assistant 消息可能带多个需要确认的 tool call。`ConfirmationRequest.batchRemaining` 是当前批次里剩余调用数（含当前），由运行时计算。第一张卡在 `batchRemaining > 1` 时提供 Run all：ViewModel 记一个只作用于本 turn 的自动批准标记，运行时后续仍逐个发出确认事件并收到显式 `true`，但不再画新卡。这样一次点击就能跑完同一批工具，同时不改变运行时每次确认的安全边界。
+- Run all 只预览当前工具的参数，不逐项预览本批后续工具；后续工具仍由模型在同一条 assistant 消息里声明。需要完整批前预览时，再让运行时做整批预检（见待定）。
 - 确认等待不计入 turn 总超时；确认超时单独计算，默认 5 分钟。进程退到后台或进程死亡时，未完成的确认直接取消，不允许回来后静默执行。
 - 现有 `/probe` 的确认流是 Phase 1 的单工具版本。Phase 2a 保留 `AgentConfirmation` 作为 registry/executor 的内部结果，但 ViewModel 立刻映射成 `ConfirmationRequest`；`ConductorItem` 和 UI 只拿 `ConfirmationRequest`。`/probe` 命令不经过 `AgentRuntime`。
 
@@ -943,6 +945,7 @@ data class ConfirmationRequest(
     val toolName: String,
     val displayArgsJson: String,
     val reason: String,
+    val batchRemaining: Int = 1,
 )
 ```
 
@@ -977,10 +980,10 @@ UI 需要新增：
 - assistant 文本。
 - tool 卡片：工具名、参数摘要、running/success/failed/cancelled、结果摘要；长结果可展开。路由模式下显示内层工具名和参数，不显示 `route_call` envelope。
 - `search_tools` 显示为一条紧凑的「查找工具」记录，可以展开看匹配数，不默认铺开 schema。
-- 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`。
+- 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；同一批还有未执行的调用时显示 `Run all` 和批次数量。点 Run all 后，本批后续确认在 ViewModel 内自动通过，不再连续弹卡。
 - 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。wonder.37 起 Stop 后消息流追加 `Stopped.`，重复 Stop 只发一次提示；已完成但刚好在 Stop 前的工具结果保留，不再被改成 `cancelled`。
-- 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。
-- Reasoning：`Thinking` 块流式显示 `reasoning_content`，不进入 transcript；首字前的等待因此有可见反馈。
+- 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。正文一开始输出就结算 Reasoning，避免 spinner 和已回答并存。
+- Reasoning：`Thinking` 块流式显示 `reasoning_content`，不进入 transcript；wonder.38 起是两行高的自动上滚视窗（上下边缘渐隐），结束后标签变 `Thought`，可 Show/Hide 查看全文。所有结算点会清理全部 streaming 项，不只最后一项。
 - 输入框上限 8,000 字符（含恢复的 saved state），超长粘贴只截断并提示，避免大文本把 Compose 布局打崩。
 - 错误：错误码转成人话，可重试的显示 Retry。
 - 无 key：提示去 `Settings > Conductor` 填写，不在 Conductor 里放 key 输入框。
@@ -995,6 +998,7 @@ UI 需要新增：
 - `/clear` 同时清 store。
 - Conductor 最后一条消息下方的左侧横三点菜单提供 Copy conversation，把当前 user、assistant、tool、notice、error 导出为 Markdown；tool output 用 pretty JSON 代码块。
 - 同一菜单的 Copy API trace 导出当前会话每一次模型请求和响应，包含请求/响应 headers 和 body；Authorization、Cookie 等敏感 header 在进入 trace 前已经打码。trace 只放内存，`/clear` 清空。
+- wonder.38 起同一菜单增加 Save API trace to file：通过系统 CreateDocument 选择落点，把同一份 sanitized Markdown 写到文件，避免 2MB 文本走剪贴板后无法粘贴。trace 仍只放内存，`/clear` 清空。
 - 持久化只保存 sanitized 后的 UI/transcript 内容；原始 tool 参数和 pending confirmation 不落盘。
 
 ## 12. BYOK 与设置入口
@@ -1127,7 +1131,8 @@ app/src/minApi24/java/io/nekohasekai/sfa/agent/
 app/src/main/java/io/nekohasekai/sfa/conductor/
   ConductorViewModel.kt  接 AgentRuntime、保存 transcript、确认 gate、事件转 ConductorItem
   ConductorSessionStore.kt  transcript/items 本地持久化
-  ConductorScreen.kt     assistant / tool / confirmation / stop / copy conversation
+  ConductorScreen.kt     assistant / reasoning ticker / tool / confirmation / stop / copy conversation / save trace
+  ConductorStreaming.kt  streaming 列表的纯函数：结算 Reasoning/Assistant、追加 delta、插入占位
 
 app/src/main/java/io/nekohasekai/sfa/compose/screen/settings/
   ConductorSettingsScreen.kt  API key、状态、测试连接
@@ -1150,6 +1155,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
   AgentPromptStabilityTest.kt
   AgentApiTraceTest.kt
   ConductorSessionSerializationTest.kt
+  ConductorStreamingTest.kt  Reasoning/Assistant streaming 结算、空占位删除、单 spinner
 ```
 
 `DeepSeekModelClientTest` 用本地 loopback HTTP server，不连真实 API；`AgentRuntimeTest` 用 fake model client、fake tool executor 和可控 clock。测试依赖加 `org.jetbrains.kotlinx:kotlinx-coroutines-test`。
@@ -1225,6 +1231,9 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 多步任务能在 guard 内完成；超出时给出明确提示和已有结论。
 - 所有注册工具的取消确认 ≤1s，Stop 后 1s 内 UI 回到可输入状态；若超时，UI 保持禁用并显示「正在停止，后台操作未确认」，不允许开新 turn。
 - 流式回答逐字出现，用户上滑后不被强制拉回底部。
+- 正文开始输出、工具开始或 turn 结束时，所有 Reasoning spinner 都停止；空 Thinking 占位不出现在 UI。
+- 同一 assistant 消息的多个确认只弹一张卡时，Run all 能一次跑完；取消仍结束整个 turn。
+- API trace 可以通过 Save API trace to file 落盘，空 trace 不生成文件。
 - Stop、超时、流式中断后 transcript 仍然配对。
 - 长工具结果被截断且标记，模型不会因为上下文超限直接失败。
 - usage 里能看到 cache hit/miss token，用于判断路由模式和裁剪策略是否达到预期。
@@ -1242,7 +1251,8 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - Phase 2a 多步 + 宽松 guard；Phase 2b 补 Stop、流式、真取消。
 - 2B 工具暴露用静态元工具 + 目录搜索；搜索结果只进 transcript；`route_call` 是运行时 unwrap，不是 `AgentTool`。
 - `toolRoutingEnabled` 开关保留，便于回退和 A/B；核心工具是否提升为原生 tool 由真机数据决定。
-- Reasoning 流式显示在 UI，不进入 transcript，也不作为下一轮请求内容。
+- Reasoning 流式显示在 UI，不进入 transcript，也不作为下一轮请求内容；wonder.38 起用两行 ticker 展示，结束后可展开全文。
+- 同一批多个确认：第一张卡提供 Run all，ViewModel 自动通过本批后续确认；运行时仍逐次显式确认。
 
 待定：
 
@@ -1251,7 +1261,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - Telemetry upload 从 Agent 调用时的确认文案。
 - 会话历史的保留期限、清理入口和导出格式；当前已本地持久化，尚无自动过期。
 - 精确的预算数值和输入拦截误报率，需要真机数据后再调。
-- Reasoning 是否默认折叠，还是只在生成时展开，等真机反馈再定。
+- 批量确认目前只预览当前工具的参数；是否在运行时做整批预检、合成一张包含全部工具与参数的卡，等下一次真机反馈再定。
 - 核心工具是否提升为原生 tool（hybrid），由真机 A/B 和参数错误率决定。
 - 搜索排序权重、`searchLimit` 和搜索 observation 字符上限，先用默认值再调。
 
@@ -1287,6 +1297,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - Stop 后消息流没有提示；`TurnOutcome.Cancelled` 现在追加 `Stopped.`，重复 Stop 只安排一次 `Stopping…` 提示。Stop 刚好发生在工具返回之后时，工具结果保留，运行时在下一轮模型调用前停止，不再把已完成结果改成 `cancelled`。
 - 首字前的等待没有反馈；SSE 的 `reasoning_content` 现在以 `Thinking` 块流式显示，不进入 transcript。
 - 4,000 字符的压缩阈值把一条 4,032 字符的 `list_nodes(group=…)` 明细压成了 compact marker；阈值提到 8,000，旧的全量 `list_nodes` 仍会被压缩。
+
+### wonder.37 真机反馈（wonder.38 修复）
+
+- 两个 Thinking spinner 同时转、turn 结束后还在转：原因是结算函数只看列表最后一项；正文 delta 先追加 Assistant 后，Reasoning 不再是最后一项，永远不会被结算。wonder.38 把 UI 列表变换抽成 `ConductorStreaming.kt` 的纯函数，正文开始、工具开始、确认、notice、turn 结束和下一步 CallingModel 都结算**所有** streaming Reasoning/Assistant 项；空占位直接删除。
+- 连续审批太慢：同一 assistant 消息带多个需要确认的 tool call 时，第一张卡增加 `Run all`；`batchRemaining` 由运行时给，ViewModel 只在本 turn 内自动通过后续确认。运行时仍逐个显式确认，安全边界不变。
+- API trace 2MB 无法粘贴：菜单增加 Save API trace to file，走 `ActivityResultContracts.CreateDocument("text/plain")`，在 IO 线程写 Markdown；空 trace 仍然只提示不落文件。
 
 ### wonder.33/34 跨版本 trace 复盘（2026-11-10）
 

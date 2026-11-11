@@ -781,6 +781,8 @@
     <string name="agent_probe_run">Probe</string>
     <string name="agent_confirm_title">Confirm tool call</string>
     <string name="agent_confirm_run">Run</string>
+    <string name="agent_confirm_run_all">Run all</string>
+    <string name="agent_confirm_batch">This response has %1$d tool calls. Run all approves the remaining prompts in this batch.</string>
     <string name="shortcut_start_service">Start Service</string>
     <string name="shortcut_stop_service">Stop Service</string>
     <string name="shortcut_tailscale">Tailscale</string>
@@ -806,7 +808,10 @@
     <string name="conductor_conversation_actions">Conversation actions</string>
     <string name="conductor_copy_conversation">Copy conversation</string>
     <string name="conductor_copy_api_trace">Copy API trace</string>
+    <string name="conductor_export_api_trace">Save API trace to file</string>
     <string name="conductor_api_trace_copied">API trace copied</string>
+    <string name="conductor_api_trace_saved">API trace saved</string>
+    <string name="conductor_api_trace_save_failed">Could not save API trace: %1$s</string>
     <string name="conductor_api_trace_empty">No API calls recorded in this session. The trace is kept in memory and is cleared when the app restarts.</string>
     <string name="conductor_input_too_long">Message is too long; limited to %1$d characters.</string>
     <string name="conductor_conversation_copied">Conversation copied</string>

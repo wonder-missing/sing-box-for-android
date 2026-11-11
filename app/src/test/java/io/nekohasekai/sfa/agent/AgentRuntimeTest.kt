@@ -268,6 +268,58 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun confirmationRequestReportsRemainingCallsInTheBatch() {
+        val first = ToolCall("call_1", "probe_via_node", """{"url":"https://example.com/1"}""")
+        val second = ToolCall("call_2", "probe_via_node", """{"url":"https://example.com/2"}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(first, second), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor =
+            FakeExecutor(listOf(probe)) { call, humanApproved ->
+                if (humanApproved) {
+                    ok(call.name)
+                } else {
+                    AgentInvocationResult(
+                        tool = call.name,
+                        ok = false,
+                        errorCode = "confirmation_required",
+                        confirmation =
+                            AgentConfirmation(
+                                tool = call.name,
+                                argsJson = call.argumentsJson,
+                                displayArgsJson = call.argumentsJson,
+                                reason = "network probe",
+                            ),
+                    )
+                }
+            }
+        val runtime = runtime(model, executor, key = "sk-test")
+        val remaining = mutableListOf<Int>()
+
+        val result =
+            runBlocking {
+                runtime.runTurn(
+                    "probe twice",
+                    emptyList(),
+                    onEvent = { event ->
+                        if (event is AgentEvent.ConfirmationRequested) {
+                            remaining += event.request.batchRemaining
+                        }
+                    },
+                    confirm = { true },
+                )
+            }
+
+        assertEquals(listOf(2, 1), remaining)
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
     fun routeCallPreservesConfirmationForInnerTool() {
         val route =
             ToolCall(

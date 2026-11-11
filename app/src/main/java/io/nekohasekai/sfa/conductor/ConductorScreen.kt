@@ -2,6 +2,8 @@ package io.nekohasekai.sfa.conductor
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,14 +58,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -83,11 +90,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -133,6 +145,7 @@ fun ConductorScreen(
     val focusManager = LocalFocusManager.current
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
     val scaffoldPadding = LocalScaffoldPadding.current
@@ -192,6 +205,52 @@ fun ConductorScreen(
         }
         clipboard.setText(AnnotatedString(viewModel.apiTraceMarkdown()))
         Toast.makeText(context, context.getString(R.string.conductor_api_trace_copied), Toast.LENGTH_SHORT).show()
+    }
+
+    val apiTraceExportLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("text/plain"),
+            onResult = { uri ->
+                if (uri == null) {
+                    // The document picker was dismissed.
+                } else if (!viewModel.hasApiTrace()) {
+                    Toast.makeText(context, context.getString(R.string.conductor_api_trace_empty), Toast.LENGTH_LONG).show()
+                } else {
+                    coroutineScope.launch {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                val markdown = viewModel.apiTraceMarkdown()
+                                val output = checkNotNull(context.contentResolver.openOutputStream(uri))
+                                output.use { it.write(markdown.toByteArray(Charsets.UTF_8)) }
+                            }
+                            Toast.makeText(context, context.getString(R.string.conductor_api_trace_saved), Toast.LENGTH_SHORT).show()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.conductor_api_trace_save_failed, e.message.orEmpty()),
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
+                }
+            },
+        )
+
+    fun exportApiTrace() {
+        if (!viewModel.hasApiTrace()) {
+            Toast.makeText(context, context.getString(R.string.conductor_api_trace_empty), Toast.LENGTH_LONG).show()
+            return
+        }
+        runCatching { apiTraceExportLauncher.launch("conductor-api-trace.md") }
+            .onFailure {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.conductor_api_trace_save_failed, it.message.orEmpty()),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
     }
 
     BackHandler(enabled = inputExpanded) {
@@ -271,11 +330,16 @@ fun ConductorScreen(
                         ConductorItemView(
                             item = uiState.items[index],
                             onConfirm = viewModel::confirmConfirmation,
+                            onConfirmAll = viewModel::confirmAllAgent,
                             onCancel = viewModel::cancelConfirmation,
                         )
                     }
                     item(key = "conversation-actions") {
-                        ConversationActions(onCopyConversation = ::copyConversation, onCopyApiTrace = ::copyApiTrace)
+                        ConversationActions(
+                            onCopyConversation = ::copyConversation,
+                            onCopyApiTrace = ::copyApiTrace,
+                            onExportApiTrace = ::exportApiTrace,
+                        )
                     }
                 }
             }
@@ -352,6 +416,7 @@ fun ConductorScreen(
 private fun ConversationActions(
     onCopyConversation: () -> Unit,
     onCopyApiTrace: () -> Unit,
+    onExportApiTrace: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -378,6 +443,13 @@ private fun ConversationActions(
                 onClick = {
                     expanded = false
                     onCopyApiTrace()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.conductor_export_api_trace)) },
+                onClick = {
+                    expanded = false
+                    onExportApiTrace()
                 },
             )
         }
@@ -410,9 +482,98 @@ private fun ConductorEmptyState(onCommand: (String) -> Unit) {
 }
 
 @Composable
+private fun ReasoningItem(item: ConductorItem.Reasoning) {
+    var expanded by remember { mutableStateOf(false) }
+    val scroll = rememberScrollState()
+    val lineHeight = 18.sp
+    val viewportHeight = with(LocalDensity.current) { lineHeight.toDp() * 2 }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (item.streaming) "Thinking" else "Thought",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (item.streaming) {
+                CircularProgressIndicator(
+                    modifier = Modifier.padding(start = 6.dp).size(10.dp),
+                    strokeWidth = 1.5.dp,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            if (!item.streaming && item.text.isNotBlank()) {
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(
+                        text = if (expanded) "Hide" else "Show",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+        }
+        if (item.text.isNotBlank()) {
+            if (expanded) {
+                SelectionContainer {
+                    Text(
+                        text = item.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    )
+                }
+            } else {
+                val surface = MaterialTheme.colorScheme.surfaceContainerHigh
+                Box(
+                    modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp)
+                        .height(viewportHeight)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(surface)
+                        .padding(horizontal = 8.dp),
+                ) {
+                    Text(
+                        text = item.text,
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = lineHeight),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxSize().verticalScroll(scroll),
+                    )
+                    Box(
+                        modifier =
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height(10.dp)
+                            .background(Brush.verticalGradient(listOf(surface, Color.Transparent))),
+                    )
+                    Box(
+                        modifier =
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(10.dp)
+                            .background(Brush.verticalGradient(listOf(Color.Transparent, surface))),
+                    )
+                }
+                LaunchedEffect(item.text) {
+                    snapshotFlow { scroll.maxValue }.collect { maxValue ->
+                        if (maxValue > 0) scroll.scrollTo(maxValue)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ConductorItemView(
     item: ConductorItem,
     onConfirm: () -> Unit,
+    onConfirmAll: () -> Unit,
     onCancel: () -> Unit,
 ) {
     when (item) {
@@ -452,32 +613,7 @@ private fun ConductorItemView(
                 }
             }
 
-        is ConductorItem.Reasoning ->
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Thinking",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (item.streaming) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(start = 6.dp).size(10.dp),
-                            strokeWidth = 1.5.dp,
-                        )
-                    }
-                }
-                if (item.text.isNotBlank()) {
-                    SelectionContainer {
-                        Text(
-                            text = item.text,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                        )
-                    }
-                }
-            }
+        is ConductorItem.Reasoning -> ReasoningItem(item)
 
         is ConductorItem.Notice ->
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -550,10 +686,27 @@ private fun ConductorItemView(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp),
                     )
+                    if (item.request.batchRemaining > 1) {
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.agent_confirm_batch,
+                                    item.request.batchRemaining,
+                                ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
                     Row(
                         modifier = Modifier.padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        if (item.request.batchRemaining > 1) {
+                            TextButton(onClick = onConfirmAll) {
+                                Text(stringResource(R.string.agent_confirm_run_all))
+                            }
+                        }
                         TextButton(onClick = onConfirm) {
                             Text(stringResource(R.string.agent_confirm_run))
                         }
