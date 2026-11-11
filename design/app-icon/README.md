@@ -14,3 +14,4 @@
 - monochrome：由同一几何派生，白色立方体剪影 + S/棱线镂空，透明底，供 Android 13+ themed icon tint。
 - legacy：`mipmap-*/ic_launcher.png` 和 `ic_launcher_round.png` 由同一 SVG 生成；`app/src/main/ic_launcher-playstore.png` 为 512px。
 - 资源名保持 `ic_launcher_foreground` / `ic_launcher_monochrome`，位置改到 `mipmap-*`；adaptive XML 和 `view_app_list_item` 的引用同步更新。
+- 垂直居中：整组立方体 + S 相对画布上移 25 单位（SVG 里是 `translate(0,-25)`），与原版 sing-box 前景的 `android:translateY="-25"` 一致。本次已写入原稿。重新导出 adaptive / legacy / playstore / monochrome 图时，以更新后的 SVG 为准，不要再丢掉这个位移。

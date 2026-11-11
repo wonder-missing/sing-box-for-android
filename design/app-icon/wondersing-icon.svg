@@ -2,7 +2,8 @@
   <!-- WonderSing app icon · A7 (final, 2026-11-11)
        Base: original sing-box isometric cube. An S is "printed" across the faces in tape tones.
        Left-face terminal hook removed; start cap is a flat cut with its two corners rounded (r=16).
-       Canvas = 108dp adaptive icon; safe zone circle r=33dp (~313 units) at center. -->
+       Canvas = 108dp adaptive icon; safe zone circle r=33dp (~313 units) at center.
+       Vertical shift: translateY(-25), same as the original sing-box foreground, so the cube is centered on the 108dp canvas. -->
   <defs>
     <clipPath id="top"><path d="M512,262 754.5,402 512,542 269.5,402Z"/></clipPath>
     <clipPath id="left"><path d="M269.5,402 512,542 512,812 269.5,672Z"/></clipPath>
@@ -24,6 +25,7 @@
     </mask>
   </defs>
   <rect width="1024" height="1024" fill="#ECEFF1"/>
+  <g transform="translate(0,-25)">
   <!-- cube faces -->
   <path d="M512,262 754.5,402 512,542 269.5,402Z" fill="#42555F"/>
   <path d="M269.5,402 512,542 512,812 269.5,672Z" fill="#232F37"/>
@@ -46,4 +48,5 @@
     <path d="M512,262 269.5,402" stroke="#B4C2CA" stroke-width="2.5"/>
     <path d="M512,542 512,812" stroke="#DCE4E9" stroke-width="2"/>
   </g>
+</g>
 </svg>
