@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；dev 另含未发的传输错误边界
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；dev 另含未发的传输错误边界与审批/批处理调整
 最后更新：2026-11-11
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -804,8 +804,10 @@ ToolCall 需要确认
 - 运行时内部用 `callId` 保存原始 `ToolCall`；`ConfirmationRequest` 不带原始参数，ViewModel 也不需要回传原始参数。
 - 模型不能自己确认，也不能通过 tool 输出改变确认策略。
 - 用户取消一个 tool call 时，同一条 assistant 消息里尚未执行的 tool call 全部回填 `cancelled`，本 turn 结束，不让模型马上换个工具重试。
-- 一条 assistant 消息可能带多个需要确认的 tool call。`ConfirmationRequest.batchRemaining` 是当前批次里剩余调用数（含当前），由运行时计算。第一张卡在 `batchRemaining > 1` 时提供 Run all：ViewModel 记一个只作用于本 turn 的自动批准标记，运行时后续仍逐个发出确认事件并收到显式 `true`，但不再画新卡。这样一次点击就能跑完同一批工具，同时不改变运行时每次确认的安全边界。
-- Run all 只预览当前工具的参数，不逐项预览本批后续工具；后续工具仍由模型在同一条 assistant 消息里声明。需要完整批前预览时，再让运行时做整批预检（见待定）。
+- 一条 assistant 消息可能带多个需要确认的 tool call。`ConfirmationRequest.batchRemaining` 是当前批次里剩余调用数（含当前），由运行时计算；`allowTurnApproval = true` 表示这张卡可以批准本 turn 后续所有确认。
+- 确认卡提供 `Approve rest of turn`：ViewModel 记一个只作用于本 turn 的自动批准标记，运行时后续仍逐个发出确认事件并收到显式 `true`，但不再画新卡。这个选项对单调用响应也出现，因为模型可能把 probe 分步调用；不再依赖它在一次响应里批量返回。
+- `Approve rest of turn` 只预览当前工具的参数，不逐项预览后续工具；后续工具仍由模型逐轮声明。需要完整批前预览时，再让运行时做整批预检（见待定）。
+- 命令入口的单工具确认卡没有 `allowTurnApproval`，不会出现这个选项。
 - 确认等待不计入 turn 总超时；确认超时单独计算，默认 5 分钟。进程退到后台或进程死亡时，未完成的确认直接取消，不允许回来后静默执行。
 - 现有 `/probe` 的确认流是 Phase 1 的单工具版本。Phase 2a 保留 `AgentConfirmation` 作为 registry/executor 的内部结果，但 ViewModel 立刻映射成 `ConfirmationRequest`；`ConductorItem` 和 UI 只拿 `ConfirmationRequest`。`/probe` 命令不经过 `AgentRuntime`。
 
@@ -953,6 +955,7 @@ data class ConfirmationRequest(
     val displayArgsJson: String,
     val reason: String,
     val batchRemaining: Int = 1,
+    val allowTurnApproval: Boolean = false,
 )
 ```
 
@@ -987,7 +990,7 @@ UI 需要新增：
 - assistant 文本。
 - tool 卡片：工具名、参数摘要、running/success/failed/cancelled、结果摘要；长结果可展开。路由模式下显示内层工具名和参数，不显示 `route_call` envelope。
 - `search_tools` 显示为一条紧凑的「查找工具」记录，可以展开看匹配数，不默认铺开 schema。
-- 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；同一批还有未执行的调用时显示 `Run all` 和批次数量。点 Run all 后，本批后续确认在 ViewModel 内自动通过，不再连续弹卡。
+- 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；agent 确认额外显示 `Approve rest of turn`。点它后，本 turn 后续确认在 ViewModel 内自动通过，不再连续弹卡。同一批还有未执行的调用时，提示里显示批次数量；单调用时也提示“会跳过本 turn 后续确认”。命令确认没有这个选项。
 - 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。wonder.37 起 Stop 后消息流追加 `Stopped.`，重复 Stop 只发一次提示；已完成但刚好在 Stop 前的工具结果保留，不再被改成 `cancelled`。
 - 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。正文一开始输出就结算 Reasoning，避免 spinner 和已回答并存。
 - Reasoning：`Thinking` 块流式显示 `reasoning_content`，不进入 transcript；wonder.38 起是两行高的自动上滚视窗（上下边缘渐隐），结束后标签变 `Thought`，可 Show/Hide 查看全文。所有结算点会清理全部 streaming 项，不只最后一项。
@@ -1261,7 +1264,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 所有注册工具的取消确认 ≤1s，Stop 后 1s 内 UI 回到可输入状态；若超时，UI 保持禁用并显示「正在停止，后台操作未确认」，不允许开新 turn。
 - 流式回答逐字出现，用户上滑后不被强制拉回底部。
 - 正文开始输出、工具开始或 turn 结束时，所有 Reasoning spinner 都停止；空 Thinking 占位不出现在 UI。
-- 同一 assistant 消息的多个确认只弹一张卡时，Run all 能一次跑完；取消仍结束整个 turn。
+- 同一 assistant 消息的多个确认只弹一张卡时，Approve rest of turn 能一次跑完；单调用响应也可以选择它来跳过本 turn 后续确认；取消仍结束整个 turn。
 - API trace 可以通过 Save API trace to file 落盘，空 trace 不生成文件；对话也可以通过 Save conversation to file 落盘。
 - Stop、超时、流式中断后 transcript 仍然配对；未完成 turn 的事件序列不会以两个连续 user 消息进入下一轮。
 - 取消/失败的 turn 在 transcript 末尾有合成 assistant 结束消息，模型能看到上一轮已闭合；输入拦截和缺 key 不产生该消息。
@@ -1282,7 +1285,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 2B 工具暴露用静态元工具 + 目录搜索；搜索结果只进 transcript；`route_call` 是运行时 unwrap，不是 `AgentTool`。
 - `toolRoutingEnabled` 开关保留，便于回退和 A/B；核心工具是否提升为原生 tool 由真机数据决定。
 - Reasoning 流式显示在 UI，不进入 transcript，也不作为下一轮请求内容；wonder.38 起用两行 ticker 展示，结束后可展开全文。
-- 同一批多个确认：第一张卡提供 Run all，ViewModel 自动通过本批后续确认；运行时仍逐次显式确认。
+- 确认卡提供 `Approve rest of turn`，对单调用和批量都可用；ViewModel 自动通过本 turn 后续确认，运行时仍逐次显式确认。
 
 待定：
 
@@ -1331,7 +1334,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 ### wonder.37 真机反馈（wonder.38 修复）
 
 - 两个 Thinking spinner 同时转、turn 结束后还在转：原因是结算函数只看列表最后一项；正文 delta 先追加 Assistant 后，Reasoning 不再是最后一项，永远不会被结算。wonder.38 把 UI 列表变换抽成 `ConductorStreaming.kt` 的纯函数，正文开始、工具开始、确认、notice、turn 结束和下一步 CallingModel 都结算**所有** streaming Reasoning/Assistant 项；空占位直接删除。
-- 连续审批太慢：同一 assistant 消息带多个需要确认的 tool call 时，第一张卡增加 `Run all`；`batchRemaining` 由运行时给，ViewModel 只在本 turn 内自动通过后续确认。运行时仍逐个显式确认，安全边界不变。
+- 连续审批太慢：同一 assistant 消息带多个需要确认的 tool call 时，第一张卡增加 `Run all`；`batchRemaining` 由运行时给，ViewModel 只在本 turn 内自动通过后续确认。运行时仍逐个显式确认，安全边界不变。后续发现模型常把 probe 分步调用，单调用卡也需要同样的本 turn 批准，见“下一版（未发）”。
 - API trace 2MB 无法粘贴：菜单增加 Save API trace to file，走 `ActivityResultContracts.CreateDocument("text/plain")`，在 IO 线程写 Markdown；空 trace 仍然只提示不落文件。
 
 ### wonder.40 中断 turn 收尾与对话导出（2026-11-11）
@@ -1348,11 +1351,13 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `TokenUsage` 增加 OpenAI `prompt_tokens_details.cached_tokens` 兼容；SSE reasoning 同时识别 `reasoning_content` 和 `reasoning`。
 - 未做 provider 私有 capability；`stream_options`、`max_completion_tokens`、Azure 类鉴权、provider 私有 reasoning 字段留待真机验证。
 
-### 下一版（未发）：传输错误边界（2026-11-11）
+### 下一版（未发）：传输错误边界与审批/批处理（2026-11-11）
 
 - xAI 实验：第一次请求在 HTTP/2 握手处失败后被 Stop；第二次同一错误重试 4 次；第三次连接 `api.x.ai/198.18.0.4:443` 失败。`198.18.0.0/15` 是本地代理常用的 fake-IP 段，不是 xAI 的地址；根因在本地 VPN/代理的路由，不是 xAI token 或模型。
 - UI 之前直接显示 OkHttp 原文（`Required SETTINGS preface not received`、fake-IP），且对所有 `IOException` 都重试。现在按 `ModelTransportErrors.kt` 分类：协议握手/DNS/连接拒绝/TLS 失败不重试，超时和一般 IO 可重试；用户消息只显示 provider host 和可操作建议，原始异常和解析 IP 只留在 API trace。
 - 第一次可重试失败时显示一条 Notice；重试循环每次尝试前检查 `cancelRequested`，Stop 后不再发起新请求。
+- 第二次实验：同一响应内模型可以发多个调用（3 个 `list_nodes`），但 `probe_via_node` 每个响应只发一个。模型 reasoning 明确说 probe 改全局出站，怕并发冲突；它不知道 runtime 对同一批调用是串行执行。现在 system prompt 说明“同一响应内按顺序执行”，probe 描述说明多 probe 会串行且只接受 selector 组里的可选节点。
+- 单调用确认卡也提供 `Approve rest of turn`，不再要求模型必须在一个响应里批量返回才能少点审批；ViewModel 的本 turn 自动批准标记对后续 responder 仍然有效。
 
 ### wonder.33/34 跨版本 trace 复盘（2026-11-10）
 

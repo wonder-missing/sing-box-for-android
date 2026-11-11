@@ -234,6 +234,10 @@ class AgentTools(
                             "Any HTTP status (including 204, 3xx, 4xx, 5xx) means the URL was reached. " +
                             "Transport failures such as DNS, timeout or EOF, and local precheck failures, return ok=false. " +
                             "Some servers reject HEAD requests, so EOF does not always mean the node cannot reach the URL. " +
+                            "The outbound must be a node listed in a selectable selector group; URLTest-only members " +
+                            "cannot be targeted individually, so use list_nodes to find a selectable tag first. " +
+                            "Multiple probe calls in one assistant message are executed one at a time, in order, " +
+                            "and each restores the previous selection before the next starts. " +
                             "The previous outbound selection is restored in a finally block; " +
                             "killing the app process mid-probe can leave the running core on the probe node until it restarts.",
                     permission = AgentPermission.NETWORK_PROBE,
@@ -243,7 +247,7 @@ class AgentTools(
                                 name = "outbound",
                                 type = AgentParameterType.STRING,
                                 required = true,
-                                description = "Outbound/node tag to use as the exit.",
+                                description = "Selectable outbound/node tag from a selector group to use as the exit.",
                             ),
                             AgentParameterSpec(
                                 name = "url",

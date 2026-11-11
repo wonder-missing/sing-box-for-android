@@ -399,6 +399,7 @@ class AgentRuntime(
                             displayArgsJson = result.confirmation!!.displayArgsJson,
                             reason = result.confirmation!!.reason,
                             batchRemaining = executable.size - index,
+                            allowTurnApproval = true,
                         )
                     onEvent(AgentEvent.ConfirmationRequested(request))
                     onEvent(AgentEvent.StateChanged(TurnState.AwaitingConfirmation(step, request)))

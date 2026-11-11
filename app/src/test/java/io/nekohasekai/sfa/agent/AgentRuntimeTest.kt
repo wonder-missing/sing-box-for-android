@@ -302,6 +302,7 @@ class AgentRuntimeTest {
             }
         val runtime = runtime(model, executor, key = "sk-test")
         val remaining = mutableListOf<Int>()
+        val turnApprovals = mutableListOf<Boolean>()
 
         val result =
             runBlocking {
@@ -311,6 +312,7 @@ class AgentRuntimeTest {
                     onEvent = { event ->
                         if (event is AgentEvent.ConfirmationRequested) {
                             remaining += event.request.batchRemaining
+                            turnApprovals += event.request.allowTurnApproval
                         }
                     },
                     confirm = { true },
@@ -318,6 +320,7 @@ class AgentRuntimeTest {
             }
 
         assertEquals(listOf(2, 1), remaining)
+        assertTrue(turnApprovals.all { it })
         assertTrue(result.outcome is TurnOutcome.Completed)
         assertTrue(validateTranscriptPairing(result.messages))
     }

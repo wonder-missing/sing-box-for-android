@@ -781,8 +781,9 @@
     <string name="agent_probe_run">Probe</string>
     <string name="agent_confirm_title">Confirm tool call</string>
     <string name="agent_confirm_run">Run</string>
-    <string name="agent_confirm_run_all">Run all</string>
-    <string name="agent_confirm_batch">This response has %1$d tool calls. Run all approves the remaining prompts in this batch.</string>
+    <string name="agent_confirm_run_all">Approve rest of turn</string>
+    <string name="agent_confirm_batch">This response has %1$d tool calls. Approving the rest of the turn also skips later prompts in this turn.</string>
+    <string name="agent_confirm_turn">Approving also skips later confirmation prompts in this turn.</string>
     <string name="shortcut_start_service">Start Service</string>
     <string name="shortcut_stop_service">Stop Service</string>
     <string name="shortcut_tailscale">Tailscale</string>

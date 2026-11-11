@@ -752,27 +752,34 @@ private fun ConductorItemView(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp),
                     )
-                    if (item.request.batchRemaining > 1) {
+                    if (item.request.allowTurnApproval) {
                         Text(
                             text =
-                                stringResource(
-                                    R.string.agent_confirm_batch,
-                                    item.request.batchRemaining,
-                                ),
+                                if (item.request.batchRemaining > 1) {
+                                    stringResource(
+                                        R.string.agent_confirm_batch,
+                                        item.request.batchRemaining,
+                                    )
+                                } else {
+                                    stringResource(R.string.agent_confirm_turn)
+                                },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
+                    if (item.request.allowTurnApproval) {
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            onClick = onConfirmAll,
+                        ) {
+                            Text(stringResource(R.string.agent_confirm_run_all))
+                        }
+                    }
                     Row(
                         modifier = Modifier.padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (item.request.batchRemaining > 1) {
-                            TextButton(onClick = onConfirmAll) {
-                                Text(stringResource(R.string.agent_confirm_run_all))
-                            }
-                        }
                         TextButton(onClick = onConfirm) {
                             Text(stringResource(R.string.agent_confirm_run))
                         }

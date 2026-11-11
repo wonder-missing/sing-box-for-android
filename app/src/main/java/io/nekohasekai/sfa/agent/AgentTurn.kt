@@ -94,6 +94,8 @@ data class ConfirmationRequest(
     val reason: String,
     /** Tool calls left in this assistant batch, including the current one. */
     val batchRemaining: Int = 1,
+    /** Agent confirmations can opt into approving later prompts in this turn. */
+    val allowTurnApproval: Boolean = false,
 )
 
 sealed interface AgentEvent {

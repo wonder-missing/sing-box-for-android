@@ -29,6 +29,7 @@
 ## 下一版待发（未发，当前 dev）
 
 - 传输错误边界：协议握手/DNS/连接拒绝/TLS 失败不盲重试，用户提示不显示原始异常和解析 IP；可重试错误显示 Notice；Stop 后不再发起新请求。对应 `ModelTransportErrors.kt` 和 `AgentRuntime.streamModelWithRetry`。
+- 审批与批处理：确认卡对单调用也提供 `Approve rest of turn`；system prompt 说明同一响应内工具串行执行；probe 描述说明多 probe 串行且只接受 selector 组里可选节点。
 
 ## 最近完成
 
