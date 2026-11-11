@@ -51,6 +51,7 @@ import io.nekohasekai.sfa.agent.AgentApiKeyProviderFactory
 import io.nekohasekai.sfa.agent.ModelEndpoint
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.ModelProviders
+import io.nekohasekai.sfa.agent.ReasoningEffort
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
 import io.nekohasekai.sfa.compat.menuAnchorCompat
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
@@ -99,6 +100,17 @@ fun ConductorSettingsScreen(navController: NavController) {
     var baseUrl by remember { mutableStateOf(ModelProviderSettings.baseUrlFor(selectedProviderId)) }
     var savedBaseUrl by remember { mutableStateOf(baseUrl) }
     var toolRouting by remember { mutableStateOf(Settings.conductorToolRouting) }
+    var reasoningEffort by remember {
+        mutableStateOf(ReasoningEffort.normalize(Settings.conductorReasoningEffort))
+    }
+    var effortMenuExpanded by remember { mutableStateOf(false) }
+    val effortLabels =
+        mapOf(
+            ReasoningEffort.DEFAULT to stringResource(R.string.conductor_reasoning_effort_default),
+            ReasoningEffort.LOW to stringResource(R.string.conductor_reasoning_effort_low),
+            ReasoningEffort.MEDIUM to stringResource(R.string.conductor_reasoning_effort_medium),
+            ReasoningEffort.HIGH to stringResource(R.string.conductor_reasoning_effort_high),
+        )
 
     LaunchedEffect(keyStore) {
         configuredHint = keyStore.apiKey()?.takeLast(4)
@@ -232,6 +244,48 @@ fun ConductorSettingsScreen(navController: NavController) {
                         label = { Text(stringResource(R.string.conductor_model_title)) },
                         placeholder = { Text(preset.defaultModel.ifBlank { "model ID" }) },
                         supportingText = { Text(stringResource(R.string.conductor_model_help)) },
+                    )
+
+                    ExposedDropdownMenuBox(
+                        expanded = effortMenuExpanded,
+                        onExpandedChange = {
+                            if (!busy) effortMenuExpanded = it
+                        },
+                    ) {
+                        OutlinedTextField(
+                            value = effortLabels[reasoningEffort] ?: effortLabels.getValue(ReasoningEffort.DEFAULT),
+                            onValueChange = {},
+                            modifier =
+                            Modifier
+                                .then(menuAnchorCompat(!busy))
+                                .fillMaxWidth(),
+                            readOnly = true,
+                            enabled = !busy,
+                            label = { Text(stringResource(R.string.conductor_reasoning_effort_title)) },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = effortMenuExpanded)
+                            },
+                        )
+                        ExposedDropdownMenu(
+                            expanded = effortMenuExpanded,
+                            onDismissRequest = { effortMenuExpanded = false },
+                        ) {
+                            ReasoningEffort.options.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(effortLabels.getValue(option)) },
+                                    onClick = {
+                                        reasoningEffort = option
+                                        Settings.conductorReasoningEffort = option
+                                        effortMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = stringResource(R.string.conductor_reasoning_effort_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
                     Text(

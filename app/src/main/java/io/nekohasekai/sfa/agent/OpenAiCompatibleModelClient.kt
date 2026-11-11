@@ -255,6 +255,7 @@ class OpenAiCompatibleModelClient(
             }
             put("temperature", request.temperature)
             put("max_tokens", request.maxOutputTokens)
+            request.reasoningEffort?.takeIf { it.isNotBlank() }?.let { put("reasoning_effort", it) }
             put("stream", stream)
         }.toString()
 

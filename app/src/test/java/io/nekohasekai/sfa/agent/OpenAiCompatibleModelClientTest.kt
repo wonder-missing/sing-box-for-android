@@ -156,6 +156,28 @@ class OpenAiCompatibleModelClientTest {
     }
 
     @Test
+    fun omitsReasoningEffortUnlessTheRequestSetsIt() {
+        responseBody = """{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"""
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
+
+        runBlocking { client.complete(request(), apiKey = "sk-test") }
+
+        assertTrue(!requestBody.contains("reasoning_effort"))
+    }
+
+    @Test
+    fun sendsReasoningEffortWhenTheRequestSetsIt() {
+        responseBody = """{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"""
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
+
+        runBlocking {
+            client.complete(request().copy(reasoningEffort = "low"), apiKey = "sk-test")
+        }
+
+        assertTrue(requestBody.contains("\"reasoning_effort\":\"low\""))
+    }
+
+    @Test
     fun appendsChatCompletionsToVersionedBaseUrl() {
         responseBody = """{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"""
         val client = clientFor("http://127.0.0.1:${server.localPort}/v1")

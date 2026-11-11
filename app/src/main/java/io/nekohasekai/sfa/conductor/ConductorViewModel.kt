@@ -31,6 +31,7 @@ import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
+import io.nekohasekai.sfa.agent.ReasoningEffort
 import io.nekohasekai.sfa.agent.TailscaleStatusSource
 import io.nekohasekai.sfa.agent.TelemetryUploadPort
 import io.nekohasekai.sfa.agent.ToolCallView
@@ -163,6 +164,7 @@ class ConductorViewModel(
             config = AgentConfig(),
             streamingModel = modelClient,
             toolRoutingEnabled = { Settings.conductorToolRouting },
+            reasoningEffort = { ReasoningEffort.wireValue(Settings.conductorReasoningEffort) },
         )
 
     private var transcript: List<AgentMessage> = emptyList()

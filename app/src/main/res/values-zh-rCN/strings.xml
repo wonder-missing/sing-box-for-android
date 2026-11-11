@@ -724,4 +724,11 @@
     <string name="shortcut_tailscale_timeout">无法加载 Tailscale 状态</string>
     <string name="last_fetched_icon">上次拉取</string>
     <string name="source_updated_icon">源端更新</string>
+    <string name="conductor_reasoning_effort_title">推理强度</string>
+    <string name="conductor_reasoning_effort_default">默认</string>
+    <string name="conductor_reasoning_effort_low">低</string>
+    <string name="conductor_reasoning_effort_medium">中</string>
+    <string name="conductor_reasoning_effort_high">高</string>
+    <string name="conductor_reasoning_effort_help">默认不传 reasoning_effort，DeepSeek 和 xAI 用它们自己的默认强度（high）。低、中、高会在下一条消息里发出。DeepSeek 会把「中」当成 high。如果模型拒绝这个字段，改回默认。</string>
+    <string name="settings_app_entry_summary">版本 %1$s</string>
 </resources>

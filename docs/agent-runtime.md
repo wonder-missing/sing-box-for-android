@@ -255,7 +255,7 @@ OpenAI-compatible 请求形态（DeepSeek / xAI / Custom 共用）：
 }
 ```
 
-三个预设都按 OpenAI-compatible 的 Bearer + Chat Completions 形态发请求。暂不抽象 provider 私有能力：`stream_options.include_usage`、`max_completion_tokens`、非 Bearer 鉴权（如 Azure）和 provider 私有 reasoning 字段不在这一版内；遇到时按 HTTP 错误显示，等真机验证后再决定是否加 capability。
+三个预设都按 OpenAI-compatible 的 Bearer + Chat Completions 形态发请求。用户把 Reasoning effort 选成 low / medium / high 时，请求带 `reasoning_effort`；默认不传这个字段，避免非推理模型返回 400。DeepSeek 把 medium 映射成 high，默认强度是 high；xAI 接受 low / medium / high，默认也是 high。`none`、`max`、`xhigh` 不在共用档位里，不发送。其余 provider 私有能力仍不抽象：`stream_options.include_usage`、`max_completion_tokens`、非 Bearer 鉴权（如 Azure）。
 
 ## 6. Tool schema、确认策略与 sanitizer
 
@@ -1024,6 +1024,7 @@ UI 需要新增：
 - Provider 下拉：DeepSeek / xAI / Custom（OpenAI-compatible）。切换 provider 时立即写入 `conductor_provider`，并加载该 provider 的模型、base URL 和 key 状态；对正在跑的 turn 不生效，下一轮才用新 provider。
 - Base URL：DeepSeek 和 xAI 预设只读；Custom 可编辑。请求地址是 `<base>/chat/completions`，base 已以 `/chat/completions` 结尾时不再追加。
 - 模型输入框：按 provider 分开保存。DeepSeek 沿用 `conductor_model`（默认 `deepseek-v4-flash`），xAI 用 `conductor_xai_model`（默认 `grok-4`），Custom 用 `conductor_generic_model`。允许改成账号实际可用的模型 ID。
+- Reasoning effort：Default / Low / Medium / High。选择后立刻写入 `conductor_reasoning_effort`，从下一条消息开始生效；同一轮里的后续请求沿用这一轮开始时的值。Default 不传字段。三个 provider 共用这一档，不按 provider 分开存。
 - API key 输入框：密码样式，可显示/隐藏，保存后清空输入框；placeholder 按 provider 显示 `sk-...` / `xai-...`。
 - 输入框用 `remember`，不用 `rememberSaveable`；保存或离开页面后清掉 Compose 状态，避免密码原文进入 saved state。
 - 状态：`Configured (…abcd)` / `Not configured`；只显示尾部 4 位。
@@ -1365,6 +1366,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 第二次实验：同一响应内模型可以发多个调用（3 个 `list_nodes`），但 `probe_via_node` 每个响应只发一个。模型 reasoning 明确说 probe 改全局出站，怕并发冲突；它不知道 runtime 对同一批调用是串行执行。现在 system prompt 说明“同一响应内按顺序执行”，probe 描述说明多 probe 会串行且只接受 selector 组里的可选节点。
 - 单调用确认卡也提供 `Approve rest of turn`，不再要求模型必须在一个响应里批量返回才能少点审批；ViewModel 的本 turn 自动批准标记对后续 responder 仍然有效。
 - 中断事件改为 `TurnEvent` + 下一条 user 的 `[conductor:event ...]` 前缀；空中断 turn 从模型 transcript 回滚，partial assistant/tool 结果保留。pending event 存在 `ConductorSession.pendingEvent`，跨进程保留；用户可伪造的前缀行会转义。UI 的 `Stopped.` notice 与模型 transcript 解耦。
+
+### wonder.42：Reasoning effort（2026-11-11）
+
+- Settings > Conductor 增加 Reasoning effort。Default 不传 `reasoning_effort`；Low / Medium / High 原样写入 chat completions 请求。
+- 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
+- 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 
 ### wonder.33/34 跨版本 trace 复盘（2026-11-10）
 

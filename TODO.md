@@ -23,7 +23,7 @@
 - [ ] **跨版本会话的版本边界提示（以后考虑）**：旧 tool observation 会被模型当成当前证据；当前决定保留现状，先记着。
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康（订阅在 CFG 项目打磨），不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
-- [ ] **Provider capability 矩阵**：wonder.39 只覆盖 OpenAI-compatible Bearer + Chat Completions；`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权、provider 私有 reasoning 字段等按真机验证结果再抽。
+- [ ] **Provider capability 矩阵**：wonder.42 起 Conductor 设置可选 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 
 ## 下个会话接手
@@ -40,7 +40,7 @@
   - `probe_many`（P1，需要 libbox 验证；当前 probe 串行切全局出站）。
   - usage 极简可视化（UI 设计未定）。
   - 批量确认整批参数预览（现在只有当前工具参数）。
-  - Provider capability（`stream_options`、`max_completion_tokens`、Azure 类鉴权，等 xAI/Custom 实测）。
+  - Provider capability（`stream_options`、`max_completion_tokens`、Azure 类鉴权；reasoning effort 的 low/medium/high 从 wonder.42 起可选，`none`/`max`/`xhigh` 仍不做）。
   - 跨版本会话边界提示（之前决定保留现状）。
   - probe 链路复测（等出口健康）；Stop 1s `TOOL_CANCEL_TIMEOUT`（等出现无法取消的工具）。
   - 搜索 no-match、`ToolObservation.ok` 契约、确认/事务可见性、LLM 摘要、增量更新等 backlog。

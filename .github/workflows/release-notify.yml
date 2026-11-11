@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   feishu:
@@ -16,48 +17,102 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
       - name: Compose message
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           TAG: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          message_file="$RUNNER_TEMP/feishu-message.txt"
+          kind="failure"
+          version=""
+          apk_url=""
+          release_url=""
+          tests=""
+          failures=""
+          errors=""
+          skipped=""
+          changelog_file="$RUNNER_TEMP/changelog.txt"
+          : > "$changelog_file"
+
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            {
-              echo "WonderSing 发版通知渠道测试"
-              echo "GitHub Actions 已切换为飞书通知。"
-            } > "$message_file"
+            kind="test"
           elif [ "$CONCLUSION" = "success" ]; then
+            kind="success"
             tag="$TAG"
             if ! printf '%s' "$tag" | grep -q '^v'; then
               tag=$(gh release view -R "$REPO" --json tagName -q .tagName)
             fi
+            version="${tag#v}"
             release_url=$(gh release view "$tag" -R "$REPO" --json url -q .url)
             apk_url=$(gh release view "$tag" -R "$REPO" --json assets \
-              --jq '.assets[] | select(.name | endswith("-arm64-v8a.apk")) | .url' | head -n 1)
-            {
-              echo "WonderSing 发版成功"
-              echo "${tag#v}"
-              if [ -n "$apk_url" ]; then
-                echo "安装包（arm64-v8a）：$apk_url"
+              --jq '[.assets[] | select(.name | endswith("-arm64-v8a.apk")) | .url][0] // empty')
+            sha="$SHA"
+            if [ -z "$sha" ]; then
+              sha=$(gh release view "$tag" -R "$REPO" --json targetCommitish -q .targetCommitish)
+            fi
+            run_id=$(gh run list -R "$REPO" -w Test --commit "$sha" --limit 20 \
+              --json databaseId,conclusion,createdAt \
+              --jq '[.[] | select(.conclusion=="success")] | sort_by(.createdAt) | last | .databaseId // empty' \
+              || true)
+            if [ -n "$run_id" ]; then
+              if gh run download "$run_id" -R "$REPO" -n unit-test-count -D "$RUNNER_TEMP/unit-test-count"; then
+                summary=$(find "$RUNNER_TEMP/unit-test-count" -name 'unit-test-count.txt' -print -quit)
+                if [ -n "${summary}" ]; then
+                  tests=$(sed -n 's/^tests=//p' "$summary" | head -n 1)
+                  failures=$(sed -n 's/^failures=//p' "$summary" | head -n 1)
+                  errors=$(sed -n 's/^errors=//p' "$summary" | head -n 1)
+                  skipped=$(sed -n 's/^skipped=//p' "$summary" | head -n 1)
+                fi
+              else
+                echo "unit-test-count artifact missing for Test run $run_id"
               fi
-              echo "Release：$release_url"
-            } > "$message_file"
+            else
+              echo "No successful Test run for $sha"
+            fi
+            prev=$(gh release list -R "$REPO" --limit 30 --json tagName,isDraft \
+              --jq "[.[] | select(.isDraft|not) | select(.tagName != \"$tag\")][0].tagName // empty")
+            if [ -n "$prev" ]; then
+              if ! gh api "repos/$REPO/compare/${prev}...${tag}" \
+                --jq '.commits[].commit.message | split("\n")[0] | select(length > 0) | select(startswith("Merge ") | not)' \
+                > "$changelog_file"; then
+                echo "Could not read commits since $prev"
+                : > "$changelog_file"
+              fi
+            fi
           else
-            {
-              echo "WonderSing 发版失败"
-              echo "标签/分支：${TAG:-unknown}"
-              echo "结论：${CONCLUSION:-unknown}"
-              echo "运行记录：$RUN_URL"
-            } > "$message_file"
+            kind="failure"
+            version="${TAG:-unknown}"
           fi
-          echo "---- Feishu message ----"
-          cat "$message_file"
+
+          python3 .github/scripts/compose_release_message.py \
+            --kind "$kind" \
+            --version "$version" \
+            --conclusion "${CONCLUSION:-}" \
+            --run-url "${RUN_URL:-}" \
+            --tests "$tests" \
+            --failures "$failures" \
+            --errors "$errors" \
+            --skipped "$skipped" \
+            --apk-url "$apk_url" \
+            --release-url "$release_url" \
+            --changelog-file "$changelog_file" \
+            > "$RUNNER_TEMP/feishu-message.json"
+          python3 - <<'PY'
+          import json
+          import os
+          path = os.environ["RUNNER_TEMP"] + "/feishu-message.json"
+          data = json.load(open(path, encoding="utf-8"))
+          print("msg_type:", data["msg_type"])
+          print(json.dumps(json.loads(data["content"]), ensure_ascii=False, indent=2)[:4000])
+          PY
 
       - name: Send to Feishu
         env:
@@ -83,7 +138,13 @@ jobs:
             echo "Feishu auth failed: code=$(printf '%s' "$token_response" | jq -r '.code // "?"') msg=$(printf '%s' "$token_response" | jq -r '.msg // "?"')"
             exit 1
           fi
-          message=$(cat "$RUNNER_TEMP/feishu-message.txt")
+          spec=$(cat "$RUNNER_TEMP/feishu-message.json")
+          msg_type=$(printf '%s' "$spec" | jq -r '.msg_type')
+          content=$(printf '%s' "$spec" | jq -r '.content')
+          if [ "$msg_type" != "text" ] && [ "$msg_type" != "interactive" ]; then
+            echo "Unexpected Feishu msg_type: $msg_type"
+            exit 1
+          fi
           failed=0
           IFS=',' read -ra recipients <<< "$LARK_NOTIFY_RECIPIENTS"
           for entry in "${recipients[@]}"; do
@@ -104,8 +165,8 @@ jobs:
               failed=1
               continue
             fi
-            payload=$(jq -n --arg receive_id "$receiver_id" --arg text "$message" \
-              '{receive_id:$receive_id, msg_type:"text", content:({text:$text}|tojson)}')
+            payload=$(jq -n --arg receive_id "$receiver_id" --arg msg_type "$msg_type" --arg content "$content" \
+              '{receive_id:$receive_id, msg_type:$msg_type, content:$content}')
             response=$(curl -sS --connect-timeout 10 --max-time 20 \
               -X POST "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiver_type}" \
               -H "Authorization: Bearer $token" \

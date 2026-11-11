@@ -50,6 +50,7 @@ object SettingsKey {
     const val CONDUCTOR_GENERIC_MODEL = "conductor_generic_model"
     const val CONDUCTOR_GENERIC_BASE_URL = "conductor_generic_base_url"
     const val CONDUCTOR_TOOL_ROUTING = "conductor_tool_routing"
+    const val CONDUCTOR_REASONING_EFFORT = "conductor_reasoning_effort"
 
     // Remote Control
     const val ACTIVE_REMOTE_SERVER_ID = "active_remote_server_id"

@@ -39,6 +39,8 @@ jobs:
           GO_VERSION=${GO_VERSION#go}
           echo "core_version=${CORE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "go_version=${GO_VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Check release message composer
+        run: python3 .github/scripts/compose_release_message.py --self-test
 
   libbox:
     name: Build libbox (arm64)
@@ -181,7 +183,10 @@ jobs:
           chmod +x ./gradlew
           ./gradlew :app:testOtherDebugUnitTest --stacktrace
       - name: Test summary
+        id: summary
         if: always()
+        env:
+          UNIT_TEST_COUNT_PATH: ${{ runner.temp }}/unit-test-count.txt
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -196,11 +201,23 @@ jobs:
               failures += int(root.get("failures", 0))
               errors += int(root.get("errors", 0))
               skipped += int(root.get("skipped", 0))
-          summary = f"tests={tests} failures={failures} errors={errors} skipped={skipped}"
+          summary = f"tests={tests}\nfailures={failures}\nerrors={errors}\nskipped={skipped}\n"
           print(summary)
+          count_path = os.environ["UNIT_TEST_COUNT_PATH"]
+          with open(count_path, "w", encoding="utf-8") as handle:
+              handle.write(summary)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
-              handle.write(summary + "\n")
+              handle.write(summary)
           PY
+      - name: Upload unit test count
+        if: always() && steps.summary.conclusion == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-count
+          path: ${{ runner.temp }}/unit-test-count.txt
+          retention-days: 14
+          overwrite: true
+          if-no-files-found: error
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4

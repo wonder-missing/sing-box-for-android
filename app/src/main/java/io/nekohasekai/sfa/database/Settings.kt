@@ -113,6 +113,7 @@ object Settings {
     var conductorGenericModel by dataStore.string(SettingsKey.CONDUCTOR_GENERIC_MODEL) { "" }
     var conductorGenericBaseUrl by dataStore.string(SettingsKey.CONDUCTOR_GENERIC_BASE_URL) { "" }
     var conductorToolRouting by dataStore.boolean(SettingsKey.CONDUCTOR_TOOL_ROUTING) { true }
+    var conductorReasoningEffort by dataStore.string(SettingsKey.CONDUCTOR_REASONING_EFFORT) { "default" }
 
     // Tailscale SSH
     var tailscaleSSHRememberedUsernames by dataStore.map(SettingsKey.TAILSCALE_SSH_REMEMBERED_USERNAMES)

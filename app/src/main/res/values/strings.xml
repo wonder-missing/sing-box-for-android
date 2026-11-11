@@ -834,6 +834,13 @@
     <string name="conductor_model_title">Model</string>
     <string name="conductor_model_hint">model ID</string>
     <string name="conductor_model_help">Use the provider’s exact model ID. The preset value is only a starting point; override it for your account.</string>
+    <string name="conductor_reasoning_effort_title">Reasoning effort</string>
+    <string name="conductor_reasoning_effort_default">Default</string>
+    <string name="conductor_reasoning_effort_low">Low</string>
+    <string name="conductor_reasoning_effort_medium">Medium</string>
+    <string name="conductor_reasoning_effort_high">High</string>
+    <string name="conductor_reasoning_effort_help">Default does not send reasoning_effort, so DeepSeek and xAI keep their own default (high). Low, medium and high are sent on the next message. DeepSeek treats medium as high. If a model rejects the field, switch back to Default.</string>
+    <string name="settings_app_entry_summary">Version %1$s</string>
     <string name="conductor_tool_routing_title">Tool routing</string>
     <string name="conductor_tool_routing_help">Send only route_call and search_tools, then load each tool schema on demand. Turn off to send every schema. Applies to the next message.</string>
     <string name="conductor_api_key_saved">Configured (…%1$s)</string>

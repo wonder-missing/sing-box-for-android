@@ -48,6 +48,35 @@ class AgentRuntimeTest {
         assertTrue(validateTranscriptPairing(result.messages))
         assertEquals(2, result.messages.size)
         assertEquals(null, result.pendingEvent)
+        assertEquals(null, model.requests.single().reasoningEffort)
+    }
+
+    @Test
+    fun reasoningEffortIsFixedAtTurnStart() {
+        val call = ToolCall("call_1", "list_nodes", "{}")
+        var stored = ReasoningEffort.LOW
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            ) {
+                stored = ReasoningEffort.HIGH
+            }
+        val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+        val runtime =
+            runtime(
+                model,
+                executor,
+                key = "sk-test",
+                reasoningEffort = { ReasoningEffort.wireValue(stored) },
+            )
+
+        val result = runBlocking { runtime.runTurn("show nodes", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals(listOf("low", "low"), model.requests.map { it.reasoningEffort })
     }
 
     @Test
@@ -698,6 +727,7 @@ class AgentRuntimeTest {
         executor: AgentToolExecutor,
         key: String?,
         config: AgentConfig = AgentConfig(maxToolRounds = 1),
+        reasoningEffort: () -> String? = { null },
     ): AgentRuntime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
@@ -705,6 +735,7 @@ class AgentRuntimeTest {
             tools = executor,
             apiKeys = FakeKeyProvider(key),
             config = config,
+            reasoningEffort = reasoningEffort,
         )
 
     private fun response(text: String): AgentModelResponse =
@@ -720,6 +751,7 @@ class AgentRuntimeTest {
 
 private class ScriptedModel(
     private val responses: MutableList<AgentModelResponse>,
+    private val onRequest: (AgentModelRequest) -> Unit = {},
 ) : AgentModelClient {
     val requests = mutableListOf<AgentModelRequest>()
 
@@ -728,6 +760,7 @@ private class ScriptedModel(
         apiKey: String,
     ): AgentModelResponse {
         requests += request
+        onRequest(request)
         return responses.removeAt(0)
     }
 }

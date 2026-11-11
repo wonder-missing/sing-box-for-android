@@ -55,6 +55,7 @@ data class AgentModelRequest(
     val temperature: Double = 0.2,
     val timeoutMs: Long,
     val toolChoice: AgentToolChoice = AgentToolChoice.AUTO,
+    val reasoningEffort: String? = null,
 )
 
 data class AgentModelResponse(

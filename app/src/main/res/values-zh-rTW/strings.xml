@@ -695,4 +695,11 @@
     <string name="agent_probe_run">探測</string>
     <string name="agent_confirm_title">確認工具呼叫</string>
     <string name="agent_confirm_run">執行</string>
+    <string name="conductor_reasoning_effort_title">推理強度</string>
+    <string name="conductor_reasoning_effort_default">預設</string>
+    <string name="conductor_reasoning_effort_low">低</string>
+    <string name="conductor_reasoning_effort_medium">中</string>
+    <string name="conductor_reasoning_effort_high">高</string>
+    <string name="conductor_reasoning_effort_help">預設不傳 reasoning_effort，DeepSeek 和 xAI 用它們自己的預設強度（high）。低、中、高會在下一則訊息送出。DeepSeek 會把「中」當成 high。如果模型拒絕這個欄位，改回預設。</string>
+    <string name="settings_app_entry_summary">版本 %1$s</string>
 </resources>

@@ -50,6 +50,7 @@ class AgentRuntime(
     private val config: AgentConfig = AgentConfig(),
     private val streamingModel: AgentStreamingModelClient? = null,
     private val toolRoutingEnabled: () -> Boolean = { config.toolRoutingEnabled },
+    private val reasoningEffort: () -> String? = { null },
 ) {
     private val confirmationIds = AtomicLong(0)
 
@@ -131,6 +132,7 @@ class AgentRuntime(
             (preparedHistory + AgentMessage.User(formatUserMessage(userText, initialEvent))).toMutableList()
         val startSize = preparedHistory.size
         val routingEnabled = toolRoutingEnabled()
+        val turnReasoningEffort = reasoningEffort()?.takeIf { it.isNotBlank() }
         val catalog = AgentToolCatalog(tools.definitions())
         val systemMessage =
             AgentContext.systemPrompt(
@@ -182,6 +184,7 @@ class AgentRuntime(
                     maxOutputTokens = config.maxOutputTokens,
                     timeoutMs = config.modelTimeoutMs,
                     toolChoice = if (toolsEnabled) AgentToolChoice.AUTO else AgentToolChoice.NONE,
+                    reasoningEffort = turnReasoningEffort,
                 )
             onEvent(AgentEvent.StateChanged(TurnState.CallingModel(step)))
             val response =

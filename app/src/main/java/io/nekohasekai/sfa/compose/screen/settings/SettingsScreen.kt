@@ -46,7 +46,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.component.AppUpdateButton
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.database.Settings
@@ -66,6 +68,7 @@ fun SettingsScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val hasUpdate by UpdateState.hasUpdate
+    val updateInfo by UpdateState.updateInfo
     val hookStatus by HookStatusClient.status.collectAsState()
     val hasPendingPrivilegeDowngrade = HookModuleUpdateNotifier.isDowngrade(hookStatus)
     val hasPendingPrivilegeUpdate = HookModuleUpdateNotifier.isUpgrade(hookStatus)
@@ -105,6 +108,22 @@ fun SettingsScreen(navController: NavController) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     },
+                    supportingContent = {
+                        Column {
+                            Text(
+                                stringResource(R.string.settings_app_entry_summary, BuildConfig.VERSION_NAME),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            val available = updateInfo
+                            if (hasUpdate && available != null) {
+                                Text(
+                                    stringResource(R.string.new_version_available, available.versionName),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Info,
@@ -113,9 +132,7 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     trailingContent = {
-                        if (hasUpdate) {
-                            Badge(containerColor = MaterialTheme.colorScheme.primary)
-                        }
+                        AppUpdateButton()
                     },
                     modifier =
                     Modifier
