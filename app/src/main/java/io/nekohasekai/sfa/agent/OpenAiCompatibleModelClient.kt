@@ -99,7 +99,14 @@ class OpenAiCompatibleModelClient(
                 )
             }
             val payload = buildPayload(request, endpoint, stream = false)
-            val (status, body) = post(chatCompletionsUrl(endpoint.baseUrl), payload, apiKey, request.timeoutMs)
+            val (status, body) =
+                post(
+                    url = chatCompletionsUrl(endpoint.baseUrl),
+                    body = payload,
+                    apiKey = apiKey,
+                    timeoutMs = request.timeoutMs,
+                    providerLabel = endpoint.providerLabel,
+                )
             if (status !in 200..299) {
                 throw httpError(status, body, endpoint.providerLabel)
             }
@@ -189,11 +196,7 @@ class OpenAiCompatibleModelClient(
                     throw CancellationException("cancelled")
                 }
                 traceError = e.message ?: "network error"
-                throw AgentModelException(
-                    AgentTurnErrorCode.MODEL_UNAVAILABLE,
-                    AgentSanitizer.sanitizeText(e.message ?: "network error"),
-                    retryable = true,
-                )
+                throw modelTransportException(e, endpoint.providerLabel, endpoint.baseUrl)
             } finally {
                 if (activeCall === call) activeCall = null
                 cancelled = false
@@ -457,6 +460,7 @@ class OpenAiCompatibleModelClient(
         body: String,
         apiKey: String,
         timeoutMs: Long,
+        providerLabel: String,
     ): Pair<Int, String> {
         val connection =
             (URL(url).openConnection() as HttpURLConnection).apply {
@@ -507,11 +511,7 @@ class OpenAiCompatibleModelClient(
             throw e
         } catch (e: IOException) {
             error = e.message ?: "network error"
-            throw AgentModelException(
-                AgentTurnErrorCode.MODEL_UNAVAILABLE,
-                AgentSanitizer.sanitizeText(e.message ?: "network error"),
-                retryable = true,
-            )
+            throw modelTransportException(e, providerLabel, url)
         } catch (e: Exception) {
             error = e.message ?: e.toString()
             throw e

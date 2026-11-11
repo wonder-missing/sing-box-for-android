@@ -26,6 +26,10 @@
 - [ ] **Provider capability 矩阵**：wonder.39 只覆盖 OpenAI-compatible Bearer + Chat Completions；`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权、provider 私有 reasoning 字段等按真机验证结果再抽。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 
+## 下一版待发（未发，当前 dev）
+
+- 传输错误边界：协议握手/DNS/连接拒绝/TLS 失败不盲重试，用户提示不显示原始异常和解析 IP；可重试错误显示 Notice；Stop 后不再发起新请求。对应 `ModelTransportErrors.kt` 和 `AgentRuntime.streamModelWithRetry`。
+
 ## 最近完成
 
 - wonder.40（2026-11-11）：中断/失败 turn 收尾：Stop 保留已流出的 assistant 正文，没有正文时在 transcript 末尾补合成 assistant 结束消息，避免下一次请求出现两个连续 user；对话与 API trace 共用文件导出，新增 Save conversation to file

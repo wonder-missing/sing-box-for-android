@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；dev 另含未发的传输错误边界
 最后更新：2026-11-11
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -1092,7 +1092,7 @@ Turn 级 UI 处理：
 | `insufficient_balance` | 402 | 提示余额不足 |
 | `rate_limited` | 429 | 自动退避重试；仍失败显示稍后再试 |
 | `model_timeout` | 408/读超时/总超时 | 可重试 |
-| `model_unavailable` | 网络错误/5xx | 可重试 |
+| `model_unavailable` | 网络错误/5xx/协议握手 | 协议握手、DNS、连接拒绝、TLS 失败不盲重试，显示网络/代理提示；超时和一般 IO 可重试，重试时显示一次提示 |
 | `model_not_found` | 404 | 提示模型 ID 不可用，检查配置 |
 | `invalid_request` | 400 | 提示请求格式错误，记录 request id |
 | `conflict` | 409 | 提示请求冲突，稍后重试 |
@@ -1106,6 +1106,17 @@ Turn 级 UI 处理：
 | `output_truncated` | `finish_reason=length` 且无可执行 tool call | 展示截断回答，提示可重试 |
 
 错误消息统一经过 sanitizer，不包含请求体、响应体原文、header。
+
+传输错误在 `ModelTransportErrors.kt` 单独分类：
+
+- `ProtocolException` / `Required SETTINGS preface` / `Expected HTTP 101`：HTTPS 握手未完成，提示本地 VPN/代理可能干扰，不重试。
+- `UnknownHostException`：DNS 解析失败，提示检查 VPN、代理和 DNS，不重试。
+- `ConnectException`：连接失败，提示检查 VPN/代理和网络，不重试。
+- `SSLException`：TLS 握手失败，提示代理/MITM/证书问题，不重试。
+- `SocketTimeoutException`：超时，可重试。
+- 其他 `IOException`：可重试。
+- 用户可见消息只使用配置的 host（`api.x.ai`）；host 本身是 IP 时改用 provider 名。解析后的 IP（例如代理 fake-IP 段的 `198.18.x.x`）和原始异常文本只留在 API trace，不进入 UI。
+- `streamModelWithRetry` 在第一次可重试失败时发一条 `Notice`，避免用户只看到 spinner；重试循环在每次尝试前检查 `cancelRequested`，Stop 后不会偷偷再发请求。
 
 ## 14. 审计与可观测
 
@@ -1336,6 +1347,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 发起 turn 时 pin 住 provider，key 读取与 endpoint 解析都用同一个 provider；Settings 里切换 provider 从下一轮开始生效。
 - `TokenUsage` 增加 OpenAI `prompt_tokens_details.cached_tokens` 兼容；SSE reasoning 同时识别 `reasoning_content` 和 `reasoning`。
 - 未做 provider 私有 capability；`stream_options`、`max_completion_tokens`、Azure 类鉴权、provider 私有 reasoning 字段留待真机验证。
+
+### 下一版（未发）：传输错误边界（2026-11-11）
+
+- xAI 实验：第一次请求在 HTTP/2 握手处失败后被 Stop；第二次同一错误重试 4 次；第三次连接 `api.x.ai/198.18.0.4:443` 失败。`198.18.0.0/15` 是本地代理常用的 fake-IP 段，不是 xAI 的地址；根因在本地 VPN/代理的路由，不是 xAI token 或模型。
+- UI 之前直接显示 OkHttp 原文（`Required SETTINGS preface not received`、fake-IP），且对所有 `IOException` 都重试。现在按 `ModelTransportErrors.kt` 分类：协议握手/DNS/连接拒绝/TLS 失败不重试，超时和一般 IO 可重试；用户消息只显示 provider host 和可操作建议，原始异常和解析 IP 只留在 API trace。
+- 第一次可重试失败时显示一条 Notice；重试循环每次尝试前检查 `cancelRequested`，Stop 后不再发起新请求。
 
 ### wonder.33/34 跨版本 trace 复盘（2026-11-10）
 

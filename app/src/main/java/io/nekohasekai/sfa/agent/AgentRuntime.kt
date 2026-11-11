@@ -605,11 +605,15 @@ class AgentRuntime(
     ): AgentModelResponse {
         var attempt = 0
         while (true) {
+            if (cancelRequested) throw CancellationException("cancelled")
             partialContent.clear()
             try {
                 return collectStream(request, apiKey, onEvent, partialContent)
             } catch (e: AgentModelException) {
                 if (!e.retryable || attempt >= config.maxRetries || cancelRequested) throw e
+                if (attempt == 0) {
+                    onEvent(AgentEvent.Notice("The provider request failed; retrying. ${e.message}"))
+                }
                 attempt += 1
                 delay(500L * attempt)
             }
