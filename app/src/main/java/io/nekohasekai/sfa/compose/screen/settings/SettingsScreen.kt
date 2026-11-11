@@ -3,11 +3,13 @@ package io.nekohasekai.sfa.compose.screen.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -39,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -101,48 +104,48 @@ fun SettingsScreen(navController: NavController) {
             ),
         ) {
             Column {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            stringResource(R.string.title_app_settings),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
-                    supportingContent = {
-                        Column {
-                            Text(
-                                stringResource(R.string.settings_app_entry_summary, BuildConfig.VERSION_NAME),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            val available = updateInfo
-                            if (hasUpdate && available != null) {
-                                Text(
-                                    stringResource(R.string.new_version_available, available.versionName),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                    },
-                    leadingContent = {
+                Column(
+                    modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                        .clickable { navController.navigate("settings/app") }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Outlined.Info,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
                         )
-                    },
-                    trailingContent = {
+                        Text(
+                            stringResource(R.string.title_app_settings),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                        )
                         AppUpdateButton()
-                    },
-                    modifier =
-                    Modifier
-                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                        .clickable { navController.navigate("settings/app") },
-                    colors =
-                    ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
-                    ),
-                )
+                    }
+                    Column(modifier = Modifier.padding(start = 40.dp, top = 4.dp)) {
+                        Text(
+                            stringResource(R.string.app_version_title),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            BuildConfig.VERSION_NAME,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        val available = updateInfo
+                        if (hasUpdate && available != null) {
+                            Text(
+                                stringResource(R.string.new_version_available, available.versionName),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
 
                 ListItem(
                     headlineContent = {

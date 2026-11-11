@@ -1025,7 +1025,7 @@ UI 需要新增：
 - Provider 下拉：DeepSeek / xAI / Custom（OpenAI-compatible）。切换 provider 时立即写入 `conductor_provider`，并加载该 provider 的模型、base URL 和 key 状态；对正在跑的 turn 不生效，下一轮才用新 provider。
 - Base URL：DeepSeek 和 xAI 预设只读；Custom 可编辑。请求地址是 `<base>/chat/completions`，base 已以 `/chat/completions` 结尾时不再追加。
 - 模型输入框：按 provider 分开保存。DeepSeek 沿用 `conductor_model`（默认 `deepseek-v4-flash`），xAI 用 `conductor_xai_model`（默认 `grok-4`），Custom 用 `conductor_generic_model`。允许改成账号实际可用的模型 ID。
-- Reasoning effort：Default / Low / Medium / High。选择后立刻写入 `conductor_reasoning_effort`，从下一条消息开始生效；同一轮里的后续请求沿用这一轮开始时的值。Default 不传字段。三个 provider 共用这一档，不按 provider 分开存。
+- Reasoning effort：Default / Low / Medium / High。选择后立刻写入 `conductor_reasoning_effort`，从下一条消息开始生效；同一轮里的后续请求沿用这一轮开始时的值。Default 不传字段。三个 provider 共用这一档，不按 provider 分开存。Conductor 输入框的 `/reasoning` 改的是同一项：无参数只显示当前值，`/reasoning low|medium|high|default` 写入后下一条消息生效。点 `/` 后选 `reasoning` 会插入 `/reasoning `，再点档位直接发送。
 - API key 输入框：密码样式，可显示/隐藏，保存后清空输入框；placeholder 按 provider 显示 `sk-...` / `xai-...`。
 - 输入框用 `remember`，不用 `rememberSaveable`；保存或离开页面后清掉 Compose 状态，避免密码原文进入 saved state。
 - 状态：`Configured (…abcd)` / `Not configured`；只显示尾部 4 位。
@@ -1374,6 +1374,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
+
+### wonder.43：输入栏与版本行（2026-11-12）
+
+- `/reasoning` 写入和 Settings > Conductor 同一个 `conductor_reasoning_effort`。档位仍只有 default / low / medium / high。
+- 设置根页 App 行：标题仍是 App，下面单独一行「应用版本 / App version」，再下一行才是版本号。有新版本时再加一行提示。右侧仍是「更新」。
+- 输入栏 `/` 和 `@` 用 `TextFieldValue` 摆光标：`/` 插在开头，光标在斜杠后；`@` 加在末尾，光标在 `@` 后。选一个带参数的 slash 命令时，光标在插入的命令和空格之后。
 
 ### wonder.33/34 跨版本 trace 复盘（2026-11-10）
 

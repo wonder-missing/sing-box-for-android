@@ -6,6 +6,7 @@ enum class ConductorCommandKind {
     HELP,
     CAPABILITIES,
     CLEAR,
+    REASONING,
     NODES,
     NETWORK,
     TAILSCALE,
@@ -58,6 +59,13 @@ object ConductorCommands {
                 description = "Clear the conversation.",
                 usage = "/clear",
                 action = ConductorCommandKind.CLEAR,
+            ),
+            ConductorCommand(
+                name = "reasoning",
+                description = "Set reasoning effort: default, low, medium, or high.",
+                usage = ConductorReasoningCommand.USAGE,
+                takesArgs = true,
+                action = ConductorCommandKind.REASONING,
             ),
             ConductorCommand(
                 name = "nodes",

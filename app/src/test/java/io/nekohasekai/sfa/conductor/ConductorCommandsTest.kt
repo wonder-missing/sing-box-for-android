@@ -34,6 +34,15 @@ class ConductorCommandsTest {
     }
 
     @Test
+    fun `parses reasoning level`() {
+        val input = ConductorCommands.parse("/reasoning high")!!
+
+        assertEquals("reasoning", input.command?.name)
+        assertEquals(listOf("high"), input.args)
+        assertTrue(input.command?.takesArgs == true)
+    }
+
+    @Test
     fun `parses probe arguments`() {
         val input = ConductorCommands.parse("/probe node-a https://example.com")!!
 

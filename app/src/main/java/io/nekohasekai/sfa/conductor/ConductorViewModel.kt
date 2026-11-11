@@ -290,6 +290,27 @@ class ConductorViewModel(
                 }
             }
 
+            ConductorCommandKind.REASONING -> {
+                val outcome =
+                    ConductorReasoningCommand.apply(
+                        parsed.args,
+                        Settings.conductorReasoningEffort,
+                    )
+                when (outcome) {
+                    is ConductorReasoningCommand.Outcome.Updated -> {
+                        Settings.conductorReasoningEffort = outcome.value
+                        append(ConductorItem.Notice("reasoning", outcome.message))
+                    }
+                    is ConductorReasoningCommand.Outcome.Shown -> {
+                        append(ConductorItem.Notice("reasoning", outcome.message))
+                    }
+                    is ConductorReasoningCommand.Outcome.Invalid -> {
+                        append(ConductorItem.Error("reasoning", outcome.message))
+                    }
+                }
+                persistSession()
+            }
+
             ConductorCommandKind.NODES -> runTool("list_nodes")
             ConductorCommandKind.NETWORK -> runTool("network_snapshot")
             ConductorCommandKind.TAILSCALE -> runTailscale()

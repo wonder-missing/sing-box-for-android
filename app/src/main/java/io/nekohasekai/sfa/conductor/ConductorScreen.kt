@@ -59,7 +59,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -83,10 +83,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -114,6 +116,19 @@ private val InputPanelMinHeight = 120.dp
 private const val InputPanelMaxLines = 5
 private const val MaxInputChars = ConductorSessionStore.MAX_DRAFT
 
+private val InputFieldSaver =
+    listSaver<TextFieldValue, Any>(
+        save = { value ->
+            listOf(value.text.take(MaxInputChars), value.selection.start, value.selection.end)
+        },
+        restore = { saved ->
+            val text = (saved[0] as String).take(MaxInputChars)
+            val start = (saved[1] as Int).coerceIn(0, text.length)
+            val end = (saved[2] as Int).coerceIn(0, text.length)
+            TextFieldValue(text, TextRange(start, end))
+        },
+    )
+
 private enum class ConductorExport { Conversation, ApiTrace }
 
 @Composable
@@ -136,13 +151,41 @@ fun ConductorScreen(
         onDispose { viewModel.disconnect() }
     }
 
-    var input by rememberSaveable(
-        stateSaver = Saver(save = { it }, restore = { it.take(MaxInputChars) }),
-    ) { mutableStateOf(viewModel.currentDraft()) }
+    var inputField by rememberSaveable(stateSaver = InputFieldSaver) {
+        val draft = viewModel.currentDraft().take(MaxInputChars)
+        mutableStateOf(TextFieldValue(draft, TextRange(draft.length)))
+    }
+    val input = inputField.text
 
-    fun setInput(next: String) {
-        input = next
-        viewModel.saveDraft(next)
+    fun setField(next: TextFieldValue) {
+        val text = next.text.take(MaxInputChars)
+        inputField =
+            if (next.text.length <= MaxInputChars) {
+                next
+            } else {
+                TextFieldValue(
+                    text,
+                    TextRange(
+                        next.selection.start.coerceIn(0, text.length),
+                        next.selection.end.coerceIn(0, text.length),
+                    ),
+                )
+            }
+        viewModel.saveDraft(text)
+    }
+
+    fun replaceInput(
+        text: String,
+        cursor: Int = text.length,
+    ) {
+        val clipped = text.take(MaxInputChars)
+        setField(TextFieldValue(clipped, TextRange(cursor.coerceIn(0, clipped.length))))
+    }
+
+    fun applyEdit(edit: ConductorInputEdit) {
+        if (edit.cursor == null && edit.text == inputField.text) return
+        val cursor = edit.cursor ?: edit.text.length
+        replaceInput(edit.text, cursor)
     }
 
     LaunchedEffect(Unit) {
@@ -183,6 +226,7 @@ fun ConductorScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val suggestions = ConductorCommands.suggestions(input)
+    val effortSuggestions = ConductorReasoningCommand.suggestions(input)
 
     fun focusInput() {
         runCatching { focusRequester.requestFocus() }
@@ -200,7 +244,7 @@ fun ConductorScreen(
             return
         }
         viewModel.submit(text)
-        setInput("")
+        replaceInput("")
         inputExpanded = false
         focusManager.clearFocus()
     }
@@ -385,7 +429,7 @@ fun ConductorScreen(
                     item(key = "empty") {
                         ConductorEmptyState(
                             onCommand = { command ->
-                                setInput("")
+                                replaceInput("")
                                 inputExpanded = false
                                 viewModel.submit(command)
                             },
@@ -417,15 +461,26 @@ fun ConductorScreen(
                 }
             }
 
-            if (!inputExpanded && suggestions.isNotEmpty()) {
+            if (!inputExpanded && effortSuggestions.isNotEmpty()) {
+                EffortSuggestions(
+                    levels = effortSuggestions,
+                    onPick = { level ->
+                        replaceInput("")
+                        inputExpanded = false
+                        viewModel.submit("/reasoning $level")
+                        focusManager.clearFocus()
+                    },
+                )
+            } else if (!inputExpanded && suggestions.isNotEmpty()) {
                 CommandSuggestions(
                     commands = suggestions,
                     onPick = { command ->
                         if (command.takesArgs) {
-                            setInput("/${command.name} ")
+                            val next = "/${command.name} "
+                            replaceInput(next, next.length)
                             focusInput()
                         } else {
-                            setInput("")
+                            replaceInput("")
                             inputExpanded = false
                             viewModel.submit("/${command.name}")
                             focusManager.clearFocus()
@@ -440,9 +495,9 @@ fun ConductorScreen(
             height = panelHeight,
             expanded = inputExpanded,
             onToggleExpand = { inputExpanded = !inputExpanded },
-            input = input,
+            input = inputField,
             onInputChange = { next ->
-                if (next.length > MaxInputChars) {
+                if (next.text.length > MaxInputChars) {
                     if (!inputTooLongWarned) {
                         Toast.makeText(
                             context,
@@ -451,10 +506,10 @@ fun ConductorScreen(
                         ).show()
                         inputTooLongWarned = true
                     }
-                    setInput(next.take(MaxInputChars))
+                    setField(next)
                 } else {
-                    setInput(next)
-                    if (next.length < MaxInputChars - 256) inputTooLongWarned = false
+                    setField(next)
+                    if (next.text.length < MaxInputChars - 256) inputTooLongWarned = false
                 }
             },
             onLineCountChanged = { inputLineCount = it },
@@ -462,17 +517,11 @@ fun ConductorScreen(
             onStop = viewModel::stopAgent,
             isRunning = uiState.isRunning,
             onSlash = {
-                setInput(if (input.startsWith("/")) input else "/" + input)
+                applyEdit(ConductorInputEdits.slash(input, MaxInputChars))
                 focusInput()
             },
             onAt = {
-                setInput(
-                    when {
-                        input.isBlank() -> "@"
-                        input.last().isWhitespace() -> input + "@"
-                        else -> "$input @"
-                    },
-                )
+                applyEdit(ConductorInputEdits.mention(input, MaxInputChars))
                 focusInput()
             },
             focusRequester = focusRequester,
@@ -950,6 +999,48 @@ private fun ToolItem(item: ConductorItem.Tool) {
 }
 
 @Composable
+private fun EffortSuggestions(
+    levels: List<String>,
+    onPick: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+    ) {
+        LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
+            items(levels, key = { it }) { level ->
+                Row(
+                    modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(level) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = level,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = ConductorReasoningCommand.hint(level),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CommandSuggestions(
     commands: List<ConductorCommand>,
     onPick: (ConductorCommand) -> Unit,
@@ -997,8 +1088,8 @@ private fun ConductorInputBar(
     height: Dp,
     expanded: Boolean,
     onToggleExpand: () -> Unit,
-    input: String,
-    onInputChange: (String) -> Unit,
+    input: TextFieldValue,
+    onInputChange: (TextFieldValue) -> Unit,
     onLineCountChanged: (Int) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -1020,7 +1111,7 @@ private fun ConductorInputBar(
             // decoration. BasicTextField relayouts its decoration while the
             // panel resizes, which can briefly blur the hint during the IME
             // animation; a plain Text stays put.
-            if (input.isEmpty()) {
+            if (input.text.isEmpty()) {
                 Text(
                     text = stringResource(R.string.conductor_input_hint),
                     style = MaterialTheme.typography.bodyLarge,
@@ -1132,7 +1223,7 @@ private fun ConductorInputBar(
                         }
                     }
                 } else {
-                    val enabled = input.isNotBlank()
+                    val enabled = input.text.isNotBlank()
                     Box(
                         modifier =
                         Modifier

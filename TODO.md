@@ -23,29 +23,30 @@
 - [ ] **跨版本会话的版本边界提示（以后考虑）**：旧 tool observation 会被模型当成当前证据；当前决定保留现状，先记着。
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康（订阅在 CFG 项目打磨），不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
-- [ ] **Provider capability 矩阵**：wonder.42 起 Conductor 设置可选 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
+- [ ] **Provider capability 矩阵**：wonder.42 起 Settings 和 `/reasoning` 共用 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 
 ## 下个会话接手
 
-- 当前 `dev` 版本号 42，wonder.42 已发布。下一次发版从 43 开始。
-- wonder.42 已包含：设置页 App 行版本号和「更新」；Conductor Reasoning effort；飞书发版卡片（单测条数 + 短 changelog）；离开 Conductor 再进入保留未发送草稿；启动图标按新稿垂直居中。
-- 发版前真机重点（wonder.42 只过了 CI 单测，没有真机）：
-  - 设置顶行 App：副标题是版本号；右侧「更新」。已有新版本时直接确认安装；没有时先检查。下载前仍有确认框。
-  - 设置 → Conductor → Reasoning effort：Default / Low / Medium / High。立刻写入，下一条消息生效。Default 不传该字段。
-  - Conductor 输入不发送，系统返回再进入，草稿还在。发送或清空后消失。`/clear` 只清会话，不清草稿。
-  - 桌面图标 square / round / adaptive / Android 13 themed。旧图标缓存可能要重启启动器。前景图按 `translate(0,-25)` 垂直居中。
+- 当前 `dev` 版本号 43，wonder.43 已发布。下一次发版从 44 开始。
+- wonder.43 已包含：`/reasoning`；设置根页 App 行把「应用版本」和版本号分成两行；输入栏 `/` 与 `@` 插入后光标跟在新文字后面。
+- 发版前真机重点（wonder.43 只过了 CI 单测，没有真机）：
+  - Conductor 点 `/`，选 `reasoning`，再选 `high`。对话里应出现已设为 high 的提示。下一条普通消息的请求带 `reasoning_effort=high`。`/reasoning` 无参数只显示当前值。
+  - 设置顶行：第一行 App 和右侧「更新」；下面一行是「应用版本」，再下面一行是完整版本号，不要和 App 挤在同一行。
+  - 输入框已有文字时点 `/`，斜杠在最前，光标紧跟在斜杠后面。点 `@`，`@` 在末尾，光标在 `@` 后面。
+  - wonder.42 的「更新」按钮、草稿恢复、桌面图标如果上次还没看，一并看。
 - 仍未做，按阻塞原因：
   - `probe_many`（P1，需要 libbox 验证；当前 probe 串行切全局出站）。
   - usage 极简可视化（UI 设计未定）。
   - 批量确认整批参数预览（现在只有当前工具参数）。
-  - Provider capability（`stream_options`、`max_completion_tokens`、Azure 类鉴权；`none`/`max`/`xhigh` 仍不做。low/medium/high 已在 wonder.42）。
+  - Provider capability（`stream_options`、`max_completion_tokens`、Azure 类鉴权；`none`/`max`/`xhigh` 仍不做。low/medium/high 与 `/reasoning` 已做）。
   - 跨版本会话边界提示（之前决定保留现状）。
   - probe 链路复测（等出口健康）；Stop 1s `TOOL_CANCEL_TIMEOUT`（等出现无法取消的工具）。
   - 搜索 no-match、`ToolObservation.ok` 契约、确认/事务可见性、LLM 摘要、增量更新等 backlog。
 
 ## 最近完成
 
+- wonder.43（2026-11-12）：`/reasoning` 与设置页共用推理强度；设置根页 App 行的版本标题和版本号分行；输入栏 `/`、`@` 插入后光标跟在新文字后面
 - wonder.42（2026-11-12）：设置页 App 行版本号与「更新」；Conductor Reasoning effort（low/medium/high，默认不传）；飞书通知带单测条数和短 changelog（超过 320 字或 8 行用卡片）；Conductor 未发送草稿跨页面保留；启动图标垂直居中
 - wonder.41（2026-11-11）：A7 app icon（adaptive / legacy / round / monochrome / playstore）；传输错误边界；单调用 `Approve rest of turn`；`conductor:event` 中断信封与空 turn 回滚
 - wonder.40（2026-11-11）：中断/失败 turn 收尾：Stop 保留已流出的 assistant 正文，没有正文时在 transcript 末尾补合成 assistant 结束消息，避免下一次请求出现两个连续 user；对话与 API trace 共用文件导出，新增 Save conversation to file
