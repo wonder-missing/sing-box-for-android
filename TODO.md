@@ -12,6 +12,7 @@
 ### P2
 
 - [ ] **每条消息的极简 token/cache 用量可视化**：API 响应已有 usage；UI 设计待定。
+- [ ] **API trace 导出到文件/分享**：2MB 文本走剪贴板在大笔记应用里可能粘不进去；输入框已限 8k，但导出文件更实用。
 - [ ] **`tailscale_status` 结构化 + 最后在线时间**：现在是纯文本块，模型能读但不能程序化处理。
 - [ ] **`network_snapshot` / `list_nodes` 重叠**：core 字段重复，随 `list_nodes` 摘要一起收。
 - [ ] **`search_tools` 相关性与 no-match 信号**：宽泛查询总是返回 top-3 弱相关工具；加分数/置信度或阈值，避免模型误以为有专用能力。
@@ -27,6 +28,7 @@
 
 ## 最近完成
 
+- wonder.37（2026-11-11）：真机反馈修复：2MB 粘贴崩溃（输入上限/恢复截断）、空 API trace 复制提示、Stop 后 `Stopped.` 与去重、已完成工具结果保留、Reasoning 流式 `Thinking` 块、压缩阈值 8k
 - wonder.36（2026-11-10）：Phase 2b 全部收尾：OkHttp SSE 流式回答、Stop 真取消、probe/telemetry 可取消、旧大 tool observation 的 turn 边界压缩、请求前缀/SSE/Stop/压缩单测
 - wonder.35（2026-11-10）：`list_nodes` 默认只回 group 摘要（tag/selected/itemCount/selectedDelayMs、groupCount/outboundCount），传 `group=<tag>` 才回该组节点明细；去掉 flat `outbounds` 与 `groups[].items` 的重复
 - wonder.34（2026-11-10）：`probe_via_node` 按 HTTP 状态判定可达（204/3xx/4xx/5xx 不再误报 `tool_failed`）、probe 回滚边界写进描述、请求前缀不变量单测、prompt 允许知识迁移（知道名字和参数就直接调）

@@ -1,7 +1,7 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）
-最后更新：2026-11-10
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37 收真机反馈
+最后更新：2026-11-11
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
 本文只定 Phase 2a / 2b 的运行时：DeepSeek BYOK、自然语言入口、结构化 tool call、确认暂停与恢复、有界循环。设备注册表和跨设备能力仍留在上位文档的 Phase 2（设备注册表部分）/ 3 / 4。
@@ -212,6 +212,8 @@ API key 作为 `complete` / `stream` 的参数传入，不放进 `AgentModelRequ
 `TokenUsage` 解析 DeepSeek 的 `prompt_tokens` / `completion_tokens`，以及 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`。没有这些字段的兼容服务返回 null，不影响主流程。
 
 Phase 2a 只实现 `AgentModelClient.complete`。Phase 2b 实现 `AgentStreamingModelClient`，流式 tool call 按 `index` 累积，`Completed` 时再交给运行时执行。2a 的 UI 事件已经按「最终消息」设计，2b 增加 delta 不需要重写运行时。Phase 2b 的 `AgentRuntime` 增加可选 `streamingModel: AgentStreamingModelClient?`，为 null 时走 `complete`；`DeepSeekModelClient` 同时实现两个接口。wonder.36 起生产路径使用 OkHttp SSE；`AgentStreamingModelClient.cancel()` 取消当前 `Call`，运行时 Stop 时先置取消标志再调用它。`AgentRuntime` 累积 `ContentDelta` 和 `ToolCallDelta`，内容增量发 `AssistantDelta`，最终仍发 `AssistantMessage` 让 UI 用完整文本收尾。
+
+wonder.37 起同时解析 SSE 的 `reasoning_content`，发 `ReasoningDelta`；UI 显示为 `Thinking` 块，不写回 transcript，也不进入下一次模型请求。
 
 `DeepSeekModelClient`：
 
@@ -976,8 +978,10 @@ UI 需要新增：
 - tool 卡片：工具名、参数摘要、running/success/failed/cancelled、结果摘要；长结果可展开。路由模式下显示内层工具名和参数，不显示 `route_call` envelope。
 - `search_tools` 显示为一条紧凑的「查找工具」记录，可以展开看匹配数，不默认铺开 schema。
 - 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`。
-- 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。
+- 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。wonder.37 起 Stop 后消息流追加 `Stopped.`，重复 Stop 只发一次提示；已完成但刚好在 Stop 前的工具结果保留，不再被改成 `cancelled`。
 - 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。
+- Reasoning：`Thinking` 块流式显示 `reasoning_content`，不进入 transcript；首字前的等待因此有可见反馈。
+- 输入框上限 8,000 字符（含恢复的 saved state），超长粘贴只截断并提示，避免大文本把 Compose 布局打崩。
 - 错误：错误码转成人话，可重试的显示 Retry。
 - 无 key：提示去 `Settings > Conductor` 填写，不在 Conductor 里放 key 输入框。
 - 敏感输入拦截：显示通用提示，不回显原文。
@@ -1238,6 +1242,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - Phase 2a 多步 + 宽松 guard；Phase 2b 补 Stop、流式、真取消。
 - 2B 工具暴露用静态元工具 + 目录搜索；搜索结果只进 transcript；`route_call` 是运行时 unwrap，不是 `AgentTool`。
 - `toolRoutingEnabled` 开关保留，便于回退和 A/B；核心工具是否提升为原生 tool 由真机数据决定。
+- Reasoning 流式显示在 UI，不进入 transcript，也不作为下一轮请求内容。
 
 待定：
 
@@ -1245,8 +1250,8 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 模型请求走系统网络还是强制走某个出站；Phase 2a 先用系统网络，失败时给明确错误，不静默切换。
 - Telemetry upload 从 Agent 调用时的确认文案。
 - 会话历史的保留期限、清理入口和导出格式；当前已本地持久化，尚无自动过期。
-- 是否展示模型推理文本；默认不展示，只展示工具状态和最终回答。
 - 精确的预算数值和输入拦截误报率，需要真机数据后再调。
+- Reasoning 是否默认折叠，还是只在生成时展开，等真机反馈再定。
 - 核心工具是否提升为原生 tool（hybrid），由真机 A/B 和参数错误率决定。
 - 搜索排序权重、`searchLimit` 和搜索 observation 字符上限，先用默认值再调。
 
@@ -1274,6 +1279,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `list_nodes` 单条 14,308 字符（5 groups、93 group items、55 outbounds），首轮 prompt 从 1,067 涨到 7,061，并且一直留在后续请求。wonder.35 已改成默认摘要 + `group` 明细。
 - `probe_via_node` 把 204 的 libbox 异常判成 `tool_failed`；wonder.34 已修，按解析出的 HTTP 状态判定可达。请求前缀不变量单测也随 wonder.34 加上。
 - 本次 trace 没有触发 `search_tools`（唯一带参工具是 core），搜索路径仍缺真机覆盖。
+
+### wonder.36 真机反馈（wonder.37 修复）
+
+- 把约 2MB 的 API trace 粘贴进 Conductor 输入框会直接打崩 Compose；输入框现在限制 8,000 字符，saved state 恢复时也截断。
+- 进程崩溃后 API trace 为空，但 Copy API trace 仍把 `No API calls recorded in this session.` 当正文复制；现在复制前检查 `hasEntries()`，为空时只提示、不覆盖剪贴板。
+- Stop 后消息流没有提示；`TurnOutcome.Cancelled` 现在追加 `Stopped.`，重复 Stop 只安排一次 `Stopping…` 提示。Stop 刚好发生在工具返回之后时，工具结果保留，运行时在下一轮模型调用前停止，不再把已完成结果改成 `cancelled`。
+- 首字前的等待没有反馈；SSE 的 `reasoning_content` 现在以 `Thinking` 块流式显示，不进入 transcript。
+- 4,000 字符的压缩阈值把一条 4,032 字符的 `list_nodes(group=…)` 明细压成了 compact marker；阈值提到 8,000，旧的全量 `list_nodes` 仍会被压缩。
 
 ### wonder.33/34 跨版本 trace 复盘（2026-11-10）
 
