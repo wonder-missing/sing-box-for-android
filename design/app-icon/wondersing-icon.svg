@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- WonderSing app icon · A7 (final, 2026-11-11)
+       Base: original sing-box isometric cube. An S is "printed" across the faces in tape tones.
+       Left-face terminal hook removed; start cap is a flat cut with its two corners rounded (r=16).
+       Canvas = 108dp adaptive icon; safe zone circle r=33dp (~313 units) at center. -->
+  <defs>
+    <clipPath id="top"><path d="M512,262 754.5,402 512,542 269.5,402Z"/></clipPath>
+    <clipPath id="left"><path d="M269.5,402 512,542 512,812 269.5,672Z"/></clipPath>
+    <clipPath id="right"><path d="M512,542 754.5,402 754.5,672 512,812Z"/></clipPath>
+    <!-- S centerline. Full path includes the left-face hook, which only shows on the right face as the tail up to the edge. -->
+    <path id="s-full" d="M580.0,307.0 C554.3,287.0 533.6,280.0 501.0,280.0 C430.4,280.0 373.0,337.4 373.0,408.0 C373.0,481.7 448.0,501.0 514.0,534.0 C577.1,565.5 651.0,581.5 651.0,652.0 C651.0,722.6 593.6,780.0 523.0,780.0 C462.1,780.0 414.8,743.8 399.0,685.0"/>
+    <path id="s-keep" d="M580.0,307.0 C554.3,287.0 533.6,280.0 501.0,280.0 C430.4,280.0 373.0,337.4 373.0,408.0 C373.0,481.7 448.0,501.0 514.0,534.0 C577.1,565.5 651.0,581.5 651.0,652.0 C651.0,722.6 593.6,780.0 523.0,780.0"/>
+    <!-- Rounds the two corners of the start cap -->
+    <mask id="cap-round" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M591.91,291.70 A16,16 0 0 0 588.06,268.49 L599.03,251.77 L630.18,275.09 L607.69,303.98Z M567.24,323.40 A16,16 0 0 1 546.20,327.19 L535.69,344.20 L561.39,363.48 L583.02,335.68Z" fill="#000"/>
+    </mask>
+    <!-- Area covered by the S paint, used to recolor the cube's bevel lines where they run over paint -->
+    <mask id="paint" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <g fill="none" stroke="#fff" stroke-width="72" stroke-linecap="butt" mask="url(#cap-round)">
+        <use href="#s-full" clip-path="url(#right)"/>
+        <use href="#s-keep"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="1024" height="1024" fill="#ECEFF1"/>
+  <!-- cube faces -->
+  <path d="M512,262 754.5,402 512,542 269.5,402Z" fill="#42555F"/>
+  <path d="M269.5,402 512,542 512,812 269.5,672Z" fill="#232F37"/>
+  <path d="M512,542 754.5,402 754.5,672 512,812Z" fill="#34444F"/>
+  <!-- S, one tone per face -->
+  <g fill="none" stroke-width="72" stroke-linecap="butt" stroke-linejoin="round" mask="url(#cap-round)">
+    <use href="#s-full" clip-path="url(#top)" stroke="#E1E8ED"/>
+    <use href="#s-full" clip-path="url(#right)" stroke="#CCD6DD"/>
+    <use href="#s-keep" clip-path="url(#left)" stroke="#99AAB5"/>
+  </g>
+  <!-- bevel lines, drawn above the paint so the polished edges stay visible -->
+  <g fill="none">
+    <path d="M512,262 754.5,402" stroke="#66808D" stroke-width="2.5"/>
+    <path d="M512,262 269.5,402" stroke="#5A737F" stroke-width="2.5"/>
+    <path d="M512,542 512,812" stroke="#445963" stroke-width="2"/>
+  </g>
+  <!-- same bevel lines where they cross the paint, in paint tones -->
+  <g fill="none" mask="url(#paint)">
+    <path d="M512,262 754.5,402" stroke="#B4C2CA" stroke-width="2.5"/>
+    <path d="M512,262 269.5,402" stroke="#B4C2CA" stroke-width="2.5"/>
+    <path d="M512,542 512,812" stroke="#DCE4E9" stroke-width="2"/>
+  </g>
+</svg>
