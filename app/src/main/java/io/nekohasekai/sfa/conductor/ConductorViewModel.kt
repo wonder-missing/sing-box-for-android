@@ -26,10 +26,11 @@ import io.nekohasekai.sfa.agent.AndroidDeviceSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeState
 import io.nekohasekai.sfa.agent.ConfirmationRequest
-import io.nekohasekai.sfa.agent.DeepSeekModelClient
 import io.nekohasekai.sfa.agent.DefaultAgentInputGuard
 import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxProbePort
+import io.nekohasekai.sfa.agent.ModelProviderSettings
+import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
 import io.nekohasekai.sfa.agent.TailscaleStatusSource
 import io.nekohasekai.sfa.agent.TelemetryUploadPort
 import io.nekohasekai.sfa.agent.ToolCallView
@@ -150,7 +151,7 @@ class ConductorViewModel(
             ).all,
         )
 
-    private val modelClient = DeepSeekModelClient(modelProvider = { Settings.conductorModel })
+    private val modelClient = OpenAiCompatibleModelClient(endpointProvider = ModelProviderSettings::endpoint)
 
     private val runtime =
         AgentRuntime(
@@ -372,6 +373,7 @@ class ConductorViewModel(
         publishNodeState(CommandNodeState())
         runtime.cancel()
         agentJob?.cancel()
+        ModelProviderSettings.unpin()
     }
 
     override fun onCleared() {
@@ -381,6 +383,7 @@ class ConductorViewModel(
         runtime.cancel()
         agentJob?.cancel()
         commandClient.disconnect()
+        ModelProviderSettings.unpin()
         super.onCleared()
     }
 
@@ -394,6 +397,7 @@ class ConductorViewModel(
         updateUi { copy(isRunning = true) }
         agentJob =
             viewModelScope.launch {
+                ModelProviderSettings.pinForTurn()
                 val result =
                     try {
                         runtime.runTurn(
@@ -425,6 +429,7 @@ class ConductorViewModel(
                     pendingAgentConfirmation = null
                     stopRequested = false
                     autoApproveAgentConfirmation = false
+                    ModelProviderSettings.unpin()
                     when (val outcome = result.outcome) {
                         is TurnOutcome.Failed ->
                             append(

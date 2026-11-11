@@ -32,9 +32,8 @@ import java.net.URL
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-class DeepSeekModelClient(
-    private val baseUrl: String = DEFAULT_BASE_URL,
-    private val modelProvider: () -> String = { DEFAULT_MODEL },
+class OpenAiCompatibleModelClient(
+    private val endpointProvider: () -> ModelEndpoint,
 ) : AgentModelClient,
     AgentStreamingModelClient {
     private val okHttp =
@@ -50,7 +49,37 @@ class DeepSeekModelClient(
     @Volatile
     private var cancelled = false
 
-    private fun currentModel(): String = modelProvider().trim().ifBlank { DEFAULT_MODEL }
+    private fun currentEndpoint(): ModelEndpoint {
+        val endpoint = endpointProvider()
+        val baseUrl = endpoint.baseUrl.trim()
+        if (baseUrl.isBlank()) {
+            throw AgentModelException(
+                AgentTurnErrorCode.INVALID_REQUEST,
+                "${endpoint.providerLabel} base URL is not configured.",
+            )
+        }
+        if (!baseUrl.startsWith("https://") && !baseUrl.startsWith("http://")) {
+            throw AgentModelException(
+                AgentTurnErrorCode.INVALID_REQUEST,
+                "${endpoint.providerLabel} base URL must start with http:// or https://.",
+            )
+        }
+        val model = endpoint.model.trim()
+        if (model.isBlank()) {
+            throw AgentModelException(
+                AgentTurnErrorCode.INVALID_REQUEST,
+                "${endpoint.providerLabel} model is not configured.",
+            )
+        }
+        runCatching { URL(chatCompletionsUrl(baseUrl)) }
+            .onFailure {
+                throw AgentModelException(
+                    AgentTurnErrorCode.INVALID_REQUEST,
+                    "${endpoint.providerLabel} base URL is invalid.",
+                )
+            }
+        return endpoint.copy(baseUrl = baseUrl, model = model)
+    }
 
     override fun cancel() {
         cancelled = true
@@ -62,15 +91,19 @@ class DeepSeekModelClient(
         apiKey: String,
     ): AgentModelResponse =
         withContext(Dispatchers.IO) {
+            val endpoint = currentEndpoint()
             if (apiKey.isBlank()) {
-                throw AgentModelException(AgentTurnErrorCode.NO_API_KEY, "DeepSeek API key is not configured.")
+                throw AgentModelException(
+                    AgentTurnErrorCode.NO_API_KEY,
+                    "${endpoint.providerLabel} API key is not configured.",
+                )
             }
-            val payload = buildPayload(request, stream = false)
-            val (status, body) = post("/chat/completions", payload, apiKey, request.timeoutMs)
+            val payload = buildPayload(request, endpoint, stream = false)
+            val (status, body) = post(chatCompletionsUrl(endpoint.baseUrl), payload, apiKey, request.timeoutMs)
             if (status !in 200..299) {
-                throw httpError(status, body)
+                throw httpError(status, body, endpoint.providerLabel)
             }
-            parseResponse(body)
+            parseResponse(body, endpoint.providerLabel)
         }
 
     override fun stream(
@@ -78,15 +111,19 @@ class DeepSeekModelClient(
         apiKey: String,
     ): Flow<AgentModelChunk> =
         flow {
+            val endpoint = currentEndpoint()
             if (apiKey.isBlank()) {
-                throw AgentModelException(AgentTurnErrorCode.NO_API_KEY, "DeepSeek API key is not configured.")
+                throw AgentModelException(
+                    AgentTurnErrorCode.NO_API_KEY,
+                    "${endpoint.providerLabel} API key is not configured.",
+                )
             }
             cancelled = false
-            val payload = buildPayload(request, stream = true)
+            val payload = buildPayload(request, endpoint, stream = true)
             val httpRequest =
                 Request
                     .Builder()
-                    .url(baseUrl.trimEnd('/') + "/chat/completions")
+                    .url(chatCompletionsUrl(endpoint.baseUrl))
                     .header("Authorization", "Bearer $apiKey")
                     .header("Content-Type", "application/json")
                     .header("Accept", "text/event-stream")
@@ -112,13 +149,13 @@ class DeepSeekModelClient(
                     if (!response.isSuccessful) {
                         val body = response.body?.string().orEmpty().take(MAX_ERROR_BYTES)
                         traceError = "HTTP ${response.code}"
-                        throw httpError(response.code, body)
+                        throw httpError(response.code, body, endpoint.providerLabel)
                     }
                     val source =
                         response.body?.source()
                             ?: throw AgentModelException(
                                 AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
-                                "DeepSeek returned an empty stream.",
+                                "${endpoint.providerLabel} returned an empty stream.",
                                 retryable = true,
                             )
                     var finish: FinishReason? = null
@@ -177,6 +214,7 @@ class DeepSeekModelClient(
         }.flowOn(Dispatchers.IO)
 
     suspend fun testConnection(apiKey: String): String {
+        val endpoint = currentEndpoint()
         complete(
             AgentModelRequest(
                 messages = listOf(AgentMessage.User("ping")),
@@ -186,15 +224,16 @@ class DeepSeekModelClient(
             ),
             apiKey,
         )
-        return "Connection OK (${currentModel()})"
+        return "Connection OK (${endpoint.providerLabel} · ${endpoint.model})"
     }
 
     private fun buildPayload(
         request: AgentModelRequest,
+        endpoint: ModelEndpoint,
         stream: Boolean,
     ): String =
         buildJsonObject {
-            put("model", currentModel())
+            put("model", endpoint.model)
             put("messages", buildMessages(request.messages))
             if (request.tools.isNotEmpty()) {
                 put(
@@ -295,7 +334,9 @@ class DeepSeekModelClient(
         val choice = (root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
         val delta = choice?.get("delta") as? JsonObject
         val content = (delta?.get("content") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
-        val reasoning = (delta?.get("reasoning_content") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
+        val reasoning =
+            (delta?.get("reasoning_content") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
+                ?: (delta?.get("reasoning") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
         val toolCalls =
             (delta?.get("tool_calls") as? JsonArray)
                 ?.mapNotNull { parseToolCallDelta(it as? JsonObject) }
@@ -328,27 +369,38 @@ class DeepSeekModelClient(
 
     private fun parseUsage(usage: JsonObject?): TokenUsage? =
         usage?.let {
+            val input = (it["prompt_tokens"] as? JsonPrimitive)?.intOrNull
+            val details = it["prompt_tokens_details"] as? JsonObject
+            val cacheHit =
+                (it["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull
+                    ?: (details?.get("cached_tokens") as? JsonPrimitive)?.intOrNull
+            val cacheMiss =
+                (it["prompt_cache_miss_tokens"] as? JsonPrimitive)?.intOrNull
+                    ?: if (cacheHit != null && input != null) (input - cacheHit).coerceAtLeast(0) else null
             TokenUsage(
-                inputTokens = (it["prompt_tokens"] as? JsonPrimitive)?.intOrNull,
+                inputTokens = input,
                 outputTokens = (it["completion_tokens"] as? JsonPrimitive)?.intOrNull,
-                cacheHitTokens = (it["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull,
-                cacheMissTokens = (it["prompt_cache_miss_tokens"] as? JsonPrimitive)?.intOrNull,
+                cacheHitTokens = cacheHit,
+                cacheMissTokens = cacheMiss,
             )
         }
 
-    private fun parseResponse(body: String): AgentModelResponse {
+    private fun parseResponse(
+        body: String,
+        providerLabel: String,
+    ): AgentModelResponse {
         val root =
             runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull()
                 ?: throw AgentModelException(
                     AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
-                    "DeepSeek returned a non-JSON response.",
+                    "$providerLabel returned a non-JSON response.",
                     retryable = true,
                 )
         val choice =
             (root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
                 ?: throw AgentModelException(
                     AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
-                    "DeepSeek returned no choices.",
+                    "$providerLabel returned no choices.",
                     retryable = true,
                 )
         val message = choice["message"] as? JsonObject
@@ -362,7 +414,7 @@ class DeepSeekModelClient(
         if (content.isNullOrBlank() && toolCalls.isEmpty()) {
             throw AgentModelException(
                 AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
-                "DeepSeek returned an empty message.",
+                "$providerLabel returned an empty message.",
                 retryable = true,
             )
         }
@@ -401,13 +453,13 @@ class DeepSeekModelClient(
         }
 
     private fun post(
-        path: String,
+        url: String,
         body: String,
         apiKey: String,
         timeoutMs: Long,
     ): Pair<Int, String> {
         val connection =
-            (URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
+            (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = timeoutMs.coerceIn(1_000, Int.MAX_VALUE.toLong()).toInt()
@@ -440,7 +492,7 @@ class DeepSeekModelClient(
                         if (total > MAX_RESPONSE_BYTES) {
                             throw AgentModelException(
                                 AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
-                                "DeepSeek response is too large.",
+                                "The model response is too large.",
                                 retryable = false,
                             )
                         }
@@ -484,6 +536,7 @@ class DeepSeekModelClient(
     private fun httpError(
         status: Int,
         body: String,
+        providerLabel: String,
     ): AgentModelException {
         val code =
             when (status) {
@@ -503,9 +556,10 @@ class DeepSeekModelClient(
                 val root = Json.parseToJsonElement(body) as? JsonObject
                 val error = root?.get("error") as? JsonObject
                 (error?.get("message") as? JsonPrimitive)?.contentOrNull
+                    ?: (root?.get("error") as? JsonPrimitive)?.contentOrNull
                     ?: root?.get("message")?.jsonPrimitive?.contentOrNull
             }.getOrNull()
-        val message = detail?.takeIf { it.isNotBlank() } ?: "DeepSeek HTTP $status"
+        val message = detail?.takeIf { it.isNotBlank() } ?: "$providerLabel HTTP $status"
         return AgentModelException(
             code,
             AgentSanitizer.sanitizeText(message),
@@ -514,8 +568,6 @@ class DeepSeekModelClient(
     }
 
     companion object {
-        const val DEFAULT_BASE_URL = "https://api.deepseek.com"
-        const val DEFAULT_MODEL = "deepseek-v4-flash"
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
         private const val MAX_ERROR_BYTES = 4 * 1024

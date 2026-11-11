@@ -44,7 +44,11 @@ object SettingsKey {
     const val GROUP_SINGLE_COLUMN = "group_single_column"
 
     // Conductor
+    const val CONDUCTOR_PROVIDER = "conductor_provider"
     const val CONDUCTOR_MODEL = "conductor_model"
+    const val CONDUCTOR_XAI_MODEL = "conductor_xai_model"
+    const val CONDUCTOR_GENERIC_MODEL = "conductor_generic_model"
+    const val CONDUCTOR_GENERIC_BASE_URL = "conductor_generic_base_url"
     const val CONDUCTOR_TOOL_ROUTING = "conductor_tool_routing"
 
     // Remote Control

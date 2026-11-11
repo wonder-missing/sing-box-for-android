@@ -10,8 +10,11 @@ import org.junit.Test
 import java.net.InetAddress
 import java.net.ServerSocket
 
-class DeepSeekModelClientTest {
+class OpenAiCompatibleModelClientTest {
     private lateinit var server: ServerSocket
+
+    @Volatile
+    private var requestLine: String = ""
 
     @Volatile
     private var requestBody: String = ""
@@ -26,6 +29,7 @@ class DeepSeekModelClientTest {
             runCatching {
                 server.accept().use { socket ->
                     val reader = socket.getInputStream().bufferedReader(Charsets.UTF_8)
+                    requestLine = reader.readLine().orEmpty()
                     var contentLength = 0
                     while (true) {
                         val line = reader.readLine() ?: break
@@ -83,7 +87,7 @@ class DeepSeekModelClientTest {
             }
             """.trimIndent()
 
-        val client = DeepSeekModelClient(baseUrl = "http://127.0.0.1:${server.localPort}")
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
         val response =
             runBlocking {
                 client.complete(
@@ -116,7 +120,7 @@ class DeepSeekModelClientTest {
             data: [DONE]
             """.trimIndent()
 
-        val client = DeepSeekModelClient(baseUrl = "http://127.0.0.1:${server.localPort}")
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
         val chunks =
             runBlocking {
                 client
@@ -150,4 +154,95 @@ class DeepSeekModelClientTest {
         assertEquals(4, completed.usage?.cacheHitTokens ?: 0)
         assertEquals(6, completed.usage?.cacheMissTokens ?: 0)
     }
+
+    @Test
+    fun appendsChatCompletionsToVersionedBaseUrl() {
+        responseBody = """{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"""
+        val client = clientFor("http://127.0.0.1:${server.localPort}/v1")
+
+        runBlocking { client.complete(request(), apiKey = "sk-test") }
+
+        assertTrue(requestLine.startsWith("POST /v1/chat/completions "))
+    }
+
+    @Test
+    fun acceptsAnExplicitChatCompletionsUrl() {
+        responseBody = """{"choices":[{"message":{"content":"done"},"finish_reason":"stop"}]}"""
+        val client = clientFor("http://127.0.0.1:${server.localPort}/v1/chat/completions")
+
+        runBlocking { client.complete(request(), apiKey = "sk-test") }
+
+        assertTrue(requestLine.startsWith("POST /v1/chat/completions "))
+    }
+
+    @Test
+    fun parsesOpenAiStyleCachedTokens() {
+        responseBody =
+            """
+            {
+              "choices": [{"message": {"content": "done"}, "finish_reason": "stop"}],
+              "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 5,
+                "prompt_tokens_details": {"cached_tokens": 30}
+              }
+            }
+            """.trimIndent()
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
+
+        val response = runBlocking { client.complete(request(), apiKey = "sk-test") }
+
+        assertEquals(30, response.usage?.cacheHitTokens ?: 0)
+        assertEquals(70, response.usage?.cacheMissTokens ?: 0)
+    }
+
+    @Test
+    fun rejectsAnEmptyBaseUrlBeforeNetwork() {
+        val client = clientFor("")
+
+        val error =
+            runCatching {
+                runBlocking { client.complete(request(), apiKey = "sk-test") }
+            }.exceptionOrNull()
+
+        assertTrue(error is AgentModelException)
+        assertEquals(AgentTurnErrorCode.INVALID_REQUEST, (error as AgentModelException).code)
+    }
+
+    @Test
+    fun buildsChatCompletionsUrlFromBase() {
+        assertEquals(
+            "https://api.deepseek.com/chat/completions",
+            chatCompletionsUrl("https://api.deepseek.com"),
+        )
+        assertEquals(
+            "https://api.x.ai/v1/chat/completions",
+            chatCompletionsUrl("https://api.x.ai/v1/"),
+        )
+        assertEquals(
+            "https://example.com/v1/chat/completions",
+            chatCompletionsUrl("https://example.com/v1/chat/completions"),
+        )
+    }
+
+    private fun request(): AgentModelRequest =
+        AgentModelRequest(
+            messages = listOf(AgentMessage.User("hi")),
+            tools = emptyList(),
+            maxOutputTokens = 1,
+            timeoutMs = 5_000,
+        )
+
+    private fun clientFor(
+        baseUrl: String,
+        model: String = "test-model",
+    ): OpenAiCompatibleModelClient =
+        OpenAiCompatibleModelClient {
+            ModelEndpoint(
+                providerId = ModelProviders.GENERIC,
+                providerLabel = "Test",
+                baseUrl = baseUrl,
+                model = model,
+            )
+        }
 }

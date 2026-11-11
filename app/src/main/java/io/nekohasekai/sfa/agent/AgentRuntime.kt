@@ -106,7 +106,7 @@ class AgentRuntime(
                 TurnOutcome.Failed(
                     AgentError(
                         AgentTurnErrorCode.NO_API_KEY,
-                        "DeepSeek API key is not configured. Open Settings > Conductor.",
+                        "API key is not configured for the selected provider. Open Settings > Conductor.",
                     ),
                 ),
                 onEvent,

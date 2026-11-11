@@ -17,7 +17,10 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,8 +48,11 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentApiKeyProviderFactory
-import io.nekohasekai.sfa.agent.AgentModelException
-import io.nekohasekai.sfa.agent.DeepSeekModelClient
+import io.nekohasekai.sfa.agent.ModelEndpoint
+import io.nekohasekai.sfa.agent.ModelProviderSettings
+import io.nekohasekai.sfa.agent.ModelProviders
+import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
+import io.nekohasekai.sfa.compat.menuAnchorCompat
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.database.Settings
@@ -71,20 +77,57 @@ fun ConductorSettingsScreen(navController: NavController) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val provider = remember { AgentApiKeyProviderFactory.create(context) }
     val scaffoldPadding = LocalScaffoldPadding.current
+
+    var selectedProviderId by remember {
+        mutableStateOf(ModelProviders.byId(Settings.conductorProvider).id)
+    }
+    val preset = remember(selectedProviderId) { ModelProviders.byId(selectedProviderId) }
+    val keyStore =
+        remember(selectedProviderId) {
+            AgentApiKeyProviderFactory.create(context, selectedProviderId)
+        }
 
     var apiKey by remember { mutableStateOf("") }
     var reveal by remember { mutableStateOf(false) }
     var configuredHint by remember { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var model by remember { mutableStateOf(Settings.conductorModel) }
-    var savedModel by remember { mutableStateOf(Settings.conductorModel) }
+    var providerMenuExpanded by remember { mutableStateOf(false) }
+    var model by remember { mutableStateOf(ModelProviderSettings.modelFor(selectedProviderId)) }
+    var savedModel by remember { mutableStateOf(model) }
+    var baseUrl by remember { mutableStateOf(ModelProviderSettings.baseUrlFor(selectedProviderId)) }
+    var savedBaseUrl by remember { mutableStateOf(baseUrl) }
     var toolRouting by remember { mutableStateOf(Settings.conductorToolRouting) }
 
-    LaunchedEffect(provider) {
-        configuredHint = provider.apiKey()?.takeLast(4)
+    LaunchedEffect(keyStore) {
+        configuredHint = keyStore.apiKey()?.takeLast(4)
+    }
+
+    val customBaseUrl = preset.customBaseUrl
+    val effectiveBaseUrl = if (customBaseUrl) baseUrl.trim() else preset.baseUrl
+    val effectiveModel = model.trim().ifBlank { preset.defaultModel }
+    val formValid = effectiveBaseUrl.isNotBlank() && effectiveModel.isNotBlank()
+    val baseChanged = customBaseUrl && baseUrl.trim() != savedBaseUrl
+    val changed = apiKey.isNotBlank() || effectiveModel != savedModel || baseChanged
+
+    fun selectProvider(id: String) {
+        val next = ModelProviders.byId(id)
+        if (next.id == selectedProviderId) {
+            providerMenuExpanded = false
+            return
+        }
+        ModelProviderSettings.select(next.id)
+        selectedProviderId = next.id
+        apiKey = ""
+        reveal = false
+        status = null
+        configuredHint = null
+        model = ModelProviderSettings.modelFor(next.id)
+        savedModel = model
+        baseUrl = ModelProviderSettings.baseUrlFor(next.id)
+        savedBaseUrl = baseUrl
+        providerMenuExpanded = false
     }
 
     Column(
@@ -101,183 +144,263 @@ fun ConductorSettingsScreen(navController: NavController) {
             ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (!provider.supported) {
+        if (!keyStore.supported) {
             Text(
                 text = stringResource(R.string.conductor_agent_unsupported),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         } else {
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             ) {
-                Text(
-                    text = stringResource(R.string.conductor_api_key_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text =
-                        configuredHint?.let {
-                            stringResource(R.string.conductor_api_key_saved, it)
-                        } ?: stringResource(R.string.conductor_api_key_not_configured),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.conductor_api_key_title)) },
-                    placeholder = { Text(stringResource(R.string.conductor_api_key_hint)) },
-                    visualTransformation = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    trailingIcon = {
-                        IconButton(onClick = { reveal = !reveal }) {
-                            Icon(
-                                imageVector = if (reveal) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = null,
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.conductor_provider_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+
+                    ExposedDropdownMenuBox(
+                        expanded = providerMenuExpanded,
+                        onExpandedChange = {
+                            if (!busy) providerMenuExpanded = it
+                        },
+                    ) {
+                        OutlinedTextField(
+                            value = preset.label,
+                            onValueChange = {},
+                            modifier =
+                            Modifier
+                                .then(menuAnchorCompat(!busy))
+                                .fillMaxWidth(),
+                            readOnly = true,
+                            enabled = !busy,
+                            label = { Text(stringResource(R.string.conductor_provider_title)) },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = providerMenuExpanded)
+                            },
+                        )
+                        ExposedDropdownMenu(
+                            expanded = providerMenuExpanded,
+                            onDismissRequest = { providerMenuExpanded = false },
+                        ) {
+                            ModelProviders.all.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = { selectProvider(option.id) },
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = stringResource(R.string.conductor_provider_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    OutlinedTextField(
+                        value = if (customBaseUrl) baseUrl else preset.baseUrl,
+                        onValueChange = { baseUrl = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        readOnly = !customBaseUrl,
+                        enabled = !busy,
+                        label = { Text(stringResource(R.string.conductor_base_url_title)) },
+                        placeholder = { Text(stringResource(R.string.conductor_base_url_hint)) },
+                        supportingText = {
+                            Text(
+                                if (customBaseUrl) {
+                                    stringResource(R.string.conductor_base_url_help_custom)
+                                } else {
+                                    stringResource(R.string.conductor_base_url_help_fixed, preset.label)
+                                },
+                            )
+                        },
+                    )
+
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = { model = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !busy,
+                        label = { Text(stringResource(R.string.conductor_model_title)) },
+                        placeholder = { Text(preset.defaultModel.ifBlank { "model ID" }) },
+                        supportingText = { Text(stringResource(R.string.conductor_model_help)) },
+                    )
+
+                    Text(
+                        text =
+                            configuredHint?.let {
+                                stringResource(R.string.conductor_api_key_saved, it)
+                            } ?: stringResource(R.string.conductor_api_key_not_configured),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !busy,
+                        label = { Text(stringResource(R.string.conductor_api_key_title)) },
+                        placeholder = { Text(preset.keyHint) },
+                        visualTransformation = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        trailingIcon = {
+                            IconButton(onClick = { reveal = !reveal }) {
+                                Icon(
+                                    imageVector = if (reveal) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = null,
+                                )
+                            }
+                        },
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.conductor_tool_routing_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = stringResource(R.string.conductor_tool_routing_help),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                    },
-                )
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.conductor_model_title)) },
-                    placeholder = { Text(stringResource(R.string.conductor_model_hint)) },
-                    supportingText = { Text(stringResource(R.string.conductor_model_help)) },
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.conductor_tool_routing_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
+                        Switch(
+                            checked = toolRouting,
+                            onCheckedChange = {
+                                toolRouting = it
+                                Settings.conductorToolRouting = it
+                            },
                         )
+                    }
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                if (busy) return@Button
+                                if (!formValid) {
+                                    status = context.getString(R.string.conductor_provider_missing_fields)
+                                    return@Button
+                                }
+                                busy = true
+                                scope.launch {
+                                    try {
+                                        if (apiKey.isNotBlank()) keyStore.save(apiKey.trim())
+                                        ModelProviderSettings.setModel(selectedProviderId, effectiveModel)
+                                        if (customBaseUrl) {
+                                            ModelProviderSettings.setBaseUrl(selectedProviderId, effectiveBaseUrl)
+                                        }
+                                        model = effectiveModel
+                                        savedModel = effectiveModel
+                                        if (customBaseUrl) {
+                                            baseUrl = effectiveBaseUrl
+                                            savedBaseUrl = effectiveBaseUrl
+                                        }
+                                        apiKey = ""
+                                        configuredHint = keyStore.apiKey()?.takeLast(4)
+                                        status = null
+                                    } catch (e: Exception) {
+                                        status = e.message ?: "Could not save the settings."
+                                    } finally {
+                                        busy = false
+                                    }
+                                }
+                            },
+                            enabled = !busy && formValid && changed,
+                        ) {
+                            Text(stringResource(R.string.conductor_api_key_save))
+                        }
+                        FilledTonalButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                if (busy) return@FilledTonalButton
+                                if (!formValid) {
+                                    status = context.getString(R.string.conductor_provider_missing_fields)
+                                    return@FilledTonalButton
+                                }
+                                val testEndpoint = ModelEndpoint(
+                                    providerId = preset.id,
+                                    providerLabel = preset.label,
+                                    baseUrl = effectiveBaseUrl,
+                                    model = effectiveModel,
+                                )
+                                busy = true
+                                status = null
+                                scope.launch {
+                                    val key = apiKey.trim().ifBlank { keyStore.apiKey().orEmpty() }
+                                    if (key.isBlank()) {
+                                        status = context.getString(R.string.conductor_api_key_not_configured)
+                                        busy = false
+                                        return@launch
+                                    }
+                                    status =
+                                        runCatching {
+                                            OpenAiCompatibleModelClient { testEndpoint }.testConnection(key)
+                                        }.fold(
+                                            onSuccess = { it },
+                                            onFailure = { it.message ?: "Connection failed." },
+                                        )
+                                    busy = false
+                                }
+                            },
+                            enabled = !busy,
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (busy) R.string.conductor_api_key_testing else R.string.conductor_api_key_test,
+                                ),
+                            )
+                        }
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                if (busy) return@TextButton
+                                busy = true
+                                scope.launch {
+                                    keyStore.clear()
+                                    apiKey = ""
+                                    configuredHint = null
+                                    status = context.getString(R.string.conductor_api_key_cleared)
+                                    busy = false
+                                }
+                            },
+                            enabled = !busy,
+                        ) {
+                            Text(stringResource(R.string.conductor_api_key_clear))
+                        }
+                    }
+                    status?.let {
                         Text(
-                            text = stringResource(R.string.conductor_tool_routing_help),
+                            text = it,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Switch(
-                        checked = toolRouting,
-                        onCheckedChange = {
-                            toolRouting = it
-                            Settings.conductorToolRouting = it
-                        },
-                    )
-                }
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            if (busy) return@Button
-                            val key = apiKey.trim()
-                            val nextModel = model.trim().ifBlank { DeepSeekModelClient.DEFAULT_MODEL }
-                            if (key.isEmpty() && nextModel == savedModel) return@Button
-                            busy = true
-                            scope.launch {
-                                try {
-                                    if (key.isNotEmpty()) provider.save(key)
-                                    Settings.conductorModel = nextModel
-                                    model = nextModel
-                                    savedModel = nextModel
-                                    apiKey = ""
-                                    configuredHint = provider.apiKey()?.takeLast(4)
-                                    status = null
-                                } catch (e: Exception) {
-                                    status = e.message ?: "Could not save the settings."
-                                } finally {
-                                    busy = false
-                                }
-                            }
-                        },
-                        enabled = (apiKey.isNotBlank() || model.trim().ifBlank { DeepSeekModelClient.DEFAULT_MODEL } != savedModel) && !busy,
-                    ) {
-                        Text(stringResource(R.string.conductor_api_key_save))
-                    }
-                    FilledTonalButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            if (busy) return@FilledTonalButton
-                            busy = true
-                            status = null
-                            scope.launch {
-                                val key = apiKey.trim().ifBlank { provider.apiKey().orEmpty() }
-                                if (key.isBlank()) {
-                                    status = context.getString(R.string.conductor_api_key_not_configured)
-                                    busy = false
-                                    return@launch
-                                }
-                                val testModel = model.trim().ifBlank { DeepSeekModelClient.DEFAULT_MODEL }
-                                status =
-                                    runCatching {
-                                        DeepSeekModelClient(modelProvider = { testModel }).testConnection(key)
-                                    }.fold(
-                                        onSuccess = { it },
-                                        onFailure = { it.message ?: "Connection failed." },
-                                    )
-                                busy = false
-                            }
-                        },
-                        enabled = !busy,
-                    ) {
-                        Text(
-                            stringResource(
-                                if (busy) R.string.conductor_api_key_testing else R.string.conductor_api_key_test,
-                            ),
-                        )
-                    }
-                    TextButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            if (busy) return@TextButton
-                            busy = true
-                            scope.launch {
-                                provider.clear()
-                                apiKey = ""
-                                configuredHint = null
-                                status = context.getString(R.string.conductor_api_key_cleared)
-                                busy = false
-                            }
-                        },
-                        enabled = !busy,
-                    ) {
-                        Text(stringResource(R.string.conductor_api_key_clear))
-                    }
-                }
-                status?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
-        }
 
-        Text(
-            text = stringResource(R.string.conductor_agent_privacy),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+            Text(
+                text = stringResource(R.string.conductor_agent_privacy),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

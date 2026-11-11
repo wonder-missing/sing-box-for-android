@@ -1,17 +1,17 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider
 最后更新：2026-11-11
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
-本文只定 Phase 2a / 2b 的运行时：DeepSeek BYOK、自然语言入口、结构化 tool call、确认暂停与恢复、有界循环。设备注册表和跨设备能力仍留在上位文档的 Phase 2（设备注册表部分）/ 3 / 4。
+本文只定 Phase 2a / 2b 的运行时：OpenAI-compatible BYOK（DeepSeek / xAI / Custom）、自然语言入口、结构化 tool call、确认暂停与恢复、有界循环。设备注册表和跨设备能力仍留在上位文档的 Phase 2（设备注册表部分）/ 3 / 4。
 
 摘要：
 
 - Phase 2a：最多 12 轮工具调用作为防死循环 guard，已经支持多步；2B 再补 Stop、真取消和流式。
 - Phase 2b：Stop、真取消、流式回答、上下文压缩、probe/telemetry 可取消已随 wonder.36 完成；同时把工具暴露收敛为 `route_call` / `search_tools` 两个静态元工具，真实工具 schema 通过目录搜索按需注入（§7.1），并修正会打断前缀缓存的裁剪和 `tools` 置空问题。
 - 使用结构化 tool call，不解析文本 ReAct。
-- `AgentRuntime` 是手写薄层，纯 Kotlin/JVM 可测；DeepSeek key 走 App Settings 的 BYOK 入口，Android Keystore 加密。
+- `AgentRuntime` 是手写薄层，纯 Kotlin/JVM 可测；provider key 走 App Settings 的 BYOK 入口，Android Keystore 加密。
 - 确认是运行时的暂停状态，模型无法绕过。
 - 用户输入先过本地敏感内容检查，命中订阅/分享链接、token、密码或日志特征时直接拦截，不发送。
 
@@ -24,7 +24,7 @@
 - Phase 2b 补 Stop、真取消和流式；工具轮数仍由运行时 guard 控制。
 - Phase 2b 把工具暴露改为静态元工具 + 目录搜索：首请求只带 `route_call` / `search_tools`，真实工具 schema 通过搜索结果按需进入 transcript；system prompt 和 `tools` 参数在会话内保持逐字节稳定。
 - 所有写操作和网络状态变更必须经过 App 侧确认，模型不能绕过。
-- DeepSeek API key 由用户在 App Settings 里填写，Android Keystore 加密保存。
+- 模型 provider 的 API key 由用户在 App Settings 里填写，按 provider 分开保存，Android Keystore 加密。
 - 用户输入在发送前做 best-effort 敏感内容检查，命中即本地拦截并提示改写。
 - 复用 `AgentToolRegistry` 的 schema、参数校验、确认对象和 sanitizer。
 
@@ -74,7 +74,7 @@ ConductorViewModel
   ↕ AgentRuntime
 AgentRuntime         循环、预算、确认暂停、observation 回填、turn 收尾
   ├─ AgentInputGuard      用户输入敏感内容本地检查
-  ├─ AgentModelClient      DeepSeek OpenAI-compatible 客户端
+  ├─ AgentModelClient      OpenAI-compatible 客户端（DeepSeek / xAI / Custom）
   ├─ AgentContext          system prompt、历史裁剪、tool schema 注入
   ├─ AgentToolExecutor     AgentToolRegistry 的 suspend/timeout 适配
   └─ AgentApiKeyProvider   Keystore 读取（API 24+），运行时只拿 key，不落日志
@@ -211,30 +211,33 @@ API key 作为 `complete` / `stream` 的参数传入，不放进 `AgentModelRequ
 
 `TokenUsage` 解析 DeepSeek 的 `prompt_tokens` / `completion_tokens`，以及 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`。没有这些字段的兼容服务返回 null，不影响主流程。
 
-Phase 2a 只实现 `AgentModelClient.complete`。Phase 2b 实现 `AgentStreamingModelClient`，流式 tool call 按 `index` 累积，`Completed` 时再交给运行时执行。2a 的 UI 事件已经按「最终消息」设计，2b 增加 delta 不需要重写运行时。Phase 2b 的 `AgentRuntime` 增加可选 `streamingModel: AgentStreamingModelClient?`，为 null 时走 `complete`；`DeepSeekModelClient` 同时实现两个接口。wonder.36 起生产路径使用 OkHttp SSE；`AgentStreamingModelClient.cancel()` 取消当前 `Call`，运行时 Stop 时先置取消标志再调用它。`AgentRuntime` 累积 `ContentDelta` 和 `ToolCallDelta`，内容增量发 `AssistantDelta`，最终仍发 `AssistantMessage` 让 UI 用完整文本收尾。
+Phase 2a 只实现 `AgentModelClient.complete`。Phase 2b 实现 `AgentStreamingModelClient`，流式 tool call 按 `index` 累积，`Completed` 时再交给运行时执行。2a 的 UI 事件已经按「最终消息」设计，2b 增加 delta 不需要重写运行时。Phase 2b 的 `AgentRuntime` 增加可选 `streamingModel: AgentStreamingModelClient?`，为 null 时走 `complete`；`OpenAiCompatibleModelClient` 同时实现两个接口。wonder.36 起生产路径使用 OkHttp SSE；`AgentStreamingModelClient.cancel()` 取消当前 `Call`，运行时 Stop 时先置取消标志再调用它。`AgentRuntime` 累积 `ContentDelta` 和 `ToolCallDelta`，内容增量发 `AssistantDelta`，最终仍发 `AssistantMessage` 让 UI 用完整文本收尾。
 
 wonder.37 起同时解析 SSE 的 `reasoning_content`，发 `ReasoningDelta`；UI 显示为 `Thinking` 块，不写回 transcript，也不进入下一次模型请求。wonder.38 把 Reasoning 改成两行高的自动上滚视窗，并在正文开始输出或进入下一步时结算所有仍在 streaming 的 Reasoning 项，避免多个 spinner 同时转。
 
-`DeepSeekModelClient`：
+wonder.39 起客户端不再叫 DeepSeek：运行时只依赖 `ModelEndpoint`（provider 名、base URL、model），由 `ModelProviderSettings` 按当前 provider 解析。内置 DeepSeek、xAI、Custom（OpenAI-compatible）三个预设；Custom 的 base URL 可编辑。请求 URL 统一为 `<base>/chat/completions`，base 已以 `/chat/completions` 结尾时不再追加；DeepSeek 预设是 `https://api.deepseek.com`，xAI 预设是 `https://api.x.ai/v1`。
 
-- Base URL：`https://api.deepseek.com`，路径 `/chat/completions`。
+`OpenAiCompatibleModelClient`：
+
 - Header：`Authorization: Bearer <key>`、`Content-Type: application/json`。
-- 默认模型 ID 是 `deepseek-v4-flash`，只放在一个常量里；Settings > Conductor 可以覆盖，不散落在 UI 和测试里。
+- 模型 ID 按 provider 分开：DeepSeek 沿用 `conductor_model`（默认 `deepseek-v4-flash`），xAI 用 `conductor_xai_model`（默认 `grok-4`），Custom 用 `conductor_generic_model`。Settings > Conductor 可以覆盖每个 provider 的模型，不散落在 UI 和测试里。
+- `TokenUsage` 除 DeepSeek 的 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` 外，也识别 OpenAI-compatible 的 `prompt_tokens_details.cached_tokens`，并用 `prompt_tokens - cached_tokens` 补 cache miss；没有字段时返回 null。
 - 请求字段：`model`、`messages`、`tools`、`tool_choice: "auto"`、`temperature: 0.2`、`max_tokens`、`stream`。
 - Phase 2a 用 `HttpURLConnection`，连接超时 10s，读超时由 `AgentConfig.modelTimeoutMs` 控制，响应体上限 2MB；不跟随重定向，`disconnect()` 和流关闭放在 `finally`。
 - Phase 2b 引入 OkHttp，只用于 `Call.cancel()` 和 SSE。`HttpURLConnection` 的 `disconnect()` 不能保证打断 DNS/TLS/阻塞读，达不到 Stop 1s 的验收，不在这里省依赖。
 - 工具参数是 JSON 字符串，可能不合法；解析失败按 `invalid_arguments` observation 回给模型，不让客户端崩溃。
+- SSE 的 reasoning 兼容 `delta.reasoning_content` 和 `delta.reasoning`；只用于 UI，不写回 transcript。
 - 模型没给 tool call id 时，客户端生成 `call_<uuid>`，并保证同一条 assistant 消息里的 id 唯一。
 - 只取 `choices[0]`。`finish_reason` 映射为 `stop` / `tool_calls` / `length` / `content_filter` / `unknown`。
 - `finish_reason == length` 且带 tool call 时，不执行可能被截断的工具参数，按 `invalid_model_response` 处理。没有 tool call 时，可以把已生成文本作为截断回答展示，并标记 `output_truncated`。
 - HTTP 状态映射：400 请求格式/参数错误，401/403 鉴权失败，402 余额不足，404 模型不存在，408 请求超时，409 冲突，429 限流，5xx 服务不可用。错误响应体最多读 4KB，过 sanitizer 后只取可读摘要。
 - 401/403、429、5xx、网络错误、超时分别映射到错误码，不把响应体原文直接塞进 UI。
 
-DeepSeek 请求形态：
+OpenAI-compatible 请求形态（DeepSeek / xAI / Custom 共用）：
 
 ```json
 {
-  "model": "deepseek-v4-flash",
+  "model": "<provider model>",
   "messages": [
     {"role": "system", "content": "..."},
     {"role": "user", "content": "看看现在有哪些节点"},
@@ -251,6 +254,8 @@ DeepSeek 请求形态：
   "stream": false
 }
 ```
+
+三个预设都按 OpenAI-compatible 的 Bearer + Chat Completions 形态发请求。暂不抽象 provider 私有能力：`stream_options.include_usage`、`max_completion_tokens`、非 Bearer 鉴权（如 Azure）和 provider 私有 reasoning 字段不在这一版内；遇到时按 HTTP 错误显示，等真机验证后再决定是否加 capability。
 
 ## 6. Tool schema、确认策略与 sanitizer
 
@@ -842,7 +847,7 @@ fun interface AgentInputGuard {
 - 不调用模型，不写 transcript，不写日志。
 - UI 只显示通用提示「检测到可能的订阅链接/token/日志内容，未发送。请删除敏感部分后重试。」
 - 提示里不回显命中的原文。
-- 首次使用 Conductor 自然语言入口时告知：对话文本和工具元数据会发给 DeepSeek，不要粘贴订阅链接、token 或完整日志。
+- 首次使用 Conductor 自然语言入口时告知：对话文本和工具元数据会发给当前模型 provider，不要粘贴订阅链接、token 或完整日志。
 
 这是 best-effort，不是内容识别保证。无法识别的敏感片段仍可能被用户主动发送，文档和 UI 都不能承诺绝对拦截。`/` 命令是用户显式输入，不经过 `AgentInputGuard`；`unknownMessage` 不回显原文，避免把订阅 URL 带回 UI/日志。
 
@@ -1005,23 +1010,32 @@ UI 需要新增：
 
 入口：`Settings > Conductor`，新增 `ConductorSettingsScreen`。只在 API 24+ 显示；`otherLegacy` 不显示自然语言入口，`/` 命令保留。
 
-- API key 输入框：密码样式，可显示/隐藏，保存后清空输入框。
-- 模型输入框：默认 `deepseek-v4-flash`，允许改成账号实际可用的模型 ID。
+- Provider 下拉：DeepSeek / xAI / Custom（OpenAI-compatible）。切换 provider 时立即写入 `conductor_provider`，并加载该 provider 的模型、base URL 和 key 状态；对正在跑的 turn 不生效，下一轮才用新 provider。
+- Base URL：DeepSeek 和 xAI 预设只读；Custom 可编辑。请求地址是 `<base>/chat/completions`，base 已以 `/chat/completions` 结尾时不再追加。
+- 模型输入框：按 provider 分开保存。DeepSeek 沿用 `conductor_model`（默认 `deepseek-v4-flash`），xAI 用 `conductor_xai_model`（默认 `grok-4`），Custom 用 `conductor_generic_model`。允许改成账号实际可用的模型 ID。
+- API key 输入框：密码样式，可显示/隐藏，保存后清空输入框；placeholder 按 provider 显示 `sk-...` / `xai-...`。
 - 输入框用 `remember`，不用 `rememberSaveable`；保存或离开页面后清掉 Compose 状态，避免密码原文进入 saved state。
-- 状态：`Configured (sk-...abcd)` / `Not configured`；只显示尾部 4 位。
+- 状态：`Configured (…abcd)` / `Not configured`；只显示尾部 4 位。
 - 按钮：Save、Clear、Test connection。
-- 说明文案：key 只保存在本机，只发给 `api.deepseek.com`；对话文本和工具元数据也会发给 DeepSeek。key 不写入日志，也不进入对话历史。
-- Test connection 先调 `GET /models` 验证 key，再用当前模型 ID 做一次 `max_tokens: 1` 的最小 completion，确认模型 ID 可用；失败显示 HTTP 状态和可读原因，不显示 key。
+- 说明文案：key 只保存在本机，只发给当前 provider；对话文本和工具元数据也会发给该 provider。key 不写入日志，也不进入对话历史。
+- Test connection 用当前表单里的 base URL、模型和 key（输入框为空时用已保存 key）做一次 `max_tokens: 1` 的最小 completion，确认 endpoint 和模型 ID 可用；失败显示 HTTP 状态和可读原因，不显示 key。
 - key 未配置时，Conductor 的自然语言入口直接提示去设置；`/` 命令不受影响。
+
+Provider 解析与 turn 快照：
+
+- `ModelProviders` 保存三个预设；`ModelProviderSettings` 读取 Settings 并生成 `ModelEndpoint(providerId, providerLabel, baseUrl, model)`。
+- 发起 turn 时 `ModelProviderSettings.pinForTurn()` 固定当前 provider；该 turn 的模型请求和 key 读取都用同一个 provider。`unpin()` 在 turn 收尾、View Disconnect/onCleared 时调用。这样在 Settings 里切换 provider 不会把 A 的 key 配到 B 的 base URL。
+- Settings 页的 key 操作使用带显式 provider id 的 key provider；运行时使用不传 id 的 provider，读取 pinned/active provider。
 
 存储：
 
 - `AgentApiKeyProvider` 接口在 `src/main`。`AgentApiKeyProviderFactory` 在 `src/minApi21` 和 `src/minApi24` 各有一份同 FQCN 实现，和现有 `WindowSizeClassCompat` 的做法一致：minApi24 返回 Keystore 实现，minApi21 返回 Unsupported 实现。`src/main` 只调用 factory，不直接引用 Keystore 类。
 - `otherLegacy` 走 minApi21 的 factory，返回 `supported = false` 和 `null` key。
-- 用 Android Keystore 生成不可导出的 AES-256-GCM key，alias `conductor-api-key`。保持 `setRandomizedEncryptionRequired(true)` 默认值。
+- 每个 provider 一个 Android Keystore AES-256-GCM key，alias `conductor-api-key-<provider>`。保持 `setRandomizedEncryptionRequired(true)` 默认值。
 - 加密时只调用 `cipher.init(ENCRYPT_MODE, key)`，让 Keystore 生成 IV，读 `cipher.iv`；不要自己传 `GCMParameterSpec`，默认配置会拒绝。
-- 存一个 Base64 blob：`version(1) + ivLength + iv + ciphertext`，放在私有 SharedPreferences `conductor_secrets`，不存明文到 Room。
+- 每个 provider 存一个 Base64 blob：`version(1) + ivLength + iv + ciphertext`，放在私有 SharedPreferences `conductor_secrets` 的 `api_key_blob_<provider>`，不存明文到 Room。
 - 解密时从 blob 里读 IV，`cipher.init(DECRYPT_MODE, key, GCMParameterSpec(128, iv))`。
+- 旧版 DeepSeek key（blob `deepseek_api_key_blob`、alias `conductor-api-key`）在 DeepSeek provider 下继续可读；保存新 key 或 Clear 时清理旧 blob/alias。
 - Keystore key 不导出、不备份。恢复设备后密文解不开时，当作未配置处理，提示重新输入。确认 `conductor_secrets` 不在 backup/data-extraction 规则里。
 - 读 key 的方法只在发起请求时调用；ViewModel 不长期持有明文。
 - 任何异常只记录错误类型，不记录 key、IV、密文。
@@ -1111,7 +1125,8 @@ app/src/main/java/io/nekohasekai/sfa/agent/
   AgentRuntime.kt        循环、预算、finishTurn、确认暂停、observation 回填
   AgentInputGuard.kt     用户输入敏感内容检查
   AgentModelClient.kt    模型接口、请求/响应/stream chunk 类型
-  DeepSeekModelClient.kt OpenAI-compatible HTTP 实现
+  ModelProviders.kt     provider 预设、endpoint 解析、turn 快照、chat/completions URL
+  OpenAiCompatibleModelClient.kt OpenAI-compatible HTTP 实现
   AgentToolSchema.kt     AgentToolDefinition -> AgentToolSchema
   AgentToolCatalog.kt    目录快照、搜索排序、建议、system prompt roster
   AgentMetaTools.kt      route_call / search_tools 静态 schema
@@ -1147,7 +1162,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
   AgentInputGuardTest.kt
   AgentConfirmationPolicyTest.kt
   AgentSanitizerTest.kt
-  DeepSeekModelClientTest.kt
+  OpenAiCompatibleModelClientTest.kt  base URL、tool_choice、SSE、usage（含 OpenAI cached_tokens）
   AgentToolSchemaTest.kt
   AgentToolCatalogTest.kt
   AgentMetaToolsTest.kt
@@ -1158,7 +1173,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
   ConductorStreamingTest.kt  Reasoning/Assistant streaming 结算、空占位删除、单 spinner
 ```
 
-`DeepSeekModelClientTest` 用本地 loopback HTTP server，不连真实 API；`AgentRuntimeTest` 用 fake model client、fake tool executor 和可控 clock。测试依赖加 `org.jetbrains.kotlinx:kotlinx-coroutines-test`。
+`OpenAiCompatibleModelClientTest` 用本地 loopback HTTP server，不连真实 API；覆盖 base URL 拼接、`tool_choice: none`、SSE reasoning/tool call、DeepSeek 与 OpenAI 两种 cache usage 字段。`AgentRuntimeTest` 用 fake model client、fake tool executor 和可控 clock。测试依赖加 `org.jetbrains.kotlinx:kotlinx-coroutines-test`。
 
 ## 16. 分阶段、迁移清单与验收
 
@@ -1171,7 +1186,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `AgentTool.execute` / `AgentToolRegistry.invoke` 改成 suspend；registry 重抛 `CancellationException`。
 - `AgentTool.execute` 增加 `ToolCancellation` 参数，现有三个工具签名同步改；`probe_via_node`、`telemetry_upload` 注册取消动作关闭连接。
 - `ConfirmationPolicy` / `InvocationSource`，替换单个 `needsConfirmation` boolean。
-- `DeepSeekModelClient` 非流式，`HttpURLConnection`，超时和关闭。
+- `OpenAiCompatibleModelClient` 非流式，`HttpURLConnection`，超时和关闭。
 - `KeystoreAgentApiKeyProvider` + `Settings > Conductor`，API 24+。
 - Conductor 非 `/` 文本进模型；多轮工具调用 + 最终回答，由宽松 guard 防死循环。
 - 现有 `/probe` 命令继续走 ViewModel，但确认卡片和工具执行改用 `ConfirmationRequest` / `AgentToolExecutor`，不经过 `AgentRuntime`；参数显示用 `displayArgsJson`。
@@ -1193,7 +1208,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `ConductorCommands.unknownMessage` 不再回显原始输入，避免把订阅 URL 带回 UI/日志。
 - `/clear` 同时清 UI、transcript、待确认状态，并取消活动 turn。
 - `AgentToolRegistryTest` 增加确认策略测试：命令和 Agent 的 `telemetry_upload` 行为不同，`probe_via_node` 两个入口都要确认。
-- 测试依赖加 `kotlinx-coroutines-test`；现有 `AgentToolRegistryTest` 的同步 `invoke` 调用改成 `runTest`，DeepSeek 客户端测试用 loopback server。
+- 测试依赖加 `kotlinx-coroutines-test`；现有 `AgentToolRegistryTest` 的同步 `invoke` 调用改成 `runTest`，模型客户端测试用 loopback server。
 - CI 只跑 `:app:testOtherDebugUnitTest`，新增 JVM 测试要在这个变体里可跑。
 
 验收：
@@ -1247,7 +1262,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - Stop 真取消，Phase 2b 引入 OkHttp 并改 suspend 工具。
 - Agent/BYOK 只支持 API 24+，`otherLegacy` 降级。
 - 确认策略用 `ConfirmationPolicy` / `InvocationSource`，不用单个 boolean。
-- DeepSeek key 走 App Settings 的 BYOK 入口，Android Keystore 加密。
+- Provider key 走 App Settings 的 BYOK 入口，按 provider 分开保存，Android Keystore 加密。
 - Phase 2a 多步 + 宽松 guard；Phase 2b 补 Stop、流式、真取消。
 - 2B 工具暴露用静态元工具 + 目录搜索；搜索结果只进 transcript；`route_call` 是运行时 unwrap，不是 `AgentTool`。
 - `toolRoutingEnabled` 开关保留，便于回退和 A/B；核心工具是否提升为原生 tool 由真机数据决定。
@@ -1256,7 +1271,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 待定：
 
-- 默认 `deepseek-v4-flash` 是否适用于当前账号；Settings > Conductor 可以改模型 ID。
+- 各 provider 的预设模型 ID（`deepseek-v4-flash` / `grok-4`）是否适用于当前账号；Settings > Conductor 可以按 provider 改模型 ID。
 - 模型请求走系统网络还是强制走某个出站；Phase 2a 先用系统网络，失败时给明确错误，不静默切换。
 - Telemetry upload 从 Agent 调用时的确认文案。
 - 会话历史的保留期限、清理入口和导出格式；当前已本地持久化，尚无自动过期。
@@ -1272,7 +1287,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 限制改成预算而不是小步数门槛：保留 12 轮防死循环 guard、超时和费用/Token 预算；产品体验靠 Stop、流式和“继续”，不要靠 4 次/1 轮这类硬卡点。
 - 上下文保持稳定前缀：system prompt 只放稳定信息，动态时间和状态走 tool；历史超过窗口时做压缩/摘要，减少 trim 造成的缓存断裂。
 - 工具并发加元数据：只读且不共享全局状态的工具可以并行，probe 这种改全局选择的必须串行；无论并行与否，下一轮模型请求都要等整批 observation 完成。
-- 供应商抽象：system prompt 不写品牌；后续抽 base URL、model、key 和 provider 名称，当前 DeepSeek 实现只是其中一种。
+- 供应商抽象：system prompt 不写品牌；wonder.39 已抽 base URL、model、key 和 provider 名称，内置 DeepSeek / xAI / Custom 三个 OpenAI-compatible 预设。
 - 可观测性：API trace 继续保留，并补 usage、cache hit/miss token、tool 耗时，用于判断问题出在模型还是工具。
 
 2B 开工顺序：
@@ -1303,6 +1318,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 两个 Thinking spinner 同时转、turn 结束后还在转：原因是结算函数只看列表最后一项；正文 delta 先追加 Assistant 后，Reasoning 不再是最后一项，永远不会被结算。wonder.38 把 UI 列表变换抽成 `ConductorStreaming.kt` 的纯函数，正文开始、工具开始、确认、notice、turn 结束和下一步 CallingModel 都结算**所有** streaming Reasoning/Assistant 项；空占位直接删除。
 - 连续审批太慢：同一 assistant 消息带多个需要确认的 tool call 时，第一张卡增加 `Run all`；`batchRemaining` 由运行时给，ViewModel 只在本 turn 内自动通过后续确认。运行时仍逐个显式确认，安全边界不变。
 - API trace 2MB 无法粘贴：菜单增加 Save API trace to file，走 `ActivityResultContracts.CreateDocument("text/plain")`，在 IO 线程写 Markdown；空 trace 仍然只提示不落文件。
+
+### wonder.39 多 Provider（2026-11-11）
+
+- `OpenAiCompatibleModelClient` 取代 DeepSeek 专用客户端；请求 URL 由 `ModelEndpoint.baseUrl` 生成，base 以 `/chat/completions` 结尾时直接使用，否则追加。DeepSeek 预设 `https://api.deepseek.com`，xAI 预设 `https://api.x.ai/v1`，Custom 可填任意 OpenAI-compatible base。
+- provider/model/key 都按 provider 分开。DeepSeek 沿用旧 `conductor_model` 和旧 key alias；旧 key 在 DeepSeek 下继续可读，保存新 key 时清理旧 blob/alias。
+- 发起 turn 时 pin 住 provider，key 读取与 endpoint 解析都用同一个 provider；Settings 里切换 provider 从下一轮开始生效。
+- `TokenUsage` 增加 OpenAI `prompt_tokens_details.cached_tokens` 兼容；SSE reasoning 同时识别 `reasoning_content` 和 `reasoning`。
+- 未做 provider 私有 capability；`stream_options`、`max_completion_tokens`、Azure 类鉴权、provider 私有 reasoning 字段留待真机验证。
 
 ### wonder.33/34 跨版本 trace 复盘（2026-11-10）
 

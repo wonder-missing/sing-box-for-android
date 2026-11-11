@@ -803,7 +803,14 @@
     <string name="source_updated_icon">Source updated</string>
     <string name="settings_conductor">Conductor</string>
     <string name="conductor_settings_title">Conductor</string>
-    <string name="conductor_api_key_title">DeepSeek API key</string>
+    <string name="conductor_provider_title">Provider</string>
+    <string name="conductor_provider_help">Presets use a fixed endpoint. Custom sends OpenAI-compatible chat/completions requests to your base URL. Applies to the next message.</string>
+    <string name="conductor_base_url_title">Base URL</string>
+    <string name="conductor_base_url_hint">https://api.openai.com/v1</string>
+    <string name="conductor_base_url_help_custom">Used as &lt;base&gt;/chat/completions. Include the version path, e.g. /v1.</string>
+    <string name="conductor_base_url_help_fixed">Fixed endpoint for %1$s.</string>
+    <string name="conductor_provider_missing_fields">Enter a base URL and model first.</string>
+    <string name="conductor_api_key_title">API key</string>
     <string name="conductor_api_key_hint">sk-...</string>
     <string name="conductor_conversation_actions">Conversation actions</string>
     <string name="conductor_copy_conversation">Copy conversation</string>
@@ -820,8 +827,8 @@
     <string name="conductor_tool_details_hint">Tap Details to view the tool output.</string>
     <string name="conductor_tool_degraded">degraded</string>
     <string name="conductor_model_title">Model</string>
-    <string name="conductor_model_hint">deepseek-v4-flash</string>
-    <string name="conductor_model_help">Change only if your DeepSeek account uses a different model ID.</string>
+    <string name="conductor_model_hint">model ID</string>
+    <string name="conductor_model_help">Use the provider’s exact model ID. The preset value is only a starting point; override it for your account.</string>
     <string name="conductor_tool_routing_title">Tool routing</string>
     <string name="conductor_tool_routing_help">Send only route_call and search_tools, then load each tool schema on demand. Turn off to send every schema. Applies to the next message.</string>
     <string name="conductor_api_key_saved">Configured (…%1$s)</string>
@@ -832,5 +839,5 @@
     <string name="conductor_api_key_testing">Testing…</string>
     <string name="conductor_api_key_cleared">Cleared</string>
     <string name="conductor_agent_unsupported">The Conductor agent requires Android 7.0 or newer.</string>
-    <string name="conductor_agent_privacy">The key is encrypted on this device. Conversation text and tool metadata are sent to api.deepseek.com. Do not paste subscription links, tokens or full logs.</string>
+    <string name="conductor_agent_privacy">The key is encrypted on this device and sent only to the selected provider. Conversation text and tool metadata are sent to that provider. Do not paste subscription links, tokens or full logs.</string>
 </resources>
