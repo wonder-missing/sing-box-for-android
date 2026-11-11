@@ -37,6 +37,7 @@ import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
+import io.nekohasekai.sfa.agent.TurnEvent
 import io.nekohasekai.sfa.agent.TurnOutcome
 import io.nekohasekai.sfa.agent.TurnResult
 import io.nekohasekai.sfa.agent.TurnState
@@ -165,6 +166,7 @@ class ConductorViewModel(
         )
 
     private var transcript: List<AgentMessage> = emptyList()
+    private var pendingTurnEvent: TurnEvent? = null
     private var agentJob: Job? = null
     private var stopRequested = false
 
@@ -273,6 +275,7 @@ class ConductorViewModel(
                 } else {
                     updateUi { copy(items = emptyList()) }
                     transcript = emptyList()
+                    pendingTurnEvent = null
                     pendingCommandConfirmation = null
                     sessionStore.clear()
                     AgentApiTrace.clear()
@@ -395,6 +398,7 @@ class ConductorViewModel(
         stopRequested = false
         autoApproveAgentConfirmation = false
         updateUi { copy(isRunning = true) }
+        val initialEvent = pendingTurnEvent
         agentJob =
             viewModelScope.launch {
                 ModelProviderSettings.pinForTurn()
@@ -406,6 +410,7 @@ class ConductorViewModel(
                             deviceSummary = deviceSummary(),
                             onEvent = ::handleAgentEvent,
                             confirm = { awaitAgentConfirmation() },
+                            initialEvent = initialEvent,
                         )
                     } catch (e: CancellationException) {
                         throw e
@@ -419,12 +424,14 @@ class ConductorViewModel(
                                         e.message ?: "Agent failed.",
                                     ),
                                 ),
+                            pendingEvent = initialEvent,
                         )
                     }
                 withContext(Dispatchers.Main) {
                     finishReasoning()
                     finishStreamingAssistant()
                     transcript = (result.compactedHistory ?: transcript) + result.messages
+                    pendingTurnEvent = result.pendingEvent
                     updateUi { copy(isRunning = false) }
                     pendingAgentConfirmation = null
                     stopRequested = false
@@ -941,6 +948,7 @@ class ConductorViewModel(
     private fun restoreSession() {
         val session = sessionStore.load() ?: return
         transcript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
+        pendingTurnEvent = session.pendingEvent
         val restoredItems =
             session.items.mapNotNull { item ->
                 when (item) {
@@ -980,12 +988,12 @@ class ConductorViewModel(
 
     private fun persistSession() {
         val items = _uiState.value.items.filterNot { it is ConductorItem.Confirmation }
-        if (transcript.isEmpty() && items.isEmpty()) {
+        if (transcript.isEmpty() && items.isEmpty() && pendingTurnEvent == null) {
             sessionStore.clear()
             return
         }
         if (!validateTranscriptPairing(transcript)) return
-        sessionStore.save(transcript, items)
+        sessionStore.save(transcript, items, pendingTurnEvent)
     }
 
     private fun deviceSummary(): String {

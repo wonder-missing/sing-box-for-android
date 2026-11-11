@@ -11,6 +11,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
@@ -38,6 +39,7 @@ data class TurnResult(
     val messages: List<AgentMessage>,
     val outcome: TurnOutcome,
     val compactedHistory: List<AgentMessage>? = null,
+    val pendingEvent: TurnEvent? = null,
 )
 
 class AgentRuntime(
@@ -69,6 +71,7 @@ class AgentRuntime(
         deviceSummary: String = "",
         onEvent: (AgentEvent) -> Unit,
         confirm: suspend (ConfirmationRequest) -> Boolean,
+        initialEvent: TurnEvent? = null,
     ): TurnResult {
         cancelRequested = false
         preparedHistoryForTurn = null
@@ -83,7 +86,13 @@ class AgentRuntime(
                             "It was not sent. Remove the sensitive part and try again.",
                     ),
                 )
-                return finish(history.toMutableList(), history.size, TurnOutcome.Cancelled(guard.reason), onEvent)
+                return finish(
+                    history.toMutableList(),
+                    history.size,
+                    TurnOutcome.Cancelled(guard.reason),
+                    onEvent,
+                    pendingEvent = initialEvent,
+                )
             }
 
             InputGuardResult.Allowed -> Unit
@@ -97,6 +106,7 @@ class AgentRuntime(
                         history.size,
                         TurnOutcome.Failed(AgentError(AgentTurnErrorCode.NO_API_KEY, "Could not read the API key.")),
                         onEvent,
+                        pendingEvent = initialEvent,
                     )
                 }
         if (apiKey.isNullOrBlank()) {
@@ -110,13 +120,15 @@ class AgentRuntime(
                     ),
                 ),
                 onEvent,
+                pendingEvent = initialEvent,
             )
         }
 
         val preparedHistory =
             AgentContext.compactOldObservations(history, config.maxHistoricalObservationChars)
         preparedHistoryForTurn = preparedHistory.takeIf { it !== history }
-        val transcript = (preparedHistory + AgentMessage.User(userText)).toMutableList()
+        val transcript =
+            (preparedHistory + AgentMessage.User(formatUserMessage(userText, initialEvent))).toMutableList()
         val startSize = preparedHistory.size
         val routingEnabled = toolRoutingEnabled()
         val catalog = AgentToolCatalog(tools.definitions())
@@ -802,6 +814,7 @@ class AgentRuntime(
         startSize: Int,
         outcome: TurnOutcome,
         onEvent: (AgentEvent) -> Unit,
+        pendingEvent: TurnEvent? = null,
     ): TurnResult {
         val reason =
             when (outcome) {
@@ -810,7 +823,7 @@ class AgentRuntime(
                 is TurnOutcome.Failed -> outcome.error.message
             }
         ensurePairing(transcript, reason)
-        closeUnfinishedTurn(transcript, startSize, outcome)
+        val event = prepareUnfinishedTurn(transcript, startSize, outcome) ?: pendingEvent
         var finalOutcome = outcome
         if (!validateTranscriptPairing(transcript)) {
             val assistantIndex = transcript.indexOfLast { it is AgentMessage.Assistant && it.toolCalls.isNotEmpty() }
@@ -828,7 +841,12 @@ class AgentRuntime(
                 )
         }
         onEvent(AgentEvent.TurnFinished(finalOutcome))
-        return TurnResult(transcript.drop(startSize), finalOutcome, preparedHistoryForTurn)
+        return TurnResult(
+            messages = transcript.drop(startSize),
+            outcome = finalOutcome,
+            compactedHistory = preparedHistoryForTurn,
+            pendingEvent = event,
+        )
     }
 
     private fun appendPartialAssistant(
@@ -842,28 +860,30 @@ class AgentRuntime(
     }
 
     /**
-     * A cancelled or failed turn can end with an unanswered user message or a
-     * cancelled tool observation. Chat completions expects the next request to
-     * see a closed turn, so add a synthetic assistant message. Without it the
-     * next user message becomes a second consecutive user turn and models tend
-     * to answer both. Input-guard and missing-key exits never added the user
-     * message, so their transcript is not touched.
+     * A cancelled or failed turn can leave an unanswered user message. For an
+     * empty turn, drop that user message from the model transcript; the UI keeps
+     * it as a stopped item. For a turn with partial assistant text or tool
+     * results, keep them. In both cases queue a runtime event for the next real
+     * user message instead of inventing an assistant reply.
      */
-    private fun closeUnfinishedTurn(
+    private fun prepareUnfinishedTurn(
         transcript: MutableList<AgentMessage>,
         startSize: Int,
         outcome: TurnOutcome,
-    ) {
-        if (outcome is TurnOutcome.Completed) return
-        if (transcript.size <= startSize) return
-        val last = transcript.lastOrNull()
-        if (last !is AgentMessage.User && last !is AgentMessage.Tool) return
-        val marker =
-            when (outcome) {
-                is TurnOutcome.Cancelled -> "Stopped."
-                is TurnOutcome.Failed -> "[The turn ended before an answer.]"
-                is TurnOutcome.Completed -> return
-            }
-        transcript.add(AgentMessage.Assistant(marker, emptyList()))
+    ): TurnEvent? {
+        if (outcome is TurnOutcome.Completed) return null
+        if (transcript.size <= startSize) return null
+        val hasOutput =
+            transcript
+                .drop(startSize)
+                .any { it is AgentMessage.Assistant || it is AgentMessage.Tool }
+        if (!hasOutput && transcript[startSize] is AgentMessage.User) {
+            transcript.removeAt(startSize)
+        }
+        return when (outcome) {
+            is TurnOutcome.Cancelled -> TurnEvent("turn_interrupted", "user_stop")
+            is TurnOutcome.Failed -> TurnEvent("turn_failed", outcome.error.code.name.lowercase(Locale.US))
+            is TurnOutcome.Completed -> null
+        }
     }
 }

@@ -30,6 +30,24 @@
 
 - 传输错误边界：协议握手/DNS/连接拒绝/TLS 失败不盲重试，用户提示不显示原始异常和解析 IP；可重试错误显示 Notice；Stop 后不再发起新请求。对应 `ModelTransportErrors.kt` 和 `AgentRuntime.streamModelWithRetry`。
 - 审批与批处理：确认卡对单调用也提供 `Approve rest of turn`；system prompt 说明同一响应内工具串行执行；probe 描述说明多 probe 串行且只接受 selector 组里可选节点。
+- 中断事件：`TurnEvent` + 下一条 user 的 `[conductor:event ...]` 前缀；空 turn 从模型 transcript 回滚，partial assistant/tool 结果保留；pending event 存在 `ConductorSession.pendingEvent`，跨进程保留；用户伪造前缀会转义。
+
+## 下个会话接手
+
+- 当前 `dev` 版本号仍是 `WONDER_BUILD=40`（wonder.40 是已发布版本）。下次发版先升到 41，跑 Test CI，绿后打 tag/build Release，确认 arm64 APK 和 Feishu notify。
+- 发版前真机重点：
+  - 中断 reasoning 后发第二问，API trace 的下一次请求应是 `system → user([conductor:event turn_interrupted ...] + 正文)`，且没有被打断的第一问。
+  - 中断前已有 partial assistant 或 tool 结果时，它们应保留，事件挂在下一问。
+  - 确认卡单调用也有 `Approve rest of turn`，点一次后续不再弹卡。
+  - xAI/Custom provider 的传输错误提示应是可读文案，不出现 fake-IP。
+- 仍未做，按阻塞原因：
+  - `probe_many`（P1，需要 libbox 验证；当前 probe 串行切全局出站）。
+  - usage 极简可视化（UI 设计未定）。
+  - 批量确认整批参数预览（现在只有当前工具参数）。
+  - Provider capability（`stream_options`、`max_completion_tokens`、Azure 类鉴权，等 xAI/Custom 实测）。
+  - 跨版本会话边界提示（之前决定保留现状）。
+  - probe 链路复测（等出口健康）；Stop 1s `TOOL_CANCEL_TIMEOUT`（等出现无法取消的工具）。
+  - 搜索 no-match、`ToolObservation.ok` 契约、确认/事务可见性、LLM 摘要、增量更新等 backlog。
 
 ## 最近完成
 

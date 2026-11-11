@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import android.content.Context
 import io.nekohasekai.sfa.agent.AgentMessage
+import io.nekohasekai.sfa.agent.TurnEvent
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -11,6 +12,7 @@ import kotlinx.serialization.json.Json
 data class ConductorSession(
     val transcript: List<AgentMessage> = emptyList(),
     val items: List<ConductorItem> = emptyList(),
+    val pendingEvent: TurnEvent? = null,
 )
 
 class ConductorSessionStore(
@@ -31,11 +33,13 @@ class ConductorSessionStore(
     fun save(
         transcript: List<AgentMessage>,
         items: List<ConductorItem>,
+        pendingEvent: TurnEvent? = null,
     ) {
         val session =
             ConductorSession(
                 transcript = transcript.takeLast(MAX_TRANSCRIPT),
                 items = items.takeLast(MAX_ITEMS),
+                pendingEvent = pendingEvent,
             )
         runCatching {
             prefs.edit().putString(KEY, json.encodeToString(session)).apply()

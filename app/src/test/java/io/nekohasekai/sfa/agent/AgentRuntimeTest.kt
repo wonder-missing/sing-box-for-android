@@ -47,6 +47,33 @@ class AgentRuntimeTest {
         assertTrue(model.requests.single().messages.first() is AgentMessage.System)
         assertTrue(validateTranscriptPairing(result.messages))
         assertEquals(2, result.messages.size)
+        assertEquals(null, result.pendingEvent)
+    }
+
+    @Test
+    fun initialEventIsPrependedToTheNextUserMessage() {
+        val model = ScriptedModel(mutableListOf(response("done")))
+        val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+        val runtime = runtime(model, executor, key = "sk-test")
+
+        val result =
+            runBlocking {
+                runtime.runTurn(
+                    "why did it stop?",
+                    emptyList(),
+                    onEvent = {},
+                    confirm = { true },
+                    initialEvent = TurnEvent("turn_interrupted", "user_stop"),
+                )
+            }
+
+        val user = model.requests.single().messages.last() as AgentMessage.User
+        assertEquals(
+            "[conductor:event turn_interrupted reason=user_stop]\nwhy did it stop?",
+            user.content,
+        )
+        assertEquals(null, result.pendingEvent)
+        assertTrue(validateTranscriptPairing(result.messages))
     }
 
     @Test
@@ -141,9 +168,7 @@ class AgentRuntimeTest {
                 .content
                 .contains("cancelled"),
         )
-        val last = result.messages.last() as AgentMessage.Assistant
-        assertEquals("Stopped.", last.content)
-        assertTrue(last.toolCalls.isEmpty())
+        assertEquals(TurnEvent("turn_interrupted", "user_stop"), result.pendingEvent)
     }
 
     @Test
@@ -157,6 +182,7 @@ class AgentRuntimeTest {
         assertTrue(result.outcome is TurnOutcome.Cancelled)
         assertTrue(model.requests.isEmpty())
         assertTrue(result.messages.isEmpty())
+        assertEquals(null, result.pendingEvent)
     }
 
     @Test
@@ -170,6 +196,7 @@ class AgentRuntimeTest {
         assertTrue(result.outcome is TurnOutcome.Failed)
         assertEquals(AgentTurnErrorCode.NO_API_KEY, (result.outcome as TurnOutcome.Failed).error.code)
         assertTrue(model.requests.isEmpty())
+        assertEquals(null, result.pendingEvent)
     }
 
     @Test
@@ -606,11 +633,12 @@ class AgentRuntimeTest {
         assertEquals(listOf("partial"), events.filterIsInstance<AgentEvent.AssistantDelta>().map { it.text })
         val last = result.messages.last() as AgentMessage.Assistant
         assertEquals("partial", last.content)
+        assertEquals(TurnEvent("turn_interrupted", "user_stop"), result.pendingEvent)
         assertTrue(validateTranscriptPairing(result.messages))
     }
 
     @Test
-    fun stopBeforeContentClosesTheTurnWithAMarker() {
+    fun stopBeforeContentRollsBackAndQueuesEvent() {
         val streaming = ReasoningOnlyStreamingModel()
         val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
         val runtime =
@@ -635,13 +663,13 @@ class AgentRuntimeTest {
             }
 
         assertTrue(result.outcome is TurnOutcome.Cancelled)
-        val last = result.messages.last() as AgentMessage.Assistant
-        assertEquals("Stopped.", last.content)
+        assertTrue(result.messages.isEmpty())
+        assertEquals(TurnEvent("turn_interrupted", "user_stop"), result.pendingEvent)
         assertTrue(validateTranscriptPairing(result.messages))
     }
 
     @Test
-    fun failedModelTurnClosesTheOpenUserTurn() {
+    fun failedModelTurnRollsBackAndQueuesEvent() {
         val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
         val model =
             object : AgentModelClient {
@@ -660,8 +688,8 @@ class AgentRuntimeTest {
         val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
 
         assertTrue(result.outcome is TurnOutcome.Failed)
-        val last = result.messages.last() as AgentMessage.Assistant
-        assertEquals("[The turn ended before an answer.]", last.content)
+        assertTrue(result.messages.isEmpty())
+        assertEquals(TurnEvent("turn_failed", "model_unavailable"), result.pendingEvent)
         assertTrue(validateTranscriptPairing(result.messages))
     }
 

@@ -4,6 +4,7 @@ import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
+import io.nekohasekai.sfa.agent.TurnEvent
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -22,6 +23,7 @@ class ConductorSessionSerializationTest {
                         AgentMessage.User("hi"),
                         AgentMessage.Assistant("hello"),
                     ),
+                pendingEvent = TurnEvent("turn_interrupted", "user_stop"),
                 items =
                     listOf(
                         ConductorItem.User("hi"),
