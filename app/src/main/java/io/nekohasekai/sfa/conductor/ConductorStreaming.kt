@@ -86,5 +86,5 @@ internal fun List<ConductorItem>.withAssistantFinal(text: String): List<Conducto
     } else {
         updated.add(Assistant(text))
     }
-    return settleStreamingAssistants(updated)
+    return updated.settleStreamingAssistants()
 }
