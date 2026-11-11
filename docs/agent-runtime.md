@@ -845,7 +845,7 @@ fun interface AgentInputGuard {
 ### 历史裁剪
 
 - 只保留最近 N 轮，Phase 2a 默认 48 条消息，尽量保住前缀缓存。
-- 每个 turn 开始前，`AgentContext.compactOldObservations` 把最近 user turn 之前、超过 `maxHistoricalObservationChars`（默认 4,000 字符）的 tool observation 替换为 `{"ok":...,"tool":...,"compacted":true,"originalChars":...}`。UI items 保留完整结果；模型需要时重新调用工具。压缩只在 turn 边界发生。
+- 每个 turn 开始前，`AgentContext.compactOldObservations` 把最近 user turn 之前、超过 `maxHistoricalObservationChars`（默认 8,000 字符）的 tool observation 替换为 `{"ok":...,"tool":...,"compacted":true,"originalChars":...}`。UI items 保留完整结果；模型需要时重新调用工具。压缩只在 turn 边界发生。
 - 单条 observation 上限 `maxObservationChars`，超出截断并标记 `truncated: true`。截断只影响发给模型的 transcript；UI 可以保留完整 sanitized 结果供展开查看。
 - 单轮 observation 总字符上限 `maxObservationCharsPerRound`，单 turn 总上限 `maxObservationCharsPerTurn`。
 - 单次请求总输入估算上限 64k tokens；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。
@@ -885,7 +885,7 @@ Phase 2a 默认值：
 | 单次搜索返回 | 5 个工具，按条目截断 |
 | 单轮搜索次数 | 2 次 |
 | 上下文裁剪 | 48 条高水位，裁到 36 条 |
-| 旧 observation 压缩 | 超过 4,000 字符且早于最近 user turn |
+| 旧 observation 压缩 | 超过 8,000 字符且早于最近 user turn |
 | 确认等待 | 5 分钟，单独计时 |
 | 瞬态重试 | 429/5xx/网络错误最多 3 次，指数退避 |
 

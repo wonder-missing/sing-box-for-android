@@ -479,6 +479,7 @@ class AgentRuntimeTest {
             StreamingScriptedModel(
                 mutableListOf(
                     listOf(
+                        AgentModelChunk.ReasoningDelta("think "),
                         AgentModelChunk.ContentDelta("Hel"),
                         AgentModelChunk.ContentDelta("lo"),
                         AgentModelChunk.ToolCallDelta(0, id = "call_1", name = "list_nodes", argumentsDelta = "{}"),
@@ -505,6 +506,10 @@ class AgentRuntimeTest {
         val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = { events += it }, confirm = { true }) }
 
         assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals(
+            listOf("think "),
+            events.filterIsInstance<AgentEvent.ReasoningDelta>().map { it.text },
+        )
         assertEquals(
             listOf("Hel", "lo", "done"),
             events.filterIsInstance<AgentEvent.AssistantDelta>().map { it.text },

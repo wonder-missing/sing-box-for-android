@@ -107,6 +107,7 @@ class DeepSeekModelClientTest {
     fun parsesSseContentToolCallsAndUsage() {
         responseBody =
             """
+            data: {"choices":[{"delta":{"reasoning_content":"think "}}]}
             data: {"choices":[{"delta":{"content":"Hel"}}]}
             data: {"choices":[{"delta":{"content":"lo"}}]}
             data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"list_nodes","arguments":"{}"}}]}}]}
@@ -130,6 +131,10 @@ class DeepSeekModelClientTest {
                     ).toList()
             }
 
+        assertEquals(
+            listOf("think "),
+            chunks.filterIsInstance<AgentModelChunk.ReasoningDelta>().map { it.text },
+        )
         assertEquals(
             listOf("Hel", "lo"),
             chunks.filterIsInstance<AgentModelChunk.ContentDelta>().map { it.text },

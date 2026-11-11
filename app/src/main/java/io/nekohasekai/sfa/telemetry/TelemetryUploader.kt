@@ -255,7 +255,6 @@ internal class TelemetryUploader(
                 output.flush()
                 if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
                 val (status, _) = readResponse(ssl.inputStream)
-                if (cancellation?.isCancelled() == true) return UploadResult.Cancelled
                 Log.i(TAG, "upload HTTP $status via protected socket (${gzipped.size} gzipped bytes)")
                 return mapStatus(status)
             } finally {

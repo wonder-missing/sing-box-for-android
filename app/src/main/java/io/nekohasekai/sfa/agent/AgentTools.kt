@@ -281,9 +281,6 @@ class AgentTools(
                     return ToolExecution(errorCode = "cancelled", errorMessage = "probe cancelled")
                 }
                 val outcome = probePort.probe(outbound, url, cancellation)
-                if (cancellation.isCancelled()) {
-                    return ToolExecution(errorCode = "cancelled", errorMessage = "probe cancelled")
-                }
                 val error =
                     outcome.error
                         ?: if (outcome.statusCode == null) "probe returned no HTTP status" else null
@@ -375,9 +372,6 @@ class AgentTools(
                     } catch (e: Exception) {
                         return ToolExecution(errorCode = "tool_failed", errorMessage = e.message ?: e.toString())
                     }
-                if (cancellation.isCancelled()) {
-                    return ToolExecution(errorCode = "cancelled", errorMessage = "telemetry upload cancelled")
-                }
                 return ToolExecution(output = buildJsonObject { put("result", result) })
             }
         }

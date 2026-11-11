@@ -55,6 +55,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -99,6 +100,7 @@ private val InputPanelTopPadding = 18.dp
 private val InputPanelBottomPadding = 60.dp
 private val InputPanelMinHeight = 120.dp
 private const val InputPanelMaxLines = 5
+private const val MaxInputChars = 8_000
 
 @Composable
 fun ConductorScreen(
@@ -120,9 +122,12 @@ fun ConductorScreen(
         onDispose { viewModel.disconnect() }
     }
 
-    var input by rememberSaveable { mutableStateOf("") }
+    var input by rememberSaveable(
+        stateSaver = Saver(save = { it }, restore = { it.take(MaxInputChars) }),
+    ) { mutableStateOf("") }
     var inputExpanded by rememberSaveable { mutableStateOf(false) }
     var inputLineCount by remember { mutableStateOf(1) }
+    var inputTooLongWarned by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
@@ -161,6 +166,14 @@ fun ConductorScreen(
     fun send() {
         val text = input.trim()
         if (text.isEmpty()) return
+        if (text.length > MaxInputChars) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.conductor_input_too_long, MaxInputChars),
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
         viewModel.submit(text)
         input = ""
         inputExpanded = false
@@ -173,6 +186,10 @@ fun ConductorScreen(
     }
 
     fun copyApiTrace() {
+        if (!viewModel.hasApiTrace()) {
+            Toast.makeText(context, context.getString(R.string.conductor_api_trace_empty), Toast.LENGTH_LONG).show()
+            return
+        }
         clipboard.setText(AnnotatedString(viewModel.apiTraceMarkdown()))
         Toast.makeText(context, context.getString(R.string.conductor_api_trace_copied), Toast.LENGTH_SHORT).show()
     }
@@ -293,7 +310,22 @@ fun ConductorScreen(
             expanded = inputExpanded,
             onToggleExpand = { inputExpanded = !inputExpanded },
             input = input,
-            onInputChange = { input = it },
+            onInputChange = { next ->
+                if (next.length > MaxInputChars) {
+                    if (!inputTooLongWarned) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.conductor_input_too_long, MaxInputChars),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        inputTooLongWarned = true
+                    }
+                    input = next.take(MaxInputChars)
+                } else {
+                    input = next
+                    if (next.length < MaxInputChars - 256) inputTooLongWarned = false
+                }
+            },
             onLineCountChanged = { inputLineCount = it },
             onSend = { send() },
             onStop = viewModel::stopAgent,
@@ -417,6 +449,33 @@ private fun ConductorItemView(
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+            }
+
+        is ConductorItem.Reasoning ->
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Thinking",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (item.streaming) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(start = 6.dp).size(10.dp),
+                            strokeWidth = 1.5.dp,
+                        )
+                    }
+                }
+                if (item.text.isNotBlank()) {
+                    SelectionContainer {
+                        Text(
+                            text = item.text,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        )
+                    }
                 }
             }
 

@@ -23,6 +23,13 @@ sealed interface ConductorItem {
     ) : ConductorItem
 
     @Serializable
+    @SerialName("reasoning")
+    data class Reasoning(
+        val text: String,
+        val streaming: Boolean = false,
+    ) : ConductorItem
+
+    @Serializable
     @SerialName("tool")
     data class Tool(
         val call: ToolCallView,

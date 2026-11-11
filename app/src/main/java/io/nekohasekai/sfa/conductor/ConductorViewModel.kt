@@ -38,6 +38,7 @@ import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.agent.TurnOutcome
 import io.nekohasekai.sfa.agent.TurnResult
+import io.nekohasekai.sfa.agent.TurnState
 import io.nekohasekai.sfa.agent.buildCommandNodeState
 import io.nekohasekai.sfa.agent.validateTranscriptPairing
 import io.nekohasekai.sfa.BuildConfig
@@ -164,6 +165,7 @@ class ConductorViewModel(
 
     private var transcript: List<AgentMessage> = emptyList()
     private var agentJob: Job? = null
+    private var stopRequested = false
 
     @Volatile
     private var pendingAgentConfirmation: CompletableDeferred<Boolean>? = null
@@ -294,7 +296,8 @@ class ConductorViewModel(
     }
 
     fun stopAgent() {
-        if (!_uiState.value.isRunning) return
+        if (!_uiState.value.isRunning || stopRequested) return
+        stopRequested = true
         pendingAgentConfirmation?.complete(false)
         removeConfirmationItems()
         runtime.cancel()
@@ -370,6 +373,7 @@ class ConductorViewModel(
             append(ConductorItem.Error("agent", "The Conductor agent requires Android 7.0 or newer."))
             return
         }
+        stopRequested = false
         updateUi { copy(isRunning = true) }
         agentJob =
             viewModelScope.launch {
@@ -397,10 +401,12 @@ class ConductorViewModel(
                         )
                     }
                 withContext(Dispatchers.Main) {
+                    finishReasoning()
                     finishStreamingAssistant()
                     transcript = (result.compactedHistory ?: transcript) + result.messages
                     updateUi { copy(isRunning = false) }
                     pendingAgentConfirmation = null
+                    stopRequested = false
                     when (val outcome = result.outcome) {
                         is TurnOutcome.Failed ->
                             append(
@@ -411,7 +417,9 @@ class ConductorViewModel(
                                 ),
                             )
 
-                        is TurnOutcome.Cancelled -> Unit
+                        is TurnOutcome.Cancelled ->
+                            append(ConductorItem.Notice("conductor", "Stopped."))
+
                         is TurnOutcome.Completed -> Unit
                     }
                     persistSession()
@@ -421,28 +429,87 @@ class ConductorViewModel(
 
     private fun handleAgentEvent(event: AgentEvent) {
         when (event) {
-            is AgentEvent.AssistantMessage -> appendAssistantMessage(event.text)
+            is AgentEvent.AssistantMessage -> {
+                finishReasoning()
+                appendAssistantMessage(event.text)
+            }
+
             is AgentEvent.AssistantDelta -> appendAssistantDelta(event.text)
+            is AgentEvent.ReasoningDelta -> appendReasoningDelta(event.text)
             is AgentEvent.ToolStarted -> {
+                finishReasoning()
                 finishStreamingAssistant()
                 append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
             }
 
             is AgentEvent.ToolFinished -> updateToolResult(event.result)
             is AgentEvent.ConfirmationRequested -> {
+                finishReasoning()
                 finishStreamingAssistant()
                 pendingAgentConfirmation = CompletableDeferred()
                 append(ConductorItem.Confirmation(event.request))
             }
 
             is AgentEvent.Notice -> {
+                finishReasoning()
                 finishStreamingAssistant()
                 append(ConductorItem.Notice("conductor", event.text))
             }
 
-            is AgentEvent.StateChanged -> Unit
+            is AgentEvent.StateChanged ->
+                if (event.state is TurnState.CallingModel) {
+                    appendReasoningPlaceholder()
+                }
+
             is AgentEvent.TurnStarted -> Unit
-            is AgentEvent.TurnFinished -> finishStreamingAssistant()
+            is AgentEvent.TurnFinished -> {
+                finishReasoning()
+                finishStreamingAssistant()
+            }
+        }
+    }
+
+    private fun appendReasoningPlaceholder() {
+        updateUi {
+            val updated = this.items.toMutableList()
+            val last = updated.lastOrNull()
+            if (last is ConductorItem.Reasoning && last.streaming) {
+                this
+            } else {
+                updated.add(ConductorItem.Reasoning("", streaming = true))
+                copy(items = updated.takeLast(MAX_ITEMS))
+            }
+        }
+    }
+
+    private fun appendReasoningDelta(text: String) {
+        if (text.isEmpty()) return
+        updateUi {
+            val updated = this.items.toMutableList()
+            val last = updated.lastOrNull()
+            if (last is ConductorItem.Reasoning && last.streaming) {
+                updated[updated.lastIndex] = last.copy(text = last.text + text)
+            } else {
+                updated.add(ConductorItem.Reasoning(text, streaming = true))
+            }
+            copy(items = updated.takeLast(MAX_ITEMS))
+        }
+    }
+
+    private fun finishReasoning() {
+        updateUi {
+            val updated = this.items.toMutableList()
+            val last = updated.lastOrNull()
+            if (last is ConductorItem.Reasoning && last.streaming) {
+                if (last.text.isBlank()) {
+                    updated.removeAt(updated.lastIndex)
+                } else {
+                    updated[updated.lastIndex] = last.copy(streaming = false)
+                }
+                copy(items = updated)
+            } else {
+                this
+            }
         }
     }
 
@@ -807,6 +874,13 @@ class ConductorViewModel(
                         appendLine()
                     }
 
+                    is ConductorItem.Reasoning -> {
+                        appendLine("## Thinking")
+                        appendLine()
+                        appendLine(item.text)
+                        appendLine()
+                    }
+
                     is ConductorItem.Tool -> {
                         appendLine("## Tool: ${item.call.name}")
                         appendLine()
@@ -880,6 +954,8 @@ class ConductorViewModel(
 
     fun apiTraceMarkdown(): String = AgentApiTrace.asMarkdown()
 
+    fun hasApiTrace(): Boolean = AgentApiTrace.hasEntries()
+
     private fun restoreSession() {
         val session = sessionStore.load() ?: return
         transcript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
@@ -888,6 +964,9 @@ class ConductorViewModel(
                 when (item) {
                     is ConductorItem.Confirmation -> null
                     is ConductorItem.Assistant ->
+                        if (item.streaming) item.copy(streaming = false) else item
+
+                    is ConductorItem.Reasoning ->
                         if (item.streaming) item.copy(streaming = false) else item
 
                     is ConductorItem.Tool ->

@@ -49,6 +49,8 @@ object AgentApiTrace {
         synchronized(lock) { entries.clear() }
     }
 
+    fun hasEntries(): Boolean = synchronized(lock) { entries.isNotEmpty() }
+
     fun asMarkdown(): String {
         val snapshot = synchronized(lock) { entries.toList() }
         if (snapshot.isEmpty()) return "No API calls recorded in this session."

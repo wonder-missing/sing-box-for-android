@@ -268,7 +268,7 @@ class AgentToolsTest {
     }
 
     @Test
-    fun probeCancellationAfterPortReturnsIsReportedAsCancelled() {
+    fun probeResultIsKeptWhenCancellationArrivesAfterPortReturns() {
         lateinit var registry: AgentToolRegistry
         val probe =
             object : ProbePort {
@@ -289,12 +289,12 @@ class AgentToolsTest {
                 """{"outbound":"node-a","url":"https://example.com/"}""",
             )
 
-        assertFalse(result.ok)
-        assertEquals("cancelled", result.errorCode)
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals(200, result.output!!.int("statusCode"))
     }
 
     @Test
-    fun telemetryCancellationAfterPortReturnsIsReportedAsCancelled() {
+    fun telemetryResultIsKeptWhenCancellationArrivesAfterPortReturns() {
         lateinit var registry: AgentToolRegistry
         val telemetry =
             object : TelemetryUploadPort {
@@ -315,8 +315,8 @@ class AgentToolsTest {
 
         val result = registry.userExec("telemetry_upload")
 
-        assertFalse(result.ok)
-        assertEquals("cancelled", result.errorCode)
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("uploaded", result.output!!.string("result"))
     }
 
     @Test

@@ -134,6 +134,7 @@ class DeepSeekModelClient(
                         val chunk = parseStreamChunk(data) ?: continue
                         finish = chunk.finishReason ?: finish
                         usage = chunk.usage ?: usage
+                        chunk.reasoning?.let { emit(AgentModelChunk.ReasoningDelta(it)) }
                         chunk.content?.let { emit(AgentModelChunk.ContentDelta(it)) }
                         chunk.toolCalls.forEach { emit(it) }
                     }
@@ -283,6 +284,7 @@ class DeepSeekModelClient(
 
     private data class StreamChunk(
         val content: String?,
+        val reasoning: String?,
         val toolCalls: List<AgentModelChunk.ToolCallDelta>,
         val finishReason: FinishReason?,
         val usage: TokenUsage?,
@@ -293,6 +295,7 @@ class DeepSeekModelClient(
         val choice = (root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
         val delta = choice?.get("delta") as? JsonObject
         val content = (delta?.get("content") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
+        val reasoning = (delta?.get("reasoning_content") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
         val toolCalls =
             (delta?.get("tool_calls") as? JsonArray)
                 ?.mapNotNull { parseToolCallDelta(it as? JsonObject) }
@@ -300,6 +303,7 @@ class DeepSeekModelClient(
         val finish = (choice?.get("finish_reason") as? JsonPrimitive)?.contentOrNull
         return StreamChunk(
             content = content,
+            reasoning = reasoning,
             toolCalls = toolCalls,
             finishReason = finish?.let { finishReason(it) },
             usage = parseUsage(root["usage"] as? JsonObject),

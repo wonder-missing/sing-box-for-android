@@ -65,6 +65,8 @@ data class AgentModelResponse(
 )
 
 sealed interface AgentModelChunk {
+    data class ReasoningDelta(val text: String) : AgentModelChunk
+
     data class ContentDelta(val text: String) : AgentModelChunk
 
     data class ToolCallDelta(

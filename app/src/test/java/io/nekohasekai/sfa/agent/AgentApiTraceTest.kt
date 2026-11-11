@@ -41,6 +41,30 @@ class AgentApiTraceTest {
     }
 
     @Test
+    fun hasEntriesReflectsRecordAndClear() {
+        AgentApiTrace.clear()
+        assertFalse(AgentApiTrace.hasEntries())
+
+        AgentApiTrace.record(
+            ApiTraceEntry(
+                timestamp = 1_700_000_000_000L,
+                method = "POST",
+                url = "https://api.deepseek.com/chat/completions",
+                requestHeaders = emptyMap(),
+                requestBody = "{}",
+                status = 200,
+                responseHeaders = emptyMap(),
+                responseBody = "{}",
+                error = null,
+            ),
+        )
+
+        assertTrue(AgentApiTrace.hasEntries())
+        AgentApiTrace.clear()
+        assertFalse(AgentApiTrace.hasEntries())
+    }
+
+    @Test
     fun printsTokenUsageAndCacheHits() {
         AgentApiTrace.clear()
         AgentApiTrace.record(

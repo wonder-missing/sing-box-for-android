@@ -103,6 +103,8 @@ sealed interface AgentEvent {
 
     data class AssistantDelta(val text: String) : AgentEvent
 
+    data class ReasoningDelta(val text: String) : AgentEvent
+
     data class ToolStarted(val call: ToolCallView) : AgentEvent
 
     data class ToolFinished(val result: ToolResultView) : AgentEvent

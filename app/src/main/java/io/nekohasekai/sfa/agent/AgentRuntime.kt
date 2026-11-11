@@ -24,7 +24,7 @@ data class AgentConfig(
     val maxInputTokens: Int = 64_000,
     val maxMessages: Int = 48,
     val trimTargetMessages: Int = 36,
-    val maxHistoricalObservationChars: Int = 4_000,
+    val maxHistoricalObservationChars: Int = 8_000,
     val toolRoutingEnabled: Boolean = true,
     val searchLimit: Int = 5,
     val maxSearchesPerRound: Int = 2,
@@ -620,6 +620,10 @@ class AgentRuntime(
         var usage: TokenUsage? = null
         client.stream(request, apiKey).collect { chunk ->
             when (chunk) {
+                is AgentModelChunk.ReasoningDelta -> {
+                    onEvent(AgentEvent.ReasoningDelta(chunk.text))
+                }
+
                 is AgentModelChunk.ContentDelta -> {
                     content.append(chunk.text)
                     onEvent(AgentEvent.AssistantDelta(chunk.text))
