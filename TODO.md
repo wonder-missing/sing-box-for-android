@@ -28,10 +28,10 @@
 
 ## 下个会话接手
 
-- 当前已发布版本号 45。`dev` 上还有未发版改动（A11 启动图、Conductor 导出文件名带本地时间）。下一次发版从 46 开始，先别打 tag。
-- MCP 清单和 slash 扩展等主人确认后再做。不要把工具 schema 写进 system prompt。给 Portal 的 `readOnlyHint` 建议先别整理。
+- 当前已发布版本号 45。`dev` 上还有未发版改动：A11 启动图、Conductor 导出文件名带本地时间、system prompt 不再列 MCP、`/mcp use <tool>` 把优先提示放进输入框。下一次发版从 46 开始，先别打 tag。
+- 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
-- 手机上看 MCP：设置 → Conductor → MCP 服务器。填名称、https URL、可选 Bearer token，点「添加并连接」。成功时这一行显示工具数量。对话里点 `/`，选 `mcp`，应列出服务器短名、必填参数，以及「asks first」或「runs immediately」。`/mcp knocks` 只留下名字里带 knocks 的。只读工具要服务器带 `readOnlyHint` 才不弹确认。明文 `http://` 可能被系统拒绝。
+- 手机上看 MCP：设置 → Conductor → MCP 服务器。填名称、https URL、可选 Bearer token，点「添加并连接」。成功时这一行显示工具数量。对话里点 `/`，选 `mcp`，应列出服务器短名、必填参数，以及「asks first」或「runs immediately」。`/mcp knocks` 只留下名字里带 knocks 的。`/mcp use orb_status` 发送后，输入框变成 `Use the MCP tool orb_status from <服务器名>. `，光标在末尾，这一步不发给模型。系统提示里不应出现 MCP 服务器名或工具名。只读工具要服务器带 `readOnlyHint` 才不弹确认。明文 `http://` 可能被系统拒绝。
 - 手机上还没看过的 wonder.43：
   - Conductor 点 `/`，选 `reasoning`，再选 `high`。对话里应出现已设为 high 的提示。下一条普通消息的请求带 `reasoning_effort=high`。`/reasoning` 无参数只显示当前值。
   - 设置顶行：第一行 App 和右侧「更新」；下面一行是「应用版本」，再下面一行是完整版本号。

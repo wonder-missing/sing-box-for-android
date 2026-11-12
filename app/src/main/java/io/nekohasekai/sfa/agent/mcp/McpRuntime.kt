@@ -71,6 +71,8 @@ class McpRuntime(
     private val attemptedAt = mutableMapOf<String, Long>()
     private val _views = MutableStateFlow<List<McpServerView>>(emptyList())
     val views: StateFlow<List<McpServerView>> = _views.asStateFlow()
+    private val _listed = MutableStateFlow<List<McpListedTool>>(emptyList())
+    val listed: StateFlow<List<McpListedTool>> = _listed.asStateFlow()
     private val cancels = CopyOnWriteArrayList<McpCancel>()
 
     @Volatile
@@ -83,23 +85,7 @@ class McpRuntime(
 
     fun tools(): List<AgentTool> = toolSnapshot
 
-    suspend fun listedTools(): List<McpListedTool> =
-        gate.withLock {
-            servers.flatMap { server ->
-                val cached = cache[server.id] ?: return@flatMap emptyList()
-                cached.remote.zip(cached.tools).map { (remote, tool) ->
-                    McpListedTool(
-                        serverId = server.id,
-                        serverName = server.name,
-                        remoteName = remote.name,
-                        localName = tool.definition.name,
-                        summary = remote.description.ifBlank { remote.name }.take(180),
-                        asksFirst = !remote.readOnly,
-                        required = requiredKeys(remote.inputSchema),
-                    )
-                }
-            }
-        }
+    suspend fun listedTools(): List<McpListedTool> = gate.withLock { listLocked() }
 
     fun cancelActive() {
         cancels.forEach { it.cancel() }
@@ -293,7 +279,24 @@ class McpRuntime(
         attemptedAt.remove(id)
     }
 
+    private fun listLocked(): List<McpListedTool> =
+        servers.filter { it.enabled }.flatMap { server ->
+            val cached = cache[server.id] ?: return@flatMap emptyList()
+            cached.remote.zip(cached.tools).map { (remote, tool) ->
+                McpListedTool(
+                    serverId = server.id,
+                    serverName = server.name,
+                    remoteName = remote.name,
+                    localName = tool.definition.name,
+                    summary = remote.description.ifBlank { remote.name }.take(180),
+                    asksFirst = !remote.readOnly,
+                    required = requiredKeys(remote.inputSchema),
+                )
+            }
+        }
+
     private fun rebuildToolsLocked() {
+        _listed.value = listLocked()
         toolSnapshot =
             servers.filter { it.enabled }.flatMap { config ->
                 cache[config.id]?.tools.orEmpty()

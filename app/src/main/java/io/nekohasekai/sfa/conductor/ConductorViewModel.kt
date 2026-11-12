@@ -21,6 +21,7 @@ import io.nekohasekai.sfa.agent.AgentRuntime
 import io.nekohasekai.sfa.agent.AgentSanitizer
 import io.nekohasekai.sfa.agent.AgentTools
 import io.nekohasekai.sfa.agent.DynamicToolExecutor
+import io.nekohasekai.sfa.agent.mcp.McpListedTool
 import io.nekohasekai.sfa.agent.mcp.McpRuntimes
 import io.nekohasekai.sfa.agent.AgentTurnErrorCode
 import io.nekohasekai.sfa.agent.AndroidDeviceSnapshotSource
@@ -85,6 +86,7 @@ class ConductorViewModel(
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+    val mcpListed: StateFlow<List<McpListedTool>> = McpRuntimes.get(application).listed
 
     private val stateLock = Any()
 
@@ -278,7 +280,19 @@ class ConductorViewModel(
                 persistSession()
             }
 
-            ConductorCommandKind.MCP -> showMcp(parsed.args.joinToString(" "))
+            ConductorCommandKind.MCP -> {
+                if (ConductorMcpUse.isUse(parsed.args)) {
+                    append(
+                        ConductorItem.Notice(
+                            "mcp",
+                            "Type /mcp use and a tool name. /mcp lists them.",
+                        ),
+                    )
+                    persistSession()
+                } else {
+                    showMcp(parsed.args.joinToString(" "))
+                }
+            }
 
             ConductorCommandKind.CLEAR -> {
                 if (_uiState.value.isRunning) {
@@ -499,6 +513,45 @@ class ConductorViewModel(
                     persistSession()
                 }
             }
+    }
+
+    fun refreshMcpQuietly() {
+        viewModelScope.launch {
+            val mcp = McpRuntimes.get(getApplication())
+            try {
+                mcp.refreshIfStale()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Suggestions keep the last list. Sending /mcp use still reports a miss.
+            }
+        }
+    }
+
+    suspend fun resolveMcpUse(raw: String): ConductorMcpUse.Outcome {
+        if (_uiState.value.isRunning) {
+            append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
+            persistSession()
+            return ConductorMcpUse.Outcome.Rejected("Wait for the current command to finish.")
+        }
+        val args = ConductorCommands.parse(raw.trim())?.args.orEmpty()
+        val mcp = McpRuntimes.get(getApplication())
+        try {
+            mcp.refreshIfStale()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Match against the last list. The settings row keeps the error.
+        }
+        return when (val outcome = ConductorMcpUse.resolve(args, mcp.listedTools())) {
+            is ConductorMcpUse.Outcome.Draft -> outcome
+            is ConductorMcpUse.Outcome.Rejected -> {
+                append(ConductorItem.User(raw.trim()))
+                append(ConductorItem.Notice("mcp", outcome.message))
+                persistSession()
+                outcome
+            }
+        }
     }
 
     private fun showMcp(query: String) {

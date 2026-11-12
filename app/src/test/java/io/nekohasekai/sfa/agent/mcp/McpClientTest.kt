@@ -131,7 +131,7 @@ class McpClientTest {
         }
 
     @Test
-    fun promptNamesMcpToolsOnlyWhenTheyAreActivated() {
+    fun promptStaysTheSameWhenMcpToolsAreActivated() {
         val builtin =
             AgentToolDefinition(
                 name = "network_snapshot",
@@ -143,13 +143,10 @@ class McpClientTest {
                 core = true,
             )
         val without = AgentToolCatalog(listOf(builtin)).promptSection()
-        assertFalse(without.contains("MCP tools are external"))
-        assertTrue(without.contains("network_snapshot()"))
-
         val withMcp = AgentToolCatalog(listOf(builtin, passthroughTool { }.definition)).promptSection()
-        assertTrue(withMcp.contains("- mcp: mcp_demo_echo"))
-        assertTrue(withMcp.contains("MCP tools are external"))
-        assertFalse(withMcp.contains("mcp_demo_echo("))
+        assertEquals(without, withMcp)
+        assertFalse(withMcp.contains("mcp_demo_echo"))
+        assertFalse(withMcp.contains("MCP"))
         assertTrue(withMcp.contains("network_snapshot()"))
     }
 
@@ -260,8 +257,8 @@ class McpClientTest {
                 assertTrue(toolMessages[0].content.contains("\"n\""))
                 assertTrue(toolMessages[1].content.contains("echo:hello:1"))
                 val prompt = (model.requests.first().messages.first() as AgentMessage.System).content
-                assertTrue(prompt.contains("- mcp: mcp_demo_echo"))
-                assertFalse(prompt.contains("mcp_demo_echo("))
+                assertFalse(prompt.contains("mcp_demo_echo"))
+                assertFalse(prompt.contains("- mcp:"))
                 assertEquals(
                     listOf(AgentMetaTools.ROUTE_CALL, AgentMetaTools.SEARCH_TOOLS),
                     model.requests.first().tools.map { it.name },

@@ -10,7 +10,9 @@ import java.util.Locale
 /**
  * Static snapshot of the registered tool definitions. The catalog is the single
  * source for the system prompt roster and for tool search; it never mutates the
- * registry and never changes the tools array sent to the model.
+ * registry and never changes the tools array sent to the model. MCP tools stay
+ * searchable and are omitted from the roster, so connecting a server does not
+ * change the system prompt.
  */
 class AgentToolCatalog(
     definitions: List<AgentToolDefinition>,
@@ -104,17 +106,13 @@ class AgentToolCatalog(
         buildString {
             appendLine("Registered capabilities for this app version:")
             definitions
+                .filter { it.category != "mcp" }
                 .groupBy { it.category }
                 .toSortedMap()
                 .forEach { (category, tools) ->
                     appendLine("- $category: ${tools.joinToString(", ") { it.name }}")
                 }
-            if (definitions.any { it.category == "mcp" }) {
-                appendLine(
-                    "MCP tools are external servers activated in Settings. They are not core. Call search_tools for a schema before route_call. Search the server name once; do not search once per tool.",
-                )
-            }
-            val core = definitions.filter { it.core }
+            val core = definitions.filter { it.core && it.category != "mcp" }
             if (core.isNotEmpty()) {
                 appendLine()
                 appendLine("Core tools. Call them directly with route_call; do not search first:")

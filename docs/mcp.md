@@ -10,9 +10,9 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 已保存的服务器可以再打开、刷新或移除。移除会删掉保存在这台设备上的 token。这一版不能编辑，改 URL 或 token 就移除再加。
 
-下一句 Conductor 消息开始，Agent 能发现这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。查某一个服务器时搜一次服务器名，不要每个工具搜一次。工具名完全匹配时只返回那一个工具。
+下一句 Conductor 消息开始，Agent 能调用这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。工具名完全匹配时只返回那一个工具；搜服务器名或 `mcp` 会带出该服务器的工具。
 
-对话里输入 `/mcp` 看当前服务器和工具：短名、一句说明、必填参数、会不会先问你。`/mcp knocks` 按名字过滤。这是本地命令，不发给模型，也不把 schema 写进对话上下文。Claude Code 的 `/mcp`、Cursor 的 MCP 面板也是这样：给人看服务器和工具名，不把整份 schema 倒进聊天记录。
+系统提示不写 MCP 服务器名，也不写 MCP 工具名。添加、关掉或换一套服务器，都不改变 system prompt，前缀缓存因此不受影响。人看清单用 `/mcp`。要让下一句优先用某个工具，输入 `/mcp use orb_status`（或点补全）。这会把一句普通文字放进输入框，光标留在后面，你补上要做的事再发送。这句话是 user 消息，不是 system message。Claude Code 的 slash、Cursor 的 `@` 也是把引用放进输入框。系统提示不罗列你连了哪些服务器。
 
 ## 协议
 
@@ -28,13 +28,13 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 ## 工具怎么进 Agent
 
-本地名字是 `mcp_<服务器 id>_<工具名>`，避免和 `route_call`、`search_tools` 以及内置工具撞名。分类是 `mcp`，不是 core，所以名字出现在 roster 的分类行里，参数不写进系统提示。schema 用服务器的 `inputSchema`。
+本地名字是 `mcp_<服务器 id>_<工具名>`，避免和 `route_call`、`search_tools` 以及内置工具撞名。分类是 `mcp`，不是 core。这些名字只留在目录里，给 `search_tools` 用，不进 system prompt。schema 用服务器的 `inputSchema`。
 
 参数不走内置工具那套「只能是字符串」。本机只检查 schema `required` 里的键：缺了、是 null、或是空字符串，就拒绝。其余类型交给服务器。
 
 `annotations.readOnlyHint == true` 的工具不弹确认，用来确认 Agent 能自己把调用做完。其他工具是 `AGENT_ONLY`，先确认再发出。权限是 `DATA_EGRESS`。输出仍然过现有 sanitizer，所以结果里的订阅链接和 token 会被打掉。
 
-没有激活的 MCP 工具时，系统提示和静态 `tools` 与原来逐字节相同。工具列表在每轮开始时如果空了，或超过 60 秒，会刷新。刷新失败沿用上一份列表，不让这一轮失败；还没有成功过的列表也不会每条消息都重试。状态留在设置行上。Stop 会断开正在进行的 MCP 连接。
+有没有激活的 MCP 工具，系统提示和静态 `tools` 都相同。工具列表在每轮开始时如果空了，或超过 60 秒，会刷新。刷新失败沿用上一份列表，不让这一轮失败；还没有成功过的列表也不会每条消息都重试。状态留在设置行上。Stop 会断开正在进行的 MCP 连接。
 
 ## 网络
 

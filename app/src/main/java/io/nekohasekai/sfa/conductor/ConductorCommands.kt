@@ -61,7 +61,7 @@ object ConductorCommands {
             ),
             ConductorCommand(
                 name = "mcp",
-                description = "List MCP servers and their tools.",
+                description = "List MCP servers and tools. /mcp use <tool> puts a preference in the input.",
                 usage = "/mcp [name]",
                 takesArgs = true,
                 action = ConductorCommandKind.MCP,
@@ -201,7 +201,8 @@ object ConductorCommands {
             append(blocks.joinToString("\n\n"))
             appendLine()
             appendLine()
-            append("Ask in plain language. Conductor calls these; you do not type the tool name.")
+            appendLine("Type /mcp use <tool> to put that tool in the input.")
+            append("Then say what you want. Conductor calls it; you do not type the tool name.")
         }
     }
 

@@ -227,6 +227,13 @@ fun ConductorScreen(
     }
     val suggestions = ConductorCommands.suggestions(input)
     val effortSuggestions = ConductorReasoningCommand.suggestions(input)
+    val mcpTools by viewModel.mcpListed.collectAsState()
+    val offerMcpVerb = ConductorMcpUse.offerVerb(input)
+    val mcpToolSuggestions = ConductorMcpUse.toolSuggestions(input, mcpTools)
+    val mcpCommand = input.trimStart().startsWith("/mcp")
+    LaunchedEffect(mcpCommand) {
+        if (mcpCommand) viewModel.refreshMcpQuietly()
+    }
 
     fun focusInput() {
         runCatching { focusRequester.requestFocus() }
@@ -241,6 +248,22 @@ fun ConductorScreen(
                 context.getString(R.string.conductor_input_too_long, MaxInputChars),
                 Toast.LENGTH_LONG,
             ).show()
+            return
+        }
+        if (ConductorMcpUse.isCommand(text)) {
+            coroutineScope.launch {
+                when (val outcome = viewModel.resolveMcpUse(text)) {
+                    is ConductorMcpUse.Outcome.Draft -> {
+                        replaceInput(outcome.text, outcome.text.length)
+                        focusInput()
+                    }
+                    is ConductorMcpUse.Outcome.Rejected -> {
+                        replaceInput("")
+                        inputExpanded = false
+                        focusManager.clearFocus()
+                    }
+                }
+            }
             return
         }
         viewModel.submit(text)
@@ -469,6 +492,31 @@ fun ConductorScreen(
                         inputExpanded = false
                         viewModel.submit("/reasoning $level")
                         focusManager.clearFocus()
+                    },
+                )
+            } else if (!inputExpanded && offerMcpVerb) {
+                McpUseSuggestions(
+                    rows = listOf(McpUseRow(key = "use", title = "use", detail = "Put one MCP tool in the input")),
+                    onPick = { _ ->
+                        val next = "/mcp use "
+                        replaceInput(next, next.length)
+                        focusInput()
+                    },
+                )
+            } else if (!inputExpanded && mcpToolSuggestions.isNotEmpty()) {
+                McpUseSuggestions(
+                    rows =
+                        mcpToolSuggestions.map { tool ->
+                            McpUseRow(
+                                key = tool.localName,
+                                title = tool.remoteName,
+                                detail = tool.serverName,
+                            )
+                        },
+                    onPick = { index ->
+                        val draft = ConductorMcpUse.draft(mcpToolSuggestions[index])
+                        replaceInput(draft, draft.length)
+                        focusInput()
                     },
                 )
             } else if (!inputExpanded && suggestions.isNotEmpty()) {
@@ -993,6 +1041,55 @@ private fun ToolItem(item: ConductorItem.Tool) {
                         if (expanded) R.string.conductor_tool_hide_details else R.string.conductor_tool_details,
                     ),
                 )
+            }
+        }
+    }
+}
+
+private data class McpUseRow(
+    val key: String,
+    val title: String,
+    val detail: String,
+)
+
+@Composable
+private fun McpUseSuggestions(
+    rows: List<McpUseRow>,
+    onPick: (Int) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+    ) {
+        LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
+            items(rows.size, key = { index -> rows[index].key }) { index ->
+                val row = rows[index]
+                Row(
+                    modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(index) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = row.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = row.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }
