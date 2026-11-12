@@ -34,6 +34,12 @@ internal object AgentSanitizer {
         Regex(
             """(?i)^(token|access_token|secret|password|passwd|pwd|api[_-]?key|authorization|subscription|sub_url|subscribe_url|configuration)$""",
         )
+    private val EMAIL_REGEX =
+        Regex("""(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b""")
+    private val TAILSCALE_IPV4_REGEX =
+        Regex("""\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b""")
+    private val TAILSCALE_IPV6_REGEX =
+        Regex("""(?i)\bfd7a:115c:a1e0:[0-9a-f:]+\b""")
     private const val TRAILING_PUNCTUATION = ".,;:)]}\"'"
 
     fun sanitizeText(
@@ -64,6 +70,20 @@ internal object AgentSanitizer {
             match.groupValues[1] + "***"
         }
     }
+
+    /**
+     * Removes personal identifiers that older tool outputs could contain:
+     * account emails and Tailscale peer addresses. Public node addresses are
+     * left alone because they are part of the diagnostic data.
+     */
+    fun scrubPersonalData(text: String): String =
+        TAILSCALE_IPV4_REGEX.replace(
+            TAILSCALE_IPV6_REGEX.replace(
+                EMAIL_REGEX.replace(text, "[redacted-email]"),
+                "[redacted-ip]",
+            ),
+            "[redacted-ip]",
+        )
 
     fun sanitizeForLog(text: String): String {
         val withoutUrls = URL_REGEX.replace(text) { "[redacted-url]" }

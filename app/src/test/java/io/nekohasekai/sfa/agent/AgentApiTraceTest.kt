@@ -41,6 +41,36 @@ class AgentApiTraceTest {
     }
 
     @Test
+    fun summariesSurviveRestoreAndAppearInMarkdown() {
+        AgentApiTrace.clear()
+        AgentApiTrace.setAppVersion("test-version")
+        AgentApiTrace.record(
+            ApiTraceEntry(
+                timestamp = 1_700_000_000_000L,
+                method = "POST",
+                url = "https://api.deepseek.com/chat/completions",
+                requestHeaders = emptyMap(),
+                requestBody = "{}",
+                status = 200,
+                responseHeaders = emptyMap(),
+                responseBody = "{}",
+                error = null,
+                usage = TokenUsage(inputTokens = 100, outputTokens = 20),
+            ),
+        )
+        val summaries = AgentApiTrace.summaries()
+        AgentApiTrace.clear()
+        AgentApiTrace.restoreSummaries(summaries)
+
+        assertTrue(AgentApiTrace.hasEntries())
+        val markdown = AgentApiTrace.asMarkdown()
+        assertTrue(markdown.contains("Request history"))
+        assertTrue(markdown.contains("vtest-version"))
+        assertTrue(markdown.contains("prompt=100 completion=20"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
     fun printsErrorCodeAndRequestId() {
         AgentApiTrace.clear()
         AgentApiTrace.record(

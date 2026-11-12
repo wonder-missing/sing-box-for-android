@@ -23,6 +23,9 @@ import io.nekohasekai.sfa.agent.AgentTools
 import io.nekohasekai.sfa.agent.DynamicToolExecutor
 import io.nekohasekai.sfa.agent.mcp.McpListedTool
 import io.nekohasekai.sfa.agent.mcp.McpRuntimes
+import io.nekohasekai.sfa.agent.AgentTailscaleEndpoint
+import io.nekohasekai.sfa.agent.AgentTailscalePeer
+import io.nekohasekai.sfa.agent.AgentTailscaleSnapshot
 import io.nekohasekai.sfa.agent.AgentTurnErrorCode
 import io.nekohasekai.sfa.agent.AndroidDeviceSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeSnapshotSource
@@ -57,6 +60,7 @@ import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -65,9 +69,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -144,8 +147,8 @@ class ConductorViewModel(
 
     private val tailscaleSource =
         object : TailscaleStatusSource {
-            override suspend fun status(cancellation: ToolCancellation?): String =
-                tailscaleText(cancellation, includeDetails = false)
+            override suspend fun status(cancellation: ToolCancellation?): AgentTailscaleSnapshot =
+                tailscaleSnapshot(cancellation)
         }
 
     private val telemetryPort =
@@ -185,6 +188,7 @@ class ConductorViewModel(
 
     private var transcript: List<AgentMessage> = emptyList()
     private var pendingTurnEvent: TurnEvent? = null
+    private var sessionStartVersion: String = BuildConfig.VERSION_NAME
     private var agentJob: Job? = null
     private var stopRequested = false
 
@@ -197,6 +201,7 @@ class ConductorViewModel(
     private var pendingCommandConfirmation: Pair<String, String>? = null
 
     init {
+        AgentApiTrace.setAppVersion(BuildConfig.VERSION_NAME)
         restoreSession()
         _uiState.update { it.copy(agentSupported = apiKeyProvider.supported) }
     }
@@ -256,11 +261,15 @@ class ConductorViewModel(
                 return
             }
             append(ConductorItem.User(text))
+            // Persist before the model call: a process death mid-turn must not
+            // lose the user message. Restore reconciles it into the transcript.
+            persistSession()
             submitAgent(text)
             return
         }
 
         append(ConductorItem.User(text))
+        persistSession()
 
         val parsed =
             ConductorCommands.parse(text)
@@ -454,6 +463,7 @@ class ConductorViewModel(
         pendingAgentConfirmation = null
         pendingTurnEvent = null
         pendingCommandConfirmation = null
+        sessionStartVersion = BuildConfig.VERSION_NAME
         transcript = emptyList()
         updateUi { copy(items = emptyList(), isRunning = false, canRetryLastTurn = false) }
         sessionStore.clear()
@@ -946,44 +956,97 @@ class ConductorViewModel(
     private suspend fun tailscaleText(
         cancellation: ToolCancellation? = null,
         includeDetails: Boolean = true,
-    ): String {
-        if (cancellation?.isCancelled() == true) return "cancelled"
-        val deferred = CompletableDeferred<String>()
-        val cancelled = CompletableDeferred<String>()
+    ): String =
+        try {
+            formatTailscale(awaitTailscaleStatus(cancellation), includeDetails)
+        } catch (e: CancellationException) {
+            "cancelled"
+        } catch (e: Exception) {
+            e.message ?: "Tailscale error"
+        }
+
+    private suspend fun tailscaleSnapshot(cancellation: ToolCancellation?): AgentTailscaleSnapshot =
+        buildTailscaleSnapshot(awaitTailscaleStatus(cancellation))
+
+    private suspend fun awaitTailscaleStatus(cancellation: ToolCancellation?): TailscaleStatusUpdate {
+        if (cancellation?.isCancelled() == true) throw CancellationException("cancelled")
+        val deferred = CompletableDeferred<TailscaleStatusUpdate>()
         val subscription =
             try {
                 CommandTarget.standaloneClient().subscribeTailscaleStatus(
                     object : TailscaleStatusHandler {
                         override fun onStatusUpdate(status: TailscaleStatusUpdate) {
                             if (!deferred.isCompleted) {
-                                deferred.complete(formatTailscale(status, includeDetails))
+                                deferred.complete(status)
                             }
                         }
 
                         override fun onError(message: String) {
                             if (!deferred.isCompleted) {
-                                deferred.complete(friendlyTailscaleError(message))
+                                deferred.completeExceptionally(
+                                    IllegalStateException(friendlyTailscaleError(message)),
+                                )
                             }
                         }
                     },
                 )
             } catch (e: Exception) {
-                return friendlyTailscaleError(e.message ?: e.toString())
+                throw IllegalStateException(friendlyTailscaleError(e.message ?: e.toString()))
             }
         cancellation?.onCancel {
             runCatching { subscription.close() }
-            cancelled.complete("cancelled")
+            deferred.cancel()
         }
         return try {
-            withTimeoutOrNull(5_000) {
-                select {
-                    deferred.onAwait { it }
-                    cancelled.onAwait { it }
-                }
-            } ?: "Timed out waiting for Tailscale status."
+            withTimeout(5_000) { deferred.await() }
+        } catch (e: TimeoutCancellationException) {
+            throw IllegalStateException("Timed out waiting for Tailscale status.")
         } finally {
             runCatching { subscription.close() }
         }
+    }
+
+    private fun buildTailscaleSnapshot(update: TailscaleStatusUpdate): AgentTailscaleSnapshot {
+        val endpoints = mutableListOf<AgentTailscaleEndpoint>()
+        val iterator = update.endpoints()
+        while (iterator.hasNext()) {
+            val endpoint = iterator.next()
+            val self = endpoint.getSelf()
+            val peers = mutableListOf<AgentTailscalePeer>()
+            val groups = endpoint.userGroups()
+            while (groups.hasNext()) {
+                val group = groups.next()
+                val groupPeers = group.peers()
+                while (groupPeers.hasNext()) {
+                    val peer = groupPeers.next()
+                    if (self != null && peer.stableID == self.stableID) continue
+                    peers +=
+                        AgentTailscalePeer(
+                            name = peerName(peer),
+                            online = peer.online,
+                            exitNode = peer.exitNode,
+                            exitNodeOption = peer.exitNodeOption,
+                            lastSeen = if (!peer.online && peer.lastSeen > 0) formatLastSeen(peer.lastSeen) else null,
+                        )
+                }
+            }
+            endpoints +=
+                AgentTailscaleEndpoint(
+                    tag = endpoint.endpointTag,
+                    state = endpoint.backendState,
+                    self =
+                        self?.let {
+                            AgentTailscalePeer(
+                                name = peerName(it),
+                                online = it.online,
+                                exitNode = it.exitNode,
+                                exitNodeOption = it.exitNodeOption,
+                            )
+                        },
+                    peers = peers,
+                )
+        }
+        return AgentTailscaleSnapshot(endpoints)
     }
 
     private fun formatTailscale(
@@ -1069,6 +1132,11 @@ class ConductorViewModel(
     fun conversationTranscript(): String =
         buildString {
             appendLine("# Conductor conversation")
+            appendLine()
+            appendLine("- app version: ${BuildConfig.VERSION_NAME}")
+            if (sessionStartVersion.isNotBlank() && sessionStartVersion != BuildConfig.VERSION_NAME) {
+                appendLine("- session started on: $sessionStartVersion")
+            }
             appendLine()
             _uiState.value.items.forEach { item ->
                 when (item) {
@@ -1170,8 +1238,12 @@ class ConductorViewModel(
 
     private fun restoreSession() {
         val session = sessionStore.load() ?: return
-        transcript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
+        sessionStartVersion = session.appVersion.ifBlank { BuildConfig.VERSION_NAME }
+        val loadedTranscript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
+        val repaired = repairRestoredTranscript(loadedTranscript, session.items)
+        transcript = repaired.takeIf { validateTranscriptPairing(it) } ?: loadedTranscript
         pendingTurnEvent = session.pendingEvent
+        AgentApiTrace.restoreSummaries(session.trace)
         val restoredItems =
             session.items.mapNotNull { item ->
                 when (item) {
@@ -1209,8 +1281,28 @@ class ConductorViewModel(
             transcript.lastOrNull() is AgentMessage.User &&
                 pendingTurnEvent != null &&
                 lastError?.title == "agent"
-        if (restoredItems.isNotEmpty()) {
-            _uiState.update { it.copy(items = restoredItems, canRetryLastTurn = canRetry) }
+        val versionChanged =
+            sessionStartVersion.isNotBlank() && sessionStartVersion != BuildConfig.VERSION_NAME
+        if (versionChanged && pendingTurnEvent == null) {
+            pendingTurnEvent =
+                TurnEvent(
+                    "app_updated",
+                    "${sessionStartVersion}->${BuildConfig.VERSION_NAME}",
+                )
+        }
+        val displayItems =
+            if (versionChanged) {
+                restoredItems +
+                    ConductorItem.Notice(
+                        "version",
+                        "App updated from $sessionStartVersion to ${BuildConfig.VERSION_NAME} " +
+                            "during this session. Earlier tool results and events may use older semantics.",
+                    )
+            } else {
+                restoredItems
+            }
+        if (displayItems.isNotEmpty()) {
+            _uiState.update { it.copy(items = displayItems, canRetryLastTurn = canRetry) }
         }
     }
 
@@ -1221,7 +1313,13 @@ class ConductorViewModel(
             return
         }
         if (!validateTranscriptPairing(transcript)) return
-        sessionStore.save(transcript, items, pendingTurnEvent)
+        sessionStore.save(
+            transcript = transcript,
+            items = items,
+            pendingEvent = pendingTurnEvent,
+            appVersion = BuildConfig.VERSION_NAME,
+            trace = AgentApiTrace.summaries(),
+        )
     }
 
     private fun deviceSummary(): String {

@@ -71,6 +71,16 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun searchOutputListsCategoriesEvenWhenMatchesAreWeak() {
+        val mcp = definition("mcp_demo_echo", "mcp", listOf("echo", "Demo", "mcp"))
+        val scoped = AgentToolCatalog(listOf(listNodes, mcp))
+        val output = scoped.searchOutput("something unrelated", limit = 5)
+        val categories = output["categories"] as JsonObject
+        assertEquals("1", (categories["mcp"] as JsonPrimitive).content)
+        assertEquals("1", (categories["network"] as JsonPrimitive).content)
+    }
+
+    @Test
     fun searchOutputMarksWeakMatches() {
         val weak = catalog.searchOutput("something unrelated", limit = 5)
         assertEquals("true", (weak["weak"] as JsonPrimitive).content)

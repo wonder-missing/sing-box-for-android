@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -28,12 +29,31 @@ data class ApiTraceEntry(
 )
 
 /**
+ * Small audit record kept in the persisted session. Full request/response
+ * bodies stay in memory only; summaries survive app upgrades and restarts.
+ */
+@Serializable
+data class ApiTraceSummary(
+    val timestamp: Long,
+    val version: String = "",
+    val status: Int? = null,
+    val durationMs: Long? = null,
+    val error: String? = null,
+    val errorCode: String? = null,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val cacheHitTokens: Int? = null,
+    val cacheMissTokens: Int? = null,
+)
+
+/**
  * In-memory debug trace for the current Conductor session. Request/response
  * bodies are kept for analysis, but credential headers are redacted before
  * they enter this buffer and before anything is copied to the clipboard.
  */
 object AgentApiTrace {
     private const val MAX_ENTRIES = 20
+    private const val MAX_SUMMARIES = 100
     private const val MAX_BODY_CHARS = 200_000
     private const val MAX_TOTAL_BODY_CHARS = 1_000_000
     private const val MAX_OLD_BODY_CHARS = 20_000
@@ -41,7 +61,15 @@ object AgentApiTrace {
 
     private val lock = Any()
     private val entries = ArrayDeque<ApiTraceEntry>()
+    private val summaryEntries = ArrayDeque<ApiTraceSummary>()
     private val prettyJson = Json { prettyPrint = true }
+
+    @Volatile
+    private var appVersion: String = ""
+
+    fun setAppVersion(version: String) {
+        appVersion = version
+    }
 
     fun record(entry: ApiTraceEntry) {
         synchronized(lock) {
@@ -50,12 +78,45 @@ object AgentApiTrace {
                 entries.removeFirst()
             }
             enforceBodyBudget()
+            summaryEntries.addLast(
+                ApiTraceSummary(
+                    timestamp = entry.startedAt ?: entry.timestamp,
+                    version = appVersion,
+                    status = entry.status,
+                    durationMs = entry.durationMs,
+                    error = entry.error,
+                    errorCode = entry.errorCode,
+                    inputTokens = entry.usage?.inputTokens,
+                    outputTokens = entry.usage?.outputTokens,
+                    cacheHitTokens = entry.usage?.cacheHitTokens,
+                    cacheMissTokens = entry.usage?.cacheMissTokens,
+                ),
+            )
+            while (summaryEntries.size > MAX_SUMMARIES) {
+                summaryEntries.removeFirst()
+            }
         }
     }
 
     fun clear() {
-        synchronized(lock) { entries.clear() }
+        synchronized(lock) {
+            entries.clear()
+            summaryEntries.clear()
+        }
     }
+
+    /**
+     * Restores the compact audit trail written by a previous process. Full
+     * bodies are intentionally not restored: they are large and debug-only.
+     */
+    fun restoreSummaries(restored: List<ApiTraceSummary>) {
+        synchronized(lock) {
+            if (summaryEntries.isNotEmpty() || restored.isEmpty()) return
+            summaryEntries.addAll(restored.takeLast(MAX_SUMMARIES))
+        }
+    }
+
+    fun summaries(): List<ApiTraceSummary> = synchronized(lock) { summaryEntries.toList() }
 
     /**
      * Caps the total request/response text retained for debugging. The newest
@@ -98,17 +159,29 @@ object AgentApiTrace {
 
     private fun ApiTraceEntry.bodyChars(): Int = requestBody.length + (responseBody?.length ?: 0)
 
-    fun hasEntries(): Boolean = synchronized(lock) { entries.isNotEmpty() }
+    fun hasEntries(): Boolean =
+        synchronized(lock) { entries.isNotEmpty() || summaryEntries.isNotEmpty() }
 
     fun lastUsage(): TokenUsage? = synchronized(lock) { entries.peekLast()?.usage }
 
     fun asMarkdown(): String {
         val snapshot = synchronized(lock) { entries.toList() }
-        if (snapshot.isEmpty()) return "No API calls recorded in this session."
+        val history = synchronized(lock) { summaryEntries.toList() }
+        if (snapshot.isEmpty() && history.isEmpty()) return "No API calls recorded in this session."
         val text =
             buildString {
                 appendLine("# Conductor API trace")
                 appendLine()
+                if (history.isNotEmpty()) {
+                    appendLine("## Request history (persisted)")
+                    appendLine()
+                    history.forEach { summary -> appendSummary(summary) }
+                    appendLine()
+                }
+                if (snapshot.isEmpty()) {
+                    appendLine("Full request/response bodies were cleared when the app restarted; only the history above survived.")
+                    return@buildString
+                }
                 snapshot.forEachIndexed { index, entry ->
                     appendLine("## ${index + 1}. ${entry.method} ${entry.url}")
                     appendLine()
@@ -182,6 +255,21 @@ object AgentApiTrace {
         } else {
             body
         }
+
+    private fun StringBuilder.appendSummary(summary: ApiTraceSummary) {
+        append("- ${formatTime(summary.timestamp)}")
+        if (summary.version.isNotBlank()) append(" v${summary.version}")
+        summary.status?.let { append(" status=$it") }
+        summary.durationMs?.let { append(" ${it}ms") }
+        if (summary.inputTokens != null || summary.outputTokens != null) {
+            append(" prompt=${summary.inputTokens ?: "?"} completion=${summary.outputTokens ?: "?"}")
+            summary.cacheHitTokens?.let { append(" cache_hit=$it") }
+            summary.cacheMissTokens?.let { append(" cache_miss=$it") }
+        }
+        summary.errorCode?.let { append(" error=$it") }
+        summary.error?.takeIf { it.isNotBlank() }?.let { append(" ${it.take(120)}") }
+        appendLine()
+    }
 
     private fun StringBuilder.appendHeaders(headers: Map<String, String>) {
         headers

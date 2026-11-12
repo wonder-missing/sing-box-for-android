@@ -86,8 +86,31 @@ interface AgentToolExecutor {
 }
 
 interface TailscaleStatusSource {
-    suspend fun status(cancellation: ToolCancellation? = null): String
+    suspend fun status(cancellation: ToolCancellation? = null): AgentTailscaleSnapshot
 }
+
+/**
+ * Structured Tailscale view for the agent. It deliberately has no account email
+ * or peer IP fields; those stay in the user-facing `/tailscale` output only.
+ */
+data class AgentTailscaleSnapshot(
+    val endpoints: List<AgentTailscaleEndpoint>,
+)
+
+data class AgentTailscaleEndpoint(
+    val tag: String,
+    val state: String,
+    val self: AgentTailscalePeer? = null,
+    val peers: List<AgentTailscalePeer> = emptyList(),
+)
+
+data class AgentTailscalePeer(
+    val name: String,
+    val online: Boolean,
+    val exitNode: Boolean = false,
+    val exitNodeOption: Boolean = false,
+    val lastSeen: String? = null,
+)
 
 interface TelemetryUploadPort {
     suspend fun upload(cancellation: ToolCancellation? = null): String

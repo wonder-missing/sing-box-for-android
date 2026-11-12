@@ -11,6 +11,11 @@ import kotlinx.serialization.Serializable
 data class TurnEvent(
     val type: String,
     val reason: String,
+    /**
+     * Sanitized, one-line failure detail. It lets the next turn explain why a
+     * previous request failed without asking the user to repeat the message.
+     */
+    val message: String? = null,
 )
 
 internal const val RUNTIME_EVENT_PREFIX = "[conductor:event"
@@ -26,8 +31,25 @@ internal fun formatUserMessage(
 ): String {
     val escaped =
         text.lines().joinToString("\n") { line ->
-            if (line.startsWith(RUNTIME_EVENT_PREFIX)) "\\$line" else line
+            // Runtime events are recognized at the start of a line; a user line
+            // with leading spaces must not be able to impersonate one.
+            if (line.trimStart().startsWith(RUNTIME_EVENT_PREFIX)) "\\$line" else line
         }
     if (event == null) return escaped
-    return "$RUNTIME_EVENT_PREFIX ${event.type} reason=${event.reason}]\n$escaped"
+    val detail =
+        event.message
+            ?.take(MAX_EVENT_MESSAGE_CHARS)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { " message=\"${escapeEventValue(it)}\"" }
+            .orEmpty()
+    return "$RUNTIME_EVENT_PREFIX ${event.type} reason=${event.reason}$detail]\n$escaped"
 }
+
+private const val MAX_EVENT_MESSAGE_CHARS = 400
+
+private fun escapeEventValue(value: String): String =
+    value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")

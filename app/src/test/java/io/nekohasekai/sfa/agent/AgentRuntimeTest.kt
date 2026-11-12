@@ -659,7 +659,10 @@ class AgentRuntimeTest {
             (result.outcome as TurnOutcome.Failed).error.code,
         )
         assertEquals(listOf(AgentMessage.User("hi")), result.messages)
-        assertEquals(TurnEvent("turn_failed", "invalid_model_response"), result.pendingEvent)
+        assertEquals(
+            TurnEvent("turn_failed", "invalid_model_response", "The model returned an empty answer."),
+            result.pendingEvent,
+        )
         assertTrue(validateTranscriptPairing(result.messages))
     }
 
@@ -749,7 +752,7 @@ class AgentRuntimeTest {
 
         assertTrue(result.outcome is TurnOutcome.Failed)
         assertEquals(listOf(AgentMessage.User("hi")), result.messages)
-        assertEquals(TurnEvent("turn_failed", "model_unavailable"), result.pendingEvent)
+        assertEquals(TurnEvent("turn_failed", "model_unavailable", "offline"), result.pendingEvent)
         assertTrue(validateTranscriptPairing(result.messages))
     }
 
@@ -779,7 +782,7 @@ class AgentRuntimeTest {
 
         val first = runBlocking { runtime.runTurn("first", emptyList(), onEvent = {}, confirm = { true }) }
         assertEquals(listOf(AgentMessage.User("first")), first.messages)
-        assertEquals(TurnEvent("turn_failed", "model_unavailable"), first.pendingEvent)
+        assertEquals(TurnEvent("turn_failed", "model_unavailable", "offline"), first.pendingEvent)
 
         runBlocking {
             runtime.runTurn(

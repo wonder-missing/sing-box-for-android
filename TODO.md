@@ -10,40 +10,44 @@
 ### P1
 
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，只能临时全局切换。`probe_many` 已按顺序批量实现；真正并发需要 daemon/新 API。实验里五次 probe 串行 6 到 15 秒。
-- [ ] **[审查] Conductor 生命周期（剩余）**：旋转已不再取消；返回或进程死亡仍会取消进行中的 turn，取消前未保存。
+- [ ] **[审查] Conductor 生命周期（剩余）**：旋转已不再取消；提交时已先持久化 user，进程死亡不再丢这条。turn 中途的 tool 卡片和未完成的 assistant 仍不落盘；返回页面仍会取消进行中的 turn。
 - [ ] **[审查] `TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时、Tailscale 取消已落地；仍没有在 Stop 后 1 秒内把未确认取消转成 turn error。
 
 ### P2
 
-- [ ] **[评估] trace 长 body 截断**：usage/finish/错误码/请求 ID 已结构化，内存有总量上限；单条 body 超过 200k 字符仍会截断。
+- [ ] **旧会话 UI 与导出的敏感原文**：wonder.51 只清洗 transcript（模型 egress）；会话 items 和对话导出仍保留旧的 `tailscale_status` 原文，分享导出前需清对话或手动处理。
+- [ ] **[评估] trace 长 body 截断**：usage/finish/错误码/请求 ID 已结构化，内存有总量上限，摘要在会话里持久化；单条 body 超过 200k 字符仍会截断，跨重启只有摘要没有完整 body。
 - [ ] **批量确认：预览与分级**：整批预检并合成一张含全部工具参数的卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS` / MCP 写工具逐次确认。
-- [ ] **[评估] `tailscale_status` 结构化**：Agent 视图已去掉登录名/IP 并加 last-seen；尚未改成 JSON 字段。
 - [ ] **确认与事务语义可见性**：模型看不到确认事件；多步调用没有框架级事务。先记着，等 2B 流式和 Phase 3 再评估。
 - [ ] **[评估] 网络诊断能力**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`、脱敏 `core_logs`、`node_detail`；先做前两个。实验里模型只能从 probe 结果推测 DNS 故障。
 - [ ] **[评估] `probe_via_node` 的 HEAD 歧义**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；`speed_test` 后续。
 - [ ] **对话级 LLM 摘要**：wonder.36 只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要还没做。
-- [ ] **跨版本会话的版本边界提示（以后考虑）**：旧 tool observation 会被模型当成当前证据；当前决定保留现状，先记着。
+- [ ] **跨版本旧 tool schema 归一（剩余）**：wonder.51 已加版本 Notice、`app_updated` 事件和导出 header；旧 tool observation 里的 `ok` 等字段仍按旧语义留在 transcript，没有逐条改写。
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康（订阅在 CFG 项目打磨），不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
 - [ ] **Provider capability 矩阵**：wonder.42 起 Settings 和 `/reasoning` 共用 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
-- [ ] **[审查] 模型客户端取消竞态（剩余）**：runtime 取消标志和流式 StreamReset 已做；`OpenAiCompatibleModelClient.cancel()` 与新 stream 的 `cancelled=false` 竞态仍在。
-- [ ] **[审查] trace release 驻留**：`DATA_EGRESS` 和 AppLog 审计已做；trace 内存已有总量上限；`AgentApiTrace` 仍在 release 默认驻留完整请求/响应。
+- [ ] **[审查] trace release 驻留**：`DATA_EGRESS` 和 AppLog 审计已做；trace 内存有总量上限，摘要跨重启保留；`AgentApiTrace` 仍在 release 默认驻留完整请求/响应，直到进程结束。
 - [ ] **[审查] 路由 A/B 真机执行**：语料见 [`docs/conductor-eval.md`](docs/conductor-eval.md)；native/routing 对比还没跑。
 - [ ] **Conductor 最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：wonder.47/48 已用 `ComposeFoundationFlags` 关闭 Compose 1.11 的新 context menu 和 smart selection；待真机确认 Copy 回来，确认后按上游修复再移除开关。
 
 ## 下个会话接手
 
-- Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.50（tag `v1.15.0-alpha.13-wonder.50`，commit `072be92`；wonder.49 为 `7048e2f`）。下一次从 51 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
-- 手机上看 wonder.49/50：
+- Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
+- 当前已发布 wonder.51（tag `v1.15.0-alpha.13-wonder.51`；wonder.50 为 `072be92`，wonder.49 为 `7048e2f`）。下一次从 52 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 手机上看 wonder.49/50/51：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
   - 说「把出口切到 direct」应出确认卡；执行后用 `list_nodes` 读回。失败时应回滚旧选择。
   - MCP 工具应全部显示 asks first；确认卡里的 URL 可读，token/query 打码。修改服务器工具定义后，刷新应提示重新启用，而不是静默替换。
   - 每轮结束应有 usage 摘要（in/out/cache）；流式回答上滑后不应被强制拉到底，点「回到最新」回到末尾。
   - 运行中点 `/clear` 应停止当前 turn 并清空。
-  - Tailscale 工具输出不应带账号邮箱和 peer IP；离线设备应有 last-seen。
+  - Tailscale 工具输出不应带账号邮箱和 peer IP；离线设备应有 last-seen。wonder.51 起返回 `endpoints/self/peers` JSON，不再是 `result` 文本。
+  - 升级后打开旧会话：末尾应有一条版本 Notice；对话导出 header 应写当前 app version 和 session started on。之前没有 pending failure 时，下一条消息的 event 行应带 `app_updated`。
+  - 在旧会话里问「我刚才那条失败的消息说了什么」：模型应能复述，不应再说「没收到内容」。
+  - 导出 API trace：应出现 `Request history (persisted)`，包含重启前的请求摘要（时间、版本、状态、耗时、usage）。
+  - 问「你能把日志传到 Mini 吗」：模型应先 `search_tools` 找 MCP 能力，不应直接断言没有。
+  - 失败卡出现后，下一条消息的请求 event 行应带 `message="..."`（DNS/超时等详情），模型能据此解释失败原因。
 - 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：
@@ -57,13 +61,14 @@
 - 仍未做，按阻塞原因：
   - probe 真正并发：libbox 没有 per-request outbound binding；`probe_many` 目前顺序执行。
   - `dns_lookup` / `route_decision` / `http_fetch_probe`：libbox 没有 DNS/route API，GET 也没有状态码和 body 上限。
-  - `TOOL_CANCEL_TIMEOUT` 精确 1 秒；返回或进程死亡中途取消仍会丢当前 turn。
-  - 批量确认整批预览；trace 单条长 body 截断与 release 驻留；会话编解码仍在主线程。
-  - 路由 A/B 真机执行；event reason 细分、prompt golden、`AgentIntentParser` 清理。
-  - Provider capability、跨版本会话边界、probe 链路复测、连接可观测、LLM 摘要、增量更新。
+  - `TOOL_CANCEL_TIMEOUT` 精确 1 秒；返回页面仍会取消进行中的 turn；turn 中途 tool 卡片不落盘。
+  - 批量确认整批预览；trace 单条长 body 截断、跨重启无完整 body、release 驻留；会话编解码仍在主线程。
+  - 路由 A/B 真机执行；旧 tool schema 归一；旧会话 UI/导出的敏感原文。
+  - Provider capability、probe 链路复测、连接可观测、LLM 摘要、增量更新。
 
 ## 最近完成
 
+- wonder.51（2026-11-13）：跨版本会话修复。提交时先持久化 user；恢复时把 UI 有、transcript 缺的 agent user 按锚点补回；清洗历史 tool 里的邮箱和 Tailscale peer IP；session 记录 appVersion，版本变化加 Notice/`app_updated` 事件，导出写版本 header；trace 摘要跨重启持久化；`turn_failed` 事件带 `message="..."`；`tailscale_status` 改结构化 JSON；MCP 发现提示 + `search_tools` categories；模型取消改代际；prompt 加观察/推断规则。tag `v1.15.0-alpha.13-wonder.51`。
 - wonder.50（2026-11-13）：P3 清理。trace 加 1M 字符总量上限（旧条目先缩到 20k 再丢弃）、错误码和 `X-Request-Id`；传输错误拆成 `network_dns` / `network_connect` / `network_tls` / `network_handshake` / `network_timeout`；system prompt 加 SHA-256 字节锁；删除无入口的 `AgentIntentParser`。tag `v1.15.0-alpha.13-wonder.50`，commit `072be92`。
 - wonder.49（2026-11-13）：Conductor P1/P2/P3 批次。工具级超时、Tailscale 取消、`probe_many` 顺序批量、`select_outbound` 确认/回滚；MCP 全部 AGENT_ONLY、`DATA_EGRESS` 强制、定义 fingerprint、404 不重试、token Keystore、确认 URL、刷新并行；token 预算、会话 512KB 上限、search weak、probe `reachable`、trace usage/耗时、Retry-After、`/clear`、AppLog 审计；UI Retry/usage/滚动/回到最新。libbox 无 per-request outbound、DNS/route、GET 状态码，probe 真正并发和诊断工具阻塞。评估见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。
 - 2026-11-13：Conductor 综合评估（实验导出 + 实现评审 + TODO 去重），见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。已修复项在评估里划掉；P1 顺序已重排。

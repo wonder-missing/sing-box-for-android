@@ -355,6 +355,50 @@ class AgentToolsTest {
     }
 
     @Test
+    fun tailscaleSnapshotIsStructuredWithoutPersonalFields() {
+        val tools =
+            AgentTools(
+                nodeSource = FakeNodeSource(),
+                deviceSource = FakeDeviceSource(),
+                probePort = FakeProbePort(),
+            )
+        val snapshot =
+            AgentTailscaleSnapshot(
+                listOf(
+                    AgentTailscaleEndpoint(
+                        tag = "tailscale",
+                        state = "Running",
+                        self = AgentTailscalePeer("phone", online = true),
+                        peers =
+                            listOf(
+                                AgentTailscalePeer(
+                                    name = "mini",
+                                    online = false,
+                                    exitNode = true,
+                                    lastSeen = "2026-11-13 02:00",
+                                ),
+                            ),
+                    ),
+                ),
+            )
+
+        val output = tools.tailscaleSnapshotJson(snapshot)
+        val endpoints = output.array("endpoints")
+        assertEquals(1, endpoints.size)
+        val endpoint = endpoints[0] as JsonObject
+        assertEquals("tailscale", endpoint.string("tag"))
+        val peers = endpoint.array("peers")
+        assertEquals(1, peers.size)
+        val peer = peers[0] as JsonObject
+        assertEquals("mini", peer.string("name"))
+        assertFalse(peer.boolean("online"))
+        assertTrue(peer.boolean("exitNode"))
+        assertEquals("2026-11-13 02:00", peer.string("lastSeen"))
+        assertFalse(output.toString().contains("@"))
+        assertFalse(output.toString().contains("100."))
+    }
+
+    @Test
     fun selectOutboundUsesTheSelectionPortAndReturnsPrevious() {
         val selection = FakeNodeSelectionPort()
         val registry = buildTestRegistry(selectionPort = selection)

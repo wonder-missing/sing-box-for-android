@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentMessage
+import io.nekohasekai.sfa.agent.ApiTraceSummary
 import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
@@ -24,6 +25,18 @@ class ConductorSessionSerializationTest {
                         AgentMessage.Assistant("hello"),
                     ),
                 pendingEvent = TurnEvent("turn_interrupted", "user_stop"),
+                appVersion = "1.15.0-alpha.13-wonder.50",
+                trace =
+                    listOf(
+                        ApiTraceSummary(
+                            timestamp = 1_700_000_000_000L,
+                            version = "1.15.0-alpha.13-wonder.50",
+                            status = 200,
+                            durationMs = 1_234,
+                            inputTokens = 100,
+                            outputTokens = 20,
+                        ),
+                    ),
                 items =
                     listOf(
                         ConductorItem.User("hi"),

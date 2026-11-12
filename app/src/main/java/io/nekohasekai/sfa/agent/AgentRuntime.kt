@@ -76,6 +76,7 @@ class AgentRuntime(
         initialEvent: TurnEvent? = null,
     ): TurnResult {
         preparedHistoryForTurn = null
+        streamingModel?.resetCancel()
         val turnId = UUID.randomUUID().toString()
         onEvent(AgentEvent.TurnStarted(turnId))
 
@@ -907,7 +908,13 @@ class AgentRuntime(
         if (transcript.size <= startSize) return null
         return when (outcome) {
             is TurnOutcome.Cancelled -> TurnEvent("turn_interrupted", "user_stop")
-            is TurnOutcome.Failed -> TurnEvent("turn_failed", outcome.error.code.name.lowercase(Locale.US))
+            is TurnOutcome.Failed ->
+                TurnEvent(
+                    "turn_failed",
+                    outcome.error.code.name.lowercase(Locale.US),
+                    AgentSanitizer.sanitizeText(outcome.error.message).ifBlank { null },
+                )
+
             is TurnOutcome.Completed -> null
         }
     }

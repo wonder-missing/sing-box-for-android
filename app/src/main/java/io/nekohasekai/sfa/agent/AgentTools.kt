@@ -523,7 +523,7 @@ class AgentTools(
                     name = "tailscale_status",
                     description =
                         "List Tailscale endpoints and peers visible to the running service. " +
-                            "Read-only; returns the same status text as the /tailscale command.",
+                            "Read-only; returns structured endpoint/peer state without account email or peer IPs.",
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
@@ -539,11 +539,13 @@ class AgentTools(
                 if (cancellation.isCancelled()) {
                     return ToolExecution(errorCode = "cancelled", errorMessage = "tailscale status cancelled")
                 }
-                return runCatching { source.status(cancellation) }
-                    .fold(
-                        onSuccess = { ToolExecution(output = buildJsonObject { put("result", it) }) },
-                        onFailure = { ToolExecution(errorCode = "tool_failed", errorMessage = it.message ?: it.toString()) },
-                    )
+                return try {
+                    ToolExecution(output = tailscaleSnapshotJson(source.status(cancellation)))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    ToolExecution(errorCode = "tool_failed", errorMessage = e.message ?: e.toString())
+                }
             }
         }
 
@@ -598,6 +600,39 @@ class AgentTools(
 
     private fun unavailable(): ToolExecution =
         ToolExecution(errorCode = "tool_unavailable", errorMessage = "this tool is not available in the current build")
+
+    internal fun tailscaleSnapshotJson(snapshot: AgentTailscaleSnapshot): JsonObject =
+        buildJsonObject {
+            put(
+                "endpoints",
+                buildJsonArray {
+                    snapshot.endpoints.forEach { endpoint ->
+                        add(
+                            buildJsonObject {
+                                put("tag", endpoint.tag)
+                                put("state", endpoint.state)
+                                endpoint.self?.let { put("self", tailscalePeerJson(it)) }
+                                put(
+                                    "peers",
+                                    buildJsonArray {
+                                        endpoint.peers.forEach { add(tailscalePeerJson(it)) }
+                                    },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+        }
+
+    private fun tailscalePeerJson(peer: AgentTailscalePeer): JsonObject =
+        buildJsonObject {
+            put("name", peer.name)
+            put("online", peer.online)
+            if (peer.exitNode) put("exitNode", true)
+            if (peer.exitNodeOption) put("exitNodeOption", true)
+            peer.lastSeen?.let { put("lastSeen", it) }
+        }
 
     private fun nodeJson(node: AgentNode): JsonObject =
         buildJsonObject {

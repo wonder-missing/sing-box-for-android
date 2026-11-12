@@ -47,8 +47,7 @@ class OpenAiCompatibleModelClient(
     @Volatile
     private var activeCall: Call? = null
 
-    @Volatile
-    private var cancelled = false
+    private val cancelGeneration = CancelGeneration()
 
     private fun currentEndpoint(): ModelEndpoint {
         val endpoint = endpointProvider()
@@ -83,8 +82,12 @@ class OpenAiCompatibleModelClient(
     }
 
     override fun cancel() {
-        cancelled = true
+        cancelGeneration.cancel()
         activeCall?.cancel()
+    }
+
+    override fun resetCancel() {
+        cancelGeneration.reset()
     }
 
     override suspend fun complete(
@@ -126,7 +129,7 @@ class OpenAiCompatibleModelClient(
                     "${endpoint.providerLabel} API key is not configured.",
                 )
             }
-            cancelled = false
+            val cancelAt = cancelGeneration.current()
             val payload = buildPayload(request, endpoint, stream = true)
             val httpRequest =
                 Request
@@ -144,7 +147,7 @@ class OpenAiCompatibleModelClient(
                     .build()
             val call = client.newCall(httpRequest)
             activeCall = call
-            if (cancelled) call.cancel()
+            if (cancelGeneration.isCancelled(cancelAt)) call.cancel()
             val requestHeaders = AgentApiTrace.sanitizeHeaders(httpRequest.headers.toMultimap())
             var status: Int? = null
             var responseHeaders: Map<String, String> = emptyMap()
@@ -177,7 +180,7 @@ class OpenAiCompatibleModelClient(
                             )
                     var sawDone = false
                     while (true) {
-                        if (cancelled) throw CancellationException("cancelled")
+                        if (cancelGeneration.isCancelled(cancelAt)) throw CancellationException("cancelled")
                         val line = source.readUtf8Line() ?: break
                         if (!line.startsWith("data:")) continue
                         val data = line.removePrefix("data:").trim()
@@ -212,7 +215,7 @@ class OpenAiCompatibleModelClient(
                 traceErrorCode = e.code.name.lowercase(Locale.US)
                 throw e
             } catch (e: IOException) {
-                if (cancelled) {
+                if (cancelGeneration.isCancelled(cancelAt)) {
                     traceError = "cancelled"
                     traceErrorCode = "turn_cancelled"
                     throw CancellationException("cancelled")
@@ -223,7 +226,6 @@ class OpenAiCompatibleModelClient(
                 throw mapped
             } finally {
                 if (activeCall === call) activeCall = null
-                cancelled = false
                 AgentApiTrace.record(
                     ApiTraceEntry(
                         timestamp = System.currentTimeMillis(),

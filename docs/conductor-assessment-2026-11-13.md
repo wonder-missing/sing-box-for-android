@@ -46,7 +46,7 @@
 
 | ID | 问题 | 来源 | 证据 | 状态 / 下一步 |
 |---|---|---|---|---|
-| P1-1 | 旋转屏幕或离开页面会取消进行中的 turn，并丢掉这一轮消息 | 实现评审 §3.2 | `ConductorScreen` 的 `onDispose` 调用 `disconnect()`；运行中不 `persistSession()`；Activity 没有 `configChanges` | 部分已修（wonder.49）：旋转不再取消；返回或进程死亡仍会取消进行中的 turn。 |
+| P1-1 | 旋转屏幕或离开页面会取消进行中的 turn，并丢掉这一轮消息 | 实现评审 §3.2 | `ConductorScreen` 的 `onDispose` 调用 `disconnect()`；运行中不 `persistSession()`；Activity 没有 `configChanges` | 部分已修（wonder.49/51）：旋转不再取消；提交时先持久化 user，恢复时补回 UI-only user；返回或进程死亡仍会取消进行中的 turn，turn 中途 tool 卡片不落盘。 |
 | P1-2 | 工具没有通用超时；`tailscale_status` 不能 1s 取消；`TOOL_CANCEL_TIMEOUT` 未产生 | 实现评审 §3.4；实验 probe 15s/6s | `AgentToolRegistry` 只有 `withContext(IO)`；deadline 只在模型轮之间检查 | 部分已修（wonder.49）：工具级 `withTimeout`、Tailscale 取消、`tool_timeout` 已落地；精确 1 秒的 `TOOL_CANCEL_TIMEOUT` 仍未完成。 |
 | P1-3 | MCP 把 `readOnlyHint` 当执行许可；`DATA_EGRESS` 只是标签 | 实现评审 §3.1 | MCP 只读工具映射成 `NEVER`；注册表不按 `AgentPermission` 决策 | 已修（wonder.49）：MCP 全部 AGENT_ONLY；`DATA_EGRESS` 强制；完整定义 hash/pinning；404 不重试；token Keystore 加密；确认卡保留 URL。 |
 | P1-4 | 上下文没有 token 预算；`maxInputTokens` 未使用；会话持久化没有总字节上限 | 实现评审 §3.5、§3.6 | 只有 48/36 消息数和字符预算；实验 25 条未触发高水位 | 已修（wonder.49）：token 估算与裁剪、会话字节上限；语义摘要和 IO 编解码仍未做。 |
@@ -60,9 +60,9 @@
 | P2-2 | `probe_via_node` 只做 HEAD，EOF 有歧义；缺少真 GET/速度测试 | 实验 probe；实现评审 | 一个节点 EOF/5853ms，模型无法区分 HEAD 拒绝和节点坏 | 阻塞：libbox GET 没有状态码 API，且会完整读取 body，无法限制 max_bytes；暂不实现。 |
 | P2-3 | `search_tools` 宽泛查询返回弱相关结果，没有 no-match 信号 | TODO P2；实验 #6 | 查询「切换选择策略组...」返回三个只读网络工具，模型多花约 3.5k 字符 | 已修（wonder.49）：搜索结果增加 `weak` 标记和提示。 |
 | P2-4 | `ToolObservation.ok` 与工具 `output.ok` 语义重复 | TODO P2；实现评审 | 两层 `ok` 容易误读 | 已修（wonder.49）：probe 内层改为 `reachable`。 |
-| P2-5 | `tailscale_status` 把账号登录名（邮箱）和所有 peer IP 发给模型；输出未结构化 | 实验 #8；TODO P2 | 对话导出包含账号名和 peer IP；模型只需要设备名/在线状态 | 部分已修（wonder.49）：Agent 视图去掉登录名和 IP，offline peer 加 last-seen；未改成 JSON。 |
+| P2-5 | `tailscale_status` 把账号登录名（邮箱）和所有 peer IP 发给模型；输出未结构化 | 实验 #8；TODO P2 | 对话导出包含账号名和 peer IP；模型只需要设备名/在线状态 | 已修（wonder.49/51）：Agent 视图去掉登录名和 IP；wonder.51 改为结构化 JSON，历史 transcript 在恢复时清洗邮箱和 Tailscale IP。 |
 | P2-6 | usage/cache 不可见；API trace 在 200k 字符处截断，长流丢失 usage/finish | 实验 #7/#9/#12；TODO P2 | 长响应 body 到 200,000 字符被截断；只有 7/12 请求有 usage | 已修（wonder.49）：trace 结构化 usage/finish/耗时/开始时间，UI 增加 usage 摘要；长响应 body 仍会截断。 |
-| P2-7 | Stop 取消标志在 turn 开头被重置，存在竞态；流式重试会重复 UI 文本 | 实现评审 §4 | `cancelRequested = false`、`cancelled = false`；重试只清 `partialContent` | 部分已修（wonder.49）：runtime 取消标志不再在 turn 开头重置；流式重试发 StreamReset。模型客户端 cancel 竞态仍在。 |
+| P2-7 | Stop 取消标志在 turn 开头被重置，存在竞态；流式重试会重复 UI 文本 | 实现评审 §4 | `cancelRequested = false`、`cancelled = false`；重试只清 `partialContent` | 已修（wonder.49/51）：runtime 取消标志不再在 turn 开头重置；流式重试发 StreamReset；模型客户端取消改为代际，turn 开始 reset，流捕获代际。 |
 | P2-8 | MCP `tools/call` 404 自动重试可能重复写；token 明文；确认卡 URL 被打码；刷新阻塞首条消息 | 实现评审 §4 | `McpSession.request` 对任何方法重试；token 在 JSON；无 `allowedUrlParameter`；刷新串行 | 已修（wonder.49）：404 不重试、token 走 Keystore、确认 URL、刷新并行；刷新进度 UI 仍无。 |
 | P2-9 | 权限与审计没有闭环；`AgentApiTrace` 在 release 默认驻留完整请求/响应 | 实现评审 §4 | `AgentPermission` 不参与决策；trace 只在内存，无结构化审计 | 部分已修（wonder.49/50）：`DATA_EGRESS` 强制、AppLog 审计、trace 内存总量上限；仍在 release 驻留完整请求/响应。 |
 | P2-10 | `Approve rest of turn` 的爆炸半径；批量确认没有整批预览 | 实现评审 §4；TODO P2 | 一次批准覆盖后续所有工具，包括 MCP 写工具 | 部分已修（wonder.49）：自动批准只覆盖同工具；整批预览未做。 |
@@ -84,6 +84,20 @@
 - ~~turn 事件的 reason 只有错误大类，DNS、连接失败、5xx 都会落到 `model_unavailable`；可以细分。~~（wonder.50 分为 `network_dns` / `network_connect` / `network_tls` / `network_handshake` / `network_timeout`）
 - ~~API trace 的时间是完成时间，不是开始时间；错误只记字符串，没有错误码/请求 ID。~~（wonder.49/50）
 - ~~`network_snapshot` 和 `list_nodes` 的 core 字段重复。~~
+
+### 跨版本会话实验（2026-11-13，wonder.51）
+
+数据：`conductor-conversation-20261113-030028.md.txt`、`conductor-api-trace-20261113-025959.md.txt`。会话从 23:59 到 02:58，跨 wonder.48/49/50，trace 只有重启后的 2 条请求。
+
+| ID | 问题 | 证据 | 状态 |
+|---|---|---|---|
+| X-1 | 旧失败 user 只在 UI，模型 transcript 缺失 | UI 有「如果我想让你获得编写临时脚本…」；trace 两次请求 0 次出现；模型答「没收到」 | 已修（wonder.51）：提交即持久化；恢复时按锚点补回 UI-only agent user，并加单测 |
+| X-2 | 旧 tool 输出里的邮箱和 Tailscale peer IP 继续发给模型 | trace 两次请求都含旧 `tailscale_status` 输出；模型复述了一个 peer IP | 已修（wonder.51）：恢复时清洗历史 tool 的邮箱、100.64/10 和 `fd7a:115c:a1e0::/48`；公开节点 IP 保留。UI/导出原文仍保留 |
+| X-3 | MCP 工具对模型不可见 | 模型先说没有远程文件/执行能力，后经 `/mcp use` 才发现 4 个工具 | 已修（wonder.51）：prompt 静态提示 + `search_tools` 输出 `categories` |
+| X-4 | trace 在重启/升级后清空 | 会话 3 小时，trace 只有 02:58 的 2 条 | 部分已修（wonder.51）：100 条摘要随 session 持久化；完整 body 仍只在进程内 |
+| X-5 | 失败详情没进模型上下文 | UI 有 DNS 错误，模型只看到 `model_unavailable` | 已修（wonder.51）：`turn_failed` 事件带 sanitized `message="..."` |
+| X-6 | 会话没有版本边界 | 模型答不出更新次数；旧 `ok` 与新 `reachable` 混用 | 部分已修（wonder.51）：session 记录 appVersion，版本变化 Notice/`app_updated`，导出 header；旧 tool schema 不改写 |
+| X-7 | 模型把推断说成事实 | 「走的是 OrbStack 的文件共享」被用户指出是编的；DNS 诊断把不同失败模式合并 | 已修（wonder.51 prompt 规则）：区分观察与推断；行为仍需真机观察 |
 
 ### 已修复
 

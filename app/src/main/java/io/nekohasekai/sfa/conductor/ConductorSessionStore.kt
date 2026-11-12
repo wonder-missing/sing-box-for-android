@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import android.content.Context
 import io.nekohasekai.sfa.agent.AgentMessage
+import io.nekohasekai.sfa.agent.ApiTraceSummary
 import io.nekohasekai.sfa.agent.TurnEvent
 import io.nekohasekai.sfa.agent.trimTranscriptToLast
 import kotlinx.serialization.Serializable
@@ -14,6 +15,8 @@ data class ConductorSession(
     val transcript: List<AgentMessage> = emptyList(),
     val items: List<ConductorItem> = emptyList(),
     val pendingEvent: TurnEvent? = null,
+    val appVersion: String = "",
+    val trace: List<ApiTraceSummary> = emptyList(),
 )
 
 internal interface ConductorPreferenceStore {
@@ -70,8 +73,10 @@ class ConductorSessionStore internal constructor(
         transcript: List<AgentMessage>,
         items: List<ConductorItem>,
         pendingEvent: TurnEvent? = null,
+        appVersion: String = "",
+        trace: List<ApiTraceSummary> = emptyList(),
     ) {
-        val payload = encodeBounded(transcript, items, pendingEvent)
+        val payload = encodeBounded(transcript, items, pendingEvent, appVersion, trace)
         runCatching {
             prefs.putString(KEY, payload)
         }
@@ -81,6 +86,8 @@ class ConductorSessionStore internal constructor(
         transcript: List<AgentMessage>,
         items: List<ConductorItem>,
         pendingEvent: TurnEvent?,
+        appVersion: String,
+        trace: List<ApiTraceSummary>,
     ): String {
         var transcriptLimit = MAX_TRANSCRIPT
         var itemsLimit = MAX_ITEMS
@@ -90,6 +97,8 @@ class ConductorSessionStore internal constructor(
                     transcript = trimTranscriptToLast(transcript, transcriptLimit),
                     items = items.takeLast(itemsLimit),
                     pendingEvent = pendingEvent,
+                    appVersion = appVersion,
+                    trace = trace,
                 )
             val raw = json.encodeToString(session)
             if (raw.toByteArray(Charsets.UTF_8).size <= MAX_BYTES ||

@@ -102,10 +102,11 @@ class AgentToolCatalog(
                         put("requiresConfirmation", tool.confirmationPolicy != ConfirmationPolicy.NEVER)
                     }
                 }.toMutableList()
-        var output = buildOutput(query, matches.size, objects, truncated = false, weak = weak)
+        val categories = definitions.groupingBy { it.category }.eachCount().toSortedMap()
+        var output = buildOutput(query, matches.size, objects, categories, truncated = false, weak = weak)
         while (objects.size > 1 && output.toString().length > maxChars) {
             objects.removeAt(objects.lastIndex)
-            output = buildOutput(query, matches.size, objects, truncated = true, weak = weak)
+            output = buildOutput(query, matches.size, objects, categories, truncated = true, weak = weak)
         }
         return output
     }
@@ -147,6 +148,7 @@ class AgentToolCatalog(
         query: String,
         total: Int,
         matches: List<JsonObject>,
+        categories: Map<String, Int>,
         truncated: Boolean,
         weak: Boolean,
     ): JsonObject =
@@ -156,15 +158,21 @@ class AgentToolCatalog(
             put("truncated", truncated)
             put("weak", weak)
             put(
+                "categories",
+                buildJsonObject {
+                    categories.forEach { (name, count) -> put(name, count) }
+                },
+            )
+            put(
                 "matches",
                 buildJsonArray {
                     matches.forEach { add(it) }
                 },
             )
             if (matches.isEmpty()) {
-                put("hint", "No matching tools. Search by capability, or use a tool name from the roster.")
+                put("hint", "No matching tools. Categories above show where capabilities live; search by category or capability name.")
             } else if (weak) {
-                put("hint", "These are weak matches, not confirmed capabilities. Do not invent a tool from them.")
+                put("hint", "These are weak matches, not confirmed capabilities. Check categories and search again before inventing a tool.")
             }
         }
 

@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际。
 最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -1384,6 +1384,18 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
+
+### wonder.51：跨版本会话修复（2026-11-13）
+
+- 提交时立即持久化用户消息；恢复会话时把 UI 里存在、transcript 缺失的 agent user 按顺序补回。只认非 `/` 且后面跟着 agent 产物的 user，按 transcript 最早保留的 user 做锚点，避免把已裁掉的历史重新塞回去。
+- 恢复会话时清洗历史 tool 消息里的账号邮箱和 Tailscale peer IP（100.64.0.0/10、`fd7a:115c:a1e0::/48`）；公开节点 IP 保留。
+- system prompt 增加 MCP 发现提示（MCP 可能运行时增加工具，结论前先 search_tools）；`search_tools` 输出增加 `categories` 计数，弱匹配也能看到 mcp 组存在。
+- `turn_failed` 事件带 sanitized `message="..."`，下一轮模型能看到失败详情；事件行里的用户伪造前缀也会被转义。
+- session 记录 `appVersion`；恢复时版本变化会加一条 Notice，并（没有待处理事件时）给下一轮加 `app_updated` 事件；对话导出 header 写当前版本和会话起始版本。
+- trace 增加 100 条持久化摘要（时间、版本、状态、耗时、usage、错误码），跨重启保留；完整 body 仍只在本进程内。对话导出会把摘要排在完整请求前。
+- `tailscale_status` 改为结构化 JSON（endpoints/self/peers，含 online、exitNode、lastSeen），不再返回邮箱或 peer IP；`/tailscale` 命令仍保留人类可读文本。
+- 模型客户端取消改为代际：turn 开始时 `resetCancel()`，流捕获代际；cancel 早于流捕获也不会丢，晚于上个 turn 也不会误伤新 turn。
+- system prompt 增加「区分观察与推断，不要把推断的机制说成事实」；golden hash 更新。
 
 ### wonder.50：P3 清理（2026-11-13）
 

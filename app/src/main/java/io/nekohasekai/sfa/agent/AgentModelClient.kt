@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.flow.Flow
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 interface AgentApiKeyProvider {
     val supported: Boolean
@@ -26,6 +28,37 @@ interface AgentStreamingModelClient {
     ): Flow<AgentModelChunk>
 
     fun cancel() = Unit
+
+    /**
+     * Starts a new cancel generation. A cancel that arrived before the turn
+     * began must not abort this turn, and a cancel during it must not be
+     * cleared by the next stream.
+     */
+    fun resetCancel() = Unit
+}
+
+/**
+ * A cancel is tied to one stream generation. A late cancel from the previous
+ * turn cannot leak into the next one, and a cancel that arrives before a new
+ * stream starts is not cleared when that stream begins.
+ */
+internal class CancelGeneration {
+    private val generation = AtomicLong(0)
+    private val cancelled = AtomicBoolean(false)
+
+    fun current(): Long = generation.get()
+
+    fun cancel() {
+        cancelled.set(true)
+        generation.incrementAndGet()
+    }
+
+    fun reset() {
+        cancelled.set(false)
+        generation.incrementAndGet()
+    }
+
+    fun isCancelled(at: Long): Boolean = cancelled.get() || generation.get() != at
 }
 
 enum class FinishReason {

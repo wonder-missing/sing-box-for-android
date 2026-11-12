@@ -9,6 +9,7 @@
 - 批次 3：完成。`/capabilities` MCP params、未知工具上限、`truncateObservation` 预算、`Retry-After`、`/clear`、`network_snapshot` 字段合并在 wonder.49；event reason 细分、prompt golden 字节锁、`AgentIntentParser` 清理在 wonder.50。
 - 批次 4：完成。Test CI 绿，tag `v1.15.0-alpha.13-wonder.49`（commit `7048e2f`），Release 绿，`SFA-1.15.0-alpha.13-wonder.49-arm64-v8a.apk` 已上传，飞书通知已发送。
 - 批次 5：完成（wonder.50，commit `072be92`）。补齐批次 3 的 event reason 细分、prompt 字节锁、`AgentIntentParser` 清理；另加 trace 内存上限和错误码/请求 ID。tag `v1.15.0-alpha.13-wonder.50`，Release 绿，飞书通知已发送。
+- 批次 6：进行中（wonder.51）。按跨版本会话实验挑 10 条：提交即持久化 user、恢复对账、历史 tool 脱敏、MCP 发现、失败详情事件、版本边界、trace 摘要持久化、Tailscale JSON、取消代际、观察/推断 prompt 规则。
 
 ## 批次
 

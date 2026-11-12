@@ -49,7 +49,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("1dbaef4307d3faff0ade651bca51cb32db535a9c221ff6e40e89aeea1dad5a8b", digest)
+        assertEquals("cc469acc2bd68f23b073df1669b0605f05756da46b4ec40c1d382aa71152e26b", digest)
     }
 
     @Test
