@@ -352,7 +352,7 @@ fun ConductorScreen(
             Toast.makeText(context, context.getString(R.string.conductor_conversation_empty), Toast.LENGTH_LONG).show()
             return
         }
-        export(ConductorExport.Conversation, "conductor-conversation.md")
+        export(ConductorExport.Conversation, ConductorExportNames.conversation())
     }
 
     fun exportApiTrace() {
@@ -360,7 +360,7 @@ fun ConductorScreen(
             Toast.makeText(context, context.getString(R.string.conductor_api_trace_empty), Toast.LENGTH_LONG).show()
             return
         }
-        export(ConductorExport.ApiTrace, "conductor-api-trace.md")
+        export(ConductorExport.ApiTrace, ConductorExportNames.apiTrace())
     }
 
     BackHandler(enabled = inputExpanded) {

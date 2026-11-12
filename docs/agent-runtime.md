@@ -1017,7 +1017,7 @@ UI 需要新增：
 - Conductor 最后一条消息下方的左侧横三点菜单提供 Copy conversation，把当前 user、assistant、tool、notice、error 导出为 Markdown；tool output 用 pretty JSON 代码块。
 - 同一菜单的 Copy API trace 导出当前会话每一次模型请求和响应，包含请求/响应 headers 和 body；Authorization、Cookie 等敏感 header 在进入 trace 前已经打码。trace 只放内存，`/clear` 清空。
 - wonder.38 起同一菜单增加 Save API trace to file：通过系统 CreateDocument 选择落点，把同一份 sanitized Markdown 写到文件，避免 2MB 文本走剪贴板后无法粘贴。trace 仍只放内存，`/clear` 清空。
-- wonder.40 起同一菜单增加 Save conversation to file：和 Copy conversation 使用同一份 Markdown 生成器，和 API trace 共用一个 CreateDocument 导出通道。文件写入在 IO 线程；空会话和空 trace 只提示，不落文件。
+- wonder.40 起同一菜单增加 Save conversation to file：和 Copy conversation 使用同一份 Markdown 生成器，和 API trace 共用一个 CreateDocument 导出通道。文件写入在 IO 线程；空会话和空 trace 只提示，不落文件。建议文件名带设备本地时间，形如 `conductor-conversation-yyyyMMdd-HHmmss.md` 和 `conductor-api-trace-yyyyMMdd-HHmmss.md`，避免多次上传撞名。
 - 持久化只保存 sanitized 后的 UI/transcript 内容；原始 tool 参数和 pending confirmation 不落盘。
 
 ## 12. BYOK 与设置入口
