@@ -658,7 +658,7 @@ class AgentRuntimeTest {
             AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
             (result.outcome as TurnOutcome.Failed).error.code,
         )
-        assertTrue(result.messages.isEmpty())
+        assertEquals(listOf(AgentMessage.User("hi")), result.messages)
         assertEquals(TurnEvent("turn_failed", "invalid_model_response"), result.pendingEvent)
         assertTrue(validateTranscriptPairing(result.messages))
     }
@@ -698,7 +698,7 @@ class AgentRuntimeTest {
     }
 
     @Test
-    fun stopBeforeContentRollsBackAndQueuesEvent() {
+    fun stopBeforeContentKeepsUserAndQueuesEvent() {
         val streaming = ReasoningOnlyStreamingModel()
         val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
         val runtime =
@@ -723,13 +723,13 @@ class AgentRuntimeTest {
             }
 
         assertTrue(result.outcome is TurnOutcome.Cancelled)
-        assertTrue(result.messages.isEmpty())
+        assertEquals(listOf(AgentMessage.User("hi")), result.messages)
         assertEquals(TurnEvent("turn_interrupted", "user_stop"), result.pendingEvent)
         assertTrue(validateTranscriptPairing(result.messages))
     }
 
     @Test
-    fun failedModelTurnRollsBackAndQueuesEvent() {
+    fun failedModelTurnKeepsUserAndQueuesEvent() {
         val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
         val model =
             object : AgentModelClient {
@@ -748,9 +748,59 @@ class AgentRuntimeTest {
         val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
 
         assertTrue(result.outcome is TurnOutcome.Failed)
-        assertTrue(result.messages.isEmpty())
+        assertEquals(listOf(AgentMessage.User("hi")), result.messages)
         assertEquals(TurnEvent("turn_failed", "model_unavailable"), result.pendingEvent)
         assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun failedTurnStaysInTheNextRequest() {
+        val requests = mutableListOf<AgentModelRequest>()
+        var calls = 0
+        val model =
+            object : AgentModelClient {
+                override suspend fun complete(
+                    request: AgentModelRequest,
+                    apiKey: String,
+                ): AgentModelResponse {
+                    requests += request
+                    if (calls++ == 0) {
+                        throw AgentModelException(
+                            AgentTurnErrorCode.MODEL_UNAVAILABLE,
+                            "offline",
+                            retryable = false,
+                        )
+                    }
+                    return response("ok")
+                }
+            }
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime = runtime(model, executor, key = "sk-test")
+
+        val first = runBlocking { runtime.runTurn("first", emptyList(), onEvent = {}, confirm = { true }) }
+        assertEquals(listOf(AgentMessage.User("first")), first.messages)
+        assertEquals(TurnEvent("turn_failed", "model_unavailable"), first.pendingEvent)
+
+        runBlocking {
+            runtime.runTurn(
+                "second",
+                first.messages,
+                onEvent = {},
+                confirm = { true },
+                initialEvent = first.pendingEvent,
+            )
+        }
+
+        val secondRequest = requests[1].messages
+        assertTrue(secondRequest.any { it is AgentMessage.User && it.content == "first" })
+        assertTrue(
+            secondRequest.any {
+                it is AgentMessage.User &&
+                    it.content.startsWith("[conductor:event turn_failed") &&
+                    it.content.endsWith("second")
+            },
+        )
+        assertTrue(validateTranscriptPairing(secondRequest))
     }
 
     private fun runtime(

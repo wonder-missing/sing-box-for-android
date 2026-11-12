@@ -64,6 +64,7 @@
     <string name="conductor_collapse">Collapse input</string>
     <string name="conductor_probe_run">Run probe</string>
     <string name="conductor_probe_cancel">Cancel</string>
+    <string name="conductor_retry">Retry</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Conductor</string>

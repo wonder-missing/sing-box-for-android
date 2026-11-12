@@ -878,11 +878,10 @@ class AgentRuntime(
     }
 
     /**
-     * A cancelled or failed turn can leave an unanswered user message. For an
-     * empty turn, drop that user message from the model transcript; the UI keeps
-     * it as a stopped item. For a turn with partial assistant text or tool
-     * results, keep them. In both cases queue a runtime event for the next real
-     * user message instead of inventing an assistant reply.
+     * A cancelled or failed turn can leave an unanswered user message. Keep that
+     * message in the model transcript so the next request still sees what the
+     * user asked; the UI already shows it. Queue a runtime event for the next
+     * real user message instead of inventing an assistant reply.
      */
     private fun prepareUnfinishedTurn(
         transcript: MutableList<AgentMessage>,
@@ -891,13 +890,6 @@ class AgentRuntime(
     ): TurnEvent? {
         if (outcome is TurnOutcome.Completed) return null
         if (transcript.size <= startSize) return null
-        val hasOutput =
-            transcript
-                .drop(startSize)
-                .any { it is AgentMessage.Assistant || it is AgentMessage.Tool }
-        if (!hasOutput && transcript[startSize] is AgentMessage.User) {
-            transcript.removeAt(startSize)
-        }
         return when (outcome) {
             is TurnOutcome.Cancelled -> TurnEvent("turn_interrupted", "user_stop")
             is TurnOutcome.Failed -> TurnEvent("turn_failed", outcome.error.code.name.lowercase(Locale.US))

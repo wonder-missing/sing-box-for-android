@@ -82,6 +82,7 @@ class ConductorViewModel(
         val isRunning: Boolean = false,
         val coreConnected: Boolean = false,
         val agentSupported: Boolean = true,
+        val canRetryLastTurn: Boolean = false,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -224,6 +225,7 @@ class ConductorViewModel(
             append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
             return
         }
+        updateUi { copy(canRetryLastTurn = false) }
 
         if (!text.startsWith("/")) {
             if (DefaultAgentInputGuard.check(text) is InputGuardResult.Blocked) {
@@ -293,7 +295,7 @@ class ConductorViewModel(
                 if (_uiState.value.isRunning) {
                     append(ConductorItem.Notice("clear", "Wait for the current command to finish."))
                 } else {
-                    updateUi { copy(items = emptyList()) }
+                    updateUi { copy(items = emptyList(), canRetryLastTurn = false) }
                     transcript = emptyList()
                     pendingTurnEvent = null
                     pendingCommandConfirmation = null
@@ -376,6 +378,28 @@ class ConductorViewModel(
         }
     }
 
+    /**
+     * Re-runs the user message whose turn failed before producing an answer.
+     * The failed message is still in the model transcript, so drop it there and
+     * let [submit] add it back as the new turn; the UI keeps a single copy.
+     */
+    fun retryLastTurn() {
+        if (_uiState.value.isRunning || !_uiState.value.canRetryLastTurn) return
+        val items = _uiState.value.items
+        val lastUserIndex = items.indexOfLast { it is ConductorItem.User }
+        if (lastUserIndex < 0) return
+        if (transcript.lastOrNull() !is AgentMessage.User) return
+        val text = (items[lastUserIndex] as ConductorItem.User).text
+        transcript = transcript.dropLast(1)
+        updateUi {
+            copy(
+                items = items.take(lastUserIndex),
+                canRetryLastTurn = false,
+            )
+        }
+        submit(text)
+    }
+
     fun confirmConfirmation() {
         if (pendingAgentConfirmation != null) {
             confirmAgent()
@@ -441,7 +465,7 @@ class ConductorViewModel(
         }
         stopRequested = false
         autoApproveAgentConfirmation = false
-        updateUi { copy(isRunning = true) }
+        updateUi { copy(isRunning = true, canRetryLastTurn = false) }
         val initialEvent = pendingTurnEvent
         agentJob =
             viewModelScope.launch {
@@ -485,12 +509,17 @@ class ConductorViewModel(
                     finishStreamingAssistant()
                     transcript = (result.compactedHistory ?: transcript) + result.messages
                     pendingTurnEvent = result.pendingEvent
-                    updateUi { copy(isRunning = false) }
+                    val outcome = result.outcome
+                    val canRetry =
+                        outcome is TurnOutcome.Failed &&
+                            transcript.lastOrNull() is AgentMessage.User &&
+                            pendingTurnEvent != null
+                    updateUi { copy(isRunning = false, canRetryLastTurn = canRetry) }
                     pendingAgentConfirmation = null
                     stopRequested = false
                     autoApproveAgentConfirmation = false
                     ModelProviderSettings.unpin()
-                    when (val outcome = result.outcome) {
+                    when (outcome) {
                         is TurnOutcome.Failed ->
                             append(
                                 ConductorItem.Error(
@@ -1105,8 +1134,13 @@ class ConductorViewModel(
                     else -> item
                 }
             }
+        val lastError = restoredItems.lastOrNull() as? ConductorItem.Error
+        val canRetry =
+            transcript.lastOrNull() is AgentMessage.User &&
+                pendingTurnEvent != null &&
+                lastError?.title == "agent"
         if (restoredItems.isNotEmpty()) {
-            _uiState.update { it.copy(items = restoredItems) }
+            _uiState.update { it.copy(items = restoredItems, canRetryLastTurn = canRetry) }
         }
     }
 

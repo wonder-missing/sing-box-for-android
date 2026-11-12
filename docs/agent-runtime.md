@@ -1,7 +1,7 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。
-最后更新：2026-11-12
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。
+最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
 本文只定 Phase 2a / 2b 的运行时：OpenAI-compatible BYOK（DeepSeek / xAI / Custom）、自然语言入口、结构化 tool call、确认暂停与恢复、有界循环。设备注册表和跨设备能力仍留在上位文档的 Phase 2（设备注册表部分）/ 3 / 4。
@@ -463,14 +463,12 @@ wonder.36 的 2B 运行时补充：
 - 还没执行的调用，同样回填 `cancelled`，或整组丢弃；两种策略选一种，但必须一致。
 - 发下一次模型请求前、返回 `TurnResult` 前，调用 `validateTranscriptPairing()`。失败时返回 `INVALID_TRANSCRIPT`，不发送请求。
 - `TurnResult.messages` 包含本轮 `User` 和后续 assistant/tool 消息；ViewModel 不重复追加用户消息。被输入检查拦截的输入不进入 transcript，只显示 UI 提示。
-- 取消或失败的 turn 不注入假 assistant 台词。`finish()` 在 `ensurePairing()` 之后判断本轮是否已经产生 assistant 正文或 tool 结果：
-  - 没有产生任何输出：把本轮 user 从模型 transcript 回滚。UI 仍保留用户消息和 `Stopped.`/错误提示。
-  - 已经产生 partial assistant 正文或 tool 结果：保留它们，不回滚。
+- 取消或失败的 turn 不注入假 assistant 台词。`finish()` 在 `ensurePairing()` 之后保留本轮已经产生的 user、partial assistant 和 tool 消息，不回滚。下一条真实 user 消息单独出现，因此 transcript 里可能出现连续两条 user；system prompt 说明这两条是独立请求，不是复合问题。
   - 两种情况都生成一个待发送的 `TurnEvent`（`turn_interrupted` / `turn_failed`，reason 用固定 token），由下一条真实 user 消息携带。
-- 下一条 user 消息在模型 transcript 里变成 `[conductor:event <type> reason=<reason>]\n<用户正文>`。事件不是独立消息，所以不会出现连续 user；system prompt 说明该前缀是 runtime metadata，不是用户请求。用户自己输入的行如果以这个前缀开头，会被转义。
+- 下一条 user 消息在模型 transcript 里变成 `[conductor:event <type> reason=<reason>]\n<用户正文>`。事件不是独立消息，而是下一轮 user 的开头；失败的那条 user 仍在前一条消息里，模型能看到原文。system prompt 说明该前缀是 runtime metadata，不是用户请求。用户自己输入的行如果以这个前缀开头，会被转义。
 - 事件跨进程持久化在 `ConductorSession.pendingEvent`；输入检查拦截或缺少 key 时本轮 user 没有进入 transcript，原 pending event 保留，等下一次真实发送。
 - Stop 发生在流式回答中途时，已生成正文先写入 transcript，事件按上面的规则挂到下一条 user；模型下一轮能看到停在哪里。
-- Retry 只重试失败的模型调用，复用已有 transcript；绝不重跑已经产生 observation 的工具。工具执行后 UI 不显示 Retry，或 Retry 只重发模型请求。
+- Retry：没有产生 assistant 正文或 tool 结果的失败 turn 在 UI 上提供 Retry。点击后从 transcript 末尾移除该 user，再由 `submit` 重新加入并带上 pending event；UI 只保留一份用户消息。不重跑已经产生 observation 的工具。
 - `/clear` 同时清 UI 消息、模型 transcript、待确认状态，并取消活动 turn。
 
 状态与结果：
@@ -1277,8 +1275,8 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 正文开始输出、工具开始或 turn 结束时，所有 Reasoning spinner 都停止；空 Thinking 占位不出现在 UI。
 - 同一 assistant 消息的多个确认只弹一张卡时，Approve rest of turn 能一次跑完；单调用响应也可以选择它来跳过本 turn 后续确认；取消仍结束整个 turn。
 - API trace 可以通过 Save API trace to file 落盘，空 trace 不生成文件；对话也可以通过 Save conversation to file 落盘。
-- Stop、超时、流式中断后 transcript 仍然配对；未完成 turn 不会以两个连续 user 消息进入下一轮。
-- 空的中断/失败 turn 会把本轮 user 从模型 transcript 回滚；有 partial assistant 或 tool 结果时保留。下一条 user 消息带 `[conductor:event ...]` 前缀，模型知道上一轮中断/失败；输入拦截和缺 key 不产生新事件。
+- Stop、超时、流式中断后 transcript 仍然配对；未完成 turn 保留原 user，下一条 user 带 `[conductor:event ...]` 前缀，可能出现连续 user，system prompt 说明它们是独立请求。
+- 空的中断/失败 turn 保留本轮 user，UI 显示 Retry；Retry 重发最后一条 user，模型下一轮仍能看到失败消息原文。输入拦截和缺 key 不产生新事件。
 - 用户自己输入以保留前缀开头的文本会被转义，不能伪造 runtime 事件；pending event 跨进程保留。
 - 长工具结果被截断且标记，模型不会因为上下文超限直接失败。
 - usage 里能看到 cache hit/miss token，用于判断路由模式和裁剪策略是否达到预期。
@@ -1378,6 +1376,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
+
+### wonder.48：失败 turn 保留 user 与 Retry（2026-11-13）
+
+- 失败或取消的 turn 不再把本轮 user 从模型 transcript 回滚。UI 里看得到的失败消息，下一次模型请求也看得到；连续两条 user 由 system prompt 说明为独立请求。
+- 没有 assistant 正文或 tool 结果的失败 turn 在 UI 显示 Retry。Retry 从 transcript 末尾移除该 user，再由 `submit` 重新加入并带上 pending event；不重跑已有 observation 的工具。
+- 覆盖 wonder.41 的「空中断 turn 从模型 transcript 回滚」规则。
 
 ### wonder.43：输入栏与版本行（2026-11-12）
 

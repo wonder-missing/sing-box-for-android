@@ -63,6 +63,7 @@
     <string name="conductor_collapse">收起输入框</string>
     <string name="conductor_probe_run">执行探测</string>
     <string name="conductor_probe_cancel">取消</string>
+    <string name="conductor_retry">重试</string>
     <string name="conductor_commands">命令</string>
     <string name="conductor_mention">提及</string>
     <string name="conductor_empty_title">命令面板</string>

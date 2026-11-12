@@ -475,6 +475,8 @@ fun ConductorScreen(
                             onConfirm = viewModel::confirmConfirmation,
                             onConfirmAll = viewModel::confirmAllAgent,
                             onCancel = viewModel::cancelConfirmation,
+                            canRetry = uiState.canRetryLastTurn && index == uiState.items.lastIndex,
+                            onRetry = viewModel::retryLastTurn,
                         )
                     }
                     item(key = "conversation-actions") {
@@ -765,6 +767,8 @@ private fun ConductorItemView(
     onConfirm: () -> Unit,
     onConfirmAll: () -> Unit,
     onCancel: () -> Unit,
+    canRetry: Boolean,
+    onRetry: () -> Unit,
 ) {
     when (item) {
         is ConductorItem.User ->
@@ -838,6 +842,14 @@ private fun ConductorItemView(
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (canRetry) {
+                    TextButton(
+                        onClick = onRetry,
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Text(stringResource(R.string.conductor_retry))
+                    }
+                }
             }
 
         is ConductorItem.Tool -> ToolItem(item)
