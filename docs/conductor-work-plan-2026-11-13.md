@@ -6,8 +6,8 @@
 
 - 批次 1：完成。旋转不再取消 turn；工具级超时、Tailscale 取消、MCP 确认/加密/pinning、token 预算、会话字节上限、`probe_many` 顺序批量、`select_outbound` 已落地。返回或进程死亡仍会取消中途 turn，精确 1 秒的 `TOOL_CANCEL_TIMEOUT` 仍未完成。
 - 批次 2：大部分完成。`search_tools` 弱匹配、`reachable`、trace usage、Tailscale 脱敏、MCP 刷新并行、同工具自动批准、UI 滚动/回到最新已落地。`dns_lookup` / `route_decision` 和 `http_fetch_probe` 被 libbox API 阻塞；整批确认预览和真机 A/B 未做。
-- 批次 3：`/capabilities` MCP params、未知工具上限、`truncateObservation` 预算、`Retry-After`、`/clear`、`network_snapshot` 字段合并已完成；event reason 细分、prompt golden、`AgentIntentParser` 清理未做。
-- 批次 4：见发布记录。
+- 批次 3：完成。`/capabilities` MCP params、未知工具上限、`truncateObservation` 预算、`Retry-After`、`/clear`、`network_snapshot` 字段合并在 wonder.49；event reason 细分、prompt golden 字节锁、`AgentIntentParser` 清理在 wonder.50。
+- 批次 4：完成。Test CI 绿，tag `v1.15.0-alpha.13-wonder.49`（commit `7048e2f`），Release 绿，`SFA-1.15.0-alpha.13-wonder.49-arm64-v8a.apk` 已上传，飞书通知已发送。
 
 ## 批次
 

@@ -16,7 +16,8 @@ import javax.net.ssl.SSLException
  * Protocol/handshake, DNS, connection refused and TLS failures are
  * deterministic: retrying the same request immediately usually only hides the
  * real problem behind a spinner. Timeouts and generic I/O failures keep the
- * retry path.
+ * retry path. Each class also gets its own error code so turn events and logs
+ * can distinguish a DNS failure from an HTTP 5xx.
  */
 internal fun modelTransportException(
     error: IOException,
@@ -32,29 +33,53 @@ internal fun modelTransportException(
         error is ProtocolException ||
             raw.contains("SETTINGS preface", ignoreCase = true) ||
             raw.contains("Expected HTTP 101", ignoreCase = true)
-    val (message, retryable) =
+    val (code, message, retryable) =
         when {
             prefaceFailure ->
-                "$providerLabel closed the HTTPS connection before the API handshake completed. " +
-                    "A local VPN or proxy may be interfering; check the proxy rules and try again." to false
+                Triple(
+                    AgentTurnErrorCode.NETWORK_HANDSHAKE,
+                    "$providerLabel closed the HTTPS connection before the API handshake completed. " +
+                        "A local VPN or proxy may be interfering; check the proxy rules and try again.",
+                    false,
+                )
 
             error is UnknownHostException ->
-                "Cannot resolve $host. Check the VPN, proxy and DNS, then try again." to false
+                Triple(
+                    AgentTurnErrorCode.NETWORK_DNS,
+                    "Cannot resolve $host. Check the VPN, proxy and DNS, then try again.",
+                    false,
+                )
 
             error is ConnectException ->
-                "Cannot reach $host. Check the VPN or proxy and network, then try again." to false
+                Triple(
+                    AgentTurnErrorCode.NETWORK_CONNECT,
+                    "Cannot reach $host. Check the VPN or proxy and network, then try again.",
+                    false,
+                )
 
             error is SSLException ->
-                "The TLS handshake with $host failed. A proxy, VPN or certificate issue may be blocking it." to false
+                Triple(
+                    AgentTurnErrorCode.NETWORK_TLS,
+                    "The TLS handshake with $host failed. A proxy, VPN or certificate issue may be blocking it.",
+                    false,
+                )
 
             error is SocketTimeoutException ->
-                "Timed out connecting to $host. Check the network or proxy and try again." to true
+                Triple(
+                    AgentTurnErrorCode.NETWORK_TIMEOUT,
+                    "Timed out connecting to $host. Check the network or proxy and try again.",
+                    true,
+                )
 
             else ->
-                "Could not reach $host. Check the VPN or proxy and network, then try again." to true
+                Triple(
+                    AgentTurnErrorCode.MODEL_UNAVAILABLE,
+                    "Could not reach $host. Check the VPN or proxy and network, then try again.",
+                    true,
+                )
         }
     return AgentModelException(
-        AgentTurnErrorCode.MODEL_UNAVAILABLE,
+        code,
         message,
         retryable = retryable,
     )

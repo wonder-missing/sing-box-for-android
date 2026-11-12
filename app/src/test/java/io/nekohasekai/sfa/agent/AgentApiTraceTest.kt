@@ -41,6 +41,59 @@ class AgentApiTraceTest {
     }
 
     @Test
+    fun printsErrorCodeAndRequestId() {
+        AgentApiTrace.clear()
+        AgentApiTrace.record(
+            ApiTraceEntry(
+                timestamp = 1_700_000_000_000L,
+                method = "POST",
+                url = "https://api.deepseek.com/chat/completions",
+                requestHeaders = emptyMap(),
+                requestBody = "{}",
+                status = 500,
+                responseHeaders = mapOf("X-Request-Id" to "req-123"),
+                responseBody = "{}",
+                error = "HTTP 500",
+                errorCode = "model_unavailable",
+            ),
+        )
+
+        val markdown = AgentApiTrace.asMarkdown()
+
+        assertTrue(markdown.contains("- error code: model_unavailable"))
+        assertTrue(markdown.contains("- request id: req-123"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
+    fun capsRetainedBodyMemoryAndKeepsNewestEntryIntact() {
+        AgentApiTrace.clear()
+        repeat(20) { index ->
+            val body = "req-$index-" + "x".repeat(190_000)
+            AgentApiTrace.record(
+                ApiTraceEntry(
+                    timestamp = 1_700_000_000_000L + index,
+                    method = "POST",
+                    url = "https://api.deepseek.com/chat/completions",
+                    requestHeaders = emptyMap(),
+                    requestBody = body,
+                    status = 200,
+                    responseHeaders = emptyMap(),
+                    responseBody = body,
+                    error = null,
+                ),
+            )
+        }
+
+        assertTrue(AgentApiTrace.retainedBodyChars() <= 1_000_000)
+        assertTrue(AgentApiTrace.retainedEntryCount() < 20)
+        val markdown = AgentApiTrace.asMarkdown()
+        assertTrue(markdown.contains("req-19-" + "x".repeat(190_000)))
+        assertTrue(markdown.contains("[body truncated for memory]"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
     fun hasEntriesReflectsRecordAndClear() {
         AgentApiTrace.clear()
         assertFalse(AgentApiTrace.hasEntries())

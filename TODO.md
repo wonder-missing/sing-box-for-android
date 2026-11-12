@@ -15,7 +15,7 @@
 
 ### P2
 
-- [ ] **[评估] trace 内存与长 body 截断**：usage/finish 已结构化；200k 字符后的响应 body 仍被截断，trace 常驻内存仍无上限。
+- [ ] **[评估] trace 长 body 截断**：usage/finish/错误码/请求 ID 已结构化，内存有总量上限；单条 body 超过 200k 字符仍会截断。
 - [ ] **批量确认：预览与分级**：整批预检并合成一张含全部工具参数的卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS` / MCP 写工具逐次确认。
 - [ ] **[评估] `tailscale_status` 结构化**：Agent 视图已去掉登录名/IP 并加 last-seen；尚未改成 JSON 字段。
 - [ ] **确认与事务语义可见性**：模型看不到确认事件；多步调用没有框架级事务。先记着，等 2B 流式和 Phase 3 再评估。
@@ -28,15 +28,14 @@
 - [ ] **Provider capability 矩阵**：wonder.42 起 Settings 和 `/reasoning` 共用 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 - [ ] **[审查] 模型客户端取消竞态（剩余）**：runtime 取消标志和流式 StreamReset 已做；`OpenAiCompatibleModelClient.cancel()` 与新 stream 的 `cancelled=false` 竞态仍在。
-- [ ] **[审查] 审计与 trace 驻留（剩余）**：`DATA_EGRESS` 和 AppLog 审计已做；`AgentApiTrace` 仍在 release 默认驻留完整请求/响应，内存无上限。
+- [ ] **[审查] trace release 驻留**：`DATA_EGRESS` 和 AppLog 审计已做；trace 内存已有总量上限；`AgentApiTrace` 仍在 release 默认驻留完整请求/响应。
 - [ ] **[审查] 路由 A/B 真机执行**：语料见 [`docs/conductor-eval.md`](docs/conductor-eval.md)；native/routing 对比还没跑。
 - [ ] **Conductor 最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：wonder.47/48 已用 `ComposeFoundationFlags` 关闭 Compose 1.11 的新 context menu 和 smart selection；待真机确认 Copy 回来，确认后按上游修复再移除开关。
-- [ ] **[审查] 小修集合（剩余）**：event reason 细分、prompt golden、`AgentIntentParser` 清理、trace 错误码/请求 ID。
 
 ## 下个会话接手
 
-- Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。P1 顺序是生命周期、工具超时/取消、MCP 信任、上下文预算、probe 批量；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.49（tag `v1.15.0-alpha.13-wonder.49`）。下一次从 50 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49 已落地 P1/P2/P3 大部分，剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
+- 当前已发布 wonder.49（tag `v1.15.0-alpha.13-wonder.49`，commit `7048e2f`）。下一次从 50 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
 - 手机上看 wonder.49：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
@@ -52,7 +51,7 @@
   - 设置 → 应用里不再有 Node list layout。分组表仍可用标题栏的单列/双列按钮切换。
   - Conductor 点一次 `/` 弹出命令菜单，再点一次 `/` 收起，文字不变。第三次再弹出。输入框里继续打字后，菜单按内容重新出现。
   - 离开再进入 Conductor，消息流不再追加 “Service started. Waiting for the core…”。旧会话里已经有的那一行还在，清对话才会消失。
-  - 设置 → Conductor → MCP 服务器。填名称、https URL、可选 Bearer token，点「添加并连接」。成功时这一行显示工具数量。对话里点 `/`，选 `mcp`，应列出服务器短名、必填参数，以及「asks first」或「runs immediately」。`/mcp knocks` 只留下名字里带 knocks 的。`/mcp use orb_status` 发送后，输入框变成 `Use the MCP tool orb_status from <服务器名>. `，光标在末尾，这一步不发给模型。系统提示里不应出现 MCP 服务器名或工具名。只读工具要服务器带 `readOnlyHint` 才不弹确认。明文 `http://` 可能被系统拒绝。
+  - 设置 → Conductor → MCP 服务器。填名称、https URL、可选 Bearer token，点「添加并连接」。成功时这一行显示工具数量。对话里点 `/`，选 `mcp`，应列出服务器短名、必填参数，以及「asks first」或「runs immediately」。`/mcp knocks` 只留下名字里带 knocks 的。`/mcp use orb_status` 发送后，输入框变成 `Use the MCP tool orb_status from <服务器名>. `，光标在末尾，这一步不发给模型。系统提示里不应出现 MCP 服务器名或工具名。明文 `http://` 可能被系统拒绝。（wonder.49 起所有 MCP 工具都要确认，`readOnlyHint` 不再免确认。）
   - Conductor 点 `/`，选 `reasoning`，再选 `high`。对话里应出现已设为 high 的提示。下一条普通消息的请求带 `reasoning_effort=high`。`/reasoning` 无参数只显示当前值。
   - 输入框已有文字时点 `/`，斜杠在最前，光标紧跟在斜杠后面。点 `@`，`@` 在末尾，光标在 `@` 后面。
 - 仍未做，按阻塞原因：
@@ -65,6 +64,7 @@
 
 ## 最近完成
 
+- wonder.49（2026-11-13）：Conductor P1/P2/P3 批次。工具级超时、Tailscale 取消、`probe_many` 顺序批量、`select_outbound` 确认/回滚；MCP 全部 AGENT_ONLY、`DATA_EGRESS` 强制、定义 fingerprint、404 不重试、token Keystore、确认 URL、刷新并行；token 预算、会话 512KB 上限、search weak、probe `reachable`、trace usage/耗时、Retry-After、`/clear`、AppLog 审计；UI Retry/usage/滚动/回到最新。libbox 无 per-request outbound、DNS/route、GET 状态码，probe 真正并发和诊断工具阻塞。评估见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。
 - 2026-11-13：Conductor 综合评估（实验导出 + 实现评审 + TODO 去重），见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。已修复项在评估里划掉；P1 顺序已重排。
 - wonder.48（2026-11-13）：失败 turn 不再把本轮 user 从模型 transcript 回滚，UI 和模型上下文一致；空失败 turn 显示 Retry，重发最后一条用户消息，不重跑已有工具结果。system prompt 明确连续两条 user 是独立请求。
 - wonder.47（2026-11-13）：Conductor 审查落地：SSE 缺完成标记或空回答被当成功、`AgentContext.trim` 在 final assistant 边界切断 tool 批次、会话持久化 `takeLast` 切断 tool 批次；新增对应单测。修复 [#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)：关闭 Compose 1.11 的新 context menu 和 smart selection，恢复用户消息长按菜单的「复制」。审查文档见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。

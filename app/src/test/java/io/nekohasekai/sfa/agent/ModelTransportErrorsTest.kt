@@ -23,7 +23,7 @@ class ModelTransportErrorsTest {
                 baseUrl,
             )
 
-        assertEquals(AgentTurnErrorCode.MODEL_UNAVAILABLE, error.code)
+        assertEquals(AgentTurnErrorCode.NETWORK_HANDSHAKE, error.code)
         assertFalse(error.retryable)
         assertTrue(error.message.contains("handshake"))
         assertFalse(error.message.contains("SETTINGS preface"))
@@ -38,7 +38,7 @@ class ModelTransportErrorsTest {
                 baseUrl,
             )
 
-        assertEquals(AgentTurnErrorCode.MODEL_UNAVAILABLE, error.code)
+        assertEquals(AgentTurnErrorCode.NETWORK_CONNECT, error.code)
         assertFalse(error.retryable)
         assertTrue(error.message.contains("api.x.ai"))
         assertFalse(error.message.contains("198.18.0.4"))
@@ -67,6 +67,7 @@ class ModelTransportErrorsTest {
                 baseUrl,
             )
 
+        assertEquals(AgentTurnErrorCode.NETWORK_DNS, error.code)
         assertFalse(error.retryable)
         assertTrue(error.message.contains("api.x.ai"))
         assertTrue(error.message.contains("DNS"))
@@ -81,6 +82,7 @@ class ModelTransportErrorsTest {
                 baseUrl,
             )
 
+        assertEquals(AgentTurnErrorCode.NETWORK_TLS, error.code)
         assertFalse(error.retryable)
         assertTrue(error.message.contains("TLS"))
         assertFalse(error.message.contains("handshake failed"))
@@ -95,6 +97,7 @@ class ModelTransportErrorsTest {
                 baseUrl,
             )
 
+        assertEquals(AgentTurnErrorCode.NETWORK_TIMEOUT, error.code)
         assertTrue(error.retryable)
         assertTrue(error.message.contains("Timed out"))
     }
@@ -108,6 +111,7 @@ class ModelTransportErrorsTest {
                 baseUrl,
             )
 
+        assertEquals(AgentTurnErrorCode.MODEL_UNAVAILABLE, error.code)
         assertTrue(error.retryable)
         assertTrue(error.message.contains("api.x.ai"))
         assertFalse(error.message.contains("unexpected EOF"))

@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）。
 最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -1384,6 +1384,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
+
+### wonder.50：P3 清理（2026-11-13）
+
+- `AgentApiTrace` 增加总量上限：新的条目保留完整请求/响应，旧条目正文先缩到 20k 字符，仍超 1M 字符时从最旧的开始丢弃；状态、usage、耗时等结构化字段保留。trace 增加错误码和 `X-Request-Id`。
+- 模型传输错误拆成 `network_dns` / `network_connect` / `network_tls` / `network_handshake` / `network_timeout`；`turn_failed` 的 reason 随之细分。HTTP 5xx 仍是 `model_unavailable`。
+- system prompt 加 SHA-256 字节锁测试；删除没有入口的 `AgentIntentParser` 及其测试。
 
 ### wonder.49：运行时与工具加固（2026-11-13）
 

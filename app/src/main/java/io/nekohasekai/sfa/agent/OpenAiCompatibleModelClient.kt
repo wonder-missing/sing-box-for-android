@@ -29,6 +29,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -149,6 +150,7 @@ class OpenAiCompatibleModelClient(
             var responseHeaders: Map<String, String> = emptyMap()
             val responseBody = StringBuilder()
             var traceError: String? = null
+            var traceErrorCode: String? = null
             val startedAt = System.currentTimeMillis()
             var finish: FinishReason? = null
             var usage: TokenUsage? = null
@@ -203,17 +205,22 @@ class OpenAiCompatibleModelClient(
                 }
             } catch (e: CancellationException) {
                 traceError = "cancelled"
+                traceErrorCode = "turn_cancelled"
                 throw e
             } catch (e: AgentModelException) {
                 traceError = e.message
+                traceErrorCode = e.code.name.lowercase(Locale.US)
                 throw e
             } catch (e: IOException) {
                 if (cancelled) {
                     traceError = "cancelled"
+                    traceErrorCode = "turn_cancelled"
                     throw CancellationException("cancelled")
                 }
                 traceError = e.message ?: "network error"
-                throw modelTransportException(e, endpoint.providerLabel, endpoint.baseUrl)
+                val mapped = modelTransportException(e, endpoint.providerLabel, endpoint.baseUrl)
+                traceErrorCode = mapped.code.name.lowercase(Locale.US)
+                throw mapped
             } finally {
                 if (activeCall === call) activeCall = null
                 cancelled = false
@@ -228,6 +235,7 @@ class OpenAiCompatibleModelClient(
                         responseHeaders = responseHeaders,
                         responseBody = AgentApiTrace.truncateBody(responseBody.toString()),
                         error = traceError,
+                        errorCode = traceErrorCode,
                         startedAt = startedAt,
                         durationMs = System.currentTimeMillis() - startedAt,
                         usage = usage,
@@ -499,6 +507,7 @@ class OpenAiCompatibleModelClient(
         var responseHeaders: Map<String, String> = emptyMap()
         var responseBody: String? = null
         var error: String? = null
+        var errorCode: String? = null
         val startedAt = System.currentTimeMillis()
         var usage: TokenUsage? = null
         var finish: FinishReason? = null
@@ -539,10 +548,13 @@ class OpenAiCompatibleModelClient(
             status to response.take(if (status in 200..299) MAX_RESPONSE_BYTES else MAX_ERROR_BYTES)
         } catch (e: AgentModelException) {
             error = e.message
+            errorCode = e.code.name.lowercase(Locale.US)
             throw e
         } catch (e: IOException) {
             error = e.message ?: "network error"
-            throw modelTransportException(e, providerLabel, url)
+            val mapped = modelTransportException(e, providerLabel, url)
+            errorCode = mapped.code.name.lowercase(Locale.US)
+            throw mapped
         } catch (e: Exception) {
             error = e.message ?: e.toString()
             throw e
@@ -558,6 +570,7 @@ class OpenAiCompatibleModelClient(
                     responseHeaders = responseHeaders,
                     responseBody = responseBody,
                     error = error,
+                    errorCode = errorCode,
                     startedAt = startedAt,
                     durationMs = System.currentTimeMillis() - startedAt,
                     usage = usage,

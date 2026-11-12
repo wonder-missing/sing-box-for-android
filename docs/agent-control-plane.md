@@ -1,7 +1,7 @@
 # Conductor：个人设备控制面（愿景与落地规划）
 
-状态：Phase 1 已完成；Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.44 增加 MCP；wonder.49 完成运行时与工具加固（工具超时、MCP 信任、上下文预算、`probe_many`、`select_outbound`）。设计见 [`agent-runtime.md`](agent-runtime.md)。
-最后更新：2026-11-10
+状态：Phase 1 已完成；Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.44 增加 MCP；wonder.49 完成运行时与工具加固（工具超时、MCP 信任、上下文预算、`probe_many`、`select_outbound`）；wonder.50 完成 P3 清理。设计见 [`agent-runtime.md`](agent-runtime.md)。
+最后更新：2026-11-13
 命名：模块/包名 `conductor`；外层底部导航文案 `Conduct`；Conductor 页面进入沉浸模式，不设页面标题。
 
 ## 1. 愿景

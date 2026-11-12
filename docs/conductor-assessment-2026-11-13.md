@@ -64,7 +64,7 @@
 | P2-6 | usage/cache 不可见；API trace 在 200k 字符处截断，长流丢失 usage/finish | 实验 #7/#9/#12；TODO P2 | 长响应 body 到 200,000 字符被截断；只有 7/12 请求有 usage | 已修（wonder.49）：trace 结构化 usage/finish/耗时/开始时间，UI 增加 usage 摘要；长响应 body 仍会截断。 |
 | P2-7 | Stop 取消标志在 turn 开头被重置，存在竞态；流式重试会重复 UI 文本 | 实现评审 §4 | `cancelRequested = false`、`cancelled = false`；重试只清 `partialContent` | 部分已修（wonder.49）：runtime 取消标志不再在 turn 开头重置；流式重试发 StreamReset。模型客户端 cancel 竞态仍在。 |
 | P2-8 | MCP `tools/call` 404 自动重试可能重复写；token 明文；确认卡 URL 被打码；刷新阻塞首条消息 | 实现评审 §4 | `McpSession.request` 对任何方法重试；token 在 JSON；无 `allowedUrlParameter`；刷新串行 | 已修（wonder.49）：404 不重试、token 走 Keystore、确认 URL、刷新并行；刷新进度 UI 仍无。 |
-| P2-9 | 权限与审计没有闭环；`AgentApiTrace` 在 release 默认驻留完整请求/响应 | 实现评审 §4 | `AgentPermission` 不参与决策；trace 只在内存，无结构化审计 | 部分已修（wonder.49）：`DATA_EGRESS` 强制、AppLog 审计；trace release 驻留和内存上限仍未做。 |
+| P2-9 | 权限与审计没有闭环；`AgentApiTrace` 在 release 默认驻留完整请求/响应 | 实现评审 §4 | `AgentPermission` 不参与决策；trace 只在内存，无结构化审计 | 部分已修（wonder.49/50）：`DATA_EGRESS` 强制、AppLog 审计、trace 内存总量上限；仍在 release 驻留完整请求/响应。 |
 | P2-10 | `Approve rest of turn` 的爆炸半径；批量确认没有整批预览 | 实现评审 §4；TODO P2 | 一次批准覆盖后续所有工具，包括 MCP 写工具 | 部分已修（wonder.49）：自动批准只覆盖同工具；整批预览未做。 |
 | P2-11 | 路由模式没有真机 A/B；默认已开 | 实现评审 §7 | `conductorToolRouting` 默认 `true`；仓库没有评测 | 语料已建（`docs/conductor-eval.md`），真机执行待做。 |
 | P2-12 | 消息列表自动滚动/稳定 key 未按设计实现 | 实现评审 §6 | 只按 `items.size` 滚到底；没有「回到最新」；`key = index` | 已修（wonder.49）：stick-to-bottom、回到最新、稳定 key；key 仍是 index+type，不是持久 id。 |
@@ -72,18 +72,18 @@
 | P2-14 | 缺少 `select_outbound` 等受控写能力 | 实验 #7 模型建议 | 模型能诊断但不能处置；probe 只临时切换 | 已修（wonder.49）：`select_outbound` 确认、失败回滚；未做选择后自动读回校验。 |
 | P2-15 | 其他已记录 backlog | TODO P2 | LLM 摘要、跨版本会话边界、probe 复测、连接可观测、Provider capability | 保持现有优先级，不重复展开 |
 
-### P3：小修与清理
+### P3：小修与清理（wonder.49/50 已全部完成）
 
-- `AgentContext.truncateObservation` 在 output 和 message 都超限时可能接近 2 倍预算。
-- `AgentToolRegistry` 未知工具错误会拼全部工具名，MCP 工具多时爆 token。
-- `/capabilities` 对 MCP 工具显示 `params: none`。
-- `/clear` 在 `isRunning` 时提交不了，和文档不一致。
-- 重试退避是线性 0.5/1/1.5 秒，不读 `Retry-After`。
-- `AgentPromptStabilityTest` 不是跨版本 golden 字节锁。
-- `AgentIntentParser` 是 POC 遗留，主代码没有入口。
-- turn 事件的 reason 只有错误大类，DNS、连接失败、5xx 都会落到 `model_unavailable`；可以细分。
-- API trace 的时间是完成时间，不是开始时间；错误只记字符串，没有错误码/请求 ID。
-- `network_snapshot` 和 `list_nodes` 的 core 字段重复。
+- ~~`AgentContext.truncateObservation` 在 output 和 message 都超限时可能接近 2 倍预算。~~
+- ~~`AgentToolRegistry` 未知工具错误会拼全部工具名，MCP 工具多时爆 token。~~
+- ~~`/capabilities` 对 MCP 工具显示 `params: none`。~~
+- ~~`/clear` 在 `isRunning` 时提交不了，和文档不一致。~~
+- ~~重试退避是线性 0.5/1/1.5 秒，不读 `Retry-After`。~~
+- ~~`AgentPromptStabilityTest` 不是跨版本 golden 字节锁。~~（wonder.50 加 SHA-256 字节锁）
+- ~~`AgentIntentParser` 是 POC 遗留，主代码没有入口。~~（wonder.50 删除）
+- ~~turn 事件的 reason 只有错误大类，DNS、连接失败、5xx 都会落到 `model_unavailable`；可以细分。~~（wonder.50 分为 `network_dns` / `network_connect` / `network_tls` / `network_handshake` / `network_timeout`）
+- ~~API trace 的时间是完成时间，不是开始时间；错误只记字符串，没有错误码/请求 ID。~~（wonder.49/50）
+- ~~`network_snapshot` 和 `list_nodes` 的 core 字段重复。~~
 
 ### 已修复
 

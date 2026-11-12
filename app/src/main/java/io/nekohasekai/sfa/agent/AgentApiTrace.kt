@@ -20,6 +20,7 @@ data class ApiTraceEntry(
     val responseHeaders: Map<String, String>,
     val responseBody: String?,
     val error: String?,
+    val errorCode: String? = null,
     val startedAt: Long? = null,
     val durationMs: Long? = null,
     val usage: TokenUsage? = null,
@@ -34,6 +35,8 @@ data class ApiTraceEntry(
 object AgentApiTrace {
     private const val MAX_ENTRIES = 20
     private const val MAX_BODY_CHARS = 200_000
+    private const val MAX_TOTAL_BODY_CHARS = 1_000_000
+    private const val MAX_OLD_BODY_CHARS = 20_000
     private const val MAX_MARKDOWN_CHARS = 2_000_000
 
     private val lock = Any()
@@ -46,12 +49,54 @@ object AgentApiTrace {
             while (entries.size > MAX_ENTRIES) {
                 entries.removeFirst()
             }
+            enforceBodyBudget()
         }
     }
 
     fun clear() {
         synchronized(lock) { entries.clear() }
     }
+
+    /**
+     * Caps the total request/response text retained for debugging. The newest
+     * entry keeps its full bodies; older entries are shortened first, then
+     * dropped if the trace is still over budget. Structured fields (status,
+     * usage, duration) survive shortening.
+     */
+    private fun enforceBodyBudget() {
+        var total = entries.sumOf { it.bodyChars() }
+        if (total <= MAX_TOTAL_BODY_CHARS) return
+        val kept = entries.toMutableList()
+        for (index in 0 until kept.lastIndex) {
+            if (total <= MAX_TOTAL_BODY_CHARS) break
+            val entry = kept[index]
+            val shortened =
+                entry.copy(
+                    requestBody = shortenForMemory(entry.requestBody),
+                    responseBody = entry.responseBody?.let { shortenForMemory(it) },
+                )
+            total -= entry.bodyChars() - shortened.bodyChars()
+            kept[index] = shortened
+        }
+        while (total > MAX_TOTAL_BODY_CHARS && kept.size > 1) {
+            total -= kept.removeAt(0).bodyChars()
+        }
+        entries.clear()
+        entries.addAll(kept)
+    }
+
+    private fun shortenForMemory(body: String): String =
+        if (body.length <= MAX_OLD_BODY_CHARS) {
+            body
+        } else {
+            body.take(MAX_OLD_BODY_CHARS) + "\n[body truncated for memory]"
+        }
+
+    internal fun retainedBodyChars(): Int = synchronized(lock) { entries.sumOf { it.bodyChars() } }
+
+    internal fun retainedEntryCount(): Int = synchronized(lock) { entries.size }
+
+    private fun ApiTraceEntry.bodyChars(): Int = requestBody.length + (responseBody?.length ?: 0)
 
     fun hasEntries(): Boolean = synchronized(lock) { entries.isNotEmpty() }
 
@@ -73,6 +118,8 @@ object AgentApiTrace {
                     entry.status?.let { appendLine("- status: $it") }
                     entry.finishReason?.let { appendLine("- finish: ${it.name.lowercase(Locale.US)}") }
                     entry.error?.let { appendLine("- error: $it") }
+                    entry.errorCode?.let { appendLine("- error code: $it") }
+                    requestId(entry.responseHeaders)?.let { appendLine("- request id: $it") }
                     entry.usage?.let { appendLine("- usage: ${formatUsage(it)}") }
                     if (entry.usage == null) {
                         entry.responseBody?.let { body -> usageLine(body)?.let { appendLine("- usage: $it") } }
@@ -171,6 +218,15 @@ object AgentApiTrace {
 
     private fun formatTime(timestamp: Long): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(timestamp))
+
+    private fun requestId(headers: Map<String, String>): String? =
+        headers.entries
+            .firstOrNull { (name, _) ->
+                name.equals("x-request-id", ignoreCase = true) ||
+                    name.equals("request-id", ignoreCase = true)
+            }?.value
+            ?.takeIf { it.isNotBlank() }
+            ?.take(160)
 
     private fun isSensitiveHeader(name: String): Boolean {
         val lower = name.lowercase(Locale.US)

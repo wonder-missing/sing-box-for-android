@@ -35,6 +35,23 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("[conductor:event"))
     }
 
+    /**
+     * Byte lock for the routing prompt. A deliberate prompt change must update
+     * this hash in the same commit; an accidental change would silently move
+     * the cache prefix for every user.
+     */
+    @Test
+    fun routingPromptMatchesGoldenBytes() {
+        val prompt = AgentContext.systemPrompt("locale=zh; tz=Asia/Shanghai", catalog.promptSection()).content
+        val digest =
+            java.security.MessageDigest
+                .getInstance("SHA-256")
+                .digest(prompt.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        assertEquals("1dbaef4307d3faff0ade651bca51cb32db535a9c221ff6e40e89aeea1dad5a8b", digest)
+    }
+
     @Test
     fun nativePromptKeepsProvidedToolsWording() {
         val prompt = AgentContext.systemPrompt("locale=zh").content
