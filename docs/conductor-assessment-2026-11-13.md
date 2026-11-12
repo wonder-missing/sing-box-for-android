@@ -46,30 +46,30 @@
 
 | ID | 问题 | 来源 | 证据 | 状态 / 下一步 |
 |---|---|---|---|---|
-| P1-1 | 旋转屏幕或离开页面会取消进行中的 turn，并丢掉这一轮消息 | 实现评审 §3.2 | `ConductorScreen` 的 `onDispose` 调用 `disconnect()`；运行中不 `persistSession()`；Activity 没有 `configChanges` | 待办。取消只在 `onCleared` 或显式返回时发生；取消前保存当前 transcript/items |
-| P1-2 | 工具没有通用超时；`tailscale_status` 不能 1s 取消；`TOOL_CANCEL_TIMEOUT` 未产生 | 实现评审 §3.4；实验 probe 15s/6s | `AgentToolRegistry` 只有 `withContext(IO)`；deadline 只在模型轮之间检查 | 待办。工具级 `withTimeout`，注册取消，真正产生 `TOOL_CANCEL_TIMEOUT` |
-| P1-3 | MCP 把 `readOnlyHint` 当执行许可；`DATA_EGRESS` 只是标签 | 实现评审 §3.1 | MCP 只读工具映射成 `NEVER`；注册表不按 `AgentPermission` 决策 | 待办。注解只当 hint；MCP 默认确认；完整定义 hash/pinning；`DATA_EGRESS` 至少 `AGENT_ONLY` |
-| P1-4 | 上下文没有 token 预算；`maxInputTokens` 未使用；会话持久化没有总字节上限 | 实现评审 §3.5、§3.6 | 只有 48/36 消息数和字符预算；实验 25 条未触发高水位 | 待办。token 估算、高水位压缩、会话文件字节上限、IO 线程编解码 |
-| P1-5 | `probe_via_node` 串行切换全局出站，不能批量并发 | TODO P1；实验五次 probe | 每次 probe 6 到 15 秒，五次串行；每次临时切换再还原 | 待办。先验证 libbox per-request outbound binding，再决定 `probe_many` |
+| P1-1 | 旋转屏幕或离开页面会取消进行中的 turn，并丢掉这一轮消息 | 实现评审 §3.2 | `ConductorScreen` 的 `onDispose` 调用 `disconnect()`；运行中不 `persistSession()`；Activity 没有 `configChanges` | 部分已修（wonder.49）：旋转不再取消；返回或进程死亡仍会取消进行中的 turn。 |
+| P1-2 | 工具没有通用超时；`tailscale_status` 不能 1s 取消；`TOOL_CANCEL_TIMEOUT` 未产生 | 实现评审 §3.4；实验 probe 15s/6s | `AgentToolRegistry` 只有 `withContext(IO)`；deadline 只在模型轮之间检查 | 部分已修（wonder.49）：工具级 `withTimeout`、Tailscale 取消、`tool_timeout` 已落地；精确 1 秒的 `TOOL_CANCEL_TIMEOUT` 仍未完成。 |
+| P1-3 | MCP 把 `readOnlyHint` 当执行许可；`DATA_EGRESS` 只是标签 | 实现评审 §3.1 | MCP 只读工具映射成 `NEVER`；注册表不按 `AgentPermission` 决策 | 已修（wonder.49）：MCP 全部 AGENT_ONLY；`DATA_EGRESS` 强制；完整定义 hash/pinning；404 不重试；token Keystore 加密；确认卡保留 URL。 |
+| P1-4 | 上下文没有 token 预算；`maxInputTokens` 未使用；会话持久化没有总字节上限 | 实现评审 §3.5、§3.6 | 只有 48/36 消息数和字符预算；实验 25 条未触发高水位 | 已修（wonder.49）：token 估算与裁剪、会话字节上限；语义摘要和 IO 编解码仍未做。 |
+| P1-5 | `probe_via_node` 串行切换全局出站，不能批量并发 | TODO P1；实验五次 probe | 每次 probe 6 到 15 秒，五次串行；每次临时切换再还原 | 已修（wonder.49）：`probe_many` 顺序批量已实现；libbox 没有 per-request outbound binding，真正并发阻塞。 |
 
 ### P2：能力缺口、隐私、可观测性、体验
 
 | ID | 问题 | 来源 | 证据 | 状态 / 下一步 |
 |---|---|---|---|---|
-| P2-1 | 缺少确定性网络诊断：`dns_lookup`、`route_decision`、脱敏 `core_logs`、`node_detail` | 实验 #7 模型建议；probe DNS 失败 | 模型只能从 probe 结果推测「隧道内 DNS 坏了」 | 待办。先做 `dns_lookup(domain, via=direct|outbound)` 和 `route_decision(domain)`；日志和节点详情必须脱敏 |
-| P2-2 | `probe_via_node` 只做 HEAD，EOF 有歧义；缺少真 GET/速度测试 | 实验 probe；实现评审 | 一个节点 EOF/5853ms，模型无法区分 HEAD 拒绝和节点坏 | 待办。`http_fetch_probe(outbound, url, max_bytes)`；`speed_test` 后续 |
-| P2-3 | `search_tools` 宽泛查询返回弱相关结果，没有 no-match 信号 | TODO P2；实验 #6 | 查询「切换选择策略组...」返回三个只读网络工具，模型多花约 3.5k 字符 | 待办。加分数阈值/置信度或明确 no-match |
-| P2-4 | `ToolObservation.ok` 与工具 `output.ok` 语义重复 | TODO P2；实现评审 | 两层 `ok` 容易误读 | 待办。去掉内层 `ok` 或改名 `reachable` |
-| P2-5 | `tailscale_status` 把账号登录名（邮箱）和所有 peer IP 发给模型；输出未结构化 | 实验 #8；TODO P2 | 对话导出包含账号名和 peer IP；模型只需要设备名/在线状态 | 待办。邮箱/登录名脱敏；peer IP 可选；加结构化字段和最后在线时间 |
-| P2-6 | usage/cache 不可见；API trace 在 200k 字符处截断，长流丢失 usage/finish | 实验 #7/#9/#12；TODO P2 | 长响应 body 到 200,000 字符被截断；只有 7/12 请求有 usage | 待办。trace 结构化记录 usage、finish、耗时；UI 极简展示 |
-| P2-7 | Stop 取消标志在 turn 开头被重置，存在竞态；流式重试会重复 UI 文本 | 实现评审 §4 | `cancelRequested = false`、`cancelled = false`；重试只清 `partialContent` | 待办。用 job/generation 取消；重试前 reset UI 或只在首字前重试 |
-| P2-8 | MCP `tools/call` 404 自动重试可能重复写；token 明文；确认卡 URL 被打码；刷新阻塞首条消息 | 实现评审 §4 | `McpSession.request` 对任何方法重试；token 在 JSON；无 `allowedUrlParameter`；刷新串行 | 待办。只重试安全方法；token 走 Keystore；确认卡保留 host/path；刷新并行/短超时 |
-| P2-9 | 权限与审计没有闭环；`AgentApiTrace` 在 release 默认驻留完整请求/响应 | 实现评审 §4 | `AgentPermission` 不参与决策；trace 只在内存，无结构化审计 | 待办。结构化审计；trace 加开关或 debug-only；限制内存 |
-| P2-10 | `Approve rest of turn` 的爆炸半径；批量确认没有整批预览 | 实现评审 §4；TODO P2 | 一次批准覆盖后续所有工具，包括 MCP 写工具 | 待办。自动批准只覆盖同工具/只读；`DATA_EGRESS` 逐次确认；整批预检 |
-| P2-11 | 路由模式没有真机 A/B；默认已开 | 实现评审 §7 | `conductorToolRouting` 默认 `true`；仓库没有评测 | 待办。15 到 20 条中文 prompt，对比 native/routing 的首参合法率、延迟、cache hit |
-| P2-12 | 消息列表自动滚动/稳定 key 未按设计实现 | 实现评审 §6 | 只按 `items.size` 滚到底；没有「回到最新」；`key = index` | 待办。stick-to-bottom + 回到最新；稳定 id |
-| P2-13 | 会话持久化体积和主线程编解码 | 实现评审 §3.6 | 120 条 transcript + 200 条 item，单条 tool output 最多 24k；SharedPreferences 同步读 | 待办。总字节上限；DataStore/文件；IO 编解码 |
-| P2-14 | 缺少 `select_outbound` 等受控写能力 | 实验 #7 模型建议 | 模型能诊断但不能处置；probe 只临时切换 | 待办/待产品决定。写能力必须确认、快照、失败回滚 |
+| P2-1 | 缺少确定性网络诊断：`dns_lookup`、`route_decision`、脱敏 `core_logs`、`node_detail` | 实验 #7 模型建议；probe DNS 失败 | 模型只能从 probe 结果推测「隧道内 DNS 坏了」 | 阻塞：libbox 没有 DNS 查询或 route match API，需要 daemon/CommandServer 扩展。 |
+| P2-2 | `probe_via_node` 只做 HEAD，EOF 有歧义；缺少真 GET/速度测试 | 实验 probe；实现评审 | 一个节点 EOF/5853ms，模型无法区分 HEAD 拒绝和节点坏 | 阻塞：libbox GET 没有状态码 API，且会完整读取 body，无法限制 max_bytes；暂不实现。 |
+| P2-3 | `search_tools` 宽泛查询返回弱相关结果，没有 no-match 信号 | TODO P2；实验 #6 | 查询「切换选择策略组...」返回三个只读网络工具，模型多花约 3.5k 字符 | 已修（wonder.49）：搜索结果增加 `weak` 标记和提示。 |
+| P2-4 | `ToolObservation.ok` 与工具 `output.ok` 语义重复 | TODO P2；实现评审 | 两层 `ok` 容易误读 | 已修（wonder.49）：probe 内层改为 `reachable`。 |
+| P2-5 | `tailscale_status` 把账号登录名（邮箱）和所有 peer IP 发给模型；输出未结构化 | 实验 #8；TODO P2 | 对话导出包含账号名和 peer IP；模型只需要设备名/在线状态 | 部分已修（wonder.49）：Agent 视图去掉登录名和 IP，offline peer 加 last-seen；未改成 JSON。 |
+| P2-6 | usage/cache 不可见；API trace 在 200k 字符处截断，长流丢失 usage/finish | 实验 #7/#9/#12；TODO P2 | 长响应 body 到 200,000 字符被截断；只有 7/12 请求有 usage | 已修（wonder.49）：trace 结构化 usage/finish/耗时/开始时间，UI 增加 usage 摘要；长响应 body 仍会截断。 |
+| P2-7 | Stop 取消标志在 turn 开头被重置，存在竞态；流式重试会重复 UI 文本 | 实现评审 §4 | `cancelRequested = false`、`cancelled = false`；重试只清 `partialContent` | 部分已修（wonder.49）：runtime 取消标志不再在 turn 开头重置；流式重试发 StreamReset。模型客户端 cancel 竞态仍在。 |
+| P2-8 | MCP `tools/call` 404 自动重试可能重复写；token 明文；确认卡 URL 被打码；刷新阻塞首条消息 | 实现评审 §4 | `McpSession.request` 对任何方法重试；token 在 JSON；无 `allowedUrlParameter`；刷新串行 | 已修（wonder.49）：404 不重试、token 走 Keystore、确认 URL、刷新并行；刷新进度 UI 仍无。 |
+| P2-9 | 权限与审计没有闭环；`AgentApiTrace` 在 release 默认驻留完整请求/响应 | 实现评审 §4 | `AgentPermission` 不参与决策；trace 只在内存，无结构化审计 | 部分已修（wonder.49）：`DATA_EGRESS` 强制、AppLog 审计；trace release 驻留和内存上限仍未做。 |
+| P2-10 | `Approve rest of turn` 的爆炸半径；批量确认没有整批预览 | 实现评审 §4；TODO P2 | 一次批准覆盖后续所有工具，包括 MCP 写工具 | 部分已修（wonder.49）：自动批准只覆盖同工具；整批预览未做。 |
+| P2-11 | 路由模式没有真机 A/B；默认已开 | 实现评审 §7 | `conductorToolRouting` 默认 `true`；仓库没有评测 | 语料已建（`docs/conductor-eval.md`），真机执行待做。 |
+| P2-12 | 消息列表自动滚动/稳定 key 未按设计实现 | 实现评审 §6 | 只按 `items.size` 滚到底；没有「回到最新」；`key = index` | 已修（wonder.49）：stick-to-bottom、回到最新、稳定 key；key 仍是 index+type，不是持久 id。 |
+| P2-13 | 会话持久化体积和主线程编解码 | 实现评审 §3.6 | 120 条 transcript + 200 条 item，单条 tool output 最多 24k；SharedPreferences 同步读 | 部分已修（wonder.49）：总字节上限；编解码仍在主线程。 |
+| P2-14 | 缺少 `select_outbound` 等受控写能力 | 实验 #7 模型建议 | 模型能诊断但不能处置；probe 只临时切换 | 已修（wonder.49）：`select_outbound` 确认、失败回滚；未做选择后自动读回校验。 |
 | P2-15 | 其他已记录 backlog | TODO P2 | LLM 摘要、跨版本会话边界、probe 复测、连接可观测、Provider capability | 保持现有优先级，不重复展开 |
 
 ### P3：小修与清理

@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性。
 最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -1384,6 +1384,13 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
+
+### wonder.49：运行时与工具加固（2026-11-13）
+
+- 工具级 `toolTimeoutMs`，超时回 `tool_timeout` observation；`tailscale_status` 接 `ToolCancellation`；`probe_many` 顺序批量；`select_outbound` 确认、失败回滚。
+- MCP 全部 `AGENT_ONLY`，`DATA_EGRESS` 强制；完整工具定义 SHA-256 fingerprint，定义变化时保留旧工具并提示重新启用；`tools/call` 404 不重试；token 走 Keystore；确认卡保留 URL；stale 刷新并行。
+- `maxInputTokens` 接入 token 估算与裁剪；会话持久化加 512KB 上限；`search_tools` 加 weak 标记；probe 内层改 `reachable`；trace 结构化 usage/finish/耗时；UI 加 Retry、usage 摘要、stick-to-bottom、回到最新、稳定 key；`/clear` 可中断活动 turn；turn/tool/confirm 写 AppLog 审计。
+- libbox 没有 per-request outbound binding、DNS query 或 route match API；`probe_many` 仍是顺序执行，`http_fetch_probe` 和 `dns_lookup` 暂不实现。
 
 ### wonder.48：失败 turn 保留 user 与 Retry（2026-11-13）
 

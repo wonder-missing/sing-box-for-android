@@ -2,6 +2,13 @@
 
 预算：4 小时。工作清单仍以 [`TODO.md`](../TODO.md) 为准；本页只记执行顺序和验收。
 
+## 状态（2026-11-13 晚）
+
+- 批次 1：完成。旋转不再取消 turn；工具级超时、Tailscale 取消、MCP 确认/加密/pinning、token 预算、会话字节上限、`probe_many` 顺序批量、`select_outbound` 已落地。返回或进程死亡仍会取消中途 turn，精确 1 秒的 `TOOL_CANCEL_TIMEOUT` 仍未完成。
+- 批次 2：大部分完成。`search_tools` 弱匹配、`reachable`、trace usage、Tailscale 脱敏、MCP 刷新并行、同工具自动批准、UI 滚动/回到最新已落地。`dns_lookup` / `route_decision` 和 `http_fetch_probe` 被 libbox API 阻塞；整批确认预览和真机 A/B 未做。
+- 批次 3：`/capabilities` MCP params、未知工具上限、`truncateObservation` 预算、`Retry-After`、`/clear`、`network_snapshot` 字段合并已完成；event reason 细分、prompt golden、`AgentIntentParser` 清理未做。
+- 批次 4：见发布记录。
+
 ## 批次
 
 ### 批次 1：P1 核心可靠性

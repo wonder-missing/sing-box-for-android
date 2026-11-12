@@ -9,19 +9,15 @@
 
 ### P1
 
-- [ ] **节点探测并发/批量**：当前 `probe_via_node` 串行切换全局出站，不能直接并发。需要 `probe_many` 或 libbox per-request outbound binding；URLTest 只能测分组配置 URL，不能测任意 GitHub 地址。先验证 libbox HTTP API，再定方案。`probe_many` 同时给 `search_tools` 一个非核心带参工具做真机验证。实验里五次 probe 串行，单次 6 到 15 秒。
-- [ ] **[审查] Conductor 生命周期**：旋转或返回不得取消正在运行的 turn；取消前先持久化当前 transcript 和 items。见审查 §3.2。
-- [ ] **[审查] 工具超时与取消**：工具级 `withTimeout` 和取消注册；`tailscale_status` 支持取消；`TOOL_CANCEL_TIMEOUT` 真正产生并上报；Stop 1 秒未确认也落到这个错误码。见审查 §3.4。
-- [ ] **[审查] MCP 信任边界**：`readOnlyHint` 只当 hint；MCP 工具默认确认；工具定义 hash/pinning；`tools/call` 404 不盲重试；token 加密。见审查 §3.1、§4。
-- [ ] **[审查] 上下文 token 预算**：接入 `maxInputTokens`；token 估算与高水位压缩；会话持久化总字节上限，编解码移到 IO。见审查 §3.5、§3.6。
+- [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，只能临时全局切换。`probe_many` 已按顺序批量实现；真正并发需要 daemon/新 API。实验里五次 probe 串行 6 到 15 秒。
+- [ ] **[审查] Conductor 生命周期（剩余）**：旋转已不再取消；返回或进程死亡仍会取消进行中的 turn，取消前未保存。
+- [ ] **[审查] `TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时、Tailscale 取消已落地；仍没有在 Stop 后 1 秒内把未确认取消转成 turn error。
 
 ### P2
 
-- [ ] **[评估] usage/cache 可见性与 trace 结构化**：UI 极简展示每轮 usage/cache；API trace 结构化记录 usage、finish、耗时，不要只依赖会被 200k 字符截断的 body。
+- [ ] **[评估] trace 内存与长 body 截断**：usage/finish 已结构化；200k 字符后的响应 body 仍被截断，trace 常驻内存仍无上限。
 - [ ] **批量确认：预览与分级**：整批预检并合成一张含全部工具参数的卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS` / MCP 写工具逐次确认。
-- [ ] **[评估] `tailscale_status` 收窄与结构化**：去掉登录名和邮箱，peer IP 可选；加结构化字段和最后在线时间。实验导出里带出了账号名和 peer IP。
-- [ ] **`search_tools` 相关性与 no-match 信号**：宽泛查询总是返回 top-3 弱相关工具；实验里「切换选择策略组」返回三个只读网络工具。加分数/置信度或阈值，避免模型误以为有专用能力。
-- [ ] **`ToolObservation.ok` 与工具 `output.ok` 的契约**：两层 `ok` 语义重复，模型会误读；去掉 probe 内层 `ok` 或改名 `reachable`，定义单一成败层。
+- [ ] **[评估] `tailscale_status` 结构化**：Agent 视图已去掉登录名/IP 并加 last-seen；尚未改成 JSON 字段。
 - [ ] **确认与事务语义可见性**：模型看不到确认事件；多步调用没有框架级事务。先记着，等 2B 流式和 Phase 3 再评估。
 - [ ] **[评估] 网络诊断能力**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`、脱敏 `core_logs`、`node_detail`；先做前两个。实验里模型只能从 probe 结果推测 DNS 故障。
 - [ ] **[评估] `probe_via_node` 的 HEAD 歧义**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；`speed_test` 后续。
@@ -31,22 +27,24 @@
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
 - [ ] **Provider capability 矩阵**：wonder.42 起 Settings 和 `/reasoning` 共用 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
-- [ ] **[审查] Stop 竞态与流式重试**：取消标志不在 turn 开头重置；重试前 reset UI 或只在首字前重试。见审查 §4。
-- [ ] **[审查] MCP 刷新与确认参数**：刷新并行/短超时/进度提示；确认卡 URL 只掩码敏感部分。见审查 §4。
-- [ ] **[审查] 权限与审计**：`AgentPermission` 强制策略；结构化审计日志；`AgentApiTrace` 加开关或 debug-only。见审查 §4。
-- [ ] **[评估] 受控写能力 `select_outbound`（待产品决定）**：模型能诊断但不能处置；写能力必须确认、保存快照、失败回滚。先做网络诊断，再评估写。
-- [ ] **[审查] 路由 A/B 与评测**：15 到 20 条中文 prompt，native 与 routing 两种模式对比；再决定 routing 是否默认开。见审查 §7。
-- [ ] **[审查] UI 手感**：stick-to-bottom 与“回到最新”；列表用稳定 id 作 key。见审查 §6。
+- [ ] **[审查] 模型客户端取消竞态（剩余）**：runtime 取消标志和流式 StreamReset 已做；`OpenAiCompatibleModelClient.cancel()` 与新 stream 的 `cancelled=false` 竞态仍在。
+- [ ] **[审查] 审计与 trace 驻留（剩余）**：`DATA_EGRESS` 和 AppLog 审计已做；`AgentApiTrace` 仍在 release 默认驻留完整请求/响应，内存无上限。
+- [ ] **[审查] 路由 A/B 真机执行**：语料见 [`docs/conductor-eval.md`](docs/conductor-eval.md)；native/routing 对比还没跑。
 - [ ] **Conductor 最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：wonder.47/48 已用 `ComposeFoundationFlags` 关闭 Compose 1.11 的新 context menu 和 smart selection；待真机确认 Copy 回来，确认后按上游修复再移除开关。
-- [ ] **[审查] 小修集合**：`/capabilities` 的 MCP params、未知工具列表上限、`truncateObservation` 预算、`Retry-After`、`/clear` 文档或行为、prompt golden、turn event reason 细分、trace 开始时间/错误码、`network_snapshot` 与 `list_nodes` 字段合并。见审查 §6。
+- [ ] **[审查] 小修集合（剩余）**：event reason 细分、prompt golden、`AgentIntentParser` 清理、trace 错误码/请求 ID。
 
 ## 下个会话接手
 
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。P1 顺序是生命周期、工具超时/取消、MCP 信任、上下文预算、probe 批量；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.48（tag `v1.15.0-alpha.13-wonder.48`，提交 `becd6e4`）。下一次从 49 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
-- 手机上看 wonder.48：
-  - 长按 Conductor 最后一条用户消息，菜单里应有「复制」和「全选」。如果仍然只有「全选」，说明 `ComposeFoundationFlags` 开关不够，回到 [#7](https://github.com/wonder-missing/sing-box-for-android/issues/7) 继续查。
-  - 制造一次失败（例如停掉 VPN 再发消息），错误卡应出现「重试」；点它后只保留一份用户消息，并重新请求。失败消息应留在下一次模型请求的 transcript 里，再发新消息时模型仍能看到它。
+- 当前已发布 wonder.49（tag `v1.15.0-alpha.13-wonder.49`）。下一次从 50 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 手机上看 wonder.49：
+  - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
+  - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
+  - 说「把出口切到 direct」应出确认卡；执行后用 `list_nodes` 读回。失败时应回滚旧选择。
+  - MCP 工具应全部显示 asks first；确认卡里的 URL 可读，token/query 打码。修改服务器工具定义后，刷新应提示重新启用，而不是静默替换。
+  - 每轮结束应有 usage 摘要（in/out/cache）；流式回答上滑后不应被强制拉到底，点「回到最新」回到末尾。
+  - 运行中点 `/clear` 应停止当前 turn 并清空。
+  - Tailscale 工具输出不应带账号邮箱和 peer IP；离线设备应有 last-seen。
 - 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：
@@ -58,13 +56,12 @@
   - Conductor 点 `/`，选 `reasoning`，再选 `high`。对话里应出现已设为 high 的提示。下一条普通消息的请求带 `reasoning_effort=high`。`/reasoning` 无参数只显示当前值。
   - 输入框已有文字时点 `/`，斜杠在最前，光标紧跟在斜杠后面。点 `@`，`@` 在末尾，光标在 `@` 后面。
 - 仍未做，按阻塞原因：
-  - `probe_many`（P1，需要 libbox 验证；当前 probe 串行切全局出站）。
-  - usage/cache 可见性与 trace 结构化、批量确认预览与分级（P2）。
-  - 网络诊断 `dns_lookup` / `route_decision`、`http_fetch_probe`、`select_outbound`（P2，先做诊断）。
-  - Provider capability（`stream_options`、`max_completion_tokens`、Azure 类鉴权；`none`/`max`/`xhigh` 仍不做。low/medium/high 与 `/reasoning` 已做）。
-  - 跨版本会话边界提示（之前决定保留现状）。
-  - probe 链路复测（等出口健康）；Stop 1s `TOOL_CANCEL_TIMEOUT` 已并入 P1 工具超时与取消。
-  - 搜索 no-match、`ToolObservation.ok` 契约、确认/事务可见性、LLM 摘要、增量更新等 backlog。
+  - probe 真正并发：libbox 没有 per-request outbound binding；`probe_many` 目前顺序执行。
+  - `dns_lookup` / `route_decision` / `http_fetch_probe`：libbox 没有 DNS/route API，GET 也没有状态码和 body 上限。
+  - `TOOL_CANCEL_TIMEOUT` 精确 1 秒；返回或进程死亡中途取消仍会丢当前 turn。
+  - 批量确认整批预览；trace 内存/长 body；会话编解码仍在主线程。
+  - 路由 A/B 真机执行；event reason 细分、prompt golden、`AgentIntentParser` 清理。
+  - Provider capability、跨版本会话边界、probe 链路复测、连接可观测、LLM 摘要、增量更新。
 
 ## 最近完成
 

@@ -1,6 +1,6 @@
 # Conductor：个人设备控制面（愿景与落地规划）
 
-状态：Phase 1 已完成；Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 进行中（工具目录与路由、缓存修正先行）；设计见 [`agent-runtime.md`](agent-runtime.md)。
+状态：Phase 1 已完成；Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.44 增加 MCP；wonder.49 完成运行时与工具加固（工具超时、MCP 信任、上下文预算、`probe_many`、`select_outbound`）。设计见 [`agent-runtime.md`](agent-runtime.md)。
 最后更新：2026-11-10
 命名：模块/包名 `conductor`；外层底部导航文案 `Conduct`；Conductor 页面进入沉浸模式，不设页面标题。
 
@@ -154,6 +154,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 - 接 DeepSeek 模型客户端、单步/多步 tool calling、流式输出、会话历史、密钥存储。Agent/BYOK 仅 API 24+，`otherLegacy` 降级。
 - 复用 Phase 1 的能力注册表；非 `/` 文本进入 Agent。
 - 2b 增加工具目录与路由：静态 `route_call` / `search_tools`、按需 schema、前缀缓存修正。运行时细节见 [`agent-runtime.md`](agent-runtime.md) §7.1。
+- wonder.49 增加 `probe_many`（顺序批量）和受控 `select_outbound`（确认、失败回滚）。真正的 probe 并发和 DNS/route 诊断仍缺 libbox API。
 - wonder.44 增加 MCP 客户端：Settings 里添加并打开 Streamable HTTP 服务器，工具进入同一目录。见 [`mcp.md`](mcp.md)。
 - 设备注册表：Tailscale peers/status、在线状态、能力。
 - 验收：自然语言能调用只读能力并回答；写操作仍需确认；敏感输入本地拦截；Agent/BYOK 仅在 API 24+ 构建可用。
