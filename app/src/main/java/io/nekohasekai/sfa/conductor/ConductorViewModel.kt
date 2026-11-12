@@ -51,6 +51,7 @@ import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
@@ -71,6 +72,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicLong
@@ -525,6 +528,9 @@ class ConductorViewModel(
                         outcome is TurnOutcome.Failed &&
                             transcript.lastOrNull() is AgentMessage.User &&
                             pendingTurnEvent != null
+                    AppLog.info(
+                        "conductor turn=${outcome::class.simpleName} messages=${result.messages.size} retry=$canRetry",
+                    )
                     updateUi { copy(isRunning = false, canRetryLastTurn = canRetry) }
                     pendingAgentConfirmation = null
                     stopRequested = false
@@ -648,11 +654,18 @@ class ConductorViewModel(
             is AgentEvent.ToolStarted -> {
                 finishReasoning()
                 finishStreamingAssistant()
+                AppLog.info("conductor tool=${event.call.name} started")
                 append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
             }
 
-            is AgentEvent.ToolFinished -> updateToolResult(event.result)
+            is AgentEvent.ToolFinished -> {
+                AppLog.info(
+                    "conductor tool=${event.result.name} ok=${event.result.ok} code=${event.result.errorCode ?: "-"}",
+                )
+                updateToolResult(event.result)
+            }
             is AgentEvent.ConfirmationRequested -> {
+                AppLog.info("conductor confirm=${event.request.toolName}")
                 if (autoApproveAgentToolName == event.request.toolName) {
                     pendingAgentConfirmation =
                         CompletableDeferred<Boolean>().apply { complete(true) }
@@ -1005,7 +1018,13 @@ class ConductorViewModel(
                                 if (peer.exitNodeOption) add("exit-node-option")
                             }
                         val addresses = if (includeDetails) " ${peerIps(peer)}" else ""
-                        appendLine("    - ${peerName(peer)} ${flags.joinToString(", ")}$addresses".trimEnd())
+                        val lastSeen =
+                            if (!peer.online && peer.lastSeen > 0) {
+                                " last-seen=${formatLastSeen(peer.lastSeen)}"
+                            } else {
+                                ""
+                            }
+                        appendLine("    - ${peerName(peer)} ${flags.joinToString(", ")}$addresses$lastSeen".trimEnd())
                     }
                 }
             }
@@ -1018,6 +1037,11 @@ class ConductorViewModel(
         val dns = peer.getDNSName()
         return dns.substringBefore(".").ifEmpty { peer.hostName }
     }
+
+    private fun formatLastSeen(seconds: Long): String =
+        runCatching {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(seconds * 1_000))
+        }.getOrDefault("unknown")
 
     private fun peerIps(peer: TailscalePeer): String {
         val ips = mutableListOf<String>()

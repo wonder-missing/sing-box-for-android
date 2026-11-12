@@ -4,6 +4,8 @@ import android.content.Context
 import io.nekohasekai.sfa.agent.AgentTool
 import io.nekohasekai.sfa.agent.ToolCancellation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -164,8 +166,9 @@ class McpRuntime(
                     now - attempted >= staleAfterMs
                 }
             }
-        for (config in due) {
-            connect(config, disableOnFailure = false)
+        coroutineScope {
+            due.map { config -> async { connect(config, disableOnFailure = false) } }
+                .forEach { it.await() }
         }
     }
 
@@ -193,11 +196,20 @@ class McpRuntime(
                 if (servers.none { it.id == config.id }) return@withLock
                 outcome.fold(
                     onSuccess = { opened ->
-                        cache[config.id] = opened
-                        fetched += config.id
-                        attemptedAt.remove(config.id)
-                        errors.remove(config.id)
-                        phase[config.id] = McpPhase.READY
+                        val previous = cache[config.id]
+                        if (previous != null && !sameToolDefinitions(previous.remote, opened.remote)) {
+                            errors[config.id] =
+                                "MCP tool definitions changed. Disable and re-enable this server to review the new tools."
+                            attemptedAt[config.id] = clock()
+                            cache[config.id] = previous.copy(fetchedAt = clock())
+                            phase[config.id] = McpPhase.READY
+                        } else {
+                            cache[config.id] = opened
+                            fetched += config.id
+                            attemptedAt.remove(config.id)
+                            errors.remove(config.id)
+                            phase[config.id] = McpPhase.READY
+                        }
                         servers = servers.map { if (it.id == config.id) it.copy(enabled = true) else it }
                         repository.save(servers)
                     },
@@ -327,6 +339,13 @@ class McpRuntime(
             (element as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
         }
     }
+
+    private fun sameToolDefinitions(
+        old: List<McpRemoteTool>,
+        new: List<McpRemoteTool>,
+    ): Boolean =
+        old.size == new.size &&
+            old.map { it.name to it.fingerprint }.toSet() == new.map { it.name to it.fingerprint }.toSet()
 
     private fun safeMessage(error: Throwable): String {
         val message = error.message?.takeIf { it.isNotBlank() } ?: "Could not reach the MCP server."

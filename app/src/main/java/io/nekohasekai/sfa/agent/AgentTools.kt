@@ -197,10 +197,6 @@ class AgentTools(
                             put("source", "command_client")
                             put("running", snapshot.coreRunning)
                             put("remoteControl", snapshot.remoteControl)
-                            put(
-                                "selectedOutbound",
-                                snapshot.groups.firstOrNull { it.selected.isNotBlank() }?.selected ?: "",
-                            )
                             put("selectedOutbounds", selectedOutbounds)
                             put("groupCount", snapshot.groups.size)
                             put("outboundCount", snapshot.outbounds.size)
@@ -600,12 +596,6 @@ class AgentTools(
                 if (telemetryUploadPort != null) add(telemetryUpload)
             }
 
-    private companion object {
-        private const val MAX_PROBE_MANY = 20
-        private const val DEFAULT_PROBE_MANY = 10
-        private const val MAX_PROBE_MANY_MS = 90_000L
-    }
-
     private fun unavailable(): ToolExecution =
         ToolExecution(errorCode = "tool_unavailable", errorMessage = "this tool is not available in the current build")
 
@@ -618,6 +608,10 @@ class AgentTools(
             node.urlTestDelayMs?.let { put("urlTestDelayMs", it) }
         }
 }
+
+private const val MAX_PROBE_MANY = 20
+private const val DEFAULT_PROBE_MANY = 10
+private const val MAX_PROBE_MANY_MS = 90_000L
 
 internal fun isAllowedProbeUrl(raw: String): Boolean {
     if (raw.length > 2048 || raw.any { it.isWhitespace() }) {

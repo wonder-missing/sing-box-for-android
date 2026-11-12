@@ -20,7 +20,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 请求带 `Accept: application/json, text/event-stream`、`MCP-Protocol-Version`，以及服务器返回的 `Mcp-Session-Id`。有 token 时加 `Authorization: Bearer`。两种响应都认：单个 JSON，或 SSE 里按 JSON-RPC id 匹配的 `data:`。
 
-`404` 会重新 `initialize` 一次。响应超过 512KB 直接失败。连接超时 15 秒，读取超时 30 秒。不跟随重定向，避免把 token 送到别的主机。
+`404` 对 `initialize` / `tools/list` 会重新 `initialize` 一次；`tools/call` 不自动重试，避免写操作重复执行。响应超过 512KB 直接失败。连接超时 15 秒，读取超时 30 秒。不跟随重定向，避免把 token 送到别的主机。
 
 这一版只读这一次 POST 的响应（JSON 或响应体里的 SSE）。不另开 GET SSE 流。服务器需要在 POST 里直接返回结果。
 
@@ -32,7 +32,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 参数不走内置工具那套「只能是字符串」。本机只检查 schema `required` 里的键：缺了、是 null、或是空字符串，就拒绝。其余类型交给服务器。
 
-`annotations.readOnlyHint == true` 的工具不弹确认，用来确认 Agent 能自己把调用做完。其他工具是 `AGENT_ONLY`，先确认再发出。权限是 `DATA_EGRESS`。输出仍然过现有 sanitizer，所以结果里的订阅链接和 token 会被打掉。
+所有 MCP 工具都是 `AGENT_ONLY`，先确认再发出；`annotations.readOnlyHint` 只作为服务器提示，不能绕过确认。权限是 `DATA_EGRESS`。确认卡保留 URL 的 host/path，但屏蔽 userinfo 和敏感 query。输出仍然过现有 sanitizer，所以结果里的订阅链接和 token 会被打掉。
 
 有没有激活的 MCP 工具，系统提示和静态 `tools` 都相同。工具列表在每轮开始时如果空了，或超过 60 秒，会刷新。刷新失败沿用上一份列表，不让这一轮失败；还没有成功过的列表也不会每条消息都重试。状态留在设置行上。Stop 会断开正在进行的 MCP 连接。
 
@@ -44,10 +44,10 @@ Android 默认禁止明文 HTTP。表单接受 `http://`，方便写局域网地
 
 ## 存放
 
-服务器列表在应用私有文件 `conductor/mcp-servers.json`。token 只在这个文件里，不进日志，不进工具 schema，不出现在设置列表里。
+服务器列表在应用私有文件 `conductor/mcp-servers.json`。API 24+ 构建用 Android Keystore AES-GCM 加密 token 后再落盘；API 21 legacy 构建没有 Agent 入口，token 以明文保存。token 不进日志，不进工具 schema，不出现在设置列表里。
 
 ## 验证
 
-JVM 单测起一个本机 MCP HTTP 服务器：打开后 `tools/list` 注册工具，`search_tools` 带回 schema，`route_call` 打到 `tools/call`，观察里有服务器返回的文本，请求带了 `Mcp-Session-Id`。只读工具直接执行；非只读工具在确认前不发请求。
+JVM 单测起一个本机 MCP HTTP 服务器：打开后 `tools/list` 注册工具，`search_tools` 带回 schema，`route_call` 打到 `tools/call`，观察里有服务器返回的文本，请求带了 `Mcp-Session-Id`。只读工具也要确认；所有工具在确认前都不发请求。
 
 设置页没有真机验证。

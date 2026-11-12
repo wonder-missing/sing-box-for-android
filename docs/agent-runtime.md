@@ -288,6 +288,7 @@ OpenAI-compatible 请求形态（DeepSeek / xAI / Custom 共用）：
 enum class AgentPermission {
     READ_NETWORK_STATE,
     NETWORK_PROBE,
+    NETWORK_CHANGE,
     DATA_EGRESS,
 }
 
@@ -330,11 +331,18 @@ enum class InvocationSource {
 | `network_snapshot` | `READ_NETWORK_STATE` | `NEVER` |
 | `tailscale_status` | `READ_NETWORK_STATE` | `NEVER` |
 | `probe_via_node` | `NETWORK_PROBE` | `ALWAYS` |
+| `probe_many` | `NETWORK_PROBE` | `ALWAYS` |
+| `select_outbound` | `NETWORK_CHANGE` | `ALWAYS` |
 | `telemetry_upload` | `DATA_EGRESS` | `AGENT_ONLY` |
+| MCP tools | `DATA_EGRESS` | `AGENT_ONLY` |
 
-`probe_via_node` 的 `ok` 语义：只要收到任何 HTTP 状态码（1xx–5xx，包括 204、3xx、4xx、5xx），就表示链路可达，`ok = true`，`statusCode` 原样回填；只有 DNS、连接失败、超时、EOF 这类没有状态码的传输错误才是 `ok = false`。libbox 的 HTTP 客户端对 204 等非 200 响应会抛异常，异常消息里带 `HTTP <code>`；`LibboxProbePort` 必须解析状态码并按上述规则归类，不能把异常本身当成失败。
+`probe_via_node` 的 `reachable` 语义：只要收到任何 HTTP 状态码（1xx–5xx，包括 204、3xx、4xx、5xx），就表示链路可达，`reachable = true`，`statusCode` 原样回填；只有 DNS、连接失败、超时、EOF 这类没有状态码的传输错误才是 `reachable = false`。外层 `ToolObservation.ok` 仍表示工具调用本身是否成功，内层不再使用 `ok` 字段。libbox 的 HTTP 客户端对 204 等非 200 响应会抛异常，异常消息里带 `HTTP <code>`；`LibboxProbePort` 必须解析状态码并按上述规则归类，不能把异常本身当成失败。
 
 探测会临时切换 outbound，`finally` 里恢复原选择；App 进程在探测中被杀时，运行中的 core 可能停留在探测节点，直到重启。工具描述要写清这条边界。
+
+`probe_many` 是同一语义的批处理：一次确认，按顺序探测最多 20 个节点，约 90 秒后停止并标记 `truncated`；它仍然串行切换全局选择，不是 per-request outbound binding。
+
+`select_outbound` 只在本机执行，Remote Control 模式直接拒绝；确认后调用 `CommandClient.selectOutbound`，异常时恢复旧选择。它不校验选择后的实际生效状态，模型应再调 `list_nodes` 读回。
 
 `ProbePort.probe` 和 `TelemetryUploadPort.upload` 都接受可选 `ToolCancellation`。Stop 时 probe 关闭 libbox HTTP client 和 worker executor，telemetry 关闭 socket/connection，uploader 返回 `UploadResult.Cancelled`；工具在调用返回后再检查一次取消标志，返回 `cancelled` observation。
 

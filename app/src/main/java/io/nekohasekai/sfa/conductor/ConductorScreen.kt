@@ -982,12 +982,12 @@ private fun ConductorItem.contentVersion(): Int =
 
 private fun ConductorItem.stableKey(index: Int): String =
     when (this) {
-        is ConductorItem.User -> "user:$index:${text.hashCode()}"
-        is ConductorItem.Assistant -> "assistant:$index:${text.hashCode()}"
-        is ConductorItem.Reasoning -> "reasoning:$index:${text.hashCode()}"
+        is ConductorItem.User -> "user:$index"
+        is ConductorItem.Assistant -> "assistant:$index"
+        is ConductorItem.Reasoning -> "reasoning:$index"
         is ConductorItem.Tool -> "tool:${call.id}"
-        is ConductorItem.Notice -> "notice:$index:${title.hashCode()}:${body.hashCode()}"
-        is ConductorItem.Error -> "error:$index:${message.hashCode()}"
+        is ConductorItem.Notice -> "notice:$index"
+        is ConductorItem.Error -> "error:$index"
         is ConductorItem.Confirmation -> "confirm:${request.id}"
     }
 

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import java.security.MessageDigest
 
 internal const val MCP_PROTOCOL = "2025-06-18"
 internal const val MCP_MAX_TOOLS = 64
@@ -46,6 +47,8 @@ data class McpRemoteTool(
     val description: String,
     val inputSchema: JsonObject,
     val readOnly: Boolean,
+    /** SHA-256 of name, description, schema and readOnlyHint. Used to detect rug pulls. */
+    val fingerprint: String = "",
 )
 
 data class McpCallResult(
@@ -337,13 +340,26 @@ class McpSession(
         val description = (element["description"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
         val annotations = element["annotations"] as? JsonObject
         val readOnly = (annotations?.get("readOnlyHint") as? JsonPrimitive)?.booleanOrNull == true
+        val schema = normalizeSchema(element["inputSchema"])
         return McpRemoteTool(
             name = name,
             description = description,
-            inputSchema = normalizeSchema(element["inputSchema"]),
+            inputSchema = schema,
             readOnly = readOnly,
+            fingerprint = toolFingerprint(name, description, schema, readOnly),
         )
     }
+
+    private fun toolFingerprint(
+        name: String,
+        description: String,
+        schema: JsonObject,
+        readOnly: Boolean,
+    ): String =
+        MessageDigest
+            .getInstance("SHA-256")
+            .digest("$name\n$description\n$schema\n$readOnly".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 
     private fun normalizeSchema(raw: JsonElement?): JsonObject {
         val obj = raw as? JsonObject

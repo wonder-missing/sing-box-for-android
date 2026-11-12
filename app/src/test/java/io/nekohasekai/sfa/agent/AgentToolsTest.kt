@@ -134,7 +134,7 @@ class AgentToolsTest {
         assertEquals("command_client", core.string("source"))
         assertTrue(core.boolean("running"))
         assertFalse(core.boolean("remoteControl"))
-        assertEquals("node-b", core.string("selectedOutbound"))
+        assertEquals("node-b", core.obj("selectedOutbounds").string("proxy"))
         assertEquals(1, core.int("groupCount"))
         assertEquals(2, core.int("outboundCount"))
         assertNull(output["note"])
