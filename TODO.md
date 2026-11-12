@@ -43,7 +43,7 @@
 ## 下个会话接手
 
 - Conductor 审查（2026-11-13）：先读 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)；按上面 `[审查]` 项推进。审查文档只放分析和证据，不另开任务清单。
-- 当前已发布 wonder.48（tag `v1.15.0-alpha.13-wonder.48`）。下一次从 49 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 当前已发布 wonder.48（tag `v1.15.0-alpha.13-wonder.48`，提交 `becd6e4`）。下一次从 49 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
 - 手机上看 wonder.48：
   - 长按 Conductor 最后一条用户消息，菜单里应有「复制」和「全选」。如果仍然只有「全选」，说明 `ComposeFoundationFlags` 开关不够，回到 [#7](https://github.com/wonder-missing/sing-box-for-android/issues/7) 继续查。
   - 制造一次失败（例如停掉 VPN 再发消息），错误卡应出现「重试」；点它后只保留一份用户消息，并重新请求。失败消息应留在下一次模型请求的 transcript 里，再发新消息时模型仍能看到它。
