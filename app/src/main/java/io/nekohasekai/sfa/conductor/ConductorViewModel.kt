@@ -204,11 +204,6 @@ class ConductorViewModel(
             }
         if (previous == shouldConnect) return
         if (shouldConnect) {
-            if (remoteControl) {
-                append(ConductorItem.Notice("remote", "Connecting to Remote Control…"))
-            } else {
-                append(ConductorItem.Notice("startup", "Service started. Waiting for the core…"))
-            }
             commandClient.connect()
         } else {
             commandClient.disconnect()

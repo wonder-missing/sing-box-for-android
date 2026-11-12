@@ -3,16 +3,16 @@ package io.nekohasekai.sfa.compose.component
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -55,14 +55,14 @@ fun AppUpdateButton() {
     var downloadJob by remember { mutableStateOf<Job?>(null) }
     var downloadError by remember { mutableStateOf<String?>(null) }
 
-    FilledTonalButton(
+    IconButton(
         onClick = {
-            if (UpdateState.isChecking.value || showDownloadDialog) return@FilledTonalButton
+            if (UpdateState.isChecking.value || showDownloadDialog) return@IconButton
             val known = UpdateState.updateInfo.value
             if (UpdateState.hasUpdate.value && known != null) {
                 Settings.lastShownUpdateVersion = known.versionCode
                 showUpdateAvailableDialog = true
-                return@FilledTonalButton
+                return@IconButton
             }
             scope.launch {
                 UpdateState.isChecking.value = true
@@ -97,19 +97,19 @@ fun AppUpdateButton() {
             }
         },
         enabled = !isChecking && !showDownloadDialog,
-        modifier =
-        Modifier
-            .heightIn(min = 48.dp)
-            .widthIn(min = 64.dp),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
     ) {
         if (isChecking) {
             CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(24.dp),
                 strokeWidth = 2.dp,
             )
         } else {
-            Text(stringResource(R.string.update), maxLines = 1)
+            Icon(
+                imageVector = Icons.Outlined.Refresh,
+                contentDescription = stringResource(R.string.check_update),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
         }
     }
 

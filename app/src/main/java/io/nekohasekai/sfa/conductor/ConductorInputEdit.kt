@@ -9,7 +9,22 @@ internal data class ConductorInputEdit(
     val cursor: Int?,
 )
 
+/** One press of the slash button. A visible menu closes; otherwise the slash is inserted. */
+internal data class SlashPress(
+    val hideMenu: Boolean,
+    val edit: ConductorInputEdit?,
+)
+
 internal object ConductorInputEdits {
+    fun slashPress(
+        menuVisible: Boolean,
+        text: String,
+        maxChars: Int,
+    ): SlashPress {
+        if (menuVisible) return SlashPress(hideMenu = true, edit = null)
+        return SlashPress(hideMenu = false, edit = slash(text, maxChars))
+    }
+
     /** Prepend `/` when the field does not already start with one. Cursor sits after that slash. */
     fun slash(
         text: String,

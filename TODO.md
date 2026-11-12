@@ -28,13 +28,16 @@
 
 ## 下个会话接手
 
-- 当前已发布版本号 45。`dev` 上还有未发版改动：A11 启动图、Conductor 导出文件名带本地时间、system prompt 不再列 MCP、`/mcp use <tool>` 把优先提示放进输入框。下一次发版从 46 开始，先别打 tag。
+- wonder.46 随本提交发出（tag `v1.15.0-alpha.13-wonder.46`）。下一次从 47 开始，先别打 tag。
 - 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
-- 手机上看 MCP：设置 → Conductor → MCP 服务器。填名称、https URL、可选 Bearer token，点「添加并连接」。成功时这一行显示工具数量。对话里点 `/`，选 `mcp`，应列出服务器短名、必填参数，以及「asks first」或「runs immediately」。`/mcp knocks` 只留下名字里带 knocks 的。`/mcp use orb_status` 发送后，输入框变成 `Use the MCP tool orb_status from <服务器名>. `，光标在末尾，这一步不发给模型。系统提示里不应出现 MCP 服务器名或工具名。只读工具要服务器带 `readOnlyHint` 才不弹确认。明文 `http://` 可能被系统拒绝。
-- 手机上还没看过的 wonder.43：
+- 手机上看 wonder.46：
+  - 设置根页 App 行：标题下方直接是裸版本号，没有「应用版本」字样。右侧是刷新图标，不是「更新」按钮。点图标仍会检查更新；已有新版本时下面多一行提示。
+  - 设置 → 应用里不再有 Node list layout。分组表仍可用标题栏的单列/双列按钮切换。
+  - Conductor 点一次 `/` 弹出命令菜单，再点一次 `/` 收起，文字不变。第三次再弹出。输入框里继续打字后，菜单按内容重新出现。
+  - 离开再进入 Conductor，消息流不再追加 “Service started. Waiting for the core…”。旧会话里已经有的那一行还在，清对话才会消失。
+  - 设置 → Conductor → MCP 服务器。填名称、https URL、可选 Bearer token，点「添加并连接」。成功时这一行显示工具数量。对话里点 `/`，选 `mcp`，应列出服务器短名、必填参数，以及「asks first」或「runs immediately」。`/mcp knocks` 只留下名字里带 knocks 的。`/mcp use orb_status` 发送后，输入框变成 `Use the MCP tool orb_status from <服务器名>. `，光标在末尾，这一步不发给模型。系统提示里不应出现 MCP 服务器名或工具名。只读工具要服务器带 `readOnlyHint` 才不弹确认。明文 `http://` 可能被系统拒绝。
   - Conductor 点 `/`，选 `reasoning`，再选 `high`。对话里应出现已设为 high 的提示。下一条普通消息的请求带 `reasoning_effort=high`。`/reasoning` 无参数只显示当前值。
-  - 设置顶行：第一行 App 和右侧「更新」；下面一行是「应用版本」，再下面一行是完整版本号。
   - 输入框已有文字时点 `/`，斜杠在最前，光标紧跟在斜杠后面。点 `@`，`@` 在末尾，光标在 `@` 后面。
 - 仍未做，按阻塞原因：
   - `probe_many`（P1，需要 libbox 验证；当前 probe 串行切全局出站）。
@@ -47,6 +50,7 @@
 
 ## 最近完成
 
+- wonder.46（2026-11-12）：A11 启动图；导出文件名带本地时间；系统提示不再列 MCP；`/mcp use` 把一句优先提示放进输入框。设置根页 App 行改为刷新图标，版本号紧贴标题下方。删掉应用设置里的 Node list layout（分组表的单列/双列按钮还在）。Conductor 的 `/` 按钮第二次按下收起菜单。进入 Conductor 不再追加 “Service started. Waiting for the core…”
 - wonder.45（2026-11-12）：`/mcp` 列出已打开的 MCP 服务器和工具。按完整工具名搜索只返回那一个；按服务器名搜索一次带出该服务器的 schema
 - wonder.44（2026-11-12）：Conductor MCP 客户端。设置里添加并打开 Streamable HTTP 服务器，Agent 用 `search_tools` 发现、`route_call` 调用。只读工具直接执行，其他工具先确认。拨号遥测同一版才能在手机上看到
 - wonder.43（2026-11-12）：`/reasoning` 与设置页共用推理强度；设置根页 App 行的版本标题和版本号分行；输入栏 `/`、`@` 插入后光标跟在新文字后面

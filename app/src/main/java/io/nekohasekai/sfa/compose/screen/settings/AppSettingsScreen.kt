@@ -45,7 +45,6 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
-import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
@@ -92,7 +91,6 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.base.UiEvent
 import io.nekohasekai.sfa.compose.base.rememberApplyServiceChangeNotifier
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
-import io.nekohasekai.sfa.compose.model.GroupLayoutPreference
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
@@ -174,7 +172,6 @@ fun AppSettingsScreen(
 
     var cacheSize by remember { mutableStateOf(0L) }
     var cacheSizeText by remember { mutableStateOf("") }
-    val singleColumn by GroupLayoutPreference.singleColumn.collectAsState()
 
     fun refreshCacheSize() {
         scope.launch(Dispatchers.IO) {
@@ -549,47 +546,6 @@ fun AppSettingsScreen(
                     modifier =
                     Modifier
                         .clickable { showLanguageDialog = true },
-                    colors =
-                    ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
-                    ),
-                )
-
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            stringResource(R.string.group_list_layout),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            stringResource(
-                                if (singleColumn) {
-                                    R.string.group_list_single_column
-                                } else {
-                                    R.string.group_list_two_columns
-                                },
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.ViewList,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = singleColumn,
-                            onCheckedChange = null,
-                        )
-                    },
-                    modifier =
-                    Modifier
-                        .clickable { GroupLayoutPreference.toggle() },
                     colors =
                     ListItemDefaults.colors(
                         containerColor = Color.Transparent,

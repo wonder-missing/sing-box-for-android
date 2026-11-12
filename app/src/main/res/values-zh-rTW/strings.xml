@@ -56,9 +56,6 @@
     <string name="title_edit_profile">編輯設定檔</string>
     <string name="title_edit_configuration">編輯設定</string>
     <string name="title_groups">群組</string>
-    <string name="group_list_layout">節點列表版面</string>
-    <string name="group_list_single_column">單欄（完整名稱）</string>
-    <string name="group_list_two_columns">雙欄（緊湊）</string>
     <string name="use_single_column">每列顯示一個節點</string>
     <string name="use_two_columns">每列顯示兩個節點</string>
     <string name="title_debug">偵錯</string>

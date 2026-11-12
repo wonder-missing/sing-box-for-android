@@ -104,32 +104,24 @@ fun SettingsScreen(navController: NavController) {
             ),
         ) {
             Column {
-                Column(
+                Row(
                     modifier =
                     Modifier
                         .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                         .clickable { navController.navigate("settings/app") }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp),
-                        )
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
                         Text(
                             stringResource(R.string.title_app_settings),
                             style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
-                        )
-                        AppUpdateButton()
-                    }
-                    Column(modifier = Modifier.padding(start = 40.dp, top = 4.dp)) {
-                        Text(
-                            stringResource(R.string.app_version_title),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
                             BuildConfig.VERSION_NAME,
@@ -145,6 +137,7 @@ fun SettingsScreen(navController: NavController) {
                             )
                         }
                     }
+                    AppUpdateButton()
                 }
 
                 ListItem(

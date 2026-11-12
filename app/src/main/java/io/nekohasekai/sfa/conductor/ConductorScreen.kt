@@ -230,6 +230,16 @@ fun ConductorScreen(
     val mcpTools by viewModel.mcpListed.collectAsState()
     val offerMcpVerb = ConductorMcpUse.offerVerb(input)
     val mcpToolSuggestions = ConductorMcpUse.toolSuggestions(input, mcpTools)
+    var slashMenuHidden by remember { mutableStateOf(false) }
+    val slashMenuVisible =
+        !inputExpanded &&
+            !slashMenuHidden &&
+            (
+                effortSuggestions.isNotEmpty() ||
+                    offerMcpVerb ||
+                    mcpToolSuggestions.isNotEmpty() ||
+                    suggestions.isNotEmpty()
+            )
     val mcpCommand = input.trimStart().startsWith("/mcp")
     LaunchedEffect(mcpCommand) {
         if (mcpCommand) viewModel.refreshMcpQuietly()
@@ -484,7 +494,7 @@ fun ConductorScreen(
                 }
             }
 
-            if (!inputExpanded && effortSuggestions.isNotEmpty()) {
+            if (slashMenuVisible && effortSuggestions.isNotEmpty()) {
                 EffortSuggestions(
                     levels = effortSuggestions,
                     onPick = { level ->
@@ -494,7 +504,7 @@ fun ConductorScreen(
                         focusManager.clearFocus()
                     },
                 )
-            } else if (!inputExpanded && offerMcpVerb) {
+            } else if (slashMenuVisible && offerMcpVerb) {
                 McpUseSuggestions(
                     rows = listOf(McpUseRow(key = "use", title = "use", detail = "Put one MCP tool in the input")),
                     onPick = { _ ->
@@ -503,7 +513,7 @@ fun ConductorScreen(
                         focusInput()
                     },
                 )
-            } else if (!inputExpanded && mcpToolSuggestions.isNotEmpty()) {
+            } else if (slashMenuVisible && mcpToolSuggestions.isNotEmpty()) {
                 McpUseSuggestions(
                     rows =
                         mcpToolSuggestions.map { tool ->
@@ -519,7 +529,7 @@ fun ConductorScreen(
                         focusInput()
                     },
                 )
-            } else if (!inputExpanded && suggestions.isNotEmpty()) {
+            } else if (slashMenuVisible && suggestions.isNotEmpty()) {
                 CommandSuggestions(
                     commands = suggestions,
                     onPick = { command ->
@@ -545,6 +555,7 @@ fun ConductorScreen(
             onToggleExpand = { inputExpanded = !inputExpanded },
             input = inputField,
             onInputChange = { next ->
+                if (next.text != input) slashMenuHidden = false
                 if (next.text.length > MaxInputChars) {
                     if (!inputTooLongWarned) {
                         Toast.makeText(
@@ -565,8 +576,14 @@ fun ConductorScreen(
             onStop = viewModel::stopAgent,
             isRunning = uiState.isRunning,
             onSlash = {
-                applyEdit(ConductorInputEdits.slash(input, MaxInputChars))
-                focusInput()
+                val press = ConductorInputEdits.slashPress(slashMenuVisible, input, MaxInputChars)
+                if (press.hideMenu) {
+                    slashMenuHidden = true
+                } else {
+                    slashMenuHidden = false
+                    press.edit?.let(::applyEdit)
+                    focusInput()
+                }
             },
             onAt = {
                 applyEdit(ConductorInputEdits.mention(input, MaxInputChars))

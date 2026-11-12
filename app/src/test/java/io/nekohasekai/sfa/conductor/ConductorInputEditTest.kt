@@ -1,7 +1,9 @@
 package io.nekohasekai.sfa.conductor
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConductorInputEditTest {
@@ -27,6 +29,32 @@ class ConductorInputEditTest {
 
         assertEquals("/help", edit.text)
         assertNull(edit.cursor)
+    }
+
+    @Test
+    fun `slash press hides a visible menu without editing the text`() {
+        val press = ConductorInputEdits.slashPress(menuVisible = true, text = "/help", maxChars = 8000)
+
+        assertTrue(press.hideMenu)
+        assertNull(press.edit)
+    }
+
+    @Test
+    fun `slash press on a hidden menu inserts the slash`() {
+        val press = ConductorInputEdits.slashPress(menuVisible = false, text = "", maxChars = 8000)
+
+        assertFalse(press.hideMenu)
+        assertEquals("/", press.edit?.text)
+        assertEquals(1, press.edit?.cursor)
+    }
+
+    @Test
+    fun `slash press shows an existing slash command again without a second slash`() {
+        val press = ConductorInputEdits.slashPress(menuVisible = false, text = "/help", maxChars = 8000)
+
+        assertFalse(press.hideMenu)
+        assertEquals("/help", press.edit?.text)
+        assertNull(press.edit?.cursor)
     }
 
     @Test

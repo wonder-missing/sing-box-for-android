@@ -69,9 +69,6 @@
     <string name="conductor_empty_title">Conductor</string>
     <string name="conductor_empty_hint">Ask anything, or type / to see commands.</string>
     <string name="logs_preview_empty">No logs yet</string>
-    <string name="group_list_layout">Node list layout</string>
-    <string name="group_list_single_column">Single column (full names)</string>
-    <string name="group_list_two_columns">Two columns (compact)</string>
     <string name="use_single_column">Show one node per row</string>
     <string name="use_two_columns">Show two nodes per row</string>
     <string name="title_debug">Debug</string>
