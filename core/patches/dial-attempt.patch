@@ -1,0 +1,911 @@
+diff --git a/common/dialer/detour.go b/common/dialer/detour.go
+index b2fc3ef..fb0c192 100644
+--- a/common/dialer/detour.go
++++ b/common/dialer/detour.go
+@@ -97,3 +97,21 @@ func (d *DetourDialer) Upstream() any {
+ 	detour, _ := d.Dialer()
+ 	return detour
+ }
++
++// IsDetour reports whether d opens a stream through another outbound instead
++// of a raw socket. Domain resolvers wrapped around a detour still count.
++func IsDetour(d N.Dialer) bool {
++	for i := 0; i < 4 && d != nil; i++ {
++		switch v := d.(type) {
++		case *DetourDialer:
++			return true
++		case *resolveDialer:
++			d = v.dialer
++		case *resolveParallelNetworkDialer:
++			d = v.dialer
++		default:
++			return false
++		}
++	}
++	return false
++}
+diff --git a/common/dialreport/report.go b/common/dialreport/report.go
+new file mode 100644
+index 0000000..e17442a
+--- /dev/null
++++ b/common/dialreport/report.go
+@@ -0,0 +1,222 @@
++package dialreport
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"net"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/sagernet/sing-box/common/dialer"
++	N "github.com/sagernet/sing/common/network"
++)
++
++const (
++	CauseTraffic = "traffic"
++	CauseURLTest = "urltest"
++)
++
++// maxAttempts is the in-process ring size. The Android side drains it every
++// couple of seconds; when the ring is full the oldest attempt is dropped.
++var maxAttempts = 256
++
++type causeKey struct{}
++
++// WithCause marks a dial as urltest (or any other cause) so a health query
++// can exclude node-selection probes from user-experience dials.
++func WithCause(ctx context.Context, cause string) context.Context {
++	if ctx == nil {
++		ctx = context.Background()
++	}
++	if cause == "" {
++		cause = CauseTraffic
++	}
++	return context.WithValue(ctx, causeKey{}, cause)
++}
++
++func causeOf(ctx context.Context) string {
++	if ctx == nil {
++		return CauseTraffic
++	}
++	cause, _ := ctx.Value(causeKey{}).(string)
++	if cause == "" {
++		return CauseTraffic
++	}
++	return cause
++}
++
++type attempt struct {
++	TS         int64  `json:"ts"`
++	Outbound   string `json:"outbound"`
++	Network    string `json:"network"`
++	Entry      string `json:"entry,omitempty"`
++	Result     string `json:"result"`
++	ErrorClass string `json:"error_class,omitempty"`
++	DurationMS int64  `json:"duration_ms"`
++	Cause      string `json:"cause"`
++}
++
++var (
++	mu    sync.Mutex
++	queue []attempt
++)
++
++// MeasureDirect records one entry dial unless [d] is a detour. A detour opens
++// a stream through another outbound; that outbound records the real entry.
++func MeasureDirect(ctx context.Context, d N.Dialer, outbound, network, server string, dial func(context.Context) (net.Conn, error)) (net.Conn, error) {
++	if dialer.IsDetour(d) {
++		return dial(ctx)
++	}
++	return Measure(ctx, outbound, network, server, dial)
++}
++
++// MeasureDirectServer is MeasureDirect that always stores the configured
++// server. Socks UDP associate and legacy UoT set RemoteAddr to the user
++// destination, which must not be uploaded as the proxy entry.
++func MeasureDirectServer(ctx context.Context, d N.Dialer, outbound, network, server string, dial func(context.Context) (net.Conn, error)) (net.Conn, error) {
++	if dialer.IsDetour(d) {
++		return dial(ctx)
++	}
++	if dial == nil {
++		return nil, errors.New("nil dial")
++	}
++	started := time.Now()
++	conn, err := dial(ctx)
++	Finish(ctx, outbound, network, server, nil, err, started)
++	return conn, err
++}
++
++// Measure times one proxy-entry dial, success and failure, and returns the
++// dial result unchanged. The entry stored is RemoteAddr when the connection
++// exists, otherwise the configured server address.
++func Measure(ctx context.Context, outbound, network, server string, dial func(context.Context) (net.Conn, error)) (net.Conn, error) {
++	if dial == nil {
++		return nil, errors.New("nil dial")
++	}
++	started := time.Now()
++	conn, err := dial(ctx)
++	var addr net.Addr
++	if conn != nil {
++		addr = conn.RemoteAddr()
++	}
++	Finish(ctx, outbound, network, server, addr, err, started)
++	return conn, err
++}
++
++// Finish records a dial that the caller already performed.
++func Finish(ctx context.Context, outbound, network, server string, addr net.Addr, err error, started time.Time) {
++	if strings.TrimSpace(outbound) == "" {
++		return
++	}
++	entry := ""
++	if addr != nil {
++		entry = addr.String()
++	}
++	if entry == "" || entry == "<nil>" {
++		entry = server
++	}
++	entry = cleanEntry(entry)
++	duration := time.Since(started).Milliseconds()
++	if duration < 0 {
++		duration = 0
++	}
++	result := "ok"
++	class := ""
++	if err != nil {
++		result = "fail"
++		class = classify(err)
++	}
++	item := attempt{
++		TS:         started.UnixMilli(),
++		Outbound:   truncate(outbound, 80),
++		Network:    truncate(network, 16),
++		Entry:      entry,
++		Result:     result,
++		ErrorClass: class,
++		DurationMS: duration,
++		Cause:      causeOf(ctx),
++	}
++	mu.Lock()
++	defer mu.Unlock()
++	limit := maxAttempts
++	if limit < 1 {
++		limit = 1
++	}
++	if len(queue) >= limit {
++		drop := len(queue) - limit + 1
++		queue = append([]attempt(nil), queue[drop:]...)
++	}
++	queue = append(queue, item)
++}
++
++// DrainJSON returns every buffered attempt as a JSON array and clears the ring.
++// An empty ring is "[]", never an empty string.
++func DrainJSON() string {
++	mu.Lock()
++	items := queue
++	queue = nil
++	mu.Unlock()
++	if len(items) == 0 {
++		return "[]"
++	}
++	raw, err := json.Marshal(items)
++	if err != nil {
++		return "[]"
++	}
++	return string(raw)
++}
++
++func classify(err error) string {
++	if err == nil {
++		return ""
++	}
++	s := strings.ToLower(err.Error())
++	switch {
++	case strings.Contains(s, "i/o timeout"):
++		return "io_timeout"
++	case strings.Contains(s, "deadline exceeded") || errors.Is(err, context.DeadlineExceeded):
++		return "deadline"
++	case strings.Contains(s, "reset by peer"):
++		return "reset"
++	case strings.Contains(s, "unexpected eof"):
++		return "unexpected_eof"
++	case strings.Contains(s, "refused"):
++		return "refused"
++	case strings.Contains(s, "no route") || strings.Contains(s, "unreachable"):
++		return "unreachable"
++	case strings.Contains(s, "tls") || strings.Contains(s, "certificate") || strings.Contains(s, "handshake"):
++		return "tls"
++	case strings.Contains(s, "no such host") || strings.Contains(s, "server misbehaving") || strings.Contains(s, "dns"):
++		return "dns"
++	case strings.Contains(s, " eof") || strings.HasSuffix(s, "eof") || s == "eof":
++		return "eof"
++	default:
++		return "other"
++	}
++}
++
++func cleanEntry(s string) string {
++	s = strings.TrimSpace(s)
++	if i := strings.Index(s, "://"); i >= 0 {
++		s = s[i+3:]
++	}
++	if at := strings.LastIndex(s, "@"); at >= 0 {
++		s = s[at+1:]
++	}
++	s = strings.Map(func(r rune) rune {
++		if r < 0x20 || r == '"' || r == '\\' {
++			return -1
++		}
++		return r
++	}, s)
++	return truncate(s, 160)
++}
++
++func truncate(s string, max int) string {
++	if len(s) <= max {
++		return s
++	}
++	return s[:max]
++}
+diff --git a/common/dialreport/report_test.go b/common/dialreport/report_test.go
+new file mode 100644
+index 0000000..68e4858
+--- /dev/null
++++ b/common/dialreport/report_test.go
+@@ -0,0 +1,152 @@
++package dialreport
++
++import (
++	"context"
++	"encoding/json"
++	"errors"
++	"net"
++	"testing"
++	"time"
++)
++
++type addrConn struct {
++	addr net.Addr
++}
++
++func (c addrConn) Read([]byte) (int, error)         { return 0, errors.New("unused") }
++func (c addrConn) Write([]byte) (int, error)        { return 0, errors.New("unused") }
++func (c addrConn) Close() error                     { return nil }
++func (c addrConn) LocalAddr() net.Addr              { return c.addr }
++func (c addrConn) RemoteAddr() net.Addr             { return c.addr }
++func (c addrConn) SetDeadline(time.Time) error      { return nil }
++func (c addrConn) SetReadDeadline(time.Time) error  { return nil }
++func (c addrConn) SetWriteDeadline(time.Time) error { return nil }
++
++func resetRing() {
++	mu.Lock()
++	queue = nil
++	maxAttempts = 256
++	mu.Unlock()
++}
++
++func TestMeasureSuccessUsesRemoteAddr(t *testing.T) {
++	resetRing()
++	conn, err := Measure(context.Background(), "proxy-a", "tcp", "example.com:443", func(context.Context) (net.Conn, error) {
++		return addrConn{addr: &net.TCPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 443}}, nil
++	})
++	if err != nil || conn == nil {
++		t.Fatalf("dial returned %v %v", conn, err)
++	}
++	var got []attempt
++	if err := json.Unmarshal([]byte(DrainJSON()), &got); err != nil {
++		t.Fatal(err)
++	}
++	if len(got) != 1 {
++		t.Fatalf("attempts=%d", len(got))
++	}
++	if got[0].Result != "ok" || got[0].ErrorClass != "" {
++		t.Fatalf("result=%s class=%s", got[0].Result, got[0].ErrorClass)
++	}
++	if got[0].Entry != "1.2.3.4:443" {
++		t.Fatalf("entry=%s", got[0].Entry)
++	}
++	if got[0].Cause != CauseTraffic || got[0].Outbound != "proxy-a" || got[0].Network != "tcp" {
++		t.Fatalf("attempt=%+v", got[0])
++	}
++	if got[0].TS <= 0 {
++		t.Fatalf("ts=%d", got[0].TS)
++	}
++	if DrainJSON() != "[]" {
++		t.Fatal("ring was not cleared")
++	}
++}
++
++func TestMeasureFailureClassAndURLTestCause(t *testing.T) {
++	resetRing()
++	ctx := WithCause(context.Background(), CauseURLTest)
++	_, err := Measure(ctx, "proxy-b", "tcp", "cdn.example:443", func(context.Context) (net.Conn, error) {
++		return nil, errors.New("dial tcp 9.9.9.9:443: connect: connection refused")
++	})
++	if err == nil {
++		t.Fatal("expected dial error")
++	}
++	var got []attempt
++	if err := json.Unmarshal([]byte(DrainJSON()), &got); err != nil {
++		t.Fatal(err)
++	}
++	if len(got) != 1 {
++		t.Fatalf("attempts=%d", len(got))
++	}
++	if got[0].Result != "fail" || got[0].ErrorClass != "refused" {
++		t.Fatalf("result=%s class=%s", got[0].Result, got[0].ErrorClass)
++	}
++	if got[0].Cause != CauseURLTest {
++		t.Fatalf("cause=%s", got[0].Cause)
++	}
++	if got[0].Entry != "cdn.example:443" {
++		t.Fatalf("entry=%s", got[0].Entry)
++	}
++}
++
++func TestClassify(t *testing.T) {
++	cases := []struct {
++		err  string
++		want string
++	}{
++		{"read: i/o timeout", "io_timeout"},
++		{"context deadline exceeded", "deadline"},
++		{"read: connection reset by peer", "reset"},
++		{"unexpected EOF", "unexpected_eof"},
++		{"EOF", "eof"},
++		{"connect: connection refused", "refused"},
++		{"connect: network is unreachable", "unreachable"},
++		{"tls: handshake failure", "tls"},
++		{"lookup example.com: no such host", "dns"},
++		{"something else", "other"},
++	}
++	for _, tc := range cases {
++		if got := classify(errors.New(tc.err)); got != tc.want {
++			t.Errorf("%q -> %s, want %s", tc.err, got, tc.want)
++		}
++	}
++}
++
++func TestRingDropsOldest(t *testing.T) {
++	resetRing()
++	maxAttempts = 2
++	for _, tag := range []string{"a", "b", "c"} {
++		_, _ = Measure(context.Background(), tag, "tcp", "127.0.0.1:1", func(context.Context) (net.Conn, error) {
++			return nil, errors.New("connection refused")
++		})
++	}
++	var got []attempt
++	if err := json.Unmarshal([]byte(DrainJSON()), &got); err != nil {
++		t.Fatal(err)
++	}
++	if len(got) != 2 || got[0].Outbound != "b" || got[1].Outbound != "c" {
++		t.Fatalf("queue=%+v", got)
++	}
++}
++
++func TestCleanEntryStripsUserinfo(t *testing.T) {
++	if got := cleanEntry("https://user:secret@entry.example:443/path"); got != "entry.example:443/path" {
++		t.Fatalf("got %q", got)
++	}
++}
++
++func TestMeasureDirectServerIgnoresUserDestination(t *testing.T) {
++	resetRing()
++	_, err := MeasureDirectServer(context.Background(), nil, "socks-out", "udp", "proxy.example:1080", func(context.Context) (net.Conn, error) {
++		return addrConn{addr: &net.UDPAddr{IP: net.IPv4(8, 8, 8, 8), Port: 53}}, nil
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	var got []attempt
++	if err := json.Unmarshal([]byte(DrainJSON()), &got); err != nil {
++		t.Fatal(err)
++	}
++	if len(got) != 1 || got[0].Entry != "proxy.example:1080" || got[0].Network != "udp" {
++		t.Fatalf("attempt=%+v", got)
++	}
++}
+diff --git a/common/urltest/urltest.go b/common/urltest/urltest.go
+index d04d34b..195bf74 100644
+--- a/common/urltest/urltest.go
++++ b/common/urltest/urltest.go
+@@ -11,6 +11,7 @@ import (
+ 
+ 	"github.com/sagernet/sing-anytls"
+ 	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-mux"
+ 	"github.com/sagernet/sing-snell"
+@@ -117,6 +118,7 @@ func urlTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err e
+ 	}
+ 
+ 	start := time.Now()
++	ctx = dialreport.WithCause(ctx, dialreport.CauseURLTest)
+ 	instance, err := detour.DialContext(ctx, "tcp", M.ParseSocksaddrHostPortStr(hostname, port))
+ 	if err != nil {
+ 		return
+diff --git a/experimental/libbox/dial_attempts.go b/experimental/libbox/dial_attempts.go
+new file mode 100644
+index 0000000..f681e18
+--- /dev/null
++++ b/experimental/libbox/dial_attempts.go
+@@ -0,0 +1,9 @@
++package libbox
++
++import "github.com/sagernet/sing-box/common/dialreport"
++
++// ReadDialAttempts drains proxy-entry dials recorded by common/dialreport.
++// The string is a JSON array. It does not depend on the core log level.
++func ReadDialAttempts() string {
++	return dialreport.DrainJSON()
++}
+diff --git a/protocol/anytls/outbound.go b/protocol/anytls/outbound.go
+index 03aa1c5..6c5436d 100644
+--- a/protocol/anytls/outbound.go
++++ b/protocol/anytls/outbound.go
+@@ -9,6 +9,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	"github.com/sagernet/sing-box/common/tls"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/log"
+@@ -32,6 +33,7 @@ var (
+ 
+ type Outbound struct {
+ 	outbound.Adapter
++	netDialer     N.Dialer
+ 	dialer        tls.Dialer
+ 	server        M.Socksaddr
+ 	tlsConfig     tls.Config
+@@ -69,6 +71,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
+ 		return nil, err
+ 	}
+ 
++	outbound.netDialer = outboundDialer
+ 	outbound.dialer = tls.NewDialer(outboundDialer, tlsConfig)
+ 
+ 	outbound.clientOptions = anytls.ClientOptions{
+@@ -111,7 +114,9 @@ func (d anytlsDialer) ListenPacket(ctx context.Context, destination M.Socksaddr)
+ }
+ 
+ func (h *Outbound) dialOut(ctx context.Context) (net.Conn, error) {
+-	return h.dialer.DialTLSContext(adapter.ContextForMultiplexSession(ctx), h.server)
++	return dialreport.MeasureDirect(ctx, h.netDialer, h.Tag(), N.NetworkTCP, h.server.String(), func(ctx context.Context) (net.Conn, error) {
++		return h.dialer.DialTLSContext(adapter.ContextForMultiplexSession(ctx), h.server)
++	})
+ }
+ 
+ func (h *Outbound) MultiplexEnabled() bool {
+diff --git a/protocol/http/outbound.go b/protocol/http/outbound.go
+index b5c5042..51ab8ee 100644
+--- a/protocol/http/outbound.go
++++ b/protocol/http/outbound.go
+@@ -7,6 +7,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/log"
+ 	"github.com/sagernet/sing-box/option"
+@@ -27,8 +28,10 @@ var _ adapter.OutboundWithMultiplex = (*Outbound)(nil)
+ 
+ type Outbound struct {
+ 	outbound.Adapter
+-	logger logger.ContextLogger
+-	client *http.Client
++	logger     logger.ContextLogger
++	client     *http.Client
++	netDialer  N.Dialer
++	serverAddr M.Socksaddr
+ }
+ 
+ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.HTTPOutboundOptions) (adapter.Outbound, error) {
+@@ -51,9 +54,11 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
+ 		return nil, err
+ 	}
+ 	return &Outbound{
+-		Adapter: outbound.NewAdapterWithDialerOptions(C.TypeHTTP, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.DialerOptions),
+-		logger:  logger,
+-		client:  client,
++		Adapter:    outbound.NewAdapterWithDialerOptions(C.TypeHTTP, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.DialerOptions),
++		logger:     logger,
++		client:     client,
++		netDialer:  outboundDialer,
++		serverAddr: options.ServerOptions.Build(),
+ 	}, nil
+ }
+ 
+@@ -80,7 +85,9 @@ func (h *Outbound) DialContext(ctx context.Context, network string, destination
+ 	switch N.NetworkName(network) {
+ 	case N.NetworkTCP:
+ 		h.logger.InfoContext(ctx, "outbound connection to ", destination)
+-		return h.client.DialContext(ctx, network, destination)
++		return dialreport.MeasureDirect(ctx, h.netDialer, h.Tag(), N.NetworkTCP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++			return h.client.DialContext(ctx, network, destination)
++		})
+ 	case N.NetworkUDP:
+ 		h.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+ 		packetConn, err := h.client.ListenPacket(ctx, destination)
+diff --git a/protocol/shadowsocks/outbound.go b/protocol/shadowsocks/outbound.go
+index 08f16c1..614d071 100644
+--- a/protocol/shadowsocks/outbound.go
++++ b/protocol/shadowsocks/outbound.go
+@@ -7,6 +7,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	"github.com/sagernet/sing-box/common/mux"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/log"
+@@ -175,16 +176,22 @@ func (h *shadowsocksDialer) DialContext(ctx context.Context, network string, des
+ 		var outConn net.Conn
+ 		var err error
+ 		if h.plugin != nil {
+-			outConn, err = h.plugin.DialContext(ctx)
++			outConn, err = dialreport.MeasureDirect(ctx, h.dialer, h.Tag(), N.NetworkTCP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++				return h.plugin.DialContext(ctx)
++			})
+ 		} else {
+-			outConn, err = h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
++			outConn, err = dialreport.MeasureDirect(ctx, h.dialer, h.Tag(), N.NetworkTCP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++				return h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
++			})
+ 		}
+ 		if err != nil {
+ 			return nil, err
+ 		}
+ 		return h.method.DialEarlyConn(outConn, destination), nil
+ 	case N.NetworkUDP:
+-		outConn, err := h.dialer.DialContext(ctx, N.NetworkUDP, h.serverAddr)
++		outConn, err := dialreport.MeasureDirect(ctx, h.dialer, h.Tag(), N.NetworkUDP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++			return h.dialer.DialContext(ctx, N.NetworkUDP, h.serverAddr)
++		})
+ 		if err != nil {
+ 			return nil, err
+ 		}
+@@ -198,7 +205,9 @@ func (h *shadowsocksDialer) ListenPacket(ctx context.Context, destination M.Sock
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+-	outConn, err := h.dialer.DialContext(ctx, N.NetworkUDP, h.serverAddr)
++	outConn, err := dialreport.MeasureDirect(ctx, h.dialer, h.Tag(), N.NetworkUDP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++		return h.dialer.DialContext(ctx, N.NetworkUDP, h.serverAddr)
++	})
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/protocol/shadowtls/outbound.go b/protocol/shadowtls/outbound.go
+index 81ce0b3..c92c6bf 100644
+--- a/protocol/shadowtls/outbound.go
++++ b/protocol/shadowtls/outbound.go
+@@ -8,6 +8,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	"github.com/sagernet/sing-box/common/tls"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/log"
+@@ -24,7 +25,9 @@ func RegisterOutbound(registry *outbound.Registry) {
+ 
+ type Outbound struct {
+ 	outbound.Adapter
+-	client *shadowtls.Client
++	client    *shadowtls.Client
++	netDialer N.Dialer
++	server    M.Socksaddr
+ }
+ 
+ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ShadowTLSOutboundOptions) (adapter.Outbound, error) {
+@@ -72,10 +75,13 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	serverAddr := options.ServerOptions.Build()
++	outbound.netDialer = outboundDialer
++	outbound.server = serverAddr
+ 	client, err := shadowtls.NewClient(shadowtls.ClientConfig{
+ 		Version:      options.Version,
+ 		Password:     options.Password,
+-		Server:       options.ServerOptions.Build(),
++		Server:       serverAddr,
+ 		Dialer:       outboundDialer,
+ 		TLSHandshake: tlsHandshakeFunc,
+ 		Logger:       logger,
+@@ -92,7 +98,9 @@ func (h *Outbound) DialContext(ctx context.Context, network string, destination
+ 	metadata.Outbound = h.Tag()
+ 	switch N.NetworkName(network) {
+ 	case N.NetworkTCP:
+-		return h.client.DialContext(ctx)
++		return dialreport.MeasureDirect(ctx, h.netDialer, h.Tag(), N.NetworkTCP, h.server.String(), func(ctx context.Context) (net.Conn, error) {
++			return h.client.DialContext(ctx)
++		})
+ 	default:
+ 		return nil, os.ErrInvalid
+ 	}
+diff --git a/protocol/socks/outbound.go b/protocol/socks/outbound.go
+index 344c798..58db6f7 100644
+--- a/protocol/socks/outbound.go
++++ b/protocol/socks/outbound.go
+@@ -7,6 +7,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/log"
+ 	"github.com/sagernet/sing-box/option"
+@@ -28,11 +29,13 @@ var _ adapter.Outbound = (*Outbound)(nil)
+ 
+ type Outbound struct {
+ 	outbound.Adapter
+-	dnsRouter adapter.DNSRouter
+-	logger    logger.ContextLogger
+-	client    *socks.Client
+-	resolve   bool
+-	uotClient *uot.Client
++	dnsRouter  adapter.DNSRouter
++	logger     logger.ContextLogger
++	client     *socks.Client
++	netDialer  N.Dialer
++	serverAddr M.Socksaddr
++	resolve    bool
++	uotClient  *uot.Client
+ }
+ 
+ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.SOCKSOutboundOptions) (adapter.Outbound, error) {
+@@ -50,12 +53,15 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	serverAddr := options.ServerOptions.Build()
+ 	outbound := &Outbound{
+-		Adapter:   outbound.NewAdapterWithDialerOptions(C.TypeSOCKS, tag, options.Network.Build(), options.DialerOptions),
+-		dnsRouter: service.FromContext[adapter.DNSRouter](ctx),
+-		logger:    logger,
+-		client:    socks.NewClient(outboundDialer, options.ServerOptions.Build(), version, options.Username, options.Password),
+-		resolve:   version == socks.Version4,
++		Adapter:    outbound.NewAdapterWithDialerOptions(C.TypeSOCKS, tag, options.Network.Build(), options.DialerOptions),
++		dnsRouter:  service.FromContext[adapter.DNSRouter](ctx),
++		logger:     logger,
++		client:     socks.NewClient(outboundDialer, serverAddr, version, options.Username, options.Password),
++		netDialer:  outboundDialer,
++		serverAddr: serverAddr,
++		resolve:    version == socks.Version4,
+ 	}
+ 	uotOptions := common.PtrValueOrDefault(options.UDPOverTCP)
+ 	if uotOptions.Enabled {
+@@ -77,20 +83,33 @@ func (h *Outbound) DialContext(ctx context.Context, network string, destination
+ 	case N.NetworkUDP:
+ 		if h.uotClient != nil {
+ 			h.logger.InfoContext(ctx, "outbound UoT connect packet connection to ", destination)
+-			return h.uotClient.DialContext(ctx, network, destination)
++			// UoT is one TCP session to the proxy. Legacy UoT's RemoteAddr is
++			// the user destination, so the entry stays the configured server.
++			return dialreport.MeasureDirectServer(ctx, h.netDialer, h.Tag(), N.NetworkTCP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++				return h.uotClient.DialContext(ctx, network, destination)
++			})
+ 		}
+ 		h.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+ 	default:
+ 		return nil, E.Extend(N.ErrUnknownNetwork, network)
+ 	}
++	// UDP associate's RemoteAddr is the user destination, not the proxy.
++	measure := dialreport.MeasureDirect
++	if N.NetworkName(network) == N.NetworkUDP {
++		measure = dialreport.MeasureDirectServer
++	}
+ 	if h.resolve && destination.IsDomain() {
+ 		destinationAddresses, err := h.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
+ 		if err != nil {
+ 			return nil, err
+ 		}
+-		return N.DialSerial(ctx, h.client, network, destination, destinationAddresses)
++		return measure(ctx, h.netDialer, h.Tag(), network, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++			return N.DialSerial(ctx, h.client, network, destination, destinationAddresses)
++		})
+ 	}
+-	return h.client.DialContext(ctx, network, destination)
++	return measure(ctx, h.netDialer, h.Tag(), network, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++		return h.client.DialContext(ctx, network, destination)
++	})
+ }
+ 
+ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+diff --git a/protocol/ssh/outbound.go b/protocol/ssh/outbound.go
+index a9ff811..b812705 100644
+--- a/protocol/ssh/outbound.go
++++ b/protocol/ssh/outbound.go
+@@ -15,6 +15,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/log"
+ 	"github.com/sagernet/sing-box/option"
+@@ -141,7 +142,9 @@ func (s *Outbound) connect(ctx context.Context) (client *ssh.Client, err error)
+ 		return s.client, nil
+ 	}
+ 
+-	conn, err := s.dialer.DialContext(adapter.ContextForMultiplexSession(ctx), N.NetworkTCP, s.serverAddr)
++	conn, err := dialreport.MeasureDirect(ctx, s.dialer, s.Tag(), N.NetworkTCP, s.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++		return s.dialer.DialContext(adapter.ContextForMultiplexSession(ctx), N.NetworkTCP, s.serverAddr)
++	})
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/protocol/trojan/outbound.go b/protocol/trojan/outbound.go
+index d1cd853..76967be 100644
+--- a/protocol/trojan/outbound.go
++++ b/protocol/trojan/outbound.go
+@@ -7,6 +7,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	"github.com/sagernet/sing-box/common/mux"
+ 	"github.com/sagernet/sing-box/common/tls"
+ 	C "github.com/sagernet/sing-box/constant"
+@@ -165,19 +166,24 @@ func (h *Outbound) Start(stage adapter.StartStage, scope *adapter.Scope) error {
+ 
+ type trojanDialer Outbound
+ 
++func (h *trojanDialer) dialServer(ctx context.Context) (net.Conn, error) {
++	return dialreport.MeasureDirect(ctx, h.dialer, h.Tag(), N.NetworkTCP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++		if h.transport != nil {
++			return h.transport.DialContext(ctx)
++		} else if h.tlsDialer != nil {
++			return h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
++		}
++		return h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
++	})
++}
++
+ func (h *trojanDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+ 	var conn net.Conn
+ 	var err error
+-	if h.transport != nil {
+-		conn, err = h.transport.DialContext(ctx)
+-	} else if h.tlsDialer != nil {
+-		conn, err = h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
+-	} else {
+-		conn, err = h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
+-	}
++	conn, err = h.dialServer(ctx)
+ 	if err != nil {
+ 		common.Close(conn)
+ 		return nil, err
+diff --git a/protocol/vless/outbound.go b/protocol/vless/outbound.go
+index c0ece0a..5fd1e86 100644
+--- a/protocol/vless/outbound.go
++++ b/protocol/vless/outbound.go
+@@ -7,6 +7,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	"github.com/sagernet/sing-box/common/mux"
+ 	"github.com/sagernet/sing-box/common/tls"
+ 	C "github.com/sagernet/sing-box/constant"
+@@ -185,19 +186,22 @@ func (h *Outbound) Start(stage adapter.StartStage, scope *adapter.Scope) error {
+ 
+ type vlessDialer Outbound
+ 
++func (h *vlessDialer) dialServer(ctx context.Context) (net.Conn, error) {
++	return dialreport.MeasureDirect(ctx, h.dialer, h.Tag(), N.NetworkTCP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++		if h.transport != nil {
++			return h.transport.DialContext(ctx)
++		} else if h.tlsDialer != nil {
++			return h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
++		}
++		return h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
++	})
++}
++
+ func (h *vlessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+-	var conn net.Conn
+-	var err error
+-	if h.transport != nil {
+-		conn, err = h.transport.DialContext(ctx)
+-	} else if h.tlsDialer != nil {
+-		conn, err = h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
+-	} else {
+-		conn, err = h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
+-	}
++	conn, err := h.dialServer(ctx)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -231,15 +235,7 @@ func (h *vlessDialer) ListenPacket(ctx context.Context, destination M.Socksaddr)
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+-	var conn net.Conn
+-	var err error
+-	if h.transport != nil {
+-		conn, err = h.transport.DialContext(ctx)
+-	} else if h.tlsDialer != nil {
+-		conn, err = h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
+-	} else {
+-		conn, err = h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
+-	}
++	conn, err := h.dialServer(ctx)
+ 	if err != nil {
+ 		common.Close(conn)
+ 		return nil, err
+diff --git a/protocol/vmess/outbound.go b/protocol/vmess/outbound.go
+index 2d86767..cefd0cd 100644
+--- a/protocol/vmess/outbound.go
++++ b/protocol/vmess/outbound.go
+@@ -7,6 +7,7 @@ import (
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-box/common/dialreport"
+ 	"github.com/sagernet/sing-box/common/mux"
+ 	"github.com/sagernet/sing-box/common/tls"
+ 	C "github.com/sagernet/sing-box/constant"
+@@ -193,19 +194,24 @@ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
+ 
+ type vmessDialer Outbound
+ 
++func (h *vmessDialer) dialServer(ctx context.Context) (net.Conn, error) {
++	return dialreport.MeasureDirect(ctx, h.dialer, h.Tag(), N.NetworkTCP, h.serverAddr.String(), func(ctx context.Context) (net.Conn, error) {
++		if h.transport != nil {
++			return h.transport.DialContext(ctx)
++		} else if h.tlsDialer != nil {
++			return h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
++		}
++		return h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
++	})
++}
++
+ func (h *vmessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+ 	var conn net.Conn
+ 	var err error
+-	if h.transport != nil {
+-		conn, err = h.transport.DialContext(ctx)
+-	} else if h.tlsDialer != nil {
+-		conn, err = h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
+-	} else {
+-		conn, err = h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
+-	}
++	conn, err = h.dialServer(ctx)
+ 	if err != nil {
+ 		common.Close(conn)
+ 		return nil, err
+@@ -226,13 +232,7 @@ func (h *vmessDialer) ListenPacket(ctx context.Context, destination M.Socksaddr)
+ 	metadata.Destination = destination
+ 	var conn net.Conn
+ 	var err error
+-	if h.transport != nil {
+-		conn, err = h.transport.DialContext(ctx)
+-	} else if h.tlsDialer != nil {
+-		conn, err = h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
+-	} else {
+-		conn, err = h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
+-	}
++	conn, err = h.dialServer(ctx)
+ 	if err != nil {
+ 		return nil, err
+ 	}

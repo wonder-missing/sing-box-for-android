@@ -56,7 +56,10 @@ internal class TelemetryLogBuffer(
      */
     private val writeLock = writeLockFor(file)
 
-    private val lines = ArrayDeque<String>()
+    private class Queued(val text: String, val eventTs: Long?)
+
+    /** [eventTs] is memory-only. Disk stores the text, so a reloaded line has none. */
+    private val lines = ArrayDeque<Queued>()
     private var rawBytes = 0
     private var dirty = false
     private var generation = 0
@@ -71,11 +74,11 @@ internal class TelemetryLogBuffer(
         synchronized(writeLock) { load() }
     }
 
-    fun append(newLines: List<String>): Boolean {
+    fun append(newLines: List<String>, eventTs: List<Long?>? = null): Boolean {
         if (newLines.isEmpty()) return false
         synchronized(lock) {
-            for (line in newLines) {
-                lines.addLast(line)
+            newLines.forEachIndexed { index, line ->
+                lines.addLast(Queued(line, eventTs?.getOrNull(index)))
                 rawBytes += line.toByteArray(Charsets.UTF_8).size
             }
             dropOldestLocked()
@@ -96,8 +99,12 @@ internal class TelemetryLogBuffer(
 
     fun overThreshold(): Boolean = synchronized(lock) { overThresholdLocked() }
 
-    fun peek(limit: Int = Int.MAX_VALUE): List<String> = synchronized(lock) {
-        if (limit >= lines.size) lines.toList() else lines.take(limit)
+    fun peek(limit: Int = Int.MAX_VALUE): List<String> = peekStamped(limit).map { it.first }
+
+    /** Text plus the wall-clock stamp, or null when the line was restored from disk. */
+    fun peekStamped(limit: Int = Int.MAX_VALUE): List<Pair<String, Long?>> = synchronized(lock) {
+        val chosen = if (limit >= lines.size) lines else lines.take(limit)
+        chosen.map { it.text to it.eventTs }
     }
 
     fun lastPersistFailure(): Exception? = synchronized(lock) { lastFailure }
@@ -108,7 +115,7 @@ internal class TelemetryLogBuffer(
             var left = count
             while (left > 0 && lines.isNotEmpty()) {
                 val removed = lines.removeFirst()
-                rawBytes -= removed.toByteArray(Charsets.UTF_8).size
+                rawBytes -= removed.text.toByteArray(Charsets.UTF_8).size
                 left--
             }
             if (rawBytes < 0) rawBytes = 0
@@ -126,7 +133,7 @@ internal class TelemetryLogBuffer(
         val snapshot = synchronized(lock) {
             if (dirty) {
                 dirty = false
-                Snapshot(lines.toList(), generation)
+                Snapshot(lines.map { it.text }, generation)
             } else {
                 null
             }
@@ -181,7 +188,7 @@ internal class TelemetryLogBuffer(
             (rawBytes > TelemetryPayload.MAX_DISK_BYTES || lines.size > TelemetryPayload.MAX_DISK_LINES)
         ) {
             val removed = lines.removeFirst()
-            rawBytes -= removed.toByteArray(Charsets.UTF_8).size
+            rawBytes -= removed.text.toByteArray(Charsets.UTF_8).size
             droppedSinceUpload++
         }
         if (rawBytes < 0) rawBytes = 0
@@ -219,7 +226,7 @@ internal class TelemetryLogBuffer(
             lines.clear()
             rawBytes = 0
             for (line in loaded) {
-                lines.addLast(line)
+                lines.addLast(Queued(line, null))
                 rawBytes += line.toByteArray(Charsets.UTF_8).size
             }
             dropOldestLocked()

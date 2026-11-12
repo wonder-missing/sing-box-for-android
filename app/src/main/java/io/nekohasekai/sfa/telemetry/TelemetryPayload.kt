@@ -1,5 +1,24 @@
 package io.nekohasekai.sfa.telemetry
 
+/**
+ * Network and clock fields attached to one upload. [ts] on the batch stays
+ * the upload time so older workers keep working; [uploadTs] repeats it.
+ * [uploadLagMs] is how stale the oldest stamped log line in the batch is.
+ * Lines restored from disk have no stamp and are left out of the range.
+ */
+internal data class BatchMeta(
+    val uploadTs: Long,
+    val transport: String? = null,
+    val networkId: String? = null,
+    val metered: Boolean? = null,
+    val validated: Boolean? = null,
+    val eventTsMin: Long? = null,
+    val eventTsMax: Long? = null,
+) {
+    val uploadLagMs: Long?
+        get() = eventTsMin?.let { (uploadTs - it).coerceAtLeast(0) }
+}
+
 internal object TelemetryPayload {
     const val FLUSH_INTERVAL_MS = 5L * 60L * 1000L
     const val FLUSH_LINE_COUNT = 500
@@ -37,12 +56,23 @@ internal object TelemetryPayload {
         more: Int = 0,
         eventsJson: String? = null,
         clientEventsJson: String? = null,
+        batch: BatchMeta? = null,
     ): ByteArray {
         val json = StringBuilder(lines.sumOf { it.length } + 128 + (eventsJson?.length ?: 0))
         json.append("{\"device\":").append(quote(device))
         json.append(",\"app_version\":").append(quote(appVersion))
         json.append(",\"core_version\":").append(quote(coreVersion))
         json.append(",\"ts\":").append(tsMillis)
+        if (batch != null) {
+            json.append(",\"upload_ts\":").append(batch.uploadTs)
+            batch.transport?.let { json.append(",\"transport\":").append(quote(it)) }
+            batch.networkId?.let { json.append(",\"network_id\":").append(quote(it)) }
+            batch.metered?.let { json.append(",\"metered\":").append(it) }
+            batch.validated?.let { json.append(",\"validated\":").append(it) }
+            batch.eventTsMin?.let { json.append(",\"event_ts_min\":").append(it) }
+            batch.eventTsMax?.let { json.append(",\"event_ts_max\":").append(it) }
+            batch.uploadLagMs?.let { json.append(",\"upload_lag_ms\":").append(it) }
+        }
         if (batchId != null) json.append(",\"batch_id\":").append(quote(batchId))
         if (droppedLines > 0) json.append(",\"dropped_lines\":").append(droppedLines)
         if (more > 0) json.append(",\"more\":").append(more)

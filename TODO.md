@@ -29,6 +29,7 @@
 ## 下个会话接手
 
 - 当前 `dev` 版本号 43，wonder.43 已发布。下一次发版从 44 开始。
+- 拨号遥测已写进 `dev`（见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）：批次网络与 `upload_lag_ms`、`conn_minute`、内核 `dial_attempt`。要在手机上看到，需要发 wonder.44（libbox 缓存键已换成 v2，Test 会重编 aar）。CFG Worker 要抄过批次字段，Observability 里才有 `upload_lag_ms` / `transport`。
 - wonder.43 已包含：`/reasoning`；设置根页 App 行把「应用版本」和版本号分成两行；输入栏 `/` 与 `@` 插入后光标跟在新文字后面。
 - 发版前真机重点（wonder.43 只过了 CI 单测，没有真机）：
   - Conductor 点 `/`，选 `reasoning`，再选 `high`。对话里应出现已设为 high 的提示。下一条普通消息的请求带 `reasoning_effort=high`。`/reasoning` 无参数只显示当前值。

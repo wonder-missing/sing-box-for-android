@@ -145,6 +145,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 stopAndAlert(Alert.EmptyConfiguration)
                 return
             }
+            runCatching { TelemetryRuntime.noteProfileConfig(content) }
 
             lastProfileName = profile.name
             withContext(Dispatchers.Main) {
@@ -235,6 +236,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             stopAndAlert(Alert.EmptyConfiguration)
             return
         }
+        runCatching { TelemetryRuntime.noteProfileConfig(content) }
         lastProfileName = profile.name
         try {
             commandServer.startOrReloadService(

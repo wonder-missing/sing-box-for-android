@@ -19,6 +19,7 @@ internal object TelemetryClientEvent {
             json.append(',').append(TelemetryPayload.quote(k)).append(':')
             when (v) {
                 is Number, is Boolean -> json.append(v.toString())
+                is JsonRaw -> json.append(v.json)
                 else -> json.append(TelemetryPayload.quote(v.toString().take(200)))
             }
         }
@@ -31,4 +32,9 @@ internal object TelemetryClientEvent {
     }
 
     const val SESSION_FIELD = "vpn_session_id"
+}
+
+/** A JSON object or array inserted without quoting. The caller builds it. */
+internal class JsonRaw(json: String) {
+    val json: String = if (json.startsWith("{") || json.startsWith("[")) json else "null"
 }

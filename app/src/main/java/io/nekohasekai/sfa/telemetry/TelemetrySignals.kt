@@ -49,14 +49,20 @@ internal object TelemetrySignals {
         "$kind:${network.hashCode().toString(16)}"
 
     /**
-     * Snapshot of the current default uplink, used for the service_start event
-     * and for network_change. The VPN itself is skipped so "default" means the
-     * physical network the tunnel rides on.
+     * Physical uplink under the tunnel. No SSID, carrier name or address.
+     * [networkId] is `transport` plus the Network hash and changes when the
+     * network object changes; it is not stable across reconnects.
      */
-    fun currentDefaultNetwork(context: Context): Map<String, Any?> {
+    internal data class Uplink(
+        val transport: String,
+        val networkId: String,
+        val metered: Boolean,
+        val validated: Boolean,
+    )
+
+    fun currentUplink(context: Context): Uplink? {
         val app = context.applicationContext
-        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return emptyMap()
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return null
         return runCatching {
             val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) cm.activeNetwork else null
             val chosen = active?.let { network ->
@@ -64,17 +70,28 @@ internal object TelemetrySignals {
             } ?: runCatching { cm.allNetworks }.getOrNull()?.firstNotNullOfOrNull { network ->
                 val caps = cm.getNetworkCapabilities(network) ?: return@firstNotNullOfOrNull null
                 if (isUplink(caps)) network to caps else null
-            }
-            if (chosen == null) {
-                emptyMap<String, Any?>()
-            } else {
-                val kind = describe(chosen.second)
-                mapOf(
-                    "transport" to kind,
-                    "default_network_id" to networkId(kind, chosen.first),
-                )
-            }
-        }.getOrDefault(emptyMap())
+            } ?: return@runCatching null
+            val kind = describe(chosen.second)
+            Uplink(
+                transport = kind,
+                networkId = networkId(kind, chosen.first),
+                metered = !chosen.second.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
+                validated = chosen.second.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+            )
+        }.getOrNull()
+    }
+
+    /**
+     * Snapshot of the current default uplink, used for the service_start event
+     * and for network_change. The VPN itself is skipped so "default" means the
+     * physical network the tunnel rides on.
+     */
+    fun currentDefaultNetwork(context: Context): Map<String, Any?> {
+        val uplink = currentUplink(context) ?: return emptyMap()
+        return mapOf(
+            "transport" to uplink.transport,
+            "default_network_id" to uplink.networkId,
+        )
     }
 
     private fun isUplink(caps: NetworkCapabilities): Boolean =

@@ -97,6 +97,22 @@ internal object TelemetryEvents {
         return null
     }
 
+    /**
+     * Outbound tag and error class for one `open connection to …` ERROR line.
+     * Null when the line is not that failure. The connection id in the log is
+     * not used: it is not the traffic-tracker id.
+     */
+    fun connFailure(line: String): Pair<String, String>? {
+        val head = HEAD.find(line) ?: return null
+        val level = head.groupValues[1]
+        if (level != "ERROR" && level != "FATAL") return null
+        val msg = CONN_ID.replace(head.groupValues[3], "")
+        val match = OPEN_CONN.find(msg) ?: return null
+        val outbound = match.groupValues[2]
+        if (outbound.isBlank()) return null
+        return outbound to reasonOf(match.groupValues[3])
+    }
+
     /** Returns a JSON array of aggregated events for [lines]. */
     fun toJson(lines: List<String>): String {
         val aggs = LinkedHashMap<String, Agg>()

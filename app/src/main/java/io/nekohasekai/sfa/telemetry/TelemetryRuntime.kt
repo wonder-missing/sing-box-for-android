@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.telemetry
 import android.content.Context
 import android.net.VpnService
 import android.util.Log
+import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogEntry
 import io.nekohasekai.libbox.OutboundGroup
@@ -58,6 +59,7 @@ internal object TelemetryRuntime {
     private const val FINAL_READ_TIMEOUT_MS = 8_000
     private const val RETRY_ATTEMPTS = 2
     private const val FINAL_ATTEMPTS = 1
+    private const val DIAL_POLL_MS = 2_000L
 
     /** Manual upload gets a short budget so the settings button cannot hang forever. */
     private const val MANUAL_UPLOAD_BUDGET_MS = 30_000L
@@ -95,6 +97,9 @@ internal object TelemetryRuntime {
     /** Replaced on every attach so the first Groups snapshot is reported as `start`. */
     @Volatile
     private var outboundTracker = OutboundSelectionTracker()
+
+    private val logClock = TelemetryLogClock()
+    private val minutes = ConnectionMinuteAggregator()
 
     internal fun currentSessionId(): String? = session.current
 
@@ -152,16 +157,23 @@ internal object TelemetryRuntime {
             if (!attached) return
             val context = appContext ?: return
             if (!TelemetryPreferences.canUpload(context)) return
+            val receivedAt = System.currentTimeMillis()
             val lines = message.mapNotNull { entry ->
                 TelemetryPayload.normalizeLine(entry.message ?: return@mapNotNull null)
             }
             if (lines.isEmpty()) return
             // Serialize with detachAndFlushAsync: once it clears the buffer and
             // persists, no late collector callback may add lines to a dead queue.
+            // Stamps and the error join stay inside the same lock as reset().
             val crossed = synchronized(stateLock) {
                 if (!attached) return
                 val queue = buffer ?: return
-                queue.append(lines)
+                val stamps = logClock.stamp(lines, receivedAt)
+                for (index in lines.indices) {
+                    val failure = TelemetryEvents.connFailure(lines[index]) ?: continue
+                    minutes.noteFailure(failure.first, failure.second, stamps[index] ?: receivedAt)
+                }
+                queue.append(lines, stamps)
             }
             schedulePersist()
             if (!firstFlushScheduled) {
@@ -203,6 +215,21 @@ internal object TelemetryRuntime {
                 }
             }
         }
+
+        override fun writeConnectionEvents(events: ConnectionEvents) {
+            if (!attached) return
+            val observedAt = System.currentTimeMillis()
+            val samples = runCatching { events.collectSamples() }.getOrDefault(emptyList())
+            for (sample in samples) {
+                minutes.observe(sample, observedAt)
+            }
+        }
+    }
+
+    /** Configured `server:port` per outbound tag. Not the dialed address. */
+    fun noteProfileConfig(content: String) {
+        val entries = runCatching { ProfileEntries.extract(content) }.getOrDefault(emptyMap())
+        minutes.setEntries(entries)
     }
 
     fun attach(vpn: VpnService) {
@@ -215,6 +242,8 @@ internal object TelemetryRuntime {
             // even if the previous session had the same selection.
             session.start()
             outboundTracker = OutboundSelectionTracker()
+            logClock.reset()
+            minutes.reset()
             coreVersion = runCatching { Libbox.version() }.getOrDefault("")
             buffer = newBuffer(context).also {
                 if (TelemetryPreferences.canUpload(context)) {
@@ -246,6 +275,7 @@ internal object TelemetryRuntime {
                     listOf(
                         CommandClient.ConnectionType.Log,
                         CommandClient.ConnectionType.Groups,
+                        CommandClient.ConnectionType.Connections,
                     ),
                 handler = handler,
                 localOnly = true,
@@ -334,6 +364,8 @@ internal object TelemetryRuntime {
             val currentUploader = uploader
             val sessionId = session.current
             if (context != null) {
+                runCatching { drainDialAttempts() }
+                runCatching { flushMinutes(includeCurrent = true) }
                 runCatching { TelemetrySignals.stopNetworkWatch(context) }
                 runCatching { TelemetryEventLog.record(context, "service_stop", mapOf("reason" to reason)) }
                 if (TelemetryPreferences.canUpload(context)) {
@@ -409,10 +441,17 @@ internal object TelemetryRuntime {
             uploadAvailable("interval", finalFlush = false)
         }
         var nextFlushAt = System.currentTimeMillis() + TelemetryPayload.FLUSH_INTERVAL_MS
+        var sinceCollector = 0L
         while (attached && scope?.isActive == true) {
-            delay(TelemetryPayload.COLLECTOR_POLL_MS)
+            delay(DIAL_POLL_MS)
             if (!attached) break
-            syncCollector()
+            drainDialAttempts()
+            flushMinutes(includeCurrent = false)
+            sinceCollector += DIAL_POLL_MS
+            if (sinceCollector >= TelemetryPayload.COLLECTOR_POLL_MS) {
+                sinceCollector = 0
+                syncCollector()
+            }
             val now = System.currentTimeMillis()
             if (flushRequested || now >= nextFlushAt) {
                 flushRequested = false
@@ -641,6 +680,38 @@ internal object TelemetryRuntime {
         }
     }
 
+    private fun drainDialAttempts() {
+        val context = appContext ?: return
+        if (!TelemetryPreferences.isEnabled(context)) return
+        val raw = runCatching { Libbox.readDialAttempts() }.getOrNull() ?: return
+        val attempts = DialAttemptJson.parse(raw)
+        if (attempts.isEmpty()) return
+        val uplink = TelemetrySignals.currentUplink(context)
+        for (attempt in attempts) {
+            val fields = LinkedHashMap(attempt)
+            if (uplink != null) {
+                fields["transport"] = uplink.transport
+                fields["network_id"] = uplink.networkId
+                fields["metered"] = uplink.metered
+                fields["validated"] = uplink.validated
+            }
+            runCatching { TelemetryEventLog.record(context, "dial_attempt", fields) }
+        }
+    }
+
+    private fun flushMinutes(includeCurrent: Boolean) {
+        val context = appContext ?: return
+        if (!TelemetryPreferences.isEnabled(context)) return
+        val flushed = minutes.flush(System.currentTimeMillis(), includeCurrent)
+        for (minute in flushed) {
+            val fields = LinkedHashMap<String, Any?>()
+            fields["minute_ts"] = minute.minuteTs
+            fields["rows"] = JsonRaw(minute.rowsJson)
+            if (minute.truncated > 0) fields["truncated"] = minute.truncated
+            runCatching { TelemetryEventLog.record(context, "conn_minute", fields) }
+        }
+    }
+
     private suspend fun sendOne(
         flush: FlushContext,
         token: String,
@@ -661,7 +732,8 @@ internal object TelemetryRuntime {
         var crashToSend = crashEvents
         while (attemptsLeftForSize > 0) {
             val ts = System.currentTimeMillis()
-            val pending = queue.peek()
+            val pendingStamped = queue.peekStamped()
+            val pending = pendingStamped.map { it.first }
             val clientEvents = TelemetryEventLog.pending(context)
             val includeCrash = crashToSend.isNotEmpty()
             if (pending.isEmpty() && clientEvents == null && !includeCrash) {
@@ -697,6 +769,8 @@ internal object TelemetryRuntime {
                 Log.i(TAG, "skipped ${batch.size} already-uploaded lines")
                 return SendOutcome(true, batch.size)
             }
+            val chosenStamps = pendingStamped.take(batch.size).map { it.second }.filterNotNull()
+            val uplink = TelemetrySignals.currentUplink(context)
             val body = TelemetryPayload.build(
                 device = device,
                 appVersion = appVersion,
@@ -708,6 +782,15 @@ internal object TelemetryRuntime {
                 more = (pending.size - batch.size).coerceAtLeast(0),
                 eventsJson = eventsJsonFor(batch, crashToSend),
                 clientEventsJson = clientEvents?.second,
+                batch = BatchMeta(
+                    uploadTs = ts,
+                    transport = uplink?.transport,
+                    networkId = uplink?.networkId,
+                    metered = uplink?.metered,
+                    validated = uplink?.validated,
+                    eventTsMin = chosenStamps.minOrNull(),
+                    eventTsMax = chosenStamps.maxOrNull(),
+                ),
             )
             val tags = buildMap {
                 put("reason", reason)
