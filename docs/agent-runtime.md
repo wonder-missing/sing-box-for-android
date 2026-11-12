@@ -6,7 +6,7 @@
 
 本文只定 Phase 2a / 2b 的运行时：OpenAI-compatible BYOK（DeepSeek / xAI / Custom）、自然语言入口、结构化 tool call、确认暂停与恢复、有界循环。设备注册表和跨设备能力仍留在上位文档的 Phase 2（设备注册表部分）/ 3 / 4。
 
-审查记录：2026-11-13 的静态审查和待办映射见 [`conductor-review-2026-11-13.md`](conductor-review-2026-11-13.md)。
+审查记录：2026-11-13 的静态审查和待办映射见 [`conductor-review-2026-11-13.md`](conductor-review-2026-11-13.md)。综合评估和优先级见 [`conductor-assessment-2026-11-13.md`](conductor-assessment-2026-11-13.md)。
 
 摘要：
 

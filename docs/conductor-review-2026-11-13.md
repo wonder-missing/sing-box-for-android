@@ -4,6 +4,8 @@
 
 审查范围：`app/src/main/java/io/nekohasekai/sfa/agent/`、`app/src/main/java/io/nekohasekai/sfa/conductor/`、相关 JVM 单测，以及 `docs/agent-runtime.md`、`docs/mcp.md`、`docs/agent-control-plane.md`。
 
+综合评估、实验数据、去重和优先级见 [`conductor-assessment-2026-11-13.md`](conductor-assessment-2026-11-13.md)。
+
 方法：静态对照代码、测试和设计文档。Mini 上没有 JDK，按项目约定编译和单测在 CI；写这份文档时没有跑 CI。
 
 ## 1. 结论
