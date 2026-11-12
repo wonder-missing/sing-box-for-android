@@ -1,10 +1,15 @@
 package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentToolDefinition
+import io.nekohasekai.sfa.agent.mcp.McpListedTool
+import io.nekohasekai.sfa.agent.mcp.McpPhase
+import io.nekohasekai.sfa.agent.mcp.McpServerView
+import java.util.Locale
 
 enum class ConductorCommandKind {
     HELP,
     CAPABILITIES,
+    MCP,
     CLEAR,
     REASONING,
     NODES,
@@ -53,6 +58,13 @@ object ConductorCommands {
                 description = "Show the capability registry: commands and tools.",
                 usage = "/capabilities",
                 action = ConductorCommandKind.CAPABILITIES,
+            ),
+            ConductorCommand(
+                name = "mcp",
+                description = "List MCP servers and their tools.",
+                usage = "/mcp [name]",
+                takesArgs = true,
+                action = ConductorCommandKind.MCP,
             ),
             ConductorCommand(
                 name = "clear",
@@ -149,6 +161,85 @@ object ConductorCommands {
                 appendLine("    permission: ${tool.permission.label}")
                 appendLine("    params: $params")
                 appendLine("    confirmation: ${tool.confirmationPolicy}")
+            }
+        }
+
+    fun mcpText(
+        servers: List<McpServerView>,
+        tools: List<McpListedTool>,
+        query: String = "",
+    ): String {
+        if (servers.isEmpty()) {
+            return "No MCP server yet.\nAdd one in Settings → Conductor → MCP servers, then turn it on."
+        }
+        val needle = query.trim()
+        val folded = needle.lowercase(Locale.US)
+        val byServer = tools.groupBy { it.serverId }
+        val blocks =
+            servers.mapNotNull { server ->
+                val own = byServer[server.id].orEmpty()
+                val serverMatches =
+                    folded.isEmpty() ||
+                        server.name.lowercase(Locale.US).contains(folded) ||
+                        server.id.lowercase(Locale.US).contains(folded)
+                val shown =
+                    if (folded.isEmpty() || serverMatches) {
+                        own
+                    } else {
+                        own.filter { tool ->
+                            tool.remoteName.lowercase(Locale.US).contains(folded) ||
+                                tool.summary.lowercase(Locale.US).contains(folded)
+                        }
+                    }
+                if (folded.isNotEmpty() && !serverMatches && shown.isEmpty()) return@mapNotNull null
+                renderMcpServer(server, shown)
+            }
+        if (blocks.isEmpty()) return "No MCP server or tool matches \"$needle\"."
+        return buildString {
+            appendLine("MCP servers:")
+            appendLine()
+            append(blocks.joinToString("\n\n"))
+            appendLine()
+            appendLine()
+            append("Ask in plain language. Conductor calls these; you do not type the tool name.")
+        }
+    }
+
+    private fun renderMcpServer(
+        server: McpServerView,
+        tools: List<McpListedTool>,
+    ): String =
+        buildString {
+            val status =
+                when {
+                    server.phase == McpPhase.CONNECTING -> "connecting"
+                    !server.enabled -> "off"
+                    tools.isEmpty() -> "on · no tools"
+                    tools.size == 1 -> "1 tool"
+                    else -> "${tools.size} tools"
+                }
+            append(server.name)
+            append(" — ")
+            append(status)
+            if (!server.error.isNullOrBlank()) {
+                appendLine()
+                append(server.error)
+            }
+            tools.forEach { tool ->
+                appendLine()
+                append("  ")
+                append(tool.remoteName)
+                append(if (tool.asksFirst) " — asks first" else " — runs immediately")
+                if (tool.required.isNotEmpty()) {
+                    appendLine()
+                    append("    required: ")
+                    append(tool.required.joinToString(", "))
+                }
+                if (tool.summary.isNotBlank() && !tool.summary.equals(tool.remoteName, ignoreCase = true)) {
+                    appendLine()
+                    append("    ")
+                    append(tool.summary)
+                }
             }
         }
 

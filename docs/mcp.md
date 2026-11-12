@@ -10,7 +10,9 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 已保存的服务器可以再打开、刷新或移除。移除会删掉保存在这台设备上的 token。这一版不能编辑，改 URL 或 token 就移除再加。
 
-下一句 Conductor 消息开始，Agent 能发现这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。
+下一句 Conductor 消息开始，Agent 能发现这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。查某一个服务器时搜一次服务器名，不要每个工具搜一次。工具名完全匹配时只返回那一个工具。
+
+对话里输入 `/mcp` 看当前服务器和工具：短名、一句说明、必填参数、会不会先问你。`/mcp knocks` 按名字过滤。这是本地命令，不发给模型，也不把 schema 写进对话上下文。Claude Code 的 `/mcp`、Cursor 的 MCP 面板也是这样：给人看服务器和工具名，不把整份 schema 倒进聊天记录。
 
 ## 协议
 

@@ -28,9 +28,9 @@
 
 ## 下个会话接手
 
-- 当前 `dev` 版本号 44。下一次发版从 45 开始。
-- wonder.44 含两块还没在手机上看过的东西：Conductor MCP 客户端（说明见 [`docs/mcp.md`](docs/mcp.md)），以及拨号遥测（`9c3ef15`，Test 曾绿，197 条，0 失败；说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署，批次字段会进 Observability。
-- 手机上看 MCP：设置 → Conductor → MCP 服务器。填名称、https URL、可选 Bearer token，点「添加并连接」。成功时这一行显示工具数量；失败时开关回到关，错误留在这一行。回到 Conductor 发一条消息，Agent 用 `search_tools` 发现工具，再用 `route_call` 调用。`readOnlyHint` 的工具不弹确认；其他工具先弹确认。只支持 Streamable HTTP，结果要在 POST 响应里返回。明文 `http://` 可能被系统拒绝。
+- 当前 `dev` 版本号 45。下一次发版从 46 开始。
+- wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
+- 手机上看 MCP：设置 → Conductor → MCP 服务器。填名称、https URL、可选 Bearer token，点「添加并连接」。成功时这一行显示工具数量。对话里点 `/`，选 `mcp`，应列出服务器短名、必填参数，以及「asks first」或「runs immediately」。`/mcp knocks` 只留下名字里带 knocks 的。只读工具要服务器带 `readOnlyHint` 才不弹确认。明文 `http://` 可能被系统拒绝。
 - 手机上还没看过的 wonder.43：
   - Conductor 点 `/`，选 `reasoning`，再选 `high`。对话里应出现已设为 high 的提示。下一条普通消息的请求带 `reasoning_effort=high`。`/reasoning` 无参数只显示当前值。
   - 设置顶行：第一行 App 和右侧「更新」；下面一行是「应用版本」，再下面一行是完整版本号。
@@ -46,6 +46,7 @@
 
 ## 最近完成
 
+- wonder.45（2026-11-12）：`/mcp` 列出已打开的 MCP 服务器和工具。按完整工具名搜索只返回那一个；按服务器名搜索一次带出该服务器的 schema
 - wonder.44（2026-11-12）：Conductor MCP 客户端。设置里添加并打开 Streamable HTTP 服务器，Agent 用 `search_tools` 发现、`route_call` 调用。只读工具直接执行，其他工具先确认。拨号遥测同一版才能在手机上看到
 - wonder.43（2026-11-12）：`/reasoning` 与设置页共用推理强度；设置根页 App 行的版本标题和版本号分行；输入栏 `/`、`@` 插入后光标跟在新文字后面
 - wonder.42（2026-11-12）：设置页 App 行版本号与「更新」；Conductor Reasoning effort（low/medium/high，默认不传）；飞书通知带单测条数和短 changelog（超过 320 字或 8 行用卡片）；Conductor 未发送草稿跨页面保留；启动图标垂直居中

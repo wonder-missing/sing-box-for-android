@@ -210,6 +210,11 @@ class McpClientTest {
                 val view = runtime.views.value.single()
                 assertTrue(view.error ?: "", view.enabled)
                 assertEquals(2, view.toolCount)
+                val listed = runtime.listedTools()
+                assertEquals(listOf("echo", "write"), listed.map { it.remoteName })
+                assertEquals(listOf("text"), listed.first().required)
+                assertTrue(!listed.first().asksFirst)
+                assertTrue(listed[1].asksFirst)
 
                 val executor = DynamicToolExecutor(emptyList())
                 executor.setExtras(runtime.tools())

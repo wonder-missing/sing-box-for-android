@@ -9,6 +9,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -18,6 +22,16 @@ enum class McpPhase {
     READY,
     ERROR,
 }
+
+data class McpListedTool(
+    val serverId: String,
+    val serverName: String,
+    val remoteName: String,
+    val localName: String,
+    val summary: String,
+    val asksFirst: Boolean,
+    val required: List<String>,
+)
 
 data class McpServerView(
     val id: String,
@@ -68,6 +82,24 @@ class McpRuntime(
     }
 
     fun tools(): List<AgentTool> = toolSnapshot
+
+    suspend fun listedTools(): List<McpListedTool> =
+        gate.withLock {
+            servers.flatMap { server ->
+                val cached = cache[server.id] ?: return@flatMap emptyList()
+                cached.remote.zip(cached.tools).map { (remote, tool) ->
+                    McpListedTool(
+                        serverId = server.id,
+                        serverName = server.name,
+                        remoteName = remote.name,
+                        localName = tool.definition.name,
+                        summary = remote.description.ifBlank { remote.name }.take(180),
+                        asksFirst = !remote.readOnly,
+                        required = requiredKeys(remote.inputSchema),
+                    )
+                }
+            }
+        }
 
     fun cancelActive() {
         cancels.forEach { it.cancel() }
@@ -284,6 +316,13 @@ class McpRuntime(
                     error = errors[config.id],
                 )
             }
+    }
+
+    private fun requiredKeys(schema: JsonObject): List<String> {
+        val required = schema["required"] as? JsonArray ?: return emptyList()
+        return required.mapNotNull { element ->
+            (element as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        }
     }
 
     private fun safeMessage(error: Throwable): String {

@@ -38,6 +38,13 @@ class AgentToolCatalog(
         val normalized = query.trim().lowercase(Locale.US)
         val cappedLimit = limit.coerceIn(1, MAX_LIMIT)
         if (normalized.isEmpty()) return definitions.take(cappedLimit)
+        val named = definitions.filter { it.name.lowercase(Locale.US) == normalized }
+        if (named.isNotEmpty()) return named.take(cappedLimit)
+        val aliased =
+            definitions.filter { tool ->
+                tool.aliases.any { it.lowercase(Locale.US) == normalized }
+            }
+        if (aliased.isNotEmpty()) return aliased.sortedBy { it.name }.take(cappedLimit)
         return definitions
             .map { it to score(it, normalized) }
             .filter { it.second > 0 }
@@ -104,7 +111,7 @@ class AgentToolCatalog(
                 }
             if (definitions.any { it.category == "mcp" }) {
                 appendLine(
-                    "MCP tools are external servers activated in Settings. They are not core. Call search_tools for a schema before route_call.",
+                    "MCP tools are external servers activated in Settings. They are not core. Call search_tools for a schema before route_call. Search the server name once; do not search once per tool.",
                 )
             }
             val core = definitions.filter { it.core }

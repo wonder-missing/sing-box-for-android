@@ -35,6 +35,17 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun exactNameDoesNotPullInToolsThatShareTokens() {
+        val echo = definition("mcp_demo_echo", "mcp", listOf("echo", "Demo", "mcp"))
+        val write = definition("mcp_demo_write", "mcp", listOf("write", "Demo", "mcp"))
+        val scoped = AgentToolCatalog(listOf(echo, write, listNodes))
+
+        assertEquals(listOf("mcp_demo_echo"), scoped.search("mcp_demo_echo").map { it.name })
+        assertEquals(listOf("mcp_demo_echo", "mcp_demo_write"), scoped.search("mcp").map { it.name })
+        assertEquals(listOf("mcp_demo_echo", "mcp_demo_write"), scoped.search("Demo").map { it.name })
+    }
+
+    @Test
     fun suggestionsCoverNearMisses() {
         assertTrue(catalog.suggestions("list_node").contains("list_nodes"))
     }

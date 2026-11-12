@@ -278,6 +278,8 @@ class ConductorViewModel(
                 persistSession()
             }
 
+            ConductorCommandKind.MCP -> showMcp(parsed.args.joinToString(" "))
+
             ConductorCommandKind.CLEAR -> {
                 if (_uiState.value.isRunning) {
                     append(ConductorItem.Notice("clear", "Wait for the current command to finish."))
@@ -497,6 +499,26 @@ class ConductorViewModel(
                     persistSession()
                 }
             }
+    }
+
+    private fun showMcp(query: String) {
+        viewModelScope.launch {
+            val mcp = McpRuntimes.get(getApplication())
+            try {
+                mcp.refreshIfStale()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // The list still shows the last known servers and the row error.
+            }
+            append(
+                ConductorItem.Notice(
+                    "mcp",
+                    ConductorCommands.mcpText(mcp.views.value, mcp.listedTools(), query),
+                ),
+            )
+            persistSession()
+        }
     }
 
     private suspend fun refreshMcpTools() {
