@@ -37,13 +37,14 @@
 - [ ] **[审查] 批量确认分级**：`Approve rest of turn` 只覆盖同工具或只读工具；`DATA_EGRESS` / MCP 写工具逐次确认。见审查 §4。
 - [ ] **[审查] 路由 A/B 与评测**：15 到 20 条中文 prompt，native 与 routing 两种模式对比；再决定 routing 是否默认开。见审查 §7。
 - [ ] **[审查] UI 手感**：stick-to-bottom 与“回到最新”；列表用稳定 id 作 key。见审查 §6。
-- [ ] **Conductor 最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：wonder.47 用 `ComposeFoundationFlags` 关闭 Compose 1.11 的新 context menu 和 smart selection；待真机确认 Copy 回来，确认后按上游修复再移除开关。
+- [ ] **Conductor 最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：wonder.47 已用 `ComposeFoundationFlags` 关闭 Compose 1.11 的新 context menu 和 smart selection；待真机确认 Copy 回来，确认后按上游修复再移除开关。
 - [ ] **[审查] 小修集合**：`/capabilities` 的 MCP params、未知工具列表上限、`truncateObservation` 预算、`Retry-After`、`/clear` 文档或行为、prompt golden。见审查 §6。
 
 ## 下个会话接手
 
 - Conductor 审查（2026-11-13）：先读 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)；按上面 `[审查]` 项推进。审查文档只放分析和证据，不另开任务清单。
-- 当前已发布 wonder.46（tag `v1.15.0-alpha.13-wonder.46`，提交 `d06f27a`）。下一次从 47 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 当前已发布 wonder.47（tag `v1.15.0-alpha.13-wonder.47`，提交 `dc39938`）。下一次从 48 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 手机上看 wonder.47：长按 Conductor 最后一条用户消息，菜单里应有「复制」和「全选」。如果仍然只有「全选」，说明 `ComposeFoundationFlags` 开关不够，回到 [#7](https://github.com/wonder-missing/sing-box-for-android/issues/7) 继续查。
 - 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：
@@ -65,7 +66,7 @@
 
 ## 最近完成
 
-- 2026-11-13：Conductor 审查落地（未发版）。修复 SSE 缺完成标记或空回答被当成功、`AgentContext.trim` 在 final assistant 边界切断 tool 批次、会话持久化 `takeLast` 切断 tool 批次；新增对应单测。审查文档见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
+- wonder.47（2026-11-13）：Conductor 审查落地：SSE 缺完成标记或空回答被当成功、`AgentContext.trim` 在 final assistant 边界切断 tool 批次、会话持久化 `takeLast` 切断 tool 批次；新增对应单测。修复 [#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)：关闭 Compose 1.11 的新 context menu 和 smart selection，恢复用户消息长按菜单的「复制」。审查文档见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
 - wonder.46（2026-11-12）：A11 启动图；导出文件名带本地时间；系统提示不再列 MCP；`/mcp use` 把一句优先提示放进输入框。设置根页 App 行改为刷新图标，版本号紧贴标题下方。删掉应用设置里的 Node list layout（分组表的单列/双列按钮还在）。Conductor 的 `/` 按钮第二次按下收起菜单。进入 Conductor 不再追加 “Service started. Waiting for the core…”
 - wonder.45（2026-11-12）：`/mcp` 列出已打开的 MCP 服务器和工具。按完整工具名搜索只返回那一个；按服务器名搜索一次带出该服务器的 schema
 - wonder.44（2026-11-12）：Conductor MCP 客户端。设置里添加并打开 Streamable HTTP 服务器，Agent 用 `search_tools` 发现、`route_call` 调用。只读工具直接执行，其他工具先确认。拨号遥测同一版才能在手机上看到
