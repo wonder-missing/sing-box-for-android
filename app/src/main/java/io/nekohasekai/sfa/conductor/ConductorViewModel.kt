@@ -272,7 +272,7 @@ class ConductorViewModel(
                 append(
                     ConductorItem.Notice(
                         "capabilities",
-                        ConductorCommands.capabilitiesText(registry.definitions()),
+                        ConductorCommands.capabilitiesText(toolExecutor.definitions()),
                     ),
                 )
                 persistSession()
@@ -687,7 +687,7 @@ class ConductorViewModel(
         argsJson: String,
     ): AgentInvocationResult =
         try {
-            registry.invokeUserCommand(name, argsJson)
+            toolExecutor.invokeUserCommand(name, argsJson)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -704,7 +704,7 @@ class ConductorViewModel(
         argsJson: String,
     ): AgentInvocationResult =
         try {
-            registry.confirmUserCommand(name, argsJson)
+            toolExecutor.confirmUserCommand(name, argsJson)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
