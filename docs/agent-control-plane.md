@@ -154,6 +154,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 - 接 DeepSeek 模型客户端、单步/多步 tool calling、流式输出、会话历史、密钥存储。Agent/BYOK 仅 API 24+，`otherLegacy` 降级。
 - 复用 Phase 1 的能力注册表；非 `/` 文本进入 Agent。
 - 2b 增加工具目录与路由：静态 `route_call` / `search_tools`、按需 schema、前缀缓存修正。运行时细节见 [`agent-runtime.md`](agent-runtime.md) §7.1。
+- wonder.44 增加 MCP 客户端：Settings 里添加并打开 Streamable HTTP 服务器，工具进入同一目录。见 [`mcp.md`](mcp.md)。
 - 设备注册表：Tailscale peers/status、在线状态、能力。
 - 验收：自然语言能调用只读能力并回答；写操作仍需确认；敏感输入本地拦截；Agent/BYOK 仅在 API 24+ 构建可用。
 

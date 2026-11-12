@@ -102,6 +102,11 @@ class AgentToolCatalog(
                 .forEach { (category, tools) ->
                     appendLine("- $category: ${tools.joinToString(", ") { it.name }}")
                 }
+            if (definitions.any { it.category == "mcp" }) {
+                appendLine(
+                    "MCP tools are external servers activated in Settings. They are not core. Call search_tools for a schema before route_call.",
+                )
+            }
             val core = definitions.filter { it.core }
             if (core.isNotEmpty()) {
                 appendLine()

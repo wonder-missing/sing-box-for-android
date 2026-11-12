@@ -32,6 +32,7 @@ import io.nekohasekai.sfa.compose.screen.settings.ConductorSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.CoreSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.EditRemoteServerScreen
 import io.nekohasekai.sfa.compose.screen.settings.FDroidMirrorScreen
+import io.nekohasekai.sfa.compose.screen.settings.McpServersScreen
 import io.nekohasekai.sfa.compose.screen.settings.PrivilegeSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.ProfileOverrideScreen
 import io.nekohasekai.sfa.compose.screen.settings.RemoteControlScreen
@@ -650,6 +651,16 @@ fun NavHost(
             popExitTransition = slideOutToRight,
         ) {
             ConductorSettingsScreen(navController = navController)
+        }
+
+        composable(
+            route = "settings/conductor/mcp",
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            McpServersScreen(navController = navController)
         }
 
         composable(

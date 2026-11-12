@@ -1,7 +1,7 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon
-最后更新：2026-11-11
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。
+最后更新：2026-11-12
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
 本文只定 Phase 2a / 2b 的运行时：OpenAI-compatible BYOK（DeepSeek / xAI / Custom）、自然语言入口、结构化 tool call、确认暂停与恢复、有界循环。设备注册表和跨设备能力仍留在上位文档的 Phase 2（设备注册表部分）/ 3 / 4。
@@ -556,11 +556,13 @@ data class AgentConfig(
 
 1. 路由模式下，`tools` 参数只含 `route_call` 和 `search_tools` 两个静态 schema；同一 App 版本、同一会话内逐字节不变。
 2. `search_tools` 的结果只以 `role=tool` 消息追加到 transcript。不得改 system prompt，不得改 `tools` 参数，不得把发现的 schema 动态塞进下一次请求的 `tools`。
-3. system prompt 的 roster 和核心工具描述由 `AgentToolCatalog` 从同一份目录元数据生成；动态设备工具不进 roster，只能通过 `search_tools` 发现。
+3. system prompt 的 roster 和核心工具描述由 `AgentToolCatalog` 从同一份目录元数据生成；动态设备工具不进 roster，只能通过 `search_tools` 发现。已激活的 MCP 工具是例外，只出现在类别行，见本节末段。
 4. 所有真实工具调用仍然经过 `AgentToolRegistry` 的权限、确认、sanitizer、取消检查。`route_call` 不能绕过任何一条。
 5. `route_call` 是传输层，不是 `AgentTool`。运行时在分发前把它还原成内层 `ToolCall`，之后与模型直接调用真实工具完全同路。
 6. `search_tools` 和 `route_call` 都计入 `maxToolRounds` 和 `maxToolCallsPerRound`。单轮搜索次数另有上限 `maxSearchesPerRound`。
 7. 工具轮数耗尽时保持 `tools` 不变，使用 `toolChoice = NONE`；上下文裁剪用滞后批量裁剪。详见「缓存正确性」。
+
+MCP 客户端（wonder.44）见 [`mcp.md`](mcp.md)。用户在 Settings 里打开的远程工具进入同一份目录，分类 `mcp`，不是 core，参数按服务器 schema 原样转发。路由模式下 schema 仍只通过 `search_tools` 进入 transcript，不进入静态 `tools`。没有激活的 MCP 工具时，roster 与元工具 schema 保持原样。激活集合变了，下一轮开始时的 roster 会带上这些名字；搜索结果仍然不改本轮的 system prompt 或 `tools`。
 
 ### 元工具 schema
 

@@ -3,9 +3,11 @@ package io.nekohasekai.sfa.agent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -63,30 +65,37 @@ class AgentToolRegistry(
                     ?: return failure(name, "invalid_arguments", "Arguments must be a JSON object.")
             }
 
-        for (spec in definition.parameters) {
-            val element = args[spec.name]
-            if (element == null || element is JsonNull) {
-                if (spec.required) {
-                    return failure(name, "missing_parameter", "Missing required parameter '${spec.name}'.")
+        if (definition.passthroughArguments) {
+            val missing = missingPassthrough(definition.parametersSchema, args)
+            if (missing != null) {
+                return failure(name, "missing_parameter", "Missing required parameter '$missing'.")
+            }
+        } else {
+            for (spec in definition.parameters) {
+                val element = args[spec.name]
+                if (element == null || element is JsonNull) {
+                    if (spec.required) {
+                        return failure(name, "missing_parameter", "Missing required parameter '${spec.name}'.")
+                    }
+                    continue
                 }
-                continue
+                val primitive = element as? JsonPrimitive
+                if (primitive == null || !primitive.isString) {
+                    return failure(
+                        name,
+                        "invalid_parameter_type",
+                        "Parameter '${spec.name}' must be a ${spec.type.schemaType}.",
+                    )
+                }
+                if (primitive.content.isBlank()) {
+                    return failure(name, "invalid_parameter", "Parameter '${spec.name}' must not be blank.")
+                }
             }
-            val primitive = element as? JsonPrimitive
-            if (primitive == null || !primitive.isString) {
-                return failure(
-                    name,
-                    "invalid_parameter_type",
-                    "Parameter '${spec.name}' must be a ${spec.type.schemaType}.",
-                )
+            val knownNames = definition.parameters.map { it.name }.toSet()
+            val unknown = args.keys.firstOrNull { it !in knownNames }
+            if (unknown != null) {
+                return failure(name, "unknown_parameter", "Unknown parameter '$unknown'.")
             }
-            if (primitive.content.isBlank()) {
-                return failure(name, "invalid_parameter", "Parameter '${spec.name}' must not be blank.")
-            }
-        }
-        val knownNames = definition.parameters.map { it.name }.toSet()
-        val unknown = args.keys.firstOrNull { it !in knownNames }
-        if (unknown != null) {
-            return failure(name, "unknown_parameter", "Unknown parameter '$unknown'.")
         }
 
         val allowedUrls =
@@ -161,6 +170,20 @@ class AgentToolRegistry(
         } finally {
             activeCancellations.remove(cancellation)
         }
+    }
+
+    private fun missingPassthrough(
+        schema: JsonObject,
+        args: JsonObject,
+    ): String? {
+        val required = schema["required"] as? JsonArray ?: return null
+        for (element in required) {
+            val key = (element as? JsonPrimitive)?.contentOrNull ?: continue
+            val value = args[key]
+            if (value == null || value is JsonNull) return key
+            if (value is JsonPrimitive && value.isString && value.content.isBlank()) return key
+        }
+        return null
     }
 
     private fun failure(

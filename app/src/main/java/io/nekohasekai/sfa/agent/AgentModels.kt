@@ -56,9 +56,11 @@ data class AgentToolDefinition(
     val core: Boolean = false,
     val confirmationReason: String? = null,
     val allowedUrlParameter: String? = null,
+    val parametersSchemaOverride: JsonObject? = null,
+    val passthroughArguments: Boolean = false,
 ) {
     val parametersSchema: JsonObject
-        get() = AgentJson.schema(parameters)
+        get() = parametersSchemaOverride ?: AgentJson.schema(parameters)
 }
 
 interface AgentToolExecutor {

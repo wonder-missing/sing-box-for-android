@@ -19,8 +19,9 @@ import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.AgentRuntime
 import io.nekohasekai.sfa.agent.AgentSanitizer
-import io.nekohasekai.sfa.agent.AgentToolRegistry
 import io.nekohasekai.sfa.agent.AgentTools
+import io.nekohasekai.sfa.agent.DynamicToolExecutor
+import io.nekohasekai.sfa.agent.mcp.McpRuntimes
 import io.nekohasekai.sfa.agent.AgentTurnErrorCode
 import io.nekohasekai.sfa.agent.AndroidDeviceSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeSnapshotSource
@@ -142,8 +143,8 @@ class ConductorViewModel(
                 TelemetryRuntime.uploadNow(application, cancellation)
         }
 
-    private val registry =
-        AgentToolRegistry(
+    private val toolExecutor =
+        DynamicToolExecutor(
             AgentTools(
                 nodeSource = nodeSource,
                 deviceSource = deviceSource,
@@ -159,7 +160,7 @@ class ConductorViewModel(
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
             model = modelClient,
-            tools = registry,
+            tools = toolExecutor,
             apiKeys = apiKeyProvider,
             config = AgentConfig(),
             streamingModel = modelClient,
@@ -350,6 +351,7 @@ class ConductorViewModel(
         pendingAgentConfirmation?.complete(false)
         removeConfirmationItems()
         runtime.cancel()
+        McpRuntimes.get(getApplication()).cancelActive()
         viewModelScope.launch {
             delay(1_000)
             if (_uiState.value.isRunning) {
@@ -404,6 +406,7 @@ class ConductorViewModel(
         commandClient.disconnect()
         publishNodeState(CommandNodeState())
         runtime.cancel()
+        McpRuntimes.get(getApplication()).cancelActive()
         agentJob?.cancel()
         ModelProviderSettings.unpin()
     }
@@ -413,6 +416,7 @@ class ConductorViewModel(
             persistSession()
         }
         runtime.cancel()
+        McpRuntimes.get(getApplication()).cancelActive()
         agentJob?.cancel()
         commandClient.disconnect()
         ModelProviderSettings.unpin()
@@ -430,6 +434,15 @@ class ConductorViewModel(
         val initialEvent = pendingTurnEvent
         agentJob =
             viewModelScope.launch {
+                refreshMcpTools()
+                if (stopRequested) {
+                    withContext(Dispatchers.Main) {
+                        updateUi { copy(isRunning = false) }
+                        append(ConductorItem.Notice("conductor", "Stopped."))
+                        persistSession()
+                    }
+                    return@launch
+                }
                 ModelProviderSettings.pinForTurn()
                 val result =
                     try {
@@ -484,6 +497,18 @@ class ConductorViewModel(
                     persistSession()
                 }
             }
+    }
+
+    private suspend fun refreshMcpTools() {
+        val mcp = McpRuntimes.get(getApplication())
+        try {
+            mcp.refreshIfStale()
+        } catch (e: CancellationException) {
+            if (!stopRequested) throw e
+        } catch (_: Exception) {
+            // A stale refresh must not fail the turn. The settings row keeps the error.
+        }
+        if (!stopRequested) toolExecutor.setExtras(mcp.tools())
     }
 
     private fun handleAgentEvent(event: AgentEvent) {
