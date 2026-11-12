@@ -515,7 +515,7 @@ class ConductorViewModel(
             }
     }
 
-    fun refreshMcpQuietly() {
+    internal fun refreshMcpQuietly() {
         viewModelScope.launch {
             val mcp = McpRuntimes.get(getApplication())
             try {
@@ -528,7 +528,7 @@ class ConductorViewModel(
         }
     }
 
-    suspend fun resolveMcpUse(raw: String): ConductorMcpUse.Outcome {
+    internal suspend fun resolveMcpUse(raw: String): ConductorMcpUse.Outcome {
         if (_uiState.value.isRunning) {
             append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
             persistSession()
