@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
@@ -43,6 +44,7 @@ class AgentToolRegistryTest {
             registry.definitions().all {
                 it.permission == AgentPermission.READ_NETWORK_STATE ||
                     it.permission == AgentPermission.NETWORK_PROBE ||
+                    it.permission == AgentPermission.NETWORK_CHANGE ||
                     it.permission == AgentPermission.DATA_EGRESS
             },
         )
@@ -129,7 +131,10 @@ class AgentToolRegistryTest {
     @Test
     fun definitionsExposeJsonSchemas() {
         val definitions = registry.definitions()
-        assertEquals(listOf("list_nodes", "network_snapshot", "probe_via_node"), definitions.map { it.name })
+        assertEquals(
+            listOf("list_nodes", "network_snapshot", "probe_via_node", "probe_many"),
+            definitions.map { it.name },
+        )
 
         val probe = definitions.first { it.name == "probe_via_node" }
         val schema = probe.parametersSchema
@@ -149,6 +154,36 @@ class AgentToolRegistryTest {
         val result = registry.userExec("probe_via_node_v2", "{}")
         assertFalse(result.ok)
         assertNull(result.output)
+    }
+
+    @Test
+    fun slowToolReturnsATimeoutObservation() {
+        val slow =
+            object : AgentTool {
+                override val definition =
+                    AgentToolDefinition(
+                        name = "slow_tool",
+                        description = "slow",
+                        permission = AgentPermission.READ_NETWORK_STATE,
+                        parameters = emptyList(),
+                        confirmationPolicy = ConfirmationPolicy.NEVER,
+                        category = "test",
+                    )
+
+                override suspend fun execute(
+                    args: kotlinx.serialization.json.JsonObject,
+                    cancellation: ToolCancellation,
+                ): ToolExecution {
+                    delay(1_000)
+                    return ToolExecution(output = kotlinx.serialization.json.buildJsonObject { })
+                }
+            }
+        val slowRegistry = AgentToolRegistry(listOf(slow), toolTimeoutMs = 50)
+
+        val result = runBlocking { slowRegistry.invokeUserCommand("slow_tool", "{}") }
+
+        assertFalse(result.ok)
+        assertEquals("tool_timeout", result.errorCode)
     }
 }
 

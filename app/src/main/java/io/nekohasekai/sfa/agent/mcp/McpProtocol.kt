@@ -252,7 +252,7 @@ class McpSession(
                     put("arguments", arguments)
                 }
             val result =
-                request("tools/call", params, cancellation) as? JsonObject
+                request("tools/call", params, cancellation, allowRetry = false) as? JsonObject
                     ?: throw McpException("MCP tools/call returned no result.")
             McpMessages.callText(result)
         }

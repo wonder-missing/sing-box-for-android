@@ -149,6 +149,9 @@ class OpenAiCompatibleModelClient(
             var responseHeaders: Map<String, String> = emptyMap()
             val responseBody = StringBuilder()
             var traceError: String? = null
+            val startedAt = System.currentTimeMillis()
+            var finish: FinishReason? = null
+            var usage: TokenUsage? = null
             try {
                 call.execute().use { response ->
                     status = response.code
@@ -156,7 +159,12 @@ class OpenAiCompatibleModelClient(
                     if (!response.isSuccessful) {
                         val body = response.body?.string().orEmpty().take(MAX_ERROR_BYTES)
                         traceError = "HTTP ${response.code}"
-                        throw httpError(response.code, body, endpoint.providerLabel)
+                        throw httpError(
+                            response.code,
+                            body,
+                            endpoint.providerLabel,
+                            retryAfterMs(response.headers["Retry-After"]),
+                        )
                     }
                     val source =
                         response.body?.source()
@@ -165,8 +173,6 @@ class OpenAiCompatibleModelClient(
                                 "${endpoint.providerLabel} returned an empty stream.",
                                 retryable = true,
                             )
-                    var finish: FinishReason? = null
-                    var usage: TokenUsage? = null
                     var sawDone = false
                     while (true) {
                         if (cancelled) throw CancellationException("cancelled")
@@ -222,6 +228,10 @@ class OpenAiCompatibleModelClient(
                         responseHeaders = responseHeaders,
                         responseBody = AgentApiTrace.truncateBody(responseBody.toString()),
                         error = traceError,
+                        startedAt = startedAt,
+                        durationMs = System.currentTimeMillis() - startedAt,
+                        usage = usage,
+                        finishReason = finish,
                     ),
                 )
             }
@@ -489,6 +499,9 @@ class OpenAiCompatibleModelClient(
         var responseHeaders: Map<String, String> = emptyMap()
         var responseBody: String? = null
         var error: String? = null
+        val startedAt = System.currentTimeMillis()
+        var usage: TokenUsage? = null
+        var finish: FinishReason? = null
         return try {
             val bytes = body.toByteArray(Charsets.UTF_8)
             connection.setFixedLengthStreamingMode(bytes.size)
@@ -517,6 +530,12 @@ class OpenAiCompatibleModelClient(
                     output.toString(Charsets.UTF_8.name())
                 }.orEmpty()
             responseBody = AgentApiTrace.truncateBody(response)
+            if (status in 200..299) {
+                val root = runCatching { Json.parseToJsonElement(response) as? JsonObject }.getOrNull()
+                val choice = (root?.get("choices") as? JsonArray)?.firstOrNull() as? JsonObject
+                finish = finishReason((choice?.get("finish_reason") as? JsonPrimitive)?.contentOrNull)
+                usage = parseUsage(root?.get("usage") as? JsonObject)
+            }
             status to response.take(if (status in 200..299) MAX_RESPONSE_BYTES else MAX_ERROR_BYTES)
         } catch (e: AgentModelException) {
             error = e.message
@@ -539,6 +558,10 @@ class OpenAiCompatibleModelClient(
                     responseHeaders = responseHeaders,
                     responseBody = responseBody,
                     error = error,
+                    startedAt = startedAt,
+                    durationMs = System.currentTimeMillis() - startedAt,
+                    usage = usage,
+                    finishReason = finish,
                 ),
             )
             connection.disconnect()
@@ -549,6 +572,7 @@ class OpenAiCompatibleModelClient(
         status: Int,
         body: String,
         providerLabel: String,
+        retryAfterMs: Long? = null,
     ): AgentModelException {
         val code =
             when (status) {
@@ -576,8 +600,15 @@ class OpenAiCompatibleModelClient(
             code,
             AgentSanitizer.sanitizeText(message),
             retryable = retryable,
+            retryAfterMs = retryAfterMs.takeIf { retryable },
         )
     }
+
+    private fun retryAfterMs(value: String?): Long? =
+        value
+            ?.trim()
+            ?.toLongOrNull()
+            ?.let { (it * 1_000L).coerceIn(0L, 60_000L) }
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 10_000

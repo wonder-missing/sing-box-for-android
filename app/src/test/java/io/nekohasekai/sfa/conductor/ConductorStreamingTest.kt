@@ -88,4 +88,25 @@ class ConductorStreamingTest {
         assertEquals(ConductorItem.Assistant("final answer", streaming = false), updated[1])
         assertEquals(2, updated.size)
     }
+
+    @Test
+    fun streamResetDropsOnlyStreamingOutput() {
+        val items =
+            listOf(
+                ConductorItem.Assistant("partial", streaming = true),
+                ConductorItem.Notice("tool", "done"),
+                ConductorItem.Reasoning("", streaming = true),
+                ConductorItem.Assistant("settled"),
+            )
+
+        val updated = items.dropStreamingOutput()
+
+        assertEquals(
+            listOf(
+                ConductorItem.Notice("tool", "done"),
+                ConductorItem.Assistant("settled"),
+            ),
+            updated,
+        )
+    }
 }

@@ -2,7 +2,9 @@ package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -17,6 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 class AgentToolRegistry(
     tools: List<AgentTool>,
+    private val toolTimeoutMs: Long = 120_000,
 ) : AgentToolExecutor {
     private val toolsByName = tools.associateBy { it.definition.name }
     private val activeCancellations = CopyOnWriteArrayList<ToolCancellationImpl>()
@@ -53,7 +56,9 @@ class AgentToolRegistry(
                 ?: return failure(
                     name,
                     "unknown_tool",
-                    "Unknown tool. Registered tools: ${toolsByName.keys.joinToString()}.",
+                    "Unknown tool. Registered tools: " +
+                        toolsByName.keys.take(12).joinToString() +
+                        if (toolsByName.size > 12) ", ... (${toolsByName.size} total)." else ".",
                 )
         val definition = tool.definition
         val trimmed = argsJson.trim()
@@ -104,8 +109,16 @@ class AgentToolRegistry(
                 ?.let { setOf(it) }
                 .orEmpty()
 
+        val policy =
+            if (definition.permission == AgentPermission.DATA_EGRESS &&
+                definition.confirmationPolicy == ConfirmationPolicy.NEVER
+            ) {
+                ConfirmationPolicy.AGENT_ONLY
+            } else {
+                definition.confirmationPolicy
+            }
         val confirmationRequired =
-            when (definition.confirmationPolicy) {
+            when (policy) {
                 ConfirmationPolicy.NEVER -> false
                 ConfirmationPolicy.AGENT_ONLY -> source == InvocationSource.AGENT && !humanApproved
                 ConfirmationPolicy.ALWAYS -> !humanApproved
@@ -122,7 +135,11 @@ class AgentToolRegistry(
                         // Raw arguments are kept for execution after confirmation.
                         argsJson = trimmed.ifEmpty { "{}" },
                         displayArgsJson =
-                            AgentSanitizer.sanitizeArgsJson(trimmed.ifEmpty { "{}" }, allowedUrls),
+                            if (definition.category == "mcp") {
+                                AgentSanitizer.sanitizeArgsForDisplay(trimmed.ifEmpty { "{}" })
+                            } else {
+                                AgentSanitizer.sanitizeArgsJson(trimmed.ifEmpty { "{}" }, allowedUrls)
+                            },
                         reason = definition.confirmationReason ?: "This tool can change network state.",
                     ),
             )
@@ -132,8 +149,10 @@ class AgentToolRegistry(
         activeCancellations.add(cancellation)
         return try {
             val execution =
-                withContext(Dispatchers.IO) {
-                    tool.execute(args, cancellation)
+                withTimeout(toolTimeoutMs.coerceAtLeast(1L)) {
+                    withContext(Dispatchers.IO) {
+                        tool.execute(args, cancellation)
+                    }
                 }
             if (execution.ok) {
                 val output = execution.output ?: JsonObject(emptyMap())
@@ -159,6 +178,13 @@ class AgentToolRegistry(
                         ),
                 )
             }
+        } catch (e: TimeoutCancellationException) {
+            runCatching { cancellation.cancel() }
+            failure(
+                name,
+                "tool_timeout",
+                "Tool timed out after ${toolTimeoutMs.coerceAtLeast(1L)}ms.",
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

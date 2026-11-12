@@ -4,6 +4,10 @@ import io.nekohasekai.sfa.agent.AgentToolDefinition
 import io.nekohasekai.sfa.agent.mcp.McpListedTool
 import io.nekohasekai.sfa.agent.mcp.McpPhase
 import io.nekohasekai.sfa.agent.mcp.McpServerView
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.util.Locale
 
 enum class ConductorCommandKind {
@@ -156,13 +160,31 @@ object ConductorCommands {
             appendLine()
             appendLine("Tools:")
             tools.forEach { tool ->
-                val params = tool.parameters.joinToString { it.name }.ifBlank { "none" }
+                val params = toolParameterNames(tool)
                 appendLine("  ${tool.name} — ${tool.description}")
                 appendLine("    permission: ${tool.permission.label}")
                 appendLine("    params: $params")
                 appendLine("    confirmation: ${tool.confirmationPolicy}")
             }
         }
+
+    private fun toolParameterNames(tool: AgentToolDefinition): String {
+        if (tool.parameters.isNotEmpty()) {
+            return tool.parameters.joinToString { spec ->
+                if (spec.required) spec.name else "${spec.name}?"
+            }
+        }
+        val schema = tool.parametersSchema
+        val properties = schema["properties"] as? JsonObject ?: return "none"
+        val required =
+            (schema["required"] as? JsonArray)
+                ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                ?.toSet()
+                .orEmpty()
+        return properties.keys
+            .joinToString { if (it in required) it else "$it?" }
+            .ifBlank { "none" }
+    }
 
     fun mcpText(
         servers: List<McpServerView>,

@@ -20,6 +20,7 @@ data class AgentConfig(
     val maxToolCallsPerRound: Int = 8,
     val modelTimeoutMs: Long = 120_000,
     val turnTimeoutMs: Long = 1_800_000,
+    val toolTimeoutMs: Long = 120_000,
     val confirmationTimeoutMs: Long = 300_000,
     val maxOutputTokens: Int = 4_096,
     val maxInputTokens: Int = 64_000,
@@ -74,7 +75,6 @@ class AgentRuntime(
         confirm: suspend (ConfirmationRequest) -> Boolean,
         initialEvent: TurnEvent? = null,
     ): TurnResult {
-        cancelRequested = false
         preparedHistoryForTurn = null
         val turnId = UUID.randomUUID().toString()
         onEvent(AgentEvent.TurnStarted(turnId))
@@ -151,6 +151,7 @@ class AgentRuntime(
         var toolRounds = 0
         var turnObservationChars = 0
         var toolsEnabled = true
+        var budgetNoticeShown = false
         val partialContent = StringBuilder()
 
         while (true) {
@@ -175,11 +176,23 @@ class AgentRuntime(
                 )
             }
 
+            val trimmedMessages = AgentContext.trim(transcript, config.maxMessages, config.trimTargetMessages)
+            val systemTokens = AgentContext.estimateTokens(systemMessage.content)
+            val toolTokens =
+                requestTools.sumOf {
+                    AgentContext.estimateTokens(it.name) +
+                        AgentContext.estimateTokens(it.description) +
+                        AgentContext.estimateTokens(it.parameters.toString())
+                }
+            val messageBudget = (config.maxInputTokens - systemTokens - toolTokens).coerceAtLeast(256)
+            val fittedMessages = AgentContext.fitToBudget(trimmedMessages, messageBudget)
+            if (fittedMessages.size < trimmedMessages.size && !budgetNoticeShown) {
+                budgetNoticeShown = true
+                onEvent(AgentEvent.Notice("Earlier conversation was not sent to the model because the context budget is full."))
+            }
             val request =
                 AgentModelRequest(
-                    messages =
-                        listOf(systemMessage) +
-                            AgentContext.trim(transcript, config.maxMessages, config.trimTargetMessages),
+                    messages = listOf(systemMessage) + fittedMessages,
                     tools = requestTools,
                     maxOutputTokens = config.maxOutputTokens,
                     timeoutMs = config.modelTimeoutMs,
@@ -623,7 +636,7 @@ class AgentRuntime(
             } catch (e: AgentModelException) {
                 if (!e.retryable || attempt >= config.maxRetries || cancelRequested) throw e
                 attempt += 1
-                delay(500L * attempt)
+                delay(e.retryAfterMs ?: (500L * (1 shl (attempt - 1))).coerceAtMost(8_000))
             }
         }
     }
@@ -645,8 +658,9 @@ class AgentRuntime(
                 if (attempt == 0) {
                     onEvent(AgentEvent.Notice("The provider request failed; retrying. ${e.message}"))
                 }
+                onEvent(AgentEvent.StreamReset)
                 attempt += 1
-                delay(500L * attempt)
+                delay(e.retryAfterMs ?: (500L * (1 shl (attempt - 1))).coerceAtMost(8_000))
             }
         }
     }
@@ -859,6 +873,7 @@ class AgentRuntime(
                 )
         }
         onEvent(AgentEvent.TurnFinished(finalOutcome))
+        cancelRequested = false
         return TurnResult(
             messages = transcript.drop(startSize),
             outcome = finalOutcome,

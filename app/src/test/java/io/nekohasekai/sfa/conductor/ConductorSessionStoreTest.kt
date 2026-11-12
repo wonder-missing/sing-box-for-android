@@ -51,8 +51,29 @@ class ConductorSessionStoreTest {
         assertEquals(history, restored)
     }
 
+    @Test
+    fun savedSessionIsBoundedInBytes() {
+        val history =
+            (0 until ConductorSessionStore.MAX_TRANSCRIPT).map {
+                AgentMessage.User("u$it-" + "x".repeat(4_000))
+            }
+        val items =
+            (0 until 200).map {
+                ConductorItem.Notice("n$it", "y".repeat(2_000))
+            }
+        val prefs = MemoryConductorPrefs()
+        val store = ConductorSessionStore(prefs)
+
+        store.save(history, items, null)
+
+        val value = prefs.lastValue.orEmpty()
+        assertTrue(value.toByteArray(Charsets.UTF_8).size <= ConductorSessionStore.MAX_BYTES)
+        assertTrue(validateTranscriptPairing(store.load()?.transcript.orEmpty()))
+    }
+
     private class MemoryConductorPrefs : ConductorPreferenceStore {
         private val values = linkedMapOf<String, String>()
+        var lastValue: String? = null
 
         override fun getString(key: String): String? = values[key]
 
@@ -61,6 +82,7 @@ class ConductorSessionStoreTest {
             value: String,
         ) {
             values[key] = value
+            lastValue = value
         }
 
         override fun remove(key: String) {

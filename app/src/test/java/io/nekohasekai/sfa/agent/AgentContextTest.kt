@@ -74,4 +74,30 @@ class AgentContextTest {
         assertTrue(trimmed.size >= 3)
         assertTrue(validateTranscriptPairing(trimmed))
     }
+
+    @Test
+    fun estimateTokensCountsCjkAsOneAndAsciiAsQuarter() {
+        assertEquals(4, AgentContext.estimateTokens("你好世界"))
+        assertEquals(2, AgentContext.estimateTokens("abcdefgh"))
+    }
+
+    @Test
+    fun fitToBudgetDropsOldTurnsAndKeepsTheCurrentUser() {
+        val big = "x".repeat(20_000)
+        val history =
+            listOf(
+                AgentMessage.User("old"),
+                AgentMessage.Assistant(null, listOf(ToolCall("c1", "x", "{}"))),
+                AgentMessage.Tool("c1", "x", big),
+                AgentMessage.Assistant("old answer"),
+                AgentMessage.User("new"),
+            )
+
+        val fitted = AgentContext.fitToBudget(history, maxTokens = 500)
+
+        assertEquals(AgentMessage.User("new"), fitted.last())
+        assertTrue(fitted.first() is AgentMessage.User)
+        assertTrue(fitted.size < history.size)
+        assertTrue(validateTranscriptPairing(fitted))
+    }
 }

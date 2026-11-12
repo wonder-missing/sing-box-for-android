@@ -30,6 +30,7 @@ import io.nekohasekai.sfa.agent.CommandNodeState
 import io.nekohasekai.sfa.agent.ConfirmationRequest
 import io.nekohasekai.sfa.agent.DefaultAgentInputGuard
 import io.nekohasekai.sfa.agent.InputGuardResult
+import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
 import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
@@ -63,6 +64,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
@@ -135,9 +137,12 @@ class ConductorViewModel(
             appTrafficUsesVpn = { appTrafficUsesVpn() },
         )
 
+    private val selectionPort = LibboxNodeSelectionPort(nodeSource)
+
     private val tailscaleSource =
         object : TailscaleStatusSource {
-            override suspend fun status(): String = tailscaleText()
+            override suspend fun status(cancellation: ToolCancellation?): String =
+                tailscaleText(cancellation, includeDetails = false)
         }
 
     private val telemetryPort =
@@ -146,15 +151,19 @@ class ConductorViewModel(
                 TelemetryRuntime.uploadNow(application, cancellation)
         }
 
+    private val agentConfig = AgentConfig()
+
     private val toolExecutor =
         DynamicToolExecutor(
             AgentTools(
                 nodeSource = nodeSource,
                 deviceSource = deviceSource,
                 probePort = probePort,
+                selectionPort = selectionPort,
                 tailscaleStatusSource = tailscaleSource,
                 telemetryUploadPort = telemetryPort,
             ).all,
+            toolTimeoutMs = agentConfig.toolTimeoutMs,
         )
 
     private val modelClient = OpenAiCompatibleModelClient(endpointProvider = ModelProviderSettings::endpoint)
@@ -165,7 +174,7 @@ class ConductorViewModel(
             model = modelClient,
             tools = toolExecutor,
             apiKeys = apiKeyProvider,
-            config = AgentConfig(),
+            config = agentConfig,
             streamingModel = modelClient,
             toolRoutingEnabled = { Settings.conductorToolRouting },
             reasoningEffort = { ReasoningEffort.wireValue(Settings.conductorReasoningEffort) },
@@ -180,7 +189,7 @@ class ConductorViewModel(
     private var pendingAgentConfirmation: CompletableDeferred<Boolean>? = null
 
     @Volatile
-    private var autoApproveAgentConfirmation = false
+    private var autoApproveAgentToolName: String? = null
 
     private var pendingCommandConfirmation: Pair<String, String>? = null
 
@@ -221,7 +230,12 @@ class ConductorViewModel(
     fun submit(raw: String) {
         val text = raw.trim()
         if (text.isEmpty()) return
+        val isClear = text == "/clear" || text.startsWith("/clear ")
         if (_uiState.value.isRunning) {
+            if (isClear) {
+                clearConversation()
+                return
+            }
             append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
             return
         }
@@ -291,18 +305,7 @@ class ConductorViewModel(
                 }
             }
 
-            ConductorCommandKind.CLEAR -> {
-                if (_uiState.value.isRunning) {
-                    append(ConductorItem.Notice("clear", "Wait for the current command to finish."))
-                } else {
-                    updateUi { copy(items = emptyList(), canRetryLastTurn = false) }
-                    transcript = emptyList()
-                    pendingTurnEvent = null
-                    pendingCommandConfirmation = null
-                    sessionStore.clear()
-                    AgentApiTrace.clear()
-                }
-            }
+            ConductorCommandKind.CLEAR -> clearConversation()
 
             ConductorCommandKind.REASONING -> {
                 val outcome =
@@ -340,18 +343,25 @@ class ConductorViewModel(
     }
 
     /**
-     * Approve this tool call and every later confirmation prompt in the same
-     * assistant batch. The runtime still asks once per call; the ViewModel
-     * answers those prompts without drawing another card.
+     * Approve this tool for the rest of the turn. The runtime still asks once
+     * per call; the ViewModel answers prompts for the same tool without drawing
+     * another card. A different tool asks again.
      */
     fun confirmAllAgent() {
         if (pendingAgentConfirmation == null) return
-        autoApproveAgentConfirmation = true
+        val toolName =
+            _uiState.value.items
+                .filterIsInstance<ConductorItem.Confirmation>()
+                .lastOrNull()
+                ?.request
+                ?.toolName
+                ?: return
+        autoApproveAgentToolName = toolName
         confirmAgent()
     }
 
     fun cancelAgent() {
-        autoApproveAgentConfirmation = false
+        autoApproveAgentToolName = null
         val pending = pendingAgentConfirmation ?: return
         removeConfirmationItems()
         pending.complete(false)
@@ -360,7 +370,7 @@ class ConductorViewModel(
     fun stopAgent() {
         if (!_uiState.value.isRunning || stopRequested) return
         stopRequested = true
-        autoApproveAgentConfirmation = false
+        autoApproveAgentToolName = null
         pendingAgentConfirmation?.complete(false)
         removeConfirmationItems()
         runtime.cancel()
@@ -431,19 +441,20 @@ class ConductorViewModel(
         persistSession()
     }
 
-    fun disconnect() {
-        if (!_uiState.value.isRunning) {
-            persistSession()
-        }
-        synchronized(stateLock) {
-            wantConnected = false
-        }
-        commandClient.disconnect()
-        publishNodeState(CommandNodeState())
+    private fun clearConversation() {
         runtime.cancel()
         McpRuntimes.get(getApplication()).cancelActive()
         agentJob?.cancel()
-        ModelProviderSettings.unpin()
+        agentJob = null
+        stopRequested = false
+        autoApproveAgentToolName = null
+        pendingAgentConfirmation = null
+        pendingTurnEvent = null
+        pendingCommandConfirmation = null
+        transcript = emptyList()
+        updateUi { copy(items = emptyList(), isRunning = false, canRetryLastTurn = false) }
+        sessionStore.clear()
+        AgentApiTrace.clear()
     }
 
     override fun onCleared() {
@@ -464,7 +475,7 @@ class ConductorViewModel(
             return
         }
         stopRequested = false
-        autoApproveAgentConfirmation = false
+        autoApproveAgentToolName = null
         updateUi { copy(isRunning = true, canRetryLastTurn = false) }
         val initialEvent = pendingTurnEvent
         agentJob =
@@ -517,7 +528,7 @@ class ConductorViewModel(
                     updateUi { copy(isRunning = false, canRetryLastTurn = canRetry) }
                     pendingAgentConfirmation = null
                     stopRequested = false
-                    autoApproveAgentConfirmation = false
+                    autoApproveAgentToolName = null
                     ModelProviderSettings.unpin()
                     when (outcome) {
                         is TurnOutcome.Failed ->
@@ -533,6 +544,18 @@ class ConductorViewModel(
                             append(ConductorItem.Notice("conductor", "Stopped."))
 
                         is TurnOutcome.Completed -> Unit
+                    }
+                    if (result.messages.isNotEmpty()) {
+                        AgentApiTrace.lastUsage()?.let { usage ->
+                            append(
+                                ConductorItem.Notice(
+                                    "usage",
+                                    "in=${usage.inputTokens ?: "?"} out=${usage.outputTokens ?: "?"}" +
+                                        " cache=${usage.cacheHitTokens ?: "?"}" +
+                                        " miss=${usage.cacheMissTokens ?: "?"}",
+                                ),
+                            )
+                        }
                     }
                     persistSession()
                 }
@@ -619,6 +642,9 @@ class ConductorViewModel(
 
             is AgentEvent.AssistantDelta -> appendAssistantDelta(event.text)
             is AgentEvent.ReasoningDelta -> appendReasoningDelta(event.text)
+            is AgentEvent.StreamReset -> {
+                updateUi { copy(items = items.dropStreamingOutput()) }
+            }
             is AgentEvent.ToolStarted -> {
                 finishReasoning()
                 finishStreamingAssistant()
@@ -627,7 +653,7 @@ class ConductorViewModel(
 
             is AgentEvent.ToolFinished -> updateToolResult(event.result)
             is AgentEvent.ConfirmationRequested -> {
-                if (autoApproveAgentConfirmation) {
+                if (autoApproveAgentToolName == event.request.toolName) {
                     pendingAgentConfirmation =
                         CompletableDeferred<Boolean>().apply { complete(true) }
                 } else {
@@ -904,15 +930,20 @@ class ConductorViewModel(
         }
     }
 
-    private suspend fun tailscaleText(): String {
+    private suspend fun tailscaleText(
+        cancellation: ToolCancellation? = null,
+        includeDetails: Boolean = true,
+    ): String {
+        if (cancellation?.isCancelled() == true) return "cancelled"
         val deferred = CompletableDeferred<String>()
+        val cancelled = CompletableDeferred<String>()
         val subscription =
             try {
                 CommandTarget.standaloneClient().subscribeTailscaleStatus(
                     object : TailscaleStatusHandler {
                         override fun onStatusUpdate(status: TailscaleStatusUpdate) {
                             if (!deferred.isCompleted) {
-                                deferred.complete(formatTailscale(status))
+                                deferred.complete(formatTailscale(status, includeDetails))
                             }
                         }
 
@@ -926,14 +957,26 @@ class ConductorViewModel(
             } catch (e: Exception) {
                 return friendlyTailscaleError(e.message ?: e.toString())
             }
+        cancellation?.onCancel {
+            runCatching { subscription.close() }
+            cancelled.complete("cancelled")
+        }
         return try {
-            withTimeoutOrNull(5_000) { deferred.await() } ?: "Timed out waiting for Tailscale status."
+            withTimeoutOrNull(5_000) {
+                select {
+                    deferred.onAwait { it }
+                    cancelled.onAwait { it }
+                }
+            } ?: "Timed out waiting for Tailscale status."
         } finally {
             runCatching { subscription.close() }
         }
     }
 
-    private fun formatTailscale(update: TailscaleStatusUpdate): String =
+    private fun formatTailscale(
+        update: TailscaleStatusUpdate,
+        includeDetails: Boolean = true,
+    ): String =
         buildString {
             var endpointCount = 0
             val endpoints = update.endpoints()
@@ -948,7 +991,9 @@ class ConductorViewModel(
                 val groups = endpoint.userGroups()
                 while (groups.hasNext()) {
                     val group = groups.next()
-                    appendLine("  ${group.loginName.ifBlank { group.displayName }}")
+                    if (includeDetails) {
+                        appendLine("  ${group.loginName.ifBlank { group.displayName }}")
+                    }
                     val peers = group.peers()
                     while (peers.hasNext()) {
                         val peer = peers.next()
@@ -959,7 +1004,8 @@ class ConductorViewModel(
                                 if (peer.exitNode) add("exit-node")
                                 if (peer.exitNodeOption) add("exit-node-option")
                             }
-                        appendLine("    - ${peerName(peer)} ${flags.joinToString(", ")} ${peerIps(peer)}".trimEnd())
+                        val addresses = if (includeDetails) " ${peerIps(peer)}" else ""
+                        appendLine("    - ${peerName(peer)} ${flags.joinToString(", ")}$addresses".trimEnd())
                     }
                 }
             }

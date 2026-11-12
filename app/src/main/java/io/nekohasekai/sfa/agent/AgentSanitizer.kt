@@ -117,4 +117,59 @@ internal object AgentSanitizer {
                 ?: return sanitizeText(raw, allowedUrls)
         return sanitizeElement(objectValue, allowedUrls).toString()
     }
+
+    /**
+     * Confirmation display for tools that send their arguments to a user-added
+     * server. URLs stay readable so the user can judge the call, but userinfo
+     * and sensitive query values are masked.
+     */
+    fun sanitizeArgsForDisplay(raw: String): String {
+        val objectValue =
+            AgentJson.parseObject(raw)
+                ?: return maskUrlsForDisplay(raw)
+        return sanitizeElementForDisplay(objectValue).toString()
+    }
+
+    private fun sanitizeElementForDisplay(element: JsonElement): JsonElement =
+        when (element) {
+            is JsonObject ->
+                buildJsonObject {
+                    element.forEach { (key, value) ->
+                        if (SENSITIVE_KEY.matches(key)) {
+                            put(key, JsonPrimitive("***"))
+                        } else {
+                            put(key, sanitizeElementForDisplay(value))
+                        }
+                    }
+                }
+
+            is JsonArray ->
+                buildJsonArray {
+                    element.forEach { add(sanitizeElementForDisplay(it)) }
+                }
+
+            is JsonPrimitive ->
+                if (element.isString) {
+                    JsonPrimitive(maskUrlsForDisplay(element.content))
+                } else {
+                    element
+                }
+
+            else -> element
+        }
+
+    private fun maskUrlsForDisplay(text: String): String {
+        var result =
+            URL_REGEX.replace(text) { match ->
+                val raw = match.value
+                val trailing = raw.takeLastWhile { it in TRAILING_PUNCTUATION }
+                val core = if (trailing.isEmpty()) raw else raw.dropLast(trailing.length)
+                maskUrlQuery(core) + trailing
+            }
+        result =
+            SENSITIVE_KV.replace(result) { match ->
+                "${match.groupValues[1]}=***"
+            }
+        return result
+    }
 }

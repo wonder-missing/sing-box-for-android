@@ -83,6 +83,14 @@ class AgentToolCatalog(
         maxChars: Int = DEFAULT_MAX_CHARS,
     ): JsonObject {
         val matches = search(query, limit)
+        val normalized = query.trim().lowercase(Locale.US)
+        val weak =
+            matches.isEmpty() ||
+                matches.none { tool ->
+                    tool.name.equals(normalized, ignoreCase = true) ||
+                        tool.aliases.any { it.equals(normalized, ignoreCase = true) } ||
+                        score(tool, normalized) >= WEAK_MATCH_SCORE
+                }
         val objects =
             matches
                 .map { tool ->
@@ -94,10 +102,10 @@ class AgentToolCatalog(
                         put("requiresConfirmation", tool.confirmationPolicy != ConfirmationPolicy.NEVER)
                     }
                 }.toMutableList()
-        var output = buildOutput(query, matches.size, objects, truncated = false)
+        var output = buildOutput(query, matches.size, objects, truncated = false, weak = weak)
         while (objects.size > 1 && output.toString().length > maxChars) {
             objects.removeAt(objects.lastIndex)
-            output = buildOutput(query, matches.size, objects, truncated = true)
+            output = buildOutput(query, matches.size, objects, truncated = true, weak = weak)
         }
         return output
     }
@@ -140,11 +148,13 @@ class AgentToolCatalog(
         total: Int,
         matches: List<JsonObject>,
         truncated: Boolean,
+        weak: Boolean,
     ): JsonObject =
         buildJsonObject {
             put("query", query)
             put("total", total)
             put("truncated", truncated)
+            put("weak", weak)
             put(
                 "matches",
                 buildJsonArray {
@@ -153,6 +163,8 @@ class AgentToolCatalog(
             )
             if (matches.isEmpty()) {
                 put("hint", "No matching tools. Search by capability, or use a tool name from the roster.")
+            } else if (weak) {
+                put("hint", "These are weak matches, not confirmed capabilities. Do not invent a tool from them.")
             }
         }
 
@@ -209,6 +221,7 @@ class AgentToolCatalog(
         const val MAX_LIMIT = 8
         const val SUGGESTION_LIMIT = 3
         private const val MAX_SUGGESTION_DISTANCE = 3
+        private const val WEAK_MATCH_SCORE = 600
         private const val DEFAULT_MAX_CHARS = 12_000
         private val TOKEN_SEPARATOR = Regex("[^\\p{L}\\p{N}]+")
     }

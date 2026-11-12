@@ -12,6 +12,7 @@ enum class AgentPermission(
 ) {
     READ_NETWORK_STATE("read_network_state"),
     NETWORK_PROBE("network_probe"),
+    NETWORK_CHANGE("network_change"),
     DATA_EGRESS("data_egress"),
 }
 
@@ -85,7 +86,7 @@ interface AgentToolExecutor {
 }
 
 interface TailscaleStatusSource {
-    suspend fun status(): String
+    suspend fun status(cancellation: ToolCancellation? = null): String
 }
 
 interface TelemetryUploadPort {
@@ -167,6 +168,21 @@ interface ProbePort {
         cancellation: ToolCancellation? = null,
     ): ProbeOutcome
 }
+
+interface NodeSelectionPort {
+    suspend fun select(
+        group: String,
+        outbound: String,
+    ): NodeSelectionResult
+}
+
+data class NodeSelectionResult(
+    val ok: Boolean,
+    val group: String,
+    val selected: String,
+    val previous: String? = null,
+    val error: String? = null,
+)
 
 data class AgentConfirmation(
     val tool: String,

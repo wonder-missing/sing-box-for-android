@@ -180,6 +180,55 @@ class McpClientTest {
     }
 
     @Test
+    fun storeEncryptsTokensAndMigratesPlaintext() {
+        val dir = Files.createTempDirectory("mcp-cipher").toFile()
+        try {
+            val file = File(dir, "mcp-servers.json")
+            val cipher = XorMcpTokenCipher()
+            val repo = FileMcpServerRepository(file, cipher)
+            repo.save(
+                listOf(
+                    McpServerConfig(
+                        id = "demo",
+                        name = "Demo",
+                        url = "https://example.com/mcp",
+                        token = "secret-token",
+                    ),
+                ),
+            )
+            assertFalse(file.readText(Charsets.UTF_8).contains("secret-token"))
+            assertTrue(file.readText(Charsets.UTF_8).contains("\"tokensEncrypted\": true"))
+            assertEquals("secret-token", FileMcpServerRepository(file, cipher).load().single().token)
+
+            file.writeText(
+                """{"servers":[{"id":"demo","name":"Demo","url":"https://example.com/mcp","token":"secret-token"}]}""",
+                Charsets.UTF_8,
+            )
+            assertEquals("secret-token", FileMcpServerRepository(file, cipher).load().single().token)
+            assertFalse(file.readText(Charsets.UTF_8).contains("secret-token"))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    private class XorMcpTokenCipher : McpTokenCipher {
+        override val supported: Boolean = true
+
+        override fun encrypt(
+            serverId: String,
+            token: String,
+        ): String = "enc:$serverId:" + token.reversed()
+
+        override fun decrypt(
+            serverId: String,
+            blob: String,
+        ): String? {
+            val prefix = "enc:$serverId:"
+            return if (blob.startsWith(prefix)) blob.removePrefix(prefix).reversed() else null
+        }
+    }
+
+    @Test
     fun validatorRejectsUserinfoAndQuerySecrets() {
         assertEquals(
             McpConfigError.URL_USERINFO,
@@ -210,13 +259,13 @@ class McpClientTest {
                 val listed = runtime.listedTools()
                 assertEquals(listOf("echo", "write"), listed.map { it.remoteName })
                 assertEquals(listOf("text"), listed.first().required)
-                assertTrue(!listed.first().asksFirst)
+                assertTrue(listed.first().asksFirst)
                 assertTrue(listed[1].asksFirst)
 
                 val executor = DynamicToolExecutor(emptyList())
                 executor.setExtras(runtime.tools())
                 val echo = executor.definitions().first { it.name == "mcp_demo_echo" }
-                assertEquals(ConfirmationPolicy.NEVER, echo.confirmationPolicy)
+                assertEquals(ConfirmationPolicy.AGENT_ONLY, echo.confirmationPolicy)
                 assertFalse(echo.core)
                 assertTrue(echo.parametersSchema.toString().contains("\"n\""))
 
@@ -248,7 +297,7 @@ class McpClientTest {
                         userText = "echo hello",
                         history = emptyList(),
                         onEvent = {},
-                        confirm = { error("read-only MCP tool must not ask for confirmation") },
+                        confirm = { true },
                     )
 
                 val toolMessages = result.messages.filterIsInstance<AgentMessage.Tool>()
@@ -268,6 +317,22 @@ class McpClientTest {
                 assertEquals("Bearer test-token", call.authorization)
                 assertTrue(call.body.contains("\"name\":\"echo\""))
                 assertFalse(call.body.contains("mcp_demo_echo"))
+            }
+        }
+
+    @Test
+    fun readOnlyMcpToolStillAsksForConfirmation() =
+        runBlocking {
+            LoopbackMcp().use { server ->
+                val runtime = runtime()
+                runtime.add("Demo", server.url, "test-token")
+                val echo = runtime.tools().first { it.definition.name == "mcp_demo_echo" }
+                val registry = AgentToolRegistry(listOf(echo))
+
+                val pending = registry.invokeAgent(ToolCall("1", echo.definition.name, """{"text":"hi"}"""), humanApproved = false)
+
+                assertEquals("confirmation_required", pending.errorCode)
+                assertEquals(0, server.records.count { it.method == "tools/call" })
             }
         }
 

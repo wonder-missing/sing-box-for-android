@@ -10,6 +10,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,10 +45,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,6 +104,7 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -146,9 +151,6 @@ fun ConductorScreen(
             remoteControl = remoteServer != null,
             remoteConnected = remoteConnected,
         )
-    }
-    DisposableEffect(Unit) {
-        onDispose { viewModel.disconnect() }
     }
 
     var inputField by rememberSaveable(stateSaver = InputFieldSaver) {
@@ -197,6 +199,18 @@ fun ConductorScreen(
     var pendingExport by remember { mutableStateOf<ConductorExport?>(null) }
     val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
+    var stickToBottom by remember { mutableStateOf(true) }
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    val atBottom by remember {
+        derivedStateOf {
+            if (uiState.items.isEmpty()) return@derivedStateOf true
+            val lastVisible =
+                listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                    ?: return@derivedStateOf true
+            lastVisible >= uiState.items.size
+        }
+    }
+    val lastContentVersion = uiState.items.lastOrNull()?.contentVersion() ?: 0
     val focusManager = LocalFocusManager.current
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -441,6 +455,21 @@ fun ConductorScreen(
         )
         val layoutDirection = LocalLayoutDirection.current
 
+        LaunchedEffect(atBottom) {
+            if (atBottom) stickToBottom = true
+        }
+        LaunchedEffect(isDragged) {
+            if (isDragged) {
+                delay(100)
+                if (listState.canScrollForward) stickToBottom = false
+            }
+        }
+        LaunchedEffect(uiState.items.size, lastContentVersion) {
+            if (uiState.items.isNotEmpty() && stickToBottom) {
+                listState.animateScrollToItem(uiState.items.size)
+            }
+        }
+
         Column(
             modifier =
             Modifier
@@ -452,12 +481,13 @@ fun ConductorScreen(
                 )
                 .padding(bottom = panelHeight),
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                 if (uiState.items.isEmpty()) {
                     item(key = "empty") {
                         ConductorEmptyState(
@@ -469,7 +499,10 @@ fun ConductorScreen(
                         )
                     }
                 } else {
-                    items(uiState.items.size, key = { index -> index }) { index ->
+                    items(
+                        count = uiState.items.size,
+                        key = { index -> uiState.items[index].stableKey(index) },
+                    ) { index ->
                         ConductorItemView(
                             item = uiState.items[index],
                             onConfirm = viewModel::confirmConfirmation,
@@ -488,11 +521,20 @@ fun ConductorScreen(
                         )
                     }
                 }
-            }
-
-            LaunchedEffect(uiState.items.size) {
-                if (uiState.items.isNotEmpty()) {
-                    listState.animateScrollToItem(uiState.items.lastIndex)
+                }
+                if (!stickToBottom && uiState.items.isNotEmpty()) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            stickToBottom = true
+                            coroutineScope.launch { listState.animateScrollToItem(uiState.items.size) }
+                        },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = stringResource(R.string.conductor_back_to_latest),
+                        )
+                    }
                 }
             }
 
@@ -929,6 +971,25 @@ private fun ConductorItemView(
 }
 
 private val InlineMarkdown = Regex("""\*\*(.+?)\*\*|`([^`]+)`""")
+
+private fun ConductorItem.contentVersion(): Int =
+    when (this) {
+        is ConductorItem.Assistant -> text.length
+        is ConductorItem.Reasoning -> text.length
+        is ConductorItem.Tool -> (result?.output?.toString()?.length ?: 0) + (result?.message?.length ?: 0)
+        else -> 0
+    }
+
+private fun ConductorItem.stableKey(index: Int): String =
+    when (this) {
+        is ConductorItem.User -> "user:$index:${text.hashCode()}"
+        is ConductorItem.Assistant -> "assistant:$index:${text.hashCode()}"
+        is ConductorItem.Reasoning -> "reasoning:$index:${text.hashCode()}"
+        is ConductorItem.Tool -> "tool:${call.id}"
+        is ConductorItem.Notice -> "notice:$index:${title.hashCode()}:${body.hashCode()}"
+        is ConductorItem.Error -> "error:$index:${message.hashCode()}"
+        is ConductorItem.Confirmation -> "confirm:${request.id}"
+    }
 
 private fun markdownAnnotated(text: String): AnnotatedString =
     buildAnnotatedString {

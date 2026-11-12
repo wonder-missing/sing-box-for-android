@@ -65,6 +65,7 @@
     <string name="conductor_probe_run">Run probe</string>
     <string name="conductor_probe_cancel">Cancel</string>
     <string name="conductor_retry">Retry</string>
+    <string name="conductor_back_to_latest">Back to latest</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Conductor</string>
@@ -779,9 +780,9 @@
     <string name="agent_probe_run">Probe</string>
     <string name="agent_confirm_title">Confirm tool call</string>
     <string name="agent_confirm_run">Run</string>
-    <string name="agent_confirm_run_all">Approve rest of turn</string>
-    <string name="agent_confirm_batch">This response has %1$d tool calls. Approving the rest of the turn also skips later prompts in this turn.</string>
-    <string name="agent_confirm_turn">Approving also skips later confirmation prompts in this turn.</string>
+    <string name="agent_confirm_run_all">Approve this tool for the rest of the turn</string>
+    <string name="agent_confirm_batch">This response has %1$d tool calls. Approving skips later prompts for the same tool in this turn.</string>
+    <string name="agent_confirm_turn">The same tool will not ask again in this turn; other tools still ask.</string>
     <string name="shortcut_start_service">Start Service</string>
     <string name="shortcut_stop_service">Stop Service</string>
     <string name="shortcut_tailscale">Tailscale</string>

@@ -167,7 +167,7 @@ class AgentToolsTest {
         assertTrue(result.errorMessage ?: "", result.ok)
         assertEquals(listOf("node-a" to "https://example.com/health"), probe.calls)
         val output = result.output!!
-        assertTrue(output.boolean("ok"))
+        assertTrue(output.boolean("reachable"))
         assertEquals(204, output.int("statusCode"))
         assertEquals(26, output.long("latencyMs"))
         assertEquals("temporary_outbound_selection", output.string("via"))
@@ -225,7 +225,7 @@ class AgentToolsTest {
             "https://probe.example.com/health?token=***",
             result.output!!.string("url"),
         )
-        assertFalse(result.output!!.boolean("ok"))
+        assertFalse(result.output!!.boolean("reachable"))
         assertEquals(502, result.output!!.int("statusCode"))
     }
 
@@ -332,7 +332,43 @@ class AgentToolsTest {
 
         assertFalse(result.ok)
         assertEquals("outbound not selectable", result.output!!.string("error"))
-        assertFalse(result.output!!.boolean("ok"))
+        assertFalse(result.output!!.boolean("reachable"))
+    }
+
+    @Test
+    fun probeManyRunsRequestedNodesInOneCall() {
+        val probe = FakeProbePort(ProbeOutcome(statusCode = 204, latencyMs = 12))
+        val registry = buildTestRegistry(probePort = probe)
+
+        val result =
+            registry.userExec(
+                "probe_many",
+                """{"group":"proxy","url":"https://example.com/","outbounds":"node-a,node-b"}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals(2, result.output!!.array("results").size)
+        assertEquals(
+            listOf("node-a" to "https://example.com/", "node-b" to "https://example.com/"),
+            probe.calls,
+        )
+    }
+
+    @Test
+    fun selectOutboundUsesTheSelectionPortAndReturnsPrevious() {
+        val selection = FakeNodeSelectionPort()
+        val registry = buildTestRegistry(selectionPort = selection)
+
+        val result =
+            registry.userExec(
+                "select_outbound",
+                """{"group":"proxy","outbound":"node-a"}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals(listOf("proxy" to "node-a"), selection.calls)
+        assertEquals("node-b", result.output!!.string("previous"))
+        assertEquals("node-a", result.output!!.string("selected"))
     }
 }
 

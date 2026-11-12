@@ -88,3 +88,9 @@ internal fun List<ConductorItem>.withAssistantFinal(text: String): List<Conducto
     }
     return updated.settleStreamingAssistants()
 }
+
+/** Discards partial streaming output before a retried request. */
+internal fun List<ConductorItem>.dropStreamingOutput(): List<ConductorItem> =
+    filterNot { item ->
+        (item is Assistant && item.streaming) || (item is Reasoning && item.streaming)
+    }

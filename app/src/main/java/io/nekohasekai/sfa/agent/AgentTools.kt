@@ -16,6 +16,7 @@ class AgentTools(
     private val nodeSource: NodeSnapshotSource,
     private val deviceSource: DeviceSnapshotSource,
     private val probePort: ProbePort,
+    private val selectionPort: NodeSelectionPort? = null,
     private val tailscaleStatusSource: TailscaleStatusSource? = null,
     private val telemetryUploadPort: TelemetryUploadPort? = null,
 ) {
@@ -290,7 +291,7 @@ class AgentTools(
                         ?: if (outcome.statusCode == null) "probe returned no HTTP status" else null
                 val output =
                     buildJsonObject {
-                        put("ok", error == null)
+                        put("reachable", error == null)
                         put("outbound", outbound)
                         put("url", url)
                         put("via", "temporary_outbound_selection")
@@ -310,6 +311,213 @@ class AgentTools(
             }
 
             private fun invalidArgument(message: String) = ToolExecution(errorCode = "invalid_parameter", errorMessage = message)
+        }
+
+    private val probeMany =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "probe_many",
+                    description =
+                        "Probe one http(s) URL through several outbounds in one call. " +
+                            "Use list_nodes(group=<tag>) first to get tags. If outbounds is omitted, " +
+                            "probes the group's items up to limit. Probes run one at a time, each temporarily " +
+                            "changing the global selection and restoring it afterwards. The batch stops after " +
+                            "about 90 seconds and marks truncated=true. Returns per-node reachable/statusCode/latency/error.",
+                    permission = AgentPermission.NETWORK_PROBE,
+                    parameters =
+                        listOf(
+                            AgentParameterSpec(
+                                name = "group",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "Selectable selector group tag.",
+                            ),
+                            AgentParameterSpec(
+                                name = "url",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "Absolute http:// or https:// URL to probe.",
+                            ),
+                            AgentParameterSpec(
+                                name = "outbounds",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description = "Optional comma or space separated outbound tags. Omit to use the group's items.",
+                            ),
+                            AgentParameterSpec(
+                                name = "limit",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description = "Optional maximum nodes, 1 to 20. Default 10.",
+                            ),
+                        ),
+                    confirmationPolicy = ConfirmationPolicy.ALWAYS,
+                    category = "network",
+                    aliases = listOf("batch probe", "probe all", "批量探测", "批量测速"),
+                    core = true,
+                    confirmationReason =
+                        "This probes several outbounds by temporarily changing the running core's selected outbound " +
+                            "for each one. It restores the previous selection after each probe and may take about 90 seconds.",
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val groupTag =
+                    AgentJson.string(args, "group")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "group is required")
+                val url =
+                    AgentJson.string(args, "url")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "url is required")
+                if (!isAllowedProbeUrl(url)) {
+                    return ToolExecution(errorCode = "invalid_parameter", errorMessage = "url must be an absolute http(s) URL")
+                }
+                val snapshot = nodeSource.snapshot()
+                if (!snapshot.coreRunning) {
+                    return ToolExecution(
+                        errorCode = "tool_unavailable",
+                        errorMessage = "sing-box core is not running; start the service before probing",
+                    )
+                }
+                if (snapshot.remoteControl) {
+                    return ToolExecution(
+                        errorCode = "tool_unavailable",
+                        errorMessage = "probe_many is local-only; Remote Control does not expose an outbound-bound HTTP client",
+                    )
+                }
+                val group =
+                    snapshot.groups.firstOrNull { it.tag == groupTag && it.selectable }
+                        ?: return ToolExecution(
+                            errorCode = "invalid_parameter",
+                            errorMessage = "Unknown selectable group '$groupTag'. Use list_nodes to list groups.",
+                        )
+                val limit =
+                    AgentJson.string(args, "limit")
+                        ?.trim()
+                        ?.toIntOrNull()
+                        ?.coerceIn(1, MAX_PROBE_MANY)
+                        ?: DEFAULT_PROBE_MANY
+                val requested =
+                    AgentJson.string(args, "outbounds")
+                        ?.split(Regex("[,\\s]+"))
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        .orEmpty()
+                val tags =
+                    (if (requested.isEmpty()) group.items.map { it.tag } else requested)
+                        .distinct()
+                        .take(limit)
+                if (tags.isEmpty()) {
+                    return ToolExecution(errorCode = "invalid_parameter", errorMessage = "No outbounds to probe.")
+                }
+                val startedAt = System.nanoTime()
+                val results = mutableListOf<JsonObject>()
+                var truncated = false
+                for (tag in tags) {
+                    if (cancellation.isCancelled()) {
+                        truncated = true
+                        break
+                    }
+                    if ((System.nanoTime() - startedAt) / 1_000_000 > MAX_PROBE_MANY_MS) {
+                        truncated = true
+                        break
+                    }
+                    val outcome = probePort.probe(tag, url, cancellation)
+                    val error =
+                        outcome.error
+                            ?: if (outcome.statusCode == null) "probe returned no HTTP status" else null
+                    results.add(
+                        buildJsonObject {
+                            put("outbound", tag)
+                            put("reachable", error == null)
+                            outcome.statusCode?.let { put("statusCode", it) }
+                            outcome.latencyMs?.let { put("latencyMs", it) }
+                            error?.let { put("error", it) }
+                        },
+                    )
+                }
+                val output =
+                    buildJsonObject {
+                        put("group", groupTag)
+                        put("url", url)
+                        put("truncated", truncated)
+                        put("results", buildJsonArray { results.forEach { add(it) } })
+                    }
+                return ToolExecution(output = output)
+            }
+        }
+
+    private val selectOutbound =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "select_outbound",
+                    description =
+                        "Change the running core's selected outbound in a selectable selector group. " +
+                            "Local-only; Remote Control is rejected. The previous selection is restored if the change fails. " +
+                            "Use list_nodes to find a selectable group and tag. App traffic may switch immediately.",
+                    permission = AgentPermission.NETWORK_CHANGE,
+                    parameters =
+                        listOf(
+                            AgentParameterSpec(
+                                name = "group",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "Selectable selector group tag.",
+                            ),
+                            AgentParameterSpec(
+                                name = "outbound",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "Outbound tag inside that group.",
+                            ),
+                        ),
+                    confirmationPolicy = ConfirmationPolicy.ALWAYS,
+                    category = "network",
+                    aliases = listOf("switch outbound", "select outbound", "切换节点", "选择出口"),
+                    core = true,
+                    confirmationReason =
+                        "This changes the running core's selected outbound. App traffic may switch immediately. " +
+                            "The previous selection is restored if the call fails.",
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val port = selectionPort ?: return unavailable()
+                val group =
+                    AgentJson.string(args, "group")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "group is required")
+                val outbound =
+                    AgentJson.string(args, "outbound")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "outbound is required")
+                if (group.length > 256 || outbound.length > 256) {
+                    return ToolExecution(errorCode = "invalid_parameter", errorMessage = "group or outbound tag is too long")
+                }
+                if (cancellation.isCancelled()) {
+                    return ToolExecution(errorCode = "cancelled", errorMessage = "select_outbound cancelled")
+                }
+                val result = port.select(group, outbound)
+                val output =
+                    buildJsonObject {
+                        put("group", result.group)
+                        put("selected", result.selected)
+                        result.previous?.let { put("previous", it) }
+                        result.error?.let { put("error", it) }
+                    }
+                return if (result.ok) {
+                    ToolExecution(output = output)
+                } else {
+                    ToolExecution(
+                        output = output,
+                        errorCode = "tool_failed",
+                        errorMessage = result.error ?: "select_outbound failed",
+                    )
+                }
+            }
         }
 
     private val tailscaleStatus =
@@ -335,7 +543,7 @@ class AgentTools(
                 if (cancellation.isCancelled()) {
                     return ToolExecution(errorCode = "cancelled", errorMessage = "tailscale status cancelled")
                 }
-                return runCatching { source.status() }
+                return runCatching { source.status(cancellation) }
                     .fold(
                         onSuccess = { ToolExecution(output = buildJsonObject { put("result", it) }) },
                         onFailure = { ToolExecution(errorCode = "tool_failed", errorMessage = it.message ?: it.toString()) },
@@ -386,9 +594,17 @@ class AgentTools(
                 add(listNodes)
                 add(networkSnapshot)
                 add(probeViaNode)
+                add(probeMany)
+                if (selectionPort != null) add(selectOutbound)
                 if (tailscaleStatusSource != null) add(tailscaleStatus)
                 if (telemetryUploadPort != null) add(telemetryUpload)
             }
+
+    private companion object {
+        private const val MAX_PROBE_MANY = 20
+        private const val DEFAULT_PROBE_MANY = 10
+        private const val MAX_PROBE_MANY_MS = 90_000L
+    }
 
     private fun unavailable(): ToolExecution =
         ToolExecution(errorCode = "tool_unavailable", errorMessage = "this tool is not available in the current build")

@@ -8,9 +8,10 @@ import java.util.ArrayDeque
  */
 class DynamicToolExecutor(
     private val builtin: List<AgentTool>,
+    private val toolTimeoutMs: Long = 120_000,
 ) : AgentToolExecutor {
     private val lock = Any()
-    private var current = AgentToolRegistry(builtin)
+    private var current = AgentToolRegistry(builtin, toolTimeoutMs)
     private val previous = ArrayDeque<AgentToolRegistry>()
 
     fun setExtras(extras: List<AgentTool>) {
@@ -20,7 +21,7 @@ class DynamicToolExecutor(
                 val name = tool.definition.name
                 name !in builtinNames && name != "route_call" && name != "search_tools"
             }
-        val next = AgentToolRegistry(this.builtin + filtered)
+        val next = AgentToolRegistry(this.builtin + filtered, toolTimeoutMs)
         synchronized(lock) {
             previous.addLast(current)
             while (previous.size > 3) previous.removeFirst()

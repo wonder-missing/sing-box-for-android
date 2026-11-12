@@ -71,6 +71,14 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun searchOutputMarksWeakMatches() {
+        val weak = catalog.searchOutput("something unrelated", limit = 5)
+        assertEquals("true", (weak["weak"] as JsonPrimitive).content)
+        val exact = catalog.searchOutput("probe", limit = 5)
+        assertEquals("false", (exact["weak"] as JsonPrimitive).content)
+    }
+
+    @Test
     fun searchOutputDropsMatchesToStayInsideBudget() {
         val big =
             definition("big_tool", "network", listOf("big"))

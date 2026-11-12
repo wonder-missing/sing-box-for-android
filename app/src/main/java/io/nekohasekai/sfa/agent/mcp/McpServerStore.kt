@@ -106,29 +106,61 @@ object McpServerValidator {
 
 class FileMcpServerRepository(
     private val file: File,
+    private val cipher: McpTokenCipher = PlaintextMcpTokenCipher,
 ) : McpServerRepository {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
 
     override fun load(): List<McpServerConfig> {
         if (!file.isFile) return emptyList()
-        return runCatching {
-            json
-                .decodeFromString(McpServerFile.serializer(), file.readText(Charsets.UTF_8))
-                .servers
+        val parsed =
+            runCatching {
+                json.decodeFromString(McpServerFile.serializer(), file.readText(Charsets.UTF_8))
+            }.getOrNull() ?: return emptyList()
+        val servers =
+            parsed.servers
                 .filter { server ->
                     server.id.isNotBlank() &&
                         server.name.isNotBlank() &&
                         (server.url.startsWith("http://") || server.url.startsWith("https://"))
                 }.take(McpServerValidator.MAX_SERVERS)
-        }.getOrDefault(emptyList())
+                .map { server ->
+                    val token =
+                        when {
+                            server.token.isBlank() -> ""
+                            parsed.tokensEncrypted && cipher.supported ->
+                                cipher.decrypt(server.id, server.token).orEmpty()
+                            parsed.tokensEncrypted -> ""
+                            else -> server.token
+                        }
+                    server.copy(token = token)
+                }
+        if (!parsed.tokensEncrypted && cipher.supported && servers.any { it.token.isNotBlank() }) {
+            runCatching { save(servers) }
+        }
+        return servers
     }
 
     override fun save(servers: List<McpServerConfig>) {
         val parent = file.parentFile ?: throw McpException("Could not save MCP servers.")
         if (!parent.isDirectory && !parent.mkdirs()) throw McpException("Could not save MCP servers.")
+        val stored =
+            servers.map { server ->
+                server.copy(
+                    token =
+                        if (server.token.isBlank()) {
+                            ""
+                        } else {
+                            cipher.encrypt(server.id, server.token)
+                        },
+                )
+            }
+        val encrypted = cipher.supported && stored.any { it.token.isNotBlank() }
         val tmp = File(parent, file.name + ".tmp")
         tmp.writeText(
-            json.encodeToString(McpServerFile.serializer(), McpServerFile(servers)),
+            json.encodeToString(
+                McpServerFile.serializer(),
+                McpServerFile(servers = stored, tokensEncrypted = encrypted),
+            ),
             Charsets.UTF_8,
         )
         if (!tmp.renameTo(file)) {
@@ -141,4 +173,5 @@ class FileMcpServerRepository(
 @Serializable
 private data class McpServerFile(
     val servers: List<McpServerConfig> = emptyList(),
+    val tokensEncrypted: Boolean = false,
 )

@@ -109,6 +109,9 @@ sealed interface AgentEvent {
 
     data class ReasoningDelta(val text: String) : AgentEvent
 
+    /** The current stream failed and will be retried; discard its partial text. */
+    data object StreamReset : AgentEvent
+
     data class ToolStarted(val call: ToolCallView) : AgentEvent
 
     data class ToolFinished(val result: ToolResultView) : AgentEvent
@@ -124,4 +127,5 @@ class AgentModelException(
     val code: AgentTurnErrorCode,
     override val message: String,
     val retryable: Boolean = false,
+    val retryAfterMs: Long? = null,
 ) : Exception(message)

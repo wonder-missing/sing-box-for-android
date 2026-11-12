@@ -36,6 +36,21 @@ class FakeProbePort(
     }
 }
 
+class FakeNodeSelectionPort(
+    var result: ((String, String) -> NodeSelectionResult)? = null,
+) : NodeSelectionPort {
+    val calls = mutableListOf<Pair<String, String>>()
+
+    override suspend fun select(
+        group: String,
+        outbound: String,
+    ): NodeSelectionResult {
+        calls.add(group to outbound)
+        return result?.invoke(group, outbound)
+            ?: NodeSelectionResult(ok = true, group = group, selected = outbound, previous = "node-b")
+    }
+}
+
 fun sampleNodeSnapshot(): NodeSnapshot =
     NodeSnapshot(
         coreRunning = true,
@@ -66,11 +81,13 @@ fun buildTestRegistry(
     nodeSource: NodeSnapshotSource = FakeNodeSource(),
     deviceSource: DeviceSnapshotSource = FakeDeviceSource(),
     probePort: ProbePort = FakeProbePort(),
+    selectionPort: NodeSelectionPort? = null,
 ): AgentToolRegistry =
     AgentToolRegistry(
         AgentTools(
             nodeSource = nodeSource,
             deviceSource = deviceSource,
             probePort = probePort,
+            selectionPort = selectionPort,
         ).all,
     )

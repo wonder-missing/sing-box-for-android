@@ -20,6 +20,10 @@ data class ApiTraceEntry(
     val responseHeaders: Map<String, String>,
     val responseBody: String?,
     val error: String?,
+    val startedAt: Long? = null,
+    val durationMs: Long? = null,
+    val usage: TokenUsage? = null,
+    val finishReason: FinishReason? = null,
 )
 
 /**
@@ -51,6 +55,8 @@ object AgentApiTrace {
 
     fun hasEntries(): Boolean = synchronized(lock) { entries.isNotEmpty() }
 
+    fun lastUsage(): TokenUsage? = synchronized(lock) { entries.peekLast()?.usage }
+
     fun asMarkdown(): String {
         val snapshot = synchronized(lock) { entries.toList() }
         if (snapshot.isEmpty()) return "No API calls recorded in this session."
@@ -62,9 +68,15 @@ object AgentApiTrace {
                     appendLine("## ${index + 1}. ${entry.method} ${entry.url}")
                     appendLine()
                     appendLine("- time: ${formatTime(entry.timestamp)}")
+                    entry.startedAt?.let { appendLine("- started: ${formatTime(it)}") }
+                    entry.durationMs?.let { appendLine("- duration: ${it}ms") }
                     entry.status?.let { appendLine("- status: $it") }
+                    entry.finishReason?.let { appendLine("- finish: ${it.name.lowercase(Locale.US)}") }
                     entry.error?.let { appendLine("- error: $it") }
-                    entry.responseBody?.let { body -> usageLine(body)?.let { appendLine("- usage: $it") } }
+                    entry.usage?.let { appendLine("- usage: ${formatUsage(it)}") }
+                    if (entry.usage == null) {
+                        entry.responseBody?.let { body -> usageLine(body)?.let { appendLine("- usage: $it") } }
+                    }
                     appendLine()
                     appendLine("### Request headers")
                     appendLine()
@@ -139,14 +151,23 @@ object AgentApiTrace {
     private fun usageLine(body: String): String? {
         val root = runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null
         val usage = root["usage"] as? JsonObject ?: return null
-        val prompt = (usage["prompt_tokens"] as? JsonPrimitive)?.intOrNull ?: return null
-        return buildString {
-            append("prompt=$prompt")
-            (usage["completion_tokens"] as? JsonPrimitive)?.intOrNull?.let { append(" completion=$it") }
-            (usage["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull?.let { append(" cache_hit=$it") }
-            (usage["prompt_cache_miss_tokens"] as? JsonPrimitive)?.intOrNull?.let { append(" cache_miss=$it") }
-        }
+        return formatUsage(
+            TokenUsage(
+                inputTokens = (usage["prompt_tokens"] as? JsonPrimitive)?.intOrNull,
+                outputTokens = (usage["completion_tokens"] as? JsonPrimitive)?.intOrNull,
+                cacheHitTokens = (usage["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull,
+                cacheMissTokens = (usage["prompt_cache_miss_tokens"] as? JsonPrimitive)?.intOrNull,
+            ),
+        )
     }
+
+    private fun formatUsage(usage: TokenUsage): String =
+        buildString {
+            append("prompt=${usage.inputTokens ?: "?"}")
+            append(" completion=${usage.outputTokens ?: "?"}")
+            usage.cacheHitTokens?.let { append(" cache_hit=$it") }
+            usage.cacheMissTokens?.let { append(" cache_miss=$it") }
+        }
 
     private fun formatTime(timestamp: Long): String =
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(timestamp))

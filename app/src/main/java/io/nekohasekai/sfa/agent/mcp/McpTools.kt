@@ -30,8 +30,7 @@ fun mcpAgentTools(
                     description = describe(serverName, tool),
                     permission = AgentPermission.DATA_EGRESS,
                     parameters = emptyList(),
-                    confirmationPolicy =
-                        if (tool.readOnly) ConfirmationPolicy.NEVER else ConfirmationPolicy.AGENT_ONLY,
+                    confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
                     category = "mcp",
                     aliases = aliases(serverName, serverId, tool.name, localName),
                     core = false,

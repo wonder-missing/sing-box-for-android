@@ -71,14 +71,34 @@ class ConductorSessionStore internal constructor(
         items: List<ConductorItem>,
         pendingEvent: TurnEvent? = null,
     ) {
-        val session =
-            ConductorSession(
-                transcript = trimTranscriptToLast(transcript, MAX_TRANSCRIPT),
-                items = items.takeLast(MAX_ITEMS),
-                pendingEvent = pendingEvent,
-            )
+        val payload = encodeBounded(transcript, items, pendingEvent)
         runCatching {
-            prefs.putString(KEY, json.encodeToString(session))
+            prefs.putString(KEY, payload)
+        }
+    }
+
+    private fun encodeBounded(
+        transcript: List<AgentMessage>,
+        items: List<ConductorItem>,
+        pendingEvent: TurnEvent?,
+    ): String {
+        var transcriptLimit = MAX_TRANSCRIPT
+        var itemsLimit = MAX_ITEMS
+        while (true) {
+            val session =
+                ConductorSession(
+                    transcript = trimTranscriptToLast(transcript, transcriptLimit),
+                    items = items.takeLast(itemsLimit),
+                    pendingEvent = pendingEvent,
+                )
+            val raw = json.encodeToString(session)
+            if (raw.toByteArray(Charsets.UTF_8).size <= MAX_BYTES ||
+                (transcriptLimit <= 1 && itemsLimit <= 1)
+            ) {
+                return raw
+            }
+            transcriptLimit = (transcriptLimit / 2).coerceAtLeast(1)
+            itemsLimit = (itemsLimit / 2).coerceAtLeast(1)
         }
     }
 
@@ -102,6 +122,7 @@ class ConductorSessionStore internal constructor(
     companion object {
         internal const val PREFS = "conductor_session"
         internal const val MAX_DRAFT = 8_000
+        internal const val MAX_BYTES = 512 * 1024
         private const val KEY = "session_v1"
         private const val DRAFT_KEY = "draft_v1"
         internal const val MAX_TRANSCRIPT = 120

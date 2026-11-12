@@ -58,6 +58,64 @@ object AgentContext {
     }
 
     /**
+     * Conservative token estimate. CJK and other non-ASCII characters count as
+     * one token; ASCII text is estimated at four characters per token. The
+     * result includes a small per-message overhead for roles and tool fields.
+     */
+    fun estimateTokens(text: String): Int {
+        if (text.isEmpty()) return 0
+        var wide = 0
+        var narrow = 0
+        text.forEach { ch ->
+            if (ch.code > 127) wide += 1 else narrow += 1
+        }
+        return wide + (narrow + 3) / 4
+    }
+
+    fun estimateMessageTokens(message: AgentMessage): Int =
+        when (message) {
+            is AgentMessage.System -> 4 + estimateTokens(message.content)
+            is AgentMessage.User -> 4 + estimateTokens(message.content)
+
+            is AgentMessage.Assistant ->
+                4 +
+                    estimateTokens(message.content.orEmpty()) +
+                    message.toolCalls.sumOf { 6 + estimateTokens(it.name) + estimateTokens(it.argumentsJson) }
+
+            is AgentMessage.Tool ->
+                4 + estimateTokens(message.name) + estimateTokens(message.content)
+        }
+
+    fun estimateMessagesTokens(messages: List<AgentMessage>): Int = messages.sumOf { estimateMessageTokens(it) }
+
+    /**
+     * Keeps the newest messages that fit [maxTokens]. The slice starts at a
+     * user message so tool calls and their observations stay paired. The
+     * current user message is always kept even if it alone exceeds the budget.
+     */
+    fun fitToBudget(
+        messages: List<AgentMessage>,
+        maxTokens: Int,
+    ): List<AgentMessage> {
+        if (maxTokens <= 0 || messages.isEmpty()) return messages
+        if (estimateMessagesTokens(messages) <= maxTokens) return messages
+        var start = messages.size
+        var used = 0
+        while (start > 0) {
+            val cost = estimateMessageTokens(messages[start - 1])
+            if (start < messages.size && used + cost > maxTokens) break
+            used += cost
+            start--
+        }
+        var firstUser = start
+        while (firstUser < messages.size && messages[firstUser] !is AgentMessage.User) firstUser++
+        if (firstUser >= messages.size) {
+            return messages.lastOrNull { it is AgentMessage.User }?.let { listOf(it) }.orEmpty()
+        }
+        return messages.subList(firstUser, messages.size)
+    }
+
+    /**
      * Keeps the last user turn fully intact and replaces older, oversized tool
      * observations with a compact marker. The UI keeps the full result; only the
      * model transcript is compacted. Compaction happens at a turn boundary.
@@ -113,24 +171,33 @@ object AgentContext {
         val output = observation.output
         val rendered = output?.toString()
         val message = observation.message
-        val outputTooLarge = rendered != null && rendered.length > maxChars
-        val messageTooLarge = message != null && message.length > maxChars
+        val outputLength = rendered?.length ?: 0
+        val messageLength = message?.length ?: 0
+        val outputTooLarge = outputLength > maxChars
+        val messageTooLarge = messageLength > maxChars
         if (!outputTooLarge && !messageTooLarge) return observation
 
+        val outputBudget =
+            if (outputTooLarge) {
+                (maxChars - maxChars / 4).coerceAtLeast(1)
+            } else {
+                outputLength
+            }
+        val messageBudget = (maxChars - outputBudget).coerceAtLeast(1)
         val truncatedOutput =
             if (outputTooLarge && rendered != null) {
                 buildJsonObject {
                     put("truncated", true)
-                    put("preview", rendered.take(maxChars))
+                    put("preview", rendered.take(outputBudget))
                 }
             } else {
                 output
             }
         return observation.copy(
             output = truncatedOutput,
-            message = message?.take(maxChars),
+            message = message?.take(if (messageTooLarge) messageBudget else maxChars),
             truncated = true,
-            originalChars = (rendered?.length ?: message?.length) ?: observation.originalChars,
+            originalChars = maxOf(outputLength, messageLength),
         )
     }
 }

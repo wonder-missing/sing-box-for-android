@@ -289,7 +289,7 @@ class McpRuntime(
                     remoteName = remote.name,
                     localName = tool.definition.name,
                     summary = remote.description.ifBlank { remote.name }.take(180),
-                    asksFirst = !remote.readOnly,
+                    asksFirst = true,
                     required = requiredKeys(remote.inputSchema),
                 )
             }
@@ -376,7 +376,7 @@ object McpRuntimes {
             instance?.let { return it }
             val file = File(context.applicationContext.filesDir, "conductor/mcp-servers.json")
             return McpRuntime(
-                repository = FileMcpServerRepository(file),
+                repository = FileMcpServerRepository(file, McpTokenCipherFactory.create()),
                 transportFactory = { config -> McpHttpTransport(config.url, config.token) },
             ).also { instance = it }
         }
