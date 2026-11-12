@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime
 from typing import Any
@@ -132,12 +133,49 @@ def seconds_from_jobs(kind: str, jobs: list[dict[str, Any]]) -> int | None:
     raise ValueError(f"unknown timing kind: {kind}")
 
 
+_AGENT_TIME_LINE = re.compile(r"^Agent-Time:\s*(?:(\d+)h)?(?:(\d+)m)?\s*$", re.IGNORECASE)
+_AGENT_LOOPS_LINE = re.compile(r"^Agent-Loops:\s*(\d+)\s*$", re.IGNORECASE)
+
+
+def effort_from_tag_message(message: str) -> dict[str, int]:
+    """Read effort lines written on an annotated release tag. Zero stays absent."""
+    seconds = 0
+    loops = 0
+    saw_time = False
+    saw_loops = False
+    for raw in message.splitlines():
+        line = raw.strip()
+        time_match = _AGENT_TIME_LINE.match(line)
+        if time_match and (time_match.group(1) or time_match.group(2)):
+            hours = int(time_match.group(1) or 0)
+            minutes = int(time_match.group(2) or 0)
+            seconds = hours * 3600 + minutes * 60
+            saw_time = True
+            continue
+        loops_match = _AGENT_LOOPS_LINE.match(line)
+        if loops_match:
+            loops = int(loops_match.group(1))
+            saw_loops = True
+    found: dict[str, int] = {}
+    if saw_time and seconds > 0:
+        found["agent_seconds"] = seconds
+    if saw_loops and loops > 0:
+        found["agent_loops"] = loops
+    return found
+
+
 def stat_lines(facts: dict[str, Any]) -> list[str]:
     lines = [test_line(facts)]
     for label, key in (("单元测试耗时", "test_seconds"), ("构建耗时", "build_seconds")):
         text = format_duration(facts.get(key))
         if text:
             lines.append(f"{label}：{text}")
+    agent_time = format_duration(facts.get("agent_seconds"))
+    if agent_time:
+        lines.append(f"Agent 投入时间：{agent_time}")
+    agent_loops = facts.get("agent_loops")
+    if isinstance(agent_loops, int) and agent_loops > 0:
+        lines.append(f"Agent Loop 数量：{agent_loops}")
     return lines
 
 
@@ -475,6 +513,38 @@ def run_self_test() -> None:
     assert unit_test_seconds([]) is None
     assert build_seconds([jobs[1]]) is None
 
+    effort = effort_from_tag_message(
+        "release\n\nAgent-Time: 2h15m\nAgent-Loops: 4\n"
+    )
+    assert effort == {"agent_seconds": 2 * 3600 + 15 * 60, "agent_loops": 4}
+    assert effort_from_tag_message("Agent-Time: 90m\nAgent-Loops: 0\n") == {"agent_seconds": 90 * 60}
+    assert effort_from_tag_message("Agent-Time: 0m\nnot a field\n") == {}
+    assert effort_from_tag_message("") == {}
+    recorded = plain_text(
+        {
+            "kind": "success",
+            "version": "1.0.0-wonder.1",
+            "tests": 12,
+            "changelog": ["fix: a"],
+            "apk_url": "",
+            "release_url": "",
+            **effort_from_tag_message("Agent-Time: 2h15m\nAgent-Loops: 4\n"),
+        }
+    )
+    assert "Agent 投入时间：2小时15分" in recorded
+    assert "Agent Loop 数量：4" in recorded
+    unrecorded = plain_text(
+        {
+            "kind": "success",
+            "version": "1.0.0-wonder.1",
+            "tests": 12,
+            "changelog": ["fix: a"],
+            "apk_url": "",
+            "release_url": "",
+        }
+    )
+    assert "Agent" not in unrecorded
+
     overflow = compose(
         {
             "kind": "success",
@@ -525,6 +595,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--skipped", default="")
     parser.add_argument("--test-seconds", default="")
     parser.add_argument("--build-seconds", default="")
+    parser.add_argument("--tag-message-file", default="")
     parser.add_argument("--apk-url", default="")
     parser.add_argument("--release-url", default="")
     parser.add_argument("--changelog-file", default="")
@@ -548,6 +619,9 @@ def main(argv: list[str]) -> int:
         "release_url": args.release_url,
         "changelog": changelog_from_lines(raw_notes),
     }
+    if args.tag_message_file:
+        with open(args.tag_message_file, encoding="utf-8") as handle:
+            facts.update(effort_from_tag_message(handle.read()))
     json.dump(compose(facts), sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

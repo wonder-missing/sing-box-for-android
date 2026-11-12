@@ -43,7 +43,9 @@ jobs:
           test_seconds=""
           build_seconds=""
           changelog_file="$RUNNER_TEMP/changelog.txt"
+          tag_message_file="$RUNNER_TEMP/tag-message.txt"
           : > "$changelog_file"
+          : > "$tag_message_file"
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             kind="test"
@@ -54,6 +56,14 @@ jobs:
               tag=$(gh release view -R "$REPO" --json tagName -q .tagName)
             fi
             version="${tag#v}"
+            # Annotated tags carry Agent-Time and Agent-Loops. A lightweight tag has neither.
+            tag_object=$(gh api "repos/$REPO/git/ref/tags/${tag}" --jq '[.object.type, .object.sha] | join(" ")' || true)
+            tag_object_type=${tag_object%% *}
+            tag_object_sha=${tag_object#* }
+            if [ "$tag_object_type" = "tag" ] && [ -n "$tag_object_sha" ] && [ "$tag_object_sha" != "$tag_object_type" ]; then
+              gh api "repos/$REPO/git/tags/${tag_object_sha}" --jq '.message // empty' > "$tag_message_file" \
+                || : > "$tag_message_file"
+            fi
             release_url=$(gh release view "$tag" -R "$REPO" --json url -q .url)
             apk_url=$(gh release view "$tag" -R "$REPO" --json assets \
               --jq '[.assets[] | select(.name | endswith("-arm64-v8a.apk")) | .url][0] // empty')
@@ -114,6 +124,7 @@ jobs:
             --skipped "$skipped" \
             --test-seconds "$test_seconds" \
             --build-seconds "$build_seconds" \
+            --tag-message-file "$tag_message_file" \
             --apk-url "$apk_url" \
             --release-url "$release_url" \
             --changelog-file "$changelog_file" \
