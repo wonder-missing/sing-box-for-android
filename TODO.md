@@ -37,6 +37,7 @@
 - [ ] **[审查] 批量确认分级**：`Approve rest of turn` 只覆盖同工具或只读工具；`DATA_EGRESS` / MCP 写工具逐次确认。见审查 §4。
 - [ ] **[审查] 路由 A/B 与评测**：15 到 20 条中文 prompt，native 与 routing 两种模式对比；再决定 routing 是否默认开。见审查 §7。
 - [ ] **[审查] UI 手感**：stick-to-bottom 与“回到最新”；列表用稳定 id 作 key。见审查 §6。
+- [ ] **Conductor 最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：wonder.47 用 `ComposeFoundationFlags` 关闭 Compose 1.11 的新 context menu 和 smart selection；待真机确认 Copy 回来，确认后按上游修复再移除开关。
 - [ ] **[审查] 小修集合**：`/capabilities` 的 MCP params、未知工具列表上限、`truncateObservation` 预算、`Retry-After`、`/clear` 文档或行为、prompt golden。见审查 §6。
 
 ## 下个会话接手

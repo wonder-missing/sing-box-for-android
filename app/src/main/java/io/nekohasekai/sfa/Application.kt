@@ -20,6 +20,7 @@ import io.nekohasekai.sfa.bg.OOMReportManager
 import io.nekohasekai.sfa.bg.PowerReportManager
 import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.compose.screen.tools.TaildropFiles
+import io.nekohasekai.sfa.compose.text.ComposeTextSelectionCompat
 import io.nekohasekai.sfa.constant.Bugs
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.log.AppLog
@@ -49,6 +50,7 @@ class Application : Application() {
     }
 
     override fun onCreate() {
+        ComposeTextSelectionCompat.install()
         super.onCreate()
         AppLifecycleObserver.register(this)
 
