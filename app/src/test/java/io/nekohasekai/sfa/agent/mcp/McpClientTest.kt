@@ -20,8 +20,6 @@ import io.nekohasekai.sfa.agent.FinishReason
 import io.nekohasekai.sfa.agent.ToolCall
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolExecution
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -43,9 +41,12 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
-import java.net.InetSocketAddress
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.nio.file.Files
-import java.util.concurrent.Executors
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class McpClientTest {
@@ -521,56 +522,90 @@ private class LoopbackMcp : AutoCloseable {
         val body: String,
     )
 
-    private val executor = Executors.newCachedThreadPool()
-    private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-    val records: MutableList<Recorded> = java.util.Collections.synchronizedList(mutableListOf())
+    private val running = AtomicBoolean(true)
+    private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
+    val records: MutableList<Recorded> = Collections.synchronizedList(mutableListOf())
     val writes = AtomicInteger()
-    val url: String
+    val url = "http://127.0.0.1:${server.localPort}/mcp"
 
-    init {
-        server.createContext("/") { exchange -> handle(exchange) }
-        server.executor = executor
-        server.start()
-        url = "http://127.0.0.1:${server.address.port}/mcp"
-    }
+    private val thread =
+        Thread {
+            while (running.get()) {
+                val socket =
+                    try {
+                        server.accept()
+                    } catch (_: Exception) {
+                        break
+                    }
+                try {
+                    handle(socket)
+                } catch (_: Exception) {
+                    // A bad request should not kill the accept loop.
+                } finally {
+                    runCatching { socket.close() }
+                }
+            }
+        }.apply {
+            isDaemon = true
+            name = "mcp-loopback"
+            start()
+        }
 
-    private fun handle(exchange: HttpExchange) {
-        val body = exchange.requestBody.use { it.readBytes() }.toString(Charsets.UTF_8)
-        val session = exchange.requestHeaders.getFirst("Mcp-Session-Id")
-        val authorization = exchange.requestHeaders.getFirst("Authorization")
+    private fun handle(socket: Socket) {
+        socket.soTimeout = 5_000
+        val reader = socket.getInputStream().bufferedReader(Charsets.UTF_8)
+        if (reader.readLine() == null) return
+        val headers = mutableMapOf<String, String>()
+        while (true) {
+            val line = reader.readLine() ?: return
+            if (line.isEmpty()) break
+            val colon = line.indexOf(':')
+            if (colon > 0) {
+                headers[line.substring(0, colon).trim().lowercase()] = line.substring(colon + 1).trim()
+            }
+        }
+        val length = headers["content-length"]?.toIntOrNull() ?: 0
+        val chars = CharArray(length)
+        var read = 0
+        while (read < length) {
+            val count = reader.read(chars, read, length - read)
+            if (count < 0) break
+            read += count
+        }
+        val body = String(chars, 0, read)
+        val session = headers["mcp-session-id"]
+        val authorization = headers["authorization"]
         val parsed = Json.parseToJsonElement(body).jsonObject
         val method = parsed["method"]!!.jsonPrimitive.content
         val id = (parsed["id"] as? JsonPrimitive)?.contentOrNull
         records += Recorded(method, session, authorization, body)
         if (authorization != "Bearer test-token") {
-            send(exchange, 401, """{"jsonrpc":"2.0","id":$id,"error":{"code":-32001,"message":"unauthorized"}}""", null)
+            send(socket, 401, "Unauthorized", """{"jsonrpc":"2.0","id":$id,"error":{"code":-32001,"message":"unauthorized"}}""", null)
             return
         }
         when (method) {
             "initialize" ->
                 send(
-                    exchange,
+                    socket,
                     200,
+                    "OK",
                     """{"jsonrpc":"2.0","id":$id,"result":{"protocolVersion":"2025-06-18","capabilities":{}}}""",
                     "sess-1",
                 )
 
-            "notifications/initialized" -> {
-                exchange.sendResponseHeaders(202, 0)
-                exchange.close()
-            }
+            "notifications/initialized" -> send(socket, 202, "Accepted", "", "sess-1")
 
             "tools/list" -> {
                 if (session != "sess-1") {
-                    send(exchange, 400, """{"jsonrpc":"2.0","id":$id,"error":{"code":-32000,"message":"no session"}}""", null)
+                    send(socket, 400, "Bad Request", """{"jsonrpc":"2.0","id":$id,"error":{"code":-32000,"message":"no session"}}""", null)
                     return
                 }
-                send(exchange, 200, listJson(id), "sess-1")
+                send(socket, 200, "OK", listJson(id), "sess-1")
             }
 
             "tools/call" -> {
                 if (session != "sess-1") {
-                    send(exchange, 400, """{"jsonrpc":"2.0","id":$id,"error":{"code":-32000,"message":"no session"}}""", null)
+                    send(socket, 400, "Bad Request", """{"jsonrpc":"2.0","id":$id,"error":{"code":-32000,"message":"no session"}}""", null)
                     return
                 }
                 val params = parsed["params"]!!.jsonObject
@@ -585,10 +620,10 @@ private class LoopbackMcp : AutoCloseable {
                         writes.incrementAndGet()
                         """{"jsonrpc":"2.0","id":$id,"result":{"content":[{"type":"text","text":"wrote"}]}}"""
                     }
-                send(exchange, 200, payload, "sess-1")
+                send(socket, 200, "OK", payload, "sess-1")
             }
 
-            else -> send(exchange, 400, """{"jsonrpc":"2.0","id":$id,"error":{"code":-32601,"message":"nope"}}""", null)
+            else -> send(socket, 400, "Bad Request", """{"jsonrpc":"2.0","id":$id,"error":{"code":-32601,"message":"nope"}}""", null)
         }
     }
 
@@ -596,21 +631,31 @@ private class LoopbackMcp : AutoCloseable {
         """{"jsonrpc":"2.0","id":$id,"result":{"tools":[{"name":"echo","description":"Echo text","inputSchema":{"type":"object","properties":{"text":{"type":"string"},"n":{"type":"number"}},"required":["text"]},"annotations":{"readOnlyHint":true}},{"name":"write","description":"Write something","inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}}]}}"""
 
     private fun send(
-        exchange: HttpExchange,
+        socket: Socket,
         status: Int,
+        reason: String,
         body: String,
         session: String?,
     ) {
-        if (session != null) exchange.responseHeaders.add("Mcp-Session-Id", session)
-        exchange.responseHeaders.add("Content-Type", "application/json")
         val bytes = body.toByteArray(Charsets.UTF_8)
-        exchange.sendResponseHeaders(status, bytes.size.toLong())
-        exchange.responseBody.use { it.write(bytes) }
+        val header =
+            buildString {
+                append("HTTP/1.1 $status $reason\r\n")
+                append("Content-Type: application/json\r\n")
+                if (session != null) append("Mcp-Session-Id: $session\r\n")
+                append("Content-Length: ${bytes.size}\r\n")
+                append("Connection: close\r\n\r\n")
+            }
+        val output = socket.getOutputStream()
+        output.write(header.toByteArray(Charsets.US_ASCII))
+        output.write(bytes)
+        output.flush()
     }
 
     override fun close() {
-        server.stop(0)
-        executor.shutdownNow()
+        running.set(false)
+        runCatching { server.close() }
+        runCatching { thread.join(1_000) }
     }
 }
 
