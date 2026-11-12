@@ -247,6 +247,37 @@ class OpenAiCompatibleModelClientTest {
         )
     }
 
+    @Test
+    fun rejectsSseThatEndsWithoutCompletion() {
+        responseBody =
+            """
+            data: {"choices":[{"delta":{"content":"Hel"}}]}
+            data: {"choices":[{"delta":{"content":"lo"}}]}
+            """.trimIndent()
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
+
+        val error =
+            runCatching {
+                runBlocking {
+                    client
+                        .stream(
+                            AgentModelRequest(
+                                messages = listOf(AgentMessage.User("hi")),
+                                tools = emptyList(),
+                                maxOutputTokens = 16,
+                                timeoutMs = 5_000,
+                            ),
+                            apiKey = "sk-test",
+                        ).toList()
+                }
+            }.exceptionOrNull()
+
+        assertTrue(error is AgentModelException)
+        val modelError = error as AgentModelException
+        assertEquals(AgentTurnErrorCode.INVALID_MODEL_RESPONSE, modelError.code)
+        assertTrue(modelError.retryable)
+    }
+
     private fun request(): AgentModelRequest =
         AgentModelRequest(
             messages = listOf(AgentMessage.User("hi")),

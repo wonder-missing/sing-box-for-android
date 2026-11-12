@@ -53,16 +53,7 @@ object AgentContext {
     ): List<AgentMessage> {
         if (history.size <= maxMessages) return history
         val target = targetMessages.coerceIn(1, maxMessages)
-        var start = (history.size - target).coerceAtLeast(0)
-        // Never start in the middle of an assistant tool-call batch.
-        while (start > 0 && history[start] is AgentMessage.Tool) {
-            start--
-        }
-        if (start > 0 && history[start] is AgentMessage.Assistant) {
-            // Keep the assistant message that owns the first retained tool result.
-            start--
-        }
-        return history.subList(start.coerceAtLeast(0), history.size)
+        return trimTranscriptToLast(history, target)
     }
 
     /**

@@ -55,4 +55,23 @@ class AgentContextTest {
         assertTrue(trimmed.first() is AgentMessage.User)
         assertTrue(trimmed.size > 36)
     }
+
+    @Test
+    fun trimStartsAtATurnBoundaryWhenTheCutFallsOnAFinalAssistant() {
+        val history =
+            listOf(
+                AgentMessage.User("u1"),
+                AgentMessage.Assistant(null, listOf(ToolCall("c1", "x", "{}"))),
+                AgentMessage.Tool("c1", "x", "{}"),
+                AgentMessage.Assistant("done"),
+                AgentMessage.User("u2"),
+                AgentMessage.Assistant("done2"),
+            )
+
+        val trimmed = AgentContext.trim(history, maxMessages = 5, targetMessages = 3)
+
+        assertTrue(trimmed.first() is AgentMessage.User)
+        assertTrue(trimmed.size >= 3)
+        assertTrue(validateTranscriptPairing(trimmed))
+    }
 }

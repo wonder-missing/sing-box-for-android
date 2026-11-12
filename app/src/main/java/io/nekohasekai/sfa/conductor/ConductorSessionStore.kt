@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.conductor
 import android.content.Context
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.TurnEvent
+import io.nekohasekai.sfa.agent.trimTranscriptToLast
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -72,7 +73,7 @@ class ConductorSessionStore internal constructor(
     ) {
         val session =
             ConductorSession(
-                transcript = transcript.takeLast(MAX_TRANSCRIPT),
+                transcript = trimTranscriptToLast(transcript, MAX_TRANSCRIPT),
                 items = items.takeLast(MAX_ITEMS),
                 pendingEvent = pendingEvent,
             )
@@ -103,7 +104,7 @@ class ConductorSessionStore internal constructor(
         internal const val MAX_DRAFT = 8_000
         private const val KEY = "session_v1"
         private const val DRAFT_KEY = "draft_v1"
-        private const val MAX_TRANSCRIPT = 120
+        internal const val MAX_TRANSCRIPT = 120
         private const val MAX_ITEMS = 200
     }
 }

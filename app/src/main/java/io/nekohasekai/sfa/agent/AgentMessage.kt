@@ -100,3 +100,18 @@ fun validateTranscriptPairing(messages: List<AgentMessage>): Boolean {
     }
     return pending.isEmpty()
 }
+
+/**
+ * Keeps at most [maxMessages] messages without starting in the middle of a
+ * tool-call batch. The slice starts at the nearest user message at or before
+ * the cut, so the model never sees an orphan tool message.
+ */
+fun trimTranscriptToLast(
+    messages: List<AgentMessage>,
+    maxMessages: Int,
+): List<AgentMessage> {
+    if (maxMessages <= 0 || messages.size <= maxMessages) return messages
+    var start = messages.size - maxMessages
+    while (start > 0 && messages[start] !is AgentMessage.User) start--
+    return messages.subList(start, messages.size)
+}

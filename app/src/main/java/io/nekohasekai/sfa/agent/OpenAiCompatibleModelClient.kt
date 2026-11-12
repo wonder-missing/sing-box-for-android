@@ -167,13 +167,17 @@ class OpenAiCompatibleModelClient(
                             )
                     var finish: FinishReason? = null
                     var usage: TokenUsage? = null
+                    var sawDone = false
                     while (true) {
                         if (cancelled) throw CancellationException("cancelled")
                         val line = source.readUtf8Line() ?: break
                         if (!line.startsWith("data:")) continue
                         val data = line.removePrefix("data:").trim()
                         if (data.isEmpty()) continue
-                        if (data == "[DONE]") break
+                        if (data == "[DONE]") {
+                            sawDone = true
+                            break
+                        }
                         responseBody.append(data).append('\n')
                         val chunk = parseStreamChunk(data) ?: continue
                         finish = chunk.finishReason ?: finish
@@ -181,6 +185,13 @@ class OpenAiCompatibleModelClient(
                         chunk.reasoning?.let { emit(AgentModelChunk.ReasoningDelta(it)) }
                         chunk.content?.let { emit(AgentModelChunk.ContentDelta(it)) }
                         chunk.toolCalls.forEach { emit(it) }
+                    }
+                    if (finish == null && !sawDone) {
+                        throw AgentModelException(
+                            AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
+                            "${endpoint.providerLabel} stream ended before completion.",
+                            retryable = true,
+                        )
                     }
                     emit(AgentModelChunk.Completed(finish ?: FinishReason.UNKNOWN, usage))
                 }

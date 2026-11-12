@@ -241,6 +241,21 @@ class AgentRuntime(
                 )
             }
 
+            if (response.toolCalls.isEmpty() && response.content.isNullOrBlank()) {
+                return finish(
+                    transcript,
+                    startSize,
+                    TurnOutcome.Failed(
+                        AgentError(
+                            AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
+                            "The model returned an empty answer.",
+                            retryable = true,
+                        ),
+                    ),
+                    onEvent,
+                )
+            }
+
             transcript.add(AgentMessage.Assistant(response.content, response.toolCalls))
             partialContent.clear()
             response.content?.takeIf { it.isNotBlank() }?.let { onEvent(AgentEvent.AssistantMessage(it)) }

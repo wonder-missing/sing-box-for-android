@@ -633,6 +633,37 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun emptyStreamingAnswerFailsClosed() {
+        val streaming =
+            StreamingScriptedModel(
+                mutableListOf(
+                    listOf(AgentModelChunk.Completed(FinishReason.STOP, null)),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime =
+            AgentRuntime(
+                inputGuard = DefaultAgentInputGuard,
+                model = ScriptedModel(mutableListOf()),
+                tools = executor,
+                apiKeys = FakeKeyProvider("sk-test"),
+                config = AgentConfig(maxToolRounds = 1),
+                streamingModel = streaming,
+            )
+
+        val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Failed)
+        assertEquals(
+            AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
+            (result.outcome as TurnOutcome.Failed).error.code,
+        )
+        assertTrue(result.messages.isEmpty())
+        assertEquals(TurnEvent("turn_failed", "invalid_model_response"), result.pendingEvent)
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
     fun stopCancelsAStreamingTurn() {
         val streaming = BlockingStreamingModel()
         val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }

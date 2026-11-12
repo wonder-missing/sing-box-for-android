@@ -1,8 +1,11 @@
 package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentMessage
+import io.nekohasekai.sfa.agent.ToolCall
+import io.nekohasekai.sfa.agent.validateTranscriptPairing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConductorSessionStoreTest {
@@ -22,6 +25,30 @@ class ConductorSessionStoreTest {
 
         store.saveDraft("")
         assertEquals("", store.loadDraft())
+    }
+
+    @Test
+    fun savedTranscriptNeverStartsInsideAToolBatch() {
+        val history =
+            mutableListOf<AgentMessage>(
+                AgentMessage.User("turn"),
+                AgentMessage.Assistant(null, listOf(ToolCall("c1", "x", "{}"))),
+                AgentMessage.Tool("c1", "x", "{}"),
+                AgentMessage.Assistant("done"),
+            )
+        repeat(ConductorSessionStore.MAX_TRANSCRIPT + 2 - history.size) {
+            history.add(AgentMessage.User("u$it"))
+        }
+        assertTrue(validateTranscriptPairing(history))
+        assertTrue(history.size > ConductorSessionStore.MAX_TRANSCRIPT)
+
+        val store = ConductorSessionStore(MemoryConductorPrefs())
+        store.save(history, emptyList(), null)
+
+        val restored = store.load()?.transcript.orEmpty()
+        assertTrue(validateTranscriptPairing(restored))
+        assertTrue(restored.first() is AgentMessage.User)
+        assertEquals(history, restored)
     }
 
     private class MemoryConductorPrefs : ConductorPreferenceStore {

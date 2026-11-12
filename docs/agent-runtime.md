@@ -6,6 +6,8 @@
 
 本文只定 Phase 2a / 2b 的运行时：OpenAI-compatible BYOK（DeepSeek / xAI / Custom）、自然语言入口、结构化 tool call、确认暂停与恢复、有界循环。设备注册表和跨设备能力仍留在上位文档的 Phase 2（设备注册表部分）/ 3 / 4。
 
+审查记录：2026-11-13 的静态审查和待办映射见 [`conductor-review-2026-11-13.md`](conductor-review-2026-11-13.md)。
+
 摘要：
 
 - Phase 2a：最多 12 轮工具调用作为防死循环 guard，已经支持多步；2B 再补 Stop、真取消和流式。
