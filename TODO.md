@@ -35,8 +35,8 @@
 ## 下个会话接手
 
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49 已落地 P1/P2/P3 大部分，剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.49（tag `v1.15.0-alpha.13-wonder.49`，commit `7048e2f`）。下一次从 50 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
-- 手机上看 wonder.49：
+- 当前已发布 wonder.50（tag `v1.15.0-alpha.13-wonder.50`，commit `072be92`；wonder.49 为 `7048e2f`）。下一次从 51 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 手机上看 wonder.49/50：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
   - 说「把出口切到 direct」应出确认卡；执行后用 `list_nodes` 读回。失败时应回滚旧选择。
@@ -58,12 +58,13 @@
   - probe 真正并发：libbox 没有 per-request outbound binding；`probe_many` 目前顺序执行。
   - `dns_lookup` / `route_decision` / `http_fetch_probe`：libbox 没有 DNS/route API，GET 也没有状态码和 body 上限。
   - `TOOL_CANCEL_TIMEOUT` 精确 1 秒；返回或进程死亡中途取消仍会丢当前 turn。
-  - 批量确认整批预览；trace 内存/长 body；会话编解码仍在主线程。
+  - 批量确认整批预览；trace 单条长 body 截断与 release 驻留；会话编解码仍在主线程。
   - 路由 A/B 真机执行；event reason 细分、prompt golden、`AgentIntentParser` 清理。
   - Provider capability、跨版本会话边界、probe 链路复测、连接可观测、LLM 摘要、增量更新。
 
 ## 最近完成
 
+- wonder.50（2026-11-13）：P3 清理。trace 加 1M 字符总量上限（旧条目先缩到 20k 再丢弃）、错误码和 `X-Request-Id`；传输错误拆成 `network_dns` / `network_connect` / `network_tls` / `network_handshake` / `network_timeout`；system prompt 加 SHA-256 字节锁；删除无入口的 `AgentIntentParser`。tag `v1.15.0-alpha.13-wonder.50`，commit `072be92`。
 - wonder.49（2026-11-13）：Conductor P1/P2/P3 批次。工具级超时、Tailscale 取消、`probe_many` 顺序批量、`select_outbound` 确认/回滚；MCP 全部 AGENT_ONLY、`DATA_EGRESS` 强制、定义 fingerprint、404 不重试、token Keystore、确认 URL、刷新并行；token 预算、会话 512KB 上限、search weak、probe `reachable`、trace usage/耗时、Retry-After、`/clear`、AppLog 审计；UI Retry/usage/滚动/回到最新。libbox 无 per-request outbound、DNS/route、GET 状态码，probe 真正并发和诊断工具阻塞。评估见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。
 - 2026-11-13：Conductor 综合评估（实验导出 + 实现评审 + TODO 去重），见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。已修复项在评估里划掉；P1 顺序已重排。
 - wonder.48（2026-11-13）：失败 turn 不再把本轮 user 从模型 transcript 回滚，UI 和模型上下文一致；空失败 turn 显示 Retry，重发最后一条用户消息，不重跑已有工具结果。system prompt 明确连续两条 user 是独立请求。
