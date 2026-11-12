@@ -25,10 +25,11 @@
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
 - [ ] **Provider capability 矩阵**：wonder.42 起 Settings 和 `/reasoning` 共用 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
+- [ ] **发版通知的 Agent 投入时间与 Loop 数**：CI 和 git 里都没有这两项。要进飞书，得先定一个随提交留下的记录（两次 tag 之间的分钟数和 loop 数）。没有记录就不要写 0。
 
 ## 下个会话接手
 
-- wonder.46 随本提交发出（tag `v1.15.0-alpha.13-wonder.46`）。下一次从 47 开始，先别打 tag。
+- 当前已发布 wonder.46（tag `v1.15.0-alpha.13-wonder.46`，提交 `d06f27a`）。下一次从 47 开始，先别打 tag。发布上传的 5xx 会在 Release 工作流里重试。飞书成功通知会带单元测试耗时，以及这次真正编译过的构建耗时。
 - 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：

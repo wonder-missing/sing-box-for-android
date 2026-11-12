@@ -28,6 +28,7 @@ jobs:
           TAG: ${{ github.event.workflow_run.head_branch }}
           SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -39,6 +40,8 @@ jobs:
           failures=""
           errors=""
           skipped=""
+          test_seconds=""
+          build_seconds=""
           changelog_file="$RUNNER_TEMP/changelog.txt"
           : > "$changelog_file"
 
@@ -74,8 +77,16 @@ jobs:
               else
                 echo "unit-test-count artifact missing for Test run $run_id"
               fi
+              if jobs=$(gh run view "$run_id" -R "$REPO" --json jobs --jq '.jobs'); then
+                test_seconds=$(printf '%s' "$jobs" | python3 .github/scripts/compose_release_message.py --seconds unit-test || true)
+              fi
             else
               echo "No successful Test run for $sha"
+            fi
+            if [ -n "${WORKFLOW_RUN_ID}" ]; then
+              if jobs=$(gh run view "$WORKFLOW_RUN_ID" -R "$REPO" --json jobs --jq '.jobs'); then
+                build_seconds=$(printf '%s' "$jobs" | python3 .github/scripts/compose_release_message.py --seconds build || true)
+              fi
             fi
             prev=$(gh release list -R "$REPO" --limit 30 --json tagName,isDraft \
               --jq "[.[] | select(.isDraft|not) | select(.tagName != \"$tag\")][0].tagName // empty")
@@ -101,6 +112,8 @@ jobs:
             --failures "$failures" \
             --errors "$errors" \
             --skipped "$skipped" \
+            --test-seconds "$test_seconds" \
+            --build-seconds "$build_seconds" \
             --apk-url "$apk_url" \
             --release-url "$release_url" \
             --changelog-file "$changelog_file" \

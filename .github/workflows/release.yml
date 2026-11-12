@@ -403,10 +403,33 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
             PRERELEASE=(--prerelease)
           fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES"
-            gh release upload "$TAG" dist/*.apk --clobber
-          else
-            gh release create "$TAG" dist/*.apk --target "${GITHUB_SHA}" --title "$TITLE" --notes "$NOTES" "${PRERELEASE[@]}"
-          fi
+          publish_release() {
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release edit "$TAG" --title "$TITLE" --notes "$NOTES"
+              gh release upload "$TAG" dist/*.apk --clobber
+            else
+              gh release create "$TAG" dist/*.apk --target "${GITHUB_SHA}" --title "$TITLE" --notes "$NOTES" "${PRERELEASE[@]}"
+            fi
+            # A 503 can leave the release behind without the APK. The next
+            # attempt takes the upload path only when the file is present.
+            assets=$(gh release view "$TAG" --json assets \
+              --jq '[.assets[] | select(.name | endswith("-arm64-v8a.apk"))] | length')
+            [ "${assets}" -ge 1 ]
+          }
+          attempt=1
+          while [ "$attempt" -le 5 ]; do
+            if [ "$attempt" -gt 1 ]; then
+              sleep_for=$((attempt * 15))
+              echo "Publish attempt ${attempt}/5 in ${sleep_for}s"
+              sleep "$sleep_for"
+            fi
+            if publish_release; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Publish failed after 5 attempts"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+          done
           gh release view "$TAG" --json url,assets --jq '{url: .url, assets: [.assets[].url]}'

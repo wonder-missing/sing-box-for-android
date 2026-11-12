@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from typing import Any
 
 TEXT_CHAR_LIMIT = 320
@@ -34,6 +35,110 @@ def changelog_from_lines(lines: list[str]) -> list[str]:
         if subject and not subject.startswith("Merge "):
             notes.append(subject)
     return notes
+
+
+UNIT_TEST_JOB = "Unit tests (otherDebug)"
+BUILD_APK_JOB = "Build release APKs"
+LIBBOX_JOB = "Build libbox (arm64)"
+LIBBOX_BUILD_STEP = "Build library"
+
+
+def format_duration(seconds: Any) -> str:
+    """Human duration. Zero, missing, and unreadable values stay blank."""
+    try:
+        total = int(seconds)
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return ""
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}小时")
+    if minutes:
+        parts.append(f"{minutes}分")
+    if secs:
+        parts.append(f"{secs}秒")
+    return "".join(parts)
+
+
+def _parse_time(value: Any) -> datetime | None:
+    text = str(value or "")
+    if not text or text.startswith("0001-"):
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _elapsed_seconds(job: dict[str, Any]) -> int | None:
+    start = _parse_time(job.get("startedAt"))
+    end = _parse_time(job.get("completedAt"))
+    if start is None or end is None:
+        return None
+    seconds = int((end - start).total_seconds())
+    if seconds <= 0:
+        return None
+    return seconds
+
+
+def _successful_job(jobs: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    for job in jobs:
+        if job.get("name") == name and job.get("conclusion") == "success":
+            return job
+    return None
+
+
+def unit_test_seconds(jobs: list[dict[str, Any]]) -> int | None:
+    job = _successful_job(jobs, UNIT_TEST_JOB)
+    if job is None:
+        return None
+    return _elapsed_seconds(job)
+
+
+def build_seconds(jobs: list[dict[str, Any]]) -> int | None:
+    """APK build time, plus libbox only when that library was actually compiled."""
+    total = 0
+    found = False
+    apk = _successful_job(jobs, BUILD_APK_JOB)
+    if apk is not None:
+        elapsed = _elapsed_seconds(apk)
+        if elapsed:
+            total += elapsed
+            found = True
+    libbox = _successful_job(jobs, LIBBOX_JOB)
+    if libbox is not None:
+        compiled = any(
+            step.get("name") == LIBBOX_BUILD_STEP and step.get("conclusion") == "success"
+            for step in libbox.get("steps") or []
+        )
+        if compiled:
+            elapsed = _elapsed_seconds(libbox)
+            if elapsed:
+                total += elapsed
+                found = True
+    if not found:
+        return None
+    return total
+
+
+def seconds_from_jobs(kind: str, jobs: list[dict[str, Any]]) -> int | None:
+    if kind == "unit-test":
+        return unit_test_seconds(jobs)
+    if kind == "build":
+        return build_seconds(jobs)
+    raise ValueError(f"unknown timing kind: {kind}")
+
+
+def stat_lines(facts: dict[str, Any]) -> list[str]:
+    lines = [test_line(facts)]
+    for label, key in (("单元测试耗时", "test_seconds"), ("构建耗时", "build_seconds")):
+        text = format_duration(facts.get(key))
+        if text:
+            lines.append(f"{label}：{text}")
+    return lines
 
 
 def test_line(facts: dict[str, Any]) -> str:
@@ -70,7 +175,7 @@ def plain_lines(facts: dict[str, Any]) -> list[str]:
     lines = [
         "WonderSing 发版成功",
         str(facts.get("version") or ""),
-        test_line(facts),
+        *stat_lines(facts),
         "变更：",
     ]
     notes = list(facts.get("changelog") or [])
@@ -113,7 +218,8 @@ def card(facts: dict[str, Any]) -> dict[str, Any]:
         title, template = "WonderSing 发版通知", "blue"
     notes = list(facts.get("changelog") or [])
     shown = notes[:CHANGELOG_LIMIT]
-    body = [f"**{test_line(facts)}**", "", "**变更**"]
+    stats = stat_lines(facts)
+    body = [f"**{stats[0]}**", *stats[1:], "", "**变更**"]
     if not shown:
         body.append("- （无）")
     else:
@@ -268,6 +374,8 @@ def run_self_test() -> None:
         "failures": 1,
         "errors": 0,
         "skipped": 2,
+        "test_seconds": 161,
+        "build_seconds": 0,
         "changelog": long_notes,
         "apk_url": "https://github.com/wonder-missing/sing-box-for-android/releases/download/v1.15.0-alpha.13-wonder.42/SFA-arm64-v8a.apk",
         "release_url": "https://github.com/wonder-missing/sing-box-for-android/releases/tag/v1.15.0-alpha.13-wonder.42",
@@ -278,6 +386,8 @@ def run_self_test() -> None:
     card_body = json.loads(long_message["content"])
     blob = json.dumps(card_body, ensure_ascii=False)
     assert "486" in blob
+    assert "单元测试耗时：2分41秒" in blob
+    assert "构建耗时" not in blob
     assert "失败 1" in blob
     assert "跳过 2" in blob
     assert card_body["header"]["template"] == "green"
@@ -301,6 +411,69 @@ def run_self_test() -> None:
         }
     )
     assert "未记录" in unknown
+    assert "耗时" not in unknown
+
+    timed = plain_text(
+        {
+            "kind": "success",
+            "version": "1.0.0-wonder.1",
+            "tests": 12,
+            "test_seconds": 161,
+            "build_seconds": 492,
+            "changelog": ["fix: a"],
+            "apk_url": "",
+            "release_url": "",
+        }
+    )
+    assert "单元测试耗时：2分41秒" in timed
+    assert "构建耗时：8分12秒" in timed
+
+    absent = plain_text(
+        {
+            "kind": "success",
+            "version": "1.0.0-wonder.1",
+            "tests": 12,
+            "test_seconds": 0,
+            "build_seconds": None,
+            "changelog": ["fix: a"],
+            "apk_url": "",
+            "release_url": "",
+        }
+    )
+    assert "耗时" not in absent
+    assert format_duration(48) == "48秒"
+    assert format_duration(120) == "2分"
+    assert format_duration(3660) == "1小时1分"
+
+    jobs = [
+        {
+            "name": "Unit tests (otherDebug)",
+            "conclusion": "success",
+            "startedAt": "2026-11-12T12:32:13Z",
+            "completedAt": "2026-11-12T12:34:54Z",
+        },
+        {
+            "name": "Build libbox (arm64)",
+            "conclusion": "success",
+            "startedAt": "2026-11-12T13:41:16Z",
+            "completedAt": "2026-11-12T13:41:28Z",
+            "steps": [{"name": "Build library", "conclusion": "skipped"}],
+        },
+        {
+            "name": "Build release APKs",
+            "conclusion": "success",
+            "startedAt": "2026-11-12T13:41:31Z",
+            "completedAt": "2026-11-12T13:49:43Z",
+        },
+    ]
+    assert unit_test_seconds(jobs) == 161
+    assert build_seconds(jobs) == 492
+    compiled = json.loads(json.dumps(jobs))
+    compiled[1]["steps"][0]["conclusion"] = "success"
+    compiled[1]["completedAt"] = "2026-11-12T13:47:16Z"
+    assert build_seconds(compiled) == 492 + 360
+    assert unit_test_seconds([]) is None
+    assert build_seconds([jobs[1]]) is None
 
     overflow = compose(
         {
@@ -335,6 +508,12 @@ def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         run_self_test()
         return 0
+    if len(argv) >= 2 and argv[0] == "--seconds":
+        jobs = json.load(sys.stdin)
+        value = seconds_from_jobs(argv[1], jobs)
+        if value:
+            print(value)
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kind", required=True, choices=("success", "failure", "test"))
     parser.add_argument("--version", default="")
@@ -344,6 +523,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--failures", default="")
     parser.add_argument("--errors", default="")
     parser.add_argument("--skipped", default="")
+    parser.add_argument("--test-seconds", default="")
+    parser.add_argument("--build-seconds", default="")
     parser.add_argument("--apk-url", default="")
     parser.add_argument("--release-url", default="")
     parser.add_argument("--changelog-file", default="")
@@ -361,6 +542,8 @@ def main(argv: list[str]) -> int:
         "failures": _optional_int(args.failures),
         "errors": _optional_int(args.errors),
         "skipped": _optional_int(args.skipped),
+        "test_seconds": _optional_int(args.test_seconds),
+        "build_seconds": _optional_int(args.build_seconds),
         "apk_url": args.apk_url,
         "release_url": args.release_url,
         "changelog": changelog_from_lines(raw_notes),
