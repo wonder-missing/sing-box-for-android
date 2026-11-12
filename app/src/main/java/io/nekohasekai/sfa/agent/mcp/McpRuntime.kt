@@ -171,7 +171,7 @@ class McpRuntime(
                 if (error is CancellationException) throw error
             }
             gate.withLock {
-                if (generation[config.id] != ticket) return@withLock
+                if ((generation[config.id] ?: 0) != ticket) return@withLock
                 if (servers.none { it.id == config.id }) return@withLock
                 outcome.fold(
                     onSuccess = { opened ->
