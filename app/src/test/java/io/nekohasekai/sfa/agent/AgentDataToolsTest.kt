@@ -100,6 +100,17 @@ class AgentDataToolsTest {
     }
 
     @Test
+    fun chineseFileQueryFindsAllFileTools() {
+        val names = AgentToolCatalog(tools.all).search("文件").map { it.name }
+
+        assertTrue(names.contains("file_list"))
+        assertTrue(names.contains("file_read"))
+        assertTrue(names.contains("file_stat"))
+        assertTrue(names.contains("file_write"))
+        assertTrue(names.contains("file_delete"))
+    }
+
+    @Test
     fun structuredParametersAreValidated() {
         store.writeText("conductor/x.txt", "x")
         val registry = AgentToolRegistry(tools.all)

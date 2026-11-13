@@ -93,7 +93,7 @@ class AgentDataTools(
                         ),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "files",
-                    aliases = listOf("stat", "metadata", "元数据"),
+                    aliases = listOf("stat", "metadata", "元数据", "文件信息"),
                 )
 
             override suspend fun execute(
