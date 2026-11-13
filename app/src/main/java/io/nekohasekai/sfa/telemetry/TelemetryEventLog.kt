@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.telemetry
 
 import android.content.Context
 import java.io.File
+import java.util.concurrent.Executors
 
 /**
  * Small persistent ring of client-side events (upload failures/successes,
@@ -19,6 +20,10 @@ internal object TelemetryEventLog {
     private const val MAX_FILE_BYTES = 4L * 1024L * 1024L
 
     private val lock = Any()
+    private val writer =
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "telemetry-events").apply { isDaemon = true }
+        }
     private var file: File? = null
     private val events = ArrayDeque<Pair<Long, String>>() // seq to json
     private var nextSeq = 1L
@@ -63,6 +68,15 @@ internal object TelemetryEventLog {
             trimLocked(now)
             writeLocked(f)
         }
+    }
+
+    /**
+     * Records an event off the caller's thread. Use this for UI/main-thread
+     * signals so writing the event file never becomes the jank it measures.
+     */
+    fun recordAsync(context: Context, type: String, fields: Map<String, Any?> = emptyMap()) {
+        val app = context.applicationContext
+        runCatching { writer.execute { record(app, type, fields) } }
     }
 
     /** Pending events (oldest first) and the highest seq included. */

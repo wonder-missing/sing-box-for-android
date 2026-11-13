@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.telemetry
 
 import android.content.Context
 import android.net.VpnService
+import android.os.SystemClock
 import android.util.Log
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
@@ -60,6 +61,7 @@ internal object TelemetryRuntime {
     private const val RETRY_ATTEMPTS = 2
     private const val FINAL_ATTEMPTS = 1
     private const val DIAL_POLL_MS = 2_000L
+    private const val HEARTBEAT_INTERVAL_MS = 15L * 60L * 1000L
 
     /** Manual upload gets a short budget so the settings button cannot hang forever. */
     private const val MANUAL_UPLOAD_BUDGET_MS = 30_000L
@@ -72,6 +74,9 @@ internal object TelemetryRuntime {
 
     @Volatile
     private var attached = false
+
+    @Volatile
+    private var attachedAtElapsed = 0L
 
     @Volatile
     private var collectorConnected = false
@@ -236,6 +241,7 @@ internal object TelemetryRuntime {
         synchronized(stateLock) {
             if (attached) return
             attached = true
+            attachedAtElapsed = SystemClock.elapsedRealtime()
             val context = vpn.applicationContext
             appContext = context
             // New VPN session: new id, and the first Groups snapshot speaks again
@@ -281,6 +287,20 @@ internal object TelemetryRuntime {
                 localOnly = true,
             )
             created.launch { runLoop() }
+            created.launch {
+                while (isActive) {
+                    delay(HEARTBEAT_INTERVAL_MS)
+                    if (!attached) break
+                    TelemetryEventLog.record(
+                        context,
+                        "service_heartbeat",
+                        mapOf(
+                            "uptime_ms" to SystemClock.elapsedRealtime() - attachedAtElapsed,
+                            "app" to BuildConfig.VERSION_NAME,
+                        ),
+                    )
+                }
+            }
         }
         Log.i(TAG, "attached")
     }

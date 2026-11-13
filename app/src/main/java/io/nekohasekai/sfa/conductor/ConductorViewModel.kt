@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import android.app.Application
 import android.os.Build
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.nekohasekai.libbox.OutboundGroup
@@ -63,6 +64,7 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.compose.screen.tools.TaildropSendFile
 import io.nekohasekai.sfa.compose.screen.tools.TaildropSendManager
 import io.nekohasekai.sfa.log.AppLog
+import io.nekohasekai.sfa.telemetry.TelemetryEventLog
 import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
@@ -181,7 +183,7 @@ class ConductorViewModel(
     private val taildropPort =
         object : TaildropPort {
             override suspend fun peers(): List<TaildropPeerInfo> {
-                val update = awaitTailscaleStatus(null)
+                val update = awaitTailscaleStatus(null, "taildrop")
                 val peers = LinkedHashMap<String, TaildropPeerInfo>()
                 val endpoints = update.endpoints()
                 while (endpoints.hasNext()) {
@@ -219,7 +221,7 @@ class ConductorViewModel(
                 files: List<File>,
                 cancellation: ToolCancellation?,
             ): TaildropSendResult {
-                val update = awaitTailscaleStatus(cancellation)
+                val update = awaitTailscaleStatus(cancellation, "taildrop")
                 var endpointTag: String? = null
                 var stableID: String? = null
                 var online = false
@@ -325,6 +327,7 @@ class ConductorViewModel(
 
     private var transcript: List<AgentMessage> = emptyList()
     private var pendingTurnEvent: TurnEvent? = null
+    private val toolStartedAt = mutableMapOf<String, Long>()
     private var sessionStartVersion: String = BuildConfig.VERSION_NAME
     private var agentJob: Job? = null
     private var stopRequested = false
@@ -602,6 +605,7 @@ class ConductorViewModel(
         pendingTurnEvent = null
         pendingCommandConfirmation = null
         sessionStartVersion = BuildConfig.VERSION_NAME
+        toolStartedAt.clear()
         transcript = emptyList()
         updateUi { copy(items = emptyList(), isRunning = false, canRetryLastTurn = false) }
         sessionStore.clear()
@@ -802,6 +806,7 @@ class ConductorViewModel(
             is AgentEvent.ToolStarted -> {
                 finishReasoning()
                 finishStreamingAssistant()
+                toolStartedAt[event.call.id] = SystemClock.uptimeMillis()
                 AppLog.info("conductor tool=${event.call.name} started")
                 append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
             }
@@ -810,6 +815,18 @@ class ConductorViewModel(
                 AppLog.info(
                     "conductor tool=${event.result.name} ok=${event.result.ok} code=${event.result.errorCode ?: "-"}",
                 )
+                toolStartedAt.remove(event.result.callId)?.let { startedAt ->
+                    TelemetryEventLog.recordAsync(
+                        application,
+                        "conductor_tool",
+                        mapOf(
+                            "tool" to telemetryToolName(event.result.name),
+                            "ms" to SystemClock.uptimeMillis() - startedAt,
+                            "ok" to event.result.ok,
+                            "code" to (event.result.errorCode ?: "-"),
+                        ),
+                    )
+                }
                 updateToolResult(event.result)
             }
             is AgentEvent.ConfirmationRequested -> {
@@ -840,6 +857,7 @@ class ConductorViewModel(
             is AgentEvent.TurnFinished -> {
                 finishReasoning()
                 finishStreamingAssistant()
+                toolStartedAt.clear()
             }
         }
     }
@@ -1096,7 +1114,7 @@ class ConductorViewModel(
         includeDetails: Boolean = true,
     ): String =
         try {
-            formatTailscale(awaitTailscaleStatus(cancellation), includeDetails)
+            formatTailscale(awaitTailscaleStatus(cancellation, "command"), includeDetails)
         } catch (e: CancellationException) {
             "cancelled"
         } catch (e: Exception) {
@@ -1104,10 +1122,14 @@ class ConductorViewModel(
         }
 
     private suspend fun tailscaleSnapshot(cancellation: ToolCancellation?): AgentTailscaleSnapshot =
-        buildTailscaleSnapshot(awaitTailscaleStatus(cancellation))
+        buildTailscaleSnapshot(awaitTailscaleStatus(cancellation, "agent"))
 
-    private suspend fun awaitTailscaleStatus(cancellation: ToolCancellation?): TailscaleStatusUpdate {
+    private suspend fun awaitTailscaleStatus(
+        cancellation: ToolCancellation?,
+        source: String,
+    ): TailscaleStatusUpdate {
         if (cancellation?.isCancelled() == true) throw CancellationException("cancelled")
+        val startedAt = SystemClock.uptimeMillis()
         val deferred = CompletableDeferred<TailscaleStatusUpdate>()
         val subscription =
             try {
@@ -1129,18 +1151,62 @@ class ConductorViewModel(
                     },
                 )
             } catch (e: Exception) {
-                throw IllegalStateException(friendlyTailscaleError(e.message ?: e.toString()))
+                val message = friendlyTailscaleError(e.message ?: e.toString())
+                recordTailscaleStatus(source, startedAt, "error", tailscaleErrorClass(message))
+                throw IllegalStateException(message)
             }
         cancellation?.onCancel {
             runCatching { subscription.close() }
             deferred.cancel()
         }
         return try {
-            withTimeout(5_000) { deferred.await() }
+            val update = withTimeout(5_000) { deferred.await() }
+            recordTailscaleStatus(source, startedAt, "ok")
+            update
         } catch (e: TimeoutCancellationException) {
+            recordTailscaleStatus(source, startedAt, "timeout")
             throw IllegalStateException("Timed out waiting for Tailscale status.")
+        } catch (e: CancellationException) {
+            recordTailscaleStatus(source, startedAt, "cancelled")
+            throw e
+        } catch (e: Exception) {
+            recordTailscaleStatus(source, startedAt, "error", tailscaleErrorClass(e.message))
+            throw e
         } finally {
             runCatching { subscription.close() }
+        }
+    }
+
+    private fun recordTailscaleStatus(
+        source: String,
+        startedAt: Long,
+        result: String,
+        errorClass: String? = null,
+    ) {
+        TelemetryEventLog.recordAsync(
+            application,
+            "tailscale_status",
+            buildMap {
+                put("source", source)
+                put("ms", SystemClock.uptimeMillis() - startedAt)
+                put("result", result)
+                errorClass?.let { put("error_class", it) }
+            },
+        )
+    }
+
+    private fun telemetryToolName(name: String): String = if (name.startsWith("mcp_")) "mcp" else name
+
+    private fun tailscaleErrorClass(message: String?): String {
+        val lower = message.orEmpty().lowercase(Locale.US)
+        return when {
+            "not running" in lower ||
+                "connection refused" in lower ||
+                "unavailable" in lower ||
+                "no such file" in lower -> "service_down"
+
+            "timed out" in lower -> "timeout"
+            else -> "other"
         }
     }
 

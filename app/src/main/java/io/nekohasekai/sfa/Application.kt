@@ -24,6 +24,7 @@ import io.nekohasekai.sfa.compose.text.ComposeTextSelectionCompat
 import io.nekohasekai.sfa.constant.Bugs
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.log.AppLog
+import io.nekohasekai.sfa.telemetry.UiJankMonitor
 import io.nekohasekai.sfa.utils.AppLifecycleObserver
 import io.nekohasekai.sfa.utils.HookModuleUpdateNotifier
 import io.nekohasekai.sfa.utils.HookStatusClient
@@ -53,6 +54,7 @@ class Application : Application() {
         ComposeTextSelectionCompat.install()
         super.onCreate()
         AppLifecycleObserver.register(this)
+        UiJankMonitor.install(this)
 
 //        Seq.setContext(this)
         runCatching {

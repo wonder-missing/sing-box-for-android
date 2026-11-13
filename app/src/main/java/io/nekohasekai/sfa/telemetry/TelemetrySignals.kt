@@ -104,28 +104,32 @@ internal object TelemetrySignals {
         val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                val kind = describe(caps)
-                val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                val metered = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-                val id = networkId(kind, network)
-                val key = "$id/$validated/$metered"
+                // The callback fires for every non-VPN internet network, including
+                // Wi-Fi and cellular at the same time. Track the active default
+                // only, so two coexisting networks do not look like flapping.
+                val uplink = currentUplink(app) ?: return
+                val key = "${uplink.networkId}/${uplink.validated}/${uplink.metered}"
                 if (key == lastNetwork) return
                 lastNetwork = key
                 TelemetryEventLog.record(
                     app,
                     "network_change",
                     mapOf(
-                        "transport" to kind,
-                        "default_network_id" to id,
-                        "validated" to validated,
-                        "metered" to metered,
+                        "transport" to uplink.transport,
+                        "default_network_id" to uplink.networkId,
+                        "validated" to uplink.validated,
+                        "metered" to uplink.metered,
                     ),
                 )
             }
 
             override fun onLost(network: Network) {
-                lastNetwork = null
-                TelemetryEventLog.record(app, "network_lost")
+                // Only report a loss when there is no usable physical uplink left.
+                // A handover will be reported by the next onCapabilitiesChanged.
+                if (currentUplink(app) == null && lastNetwork != null) {
+                    lastNetwork = null
+                    TelemetryEventLog.record(app, "network_lost")
+                }
             }
         }
         runCatching {

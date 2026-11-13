@@ -45,3 +45,14 @@ Socks 的 UDP associate，以及 UoT，包装连接的 `RemoteAddr` 是用户目
 ## 内核补丁
 
 补丁是 `core/patches/dial-attempt.patch`，打在不可变的 `v1.15.0-alpha.13` 上，不改 `CORE_VERSION`。libbox 缓存键从 `v1` 改成 `v2` 加补丁哈希，Test 和 Release 用同一条。缓存未命中时 CI 先 `go test ./common/dialreport/`，再编 aar。
+
+## 性能与抖动信号（2026-11-13 起）
+
+这一组只回答「是不是 App 侧卡了/服务死了/状态查询慢」，不上传页面名、参数、域名或正文。
+
+- `ui_jank`：一分钟一窗，只在前台 Activity 存活时统计 Choreographer frame gap。字段 `frames`、`jank32`（≥32ms）、`severe200`（≥200ms）、`max_ms`。只有出现 200ms 以上卡顿或至少 5 个 jank 帧才发；写事件走后台线程，避免监控本身造成卡顿。
+- `tailscale_status`：每次 `tailscale_status` 查询一条，字段 `source`（agent/command/taildrop）、`ms`、`result`（ok/timeout/cancelled/error）、`error_class`（service_down/timeout/other）。用来区分 Tailscale 状态查询慢和服务没起来，不含设备名/IP。
+- `service_heartbeat`：服务附着后每 15 分钟一条，字段 `uptime_ms`、`app`，带 `vpn_session_id`。相邻两次 start 之间没有 stop 但有 heartbeat 缺口时，说明服务被静默杀掉。
+- `conductor_tool`：Conductor 工具调用一条，字段 `tool`（MCP 工具统一记 `mcp`）、`ms`、`ok`、`code`。不含参数和结果正文。
+
+`network_change` 的口径同时收紧：只在当前 default uplink（`currentUplink`，排除 VPN）变化时记一条，不再把 Wi-Fi 和蜂窝并存的各自 capabilities 变化都记成事件。`network_lost` 只在没有可用物理 uplink 时记。
