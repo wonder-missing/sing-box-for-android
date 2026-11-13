@@ -169,9 +169,10 @@ class ConductorVirtualDirectorySource(
     ): VfsRead {
         if (segments.size != 2 || segments[1] !in RUNTIME_FILES) throw notFound()
         val bytes = runtimeBytes(segments[1])
-        if (offset > bytes.size) throw rangeNotSatisfiable()
-        if (offset == bytes.size || length == 0) {
-            if (offset < bytes.size) throw VfsException(VfsErrorCode.BAD_REQUEST, "Read length must be positive before EOF.")
+        val size = bytes.size.toLong()
+        if (offset > size) throw rangeNotSatisfiable()
+        if (offset == size || length == 0) {
+            if (offset < size) throw VfsException(VfsErrorCode.BAD_REQUEST, "Read length must be positive before EOF.")
             return VfsRead(ByteArray(0), true)
         }
         val end = minOf(bytes.size.toLong(), offset + length.toLong()).toInt()
