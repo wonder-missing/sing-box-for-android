@@ -28,7 +28,7 @@
 
 - `files_list(path = "")`：在工作目录内列目录；返回相对路径、类型、大小、mtime；目录在前。
 - `files_stat(path)`：类型、大小、mtime、sha256（可选）。
-- `files_read(path, max_bytes = 262144)`：只读 UTF-8 文本；超限截断并标记；二进制只回元数据。
+- `files_read(path, max_bytes = 262144)`：只读 UTF-8 文本；超限截断并标记；二进制只回元数据。默认过 `AgentSanitizer` 的 URL/token 打码；需要原文时用单独的 `files_read_raw`（debug/确认），避免 crash/log 里的订阅链接和 token 直接进模型。
 - `files_write(path, text, overwrite = false)`：仅 `工作目录/conductor/`；原子写；默认不覆盖；单文件 1MB。
 - `files_mkdir(path)`、`files_delete(path)`：仅 `conductor/`。
 - 路径安全：canonical path 必须在根内；拒绝 `..`、绝对路径、symlink、空名；深度上限；大小/数量上限。
