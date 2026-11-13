@@ -47,7 +47,7 @@
 
 - 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md) 的「数据面」一节。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.55（tag `v1.15.0-alpha.13-wonder.55`，commit `8db3dc7`；54 为 `7a6bd1b`，53 为 `abd0958`，52 为 `6ebbacb`，51 为 `204bfa6`）。下一次从 56 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 当前已发布 wonder.56（tag `v1.15.0-alpha.13-wonder.56`，commit `a473fca`；55 为 `8db3dc7`，54 为 `7a6bd1b`，53 为 `abd0958`，52 为 `6ebbacb`）。下一次从 57 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
 - 手机上看近期版本（49 到 54）：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
@@ -88,6 +88,8 @@
 
 ## 最近完成
 
+- wonder.56（2026-11-13）：工具搜索召回修正。分类名查询返回整个分类（network/files/mcp 等）；去掉 alias 精确命中的提前返回，中文泛化 alias 不再遮住其他工具；system prompt 声明每轮搜索次数上限；golden hash 更新。来源是 Conductor 自测报告 `tool-search-report-20261113.md`。tag `v1.15.0-alpha.13-wonder.56`，commit `a473fca`。
+- wonder.55（2026-11-13）：性能与抖动遥测。`network_change` 只记 default uplink；新增 `ui_jank`、`tailscale_status` 耗时/结果、`service_heartbeat`、`conductor_tool` 耗时；主线程事件走后台写线程。tag `v1.15.0-alpha.13-wonder.55`，commit `8db3dc7`。
 - wonder.54（2026-11-13）：恢复会话时，所有非 `/` 的 UI user 都算 agent 消息，不再要求后面必须跟着 agent 产物；最后一条没跑成的 user 也会补回 transcript。修「消息留在流里、下一轮 Agent 不知道」。tag `v1.15.0-alpha.13-wonder.54`，commit `7a6bd1b`。
 - wonder.53（2026-11-13）：Conductor ViewModel 改为 activity 作用域，离开页面不再取消进行中的 turn；`search_tools` 空 query 返回 catalog（不含 schema），修掉提示词契约与实现不一致；数据面设计合并进工作规划。tag `v1.15.0-alpha.13-wonder.53`，commit `abd0958`。
 - wonder.52（2026-11-13）：数据面第一版。读整个工作目录、写 `conductor/`；`file_list/stat/read/write/mkdir/delete`；`diagnostics_export(kind=conversation|trace)`；`taildrop_peers`、`taildrop_send`（只允许工作目录内文件，`ALWAYS` 确认，复用现有 Taildrop service）；参数 schema 支持 integer/boolean/string array；`WorkingDirectoryProvider` docId 越界加固。tag `v1.15.0-alpha.13-wonder.52`，commit `6ebbacb`。
