@@ -65,6 +65,8 @@
     <string name="conductor_probe_cancel">取消</string>
     <string name="conductor_retry">重试</string>
     <string name="conductor_back_to_latest">回到最新</string>
+    <string name="conductor_context_usage">上下文 %1$d%% · %2$s/%3$s</string>
+    <string name="conductor_context_usage_description">上下文占用：%1$d%%，%2$d / %3$d tokens</string>
     <string name="conductor_file_request_title">Conductor 需要文件</string>
     <string name="conductor_file_request_choose">选择文件</string>
     <string name="conductor_file_request_choose_one">选择一个文件</string>

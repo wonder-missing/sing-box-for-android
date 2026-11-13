@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -830,12 +831,107 @@ class AgentRuntimeTest {
         assertTrue(validateTranscriptPairing(secondRequest))
     }
 
+    @Test
+    fun truncatedToolCallReportsTheOutputLimit() {
+        val call = ToolCall("call-1", "list_nodes", "{}")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(call), FinishReason.LENGTH, null),
+                ),
+            )
+        val runtime =
+            runtime(
+                model,
+                FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") },
+                key = "sk-test",
+                modelLimits = { ModelLimits(contextWindow = 1_000_000, maxOutputTokens = 4_096) },
+            )
+
+        val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        val error = (result.outcome as TurnOutcome.Failed).error
+        assertEquals(AgentTurnErrorCode.OUTPUT_TRUNCATED, error.code)
+        assertTrue(error.message.contains("output limit"))
+        assertTrue(error.message.contains("4096"))
+    }
+
+    @Test
+    fun compactsHistoryBeforeTheNextRequestWhenContextIsNearTheLimit() {
+        val history =
+            listOf(
+                AgentMessage.User("old goal " + "x".repeat(70_000)),
+                AgentMessage.Assistant("old answer " + "y".repeat(70_000), emptyList()),
+            )
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    response("The user wants the old goal handled."),
+                    response("done"),
+                ),
+            )
+        val events = mutableListOf<AgentEvent>()
+        val runtime =
+            runtime(
+                model,
+                FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) },
+                key = "sk-test",
+                modelLimits = { ModelLimits(contextWindow = 40_000, maxOutputTokens = 1_000) },
+            )
+
+        val result =
+            runBlocking {
+                runtime.runTurn(
+                    "new task",
+                    history,
+                    onEvent = { events += it },
+                    confirm = { true },
+                )
+            }
+
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals(2, model.requests.size)
+        val summaryRequest = model.requests[0]
+        assertTrue(summaryRequest.tools.isEmpty())
+        assertTrue(
+            summaryRequest.messages.first().let {
+                it is AgentMessage.System && it.content.contains("compact")
+            },
+        )
+        val turnRequest = model.requests[1]
+        assertTrue(
+            turnRequest.messages.any {
+                it is AgentMessage.System && it.content.contains("The user wants the old goal handled.")
+            },
+        )
+        assertFalse(
+            turnRequest.messages.any {
+                it is AgentMessage.User && it.content.contains("old goal")
+            },
+        )
+        assertTrue(
+            turnRequest.messages.any {
+                it is AgentMessage.User && it.content.contains("new task")
+            },
+        )
+        assertTrue(events.any { it is AgentEvent.ContextUsage })
+        assertTrue(
+            events.filterIsInstance<AgentEvent.Notice>().any { it.text.contains("compacted") },
+        )
+        assertEquals(1, result.compactedHistory?.size)
+        assertTrue(result.compactedHistory?.single() is AgentMessage.System)
+        assertEquals(2, result.messages.size)
+        assertTrue(result.messages.first() is AgentMessage.User)
+        assertTrue(result.messages.last() is AgentMessage.Assistant)
+    }
+
     private fun runtime(
         model: AgentModelClient,
         executor: AgentToolExecutor,
         key: String?,
         config: AgentConfig = AgentConfig(maxToolRounds = 1),
         reasoningEffort: () -> String? = { null },
+        modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
     ): AgentRuntime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
@@ -844,6 +940,7 @@ class AgentRuntimeTest {
             apiKeys = FakeKeyProvider(key),
             config = config,
             reasoningEffort = reasoningEffort,
+            modelLimits = modelLimits,
         )
 
     private fun response(text: String): AgentModelResponse =

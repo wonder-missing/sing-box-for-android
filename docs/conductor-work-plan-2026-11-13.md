@@ -17,6 +17,7 @@
 - 批次 11：完成（wonder.56，commit `a473fca`）。修工具搜索分类/中文召回，声明每轮搜索上限；来源是 Conductor 自测报告。
 - 批次 12：完成（wonder.57，commit `6e4008f`）。补 `file_stat` 中文 alias，让「文件」查询召回全部文件工具（wonder.58 起撤销，改为英文单轨）。
 - 批次 13：完成（wonder.58）。工具元数据改英文单轨；文件工具补 `file_read(offset/limit)`、`file_tail`、`file_grep`、`diagnostics_export(tail)`；新增用户选文件链路 `request_files` → `file_read_selected` / `taildrop_send_selected`（系统 SAF 多选、临时 URI、不复制）。
+- 批次 14：完成（wonder.59）。去掉固定 4096 输出 / 64k 输入预算，改用 provider 的 `ModelLimits`；输入栏显示上下文百分比；达到 80% 时用模型摘要 Auto Compact（当前轮保留，3 次失败熔断）；截断工具调用改用 `OUTPUT_TRUNCATED` 和可行动提示。
 
 ## 数据面（自 wonder.52 起）
 

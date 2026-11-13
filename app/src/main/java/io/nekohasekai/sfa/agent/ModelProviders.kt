@@ -18,6 +18,22 @@ data class ModelEndpoint(
     val model: String,
 )
 
+/**
+ * Context/output ceilings published for the provider model. This is a
+ * capability table, not a user budget: requests use the model's supported
+ * maximum, and [maxOutputTokens] = null means the provider default applies
+ * (the field is omitted from the request).
+ */
+data class ModelLimits(
+    val contextWindow: Int,
+    val maxOutputTokens: Int?,
+) {
+    companion object {
+        /** Unknown OpenAI-compatible providers: omit max_tokens and assume a common window. */
+        val FALLBACK = ModelLimits(contextWindow = 128_000, maxOutputTokens = null)
+    }
+}
+
 object ModelProviders {
     const val DEEPSEEK = "deepseek"
     const val XAI = "xai"
@@ -74,6 +90,24 @@ object ModelProviderSettings {
     }
 
     fun endpoint(): ModelEndpoint = endpointFor(active())
+
+    /**
+     * Ceilings for the active provider. DeepSeek V4 Flash: 1M context,
+     * 384K output (api-docs.deepseek.com). xAI Grok 4: 256K/256K; Fast
+     * variants: 2M/2M. Generic endpoints cannot be known here, so they omit
+     * max_tokens and use the fallback window.
+     */
+    fun limitsFor(endpoint: ModelEndpoint): ModelLimits =
+        when (endpoint.providerId) {
+            ModelProviders.DEEPSEEK -> ModelLimits(contextWindow = 1_000_000, maxOutputTokens = 384_000)
+            ModelProviders.XAI ->
+                if (endpoint.model.contains("fast", ignoreCase = true)) {
+                    ModelLimits(contextWindow = 2_000_000, maxOutputTokens = 2_000_000)
+                } else {
+                    ModelLimits(contextWindow = 256_000, maxOutputTokens = 256_000)
+                }
+            else -> ModelLimits.FALLBACK
+        }
 
     fun endpointFor(preset: ModelProviderPreset): ModelEndpoint {
         val baseUrl = if (preset.customBaseUrl) Settings.conductorGenericBaseUrl else preset.baseUrl

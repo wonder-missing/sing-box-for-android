@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回；wonder.57 补文件工具召回；wonder.58 改为英文工具元数据，补齐文件分页/tail/grep 和用户选文件链路。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回；wonder.57 补文件工具召回；wonder.58 改为英文工具元数据，补齐文件分页/tail/grep 和用户选文件链路；wonder.59 改用模型 API 的上下文/输出上限，加入上下文百分比与 80% 自动 Compact。
 最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -161,7 +161,7 @@ interface AgentApiKeyProvider {
 data class AgentModelRequest(
     val messages: List<AgentMessage>,
     val tools: List<AgentToolSchema>,
-    val maxOutputTokens: Int,
+    val maxOutputTokens: Int?, // null 表示省略 max_tokens，用 provider 默认值
     val temperature: Double,
     val timeoutMs: Long,
     val toolChoice: AgentToolChoice = AgentToolChoice.AUTO,
@@ -252,12 +252,12 @@ OpenAI-compatible 请求形态（DeepSeek / xAI / Custom 共用）：
   "tools": [{"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}],
   "tool_choice": "auto",
   "temperature": 0.2,
-  "max_tokens": 4096,
+  "max_tokens": 384000,
   "stream": false
 }
 ```
 
-三个预设都按 OpenAI-compatible 的 Bearer + Chat Completions 形态发请求。用户把 Reasoning effort 选成 low / medium / high 时，请求带 `reasoning_effort`；默认不传这个字段，避免非推理模型返回 400。DeepSeek 把 medium 映射成 high，默认强度是 high；xAI 接受 low / medium / high，默认也是 high。`none`、`max`、`xhigh` 不在共用档位里，不发送。其余 provider 私有能力仍不抽象：`stream_options.include_usage`、`max_completion_tokens`、非 Bearer 鉴权（如 Azure）。
+`max_tokens` 按 `ModelLimits` 与本次输入动态计算（模型上限、上下文窗口减输入减 8K），不是固定预算；未知 provider 省略该字段，由 API 默认值决定。三个预设都按 OpenAI-compatible 的 Bearer + Chat Completions 形态发请求。用户把 Reasoning effort 选成 low / medium / high 时，请求带 `reasoning_effort`；默认不传这个字段，避免非推理模型返回 400。DeepSeek 把 medium 映射成 high，默认强度是 high；xAI 接受 low / medium / high，默认也是 high。`none`、`max`、`xhigh` 不在共用档位里，不发送。其余 provider 私有能力仍不抽象：`stream_options.include_usage`、`max_completion_tokens`、非 Bearer 鉴权（如 Azure）。
 
 ## 6. Tool schema、确认策略与 sanitizer
 
@@ -542,15 +542,16 @@ data class AgentConfig(
     val modelTimeoutMs: Long = 120_000,
     val turnTimeoutMs: Long = 1_800_000,
     val confirmationTimeoutMs: Long = 300_000,
-    val cancelGraceMs: Long = 1_000,
-    val maxOutputTokens: Int = 4_096,
-    val maxInputTokens: Int = 64_000,
+    val maxMessages: Int = 200,
+    val trimTargetMessages: Int = 160,
     val maxObservationChars: Int = 24_000,
     val maxObservationCharsPerRound: Int = 64_000,
     val maxObservationCharsPerTurn: Int = 128_000,
     val maxRetries: Int = 3,
 )
 ```
+
+`AgentConfig` 不再持有输入/输出 token 预算：窗口和输出上限来自当前 provider 的 `ModelLimits`，Auto Compact 按窗口的 80% 触发（wonder.59）。
 
 `AgentRuntime` 不持有 ViewModel，也不直接改 UI。`onEvent` 负责状态展示，`confirm` 是暂停点。`AgentRuntime` 同时只跑一个 turn；ViewModel 在 `isRunning` 时拒绝新输入。Stop 进入 `Cancelling` 后仍保持 `isRunning`，直到工具确认退出或 `TOOL_CANCEL_TIMEOUT` 处理完，避免 `cancel()` 串到下一轮；`cancel()` 在没有活动 turn 时是 no-op。
 
@@ -872,13 +873,13 @@ fun interface AgentInputGuard {
 
 ### 历史裁剪
 
-- 只保留最近 N 轮，Phase 2a 默认 48 条消息，尽量保住前缀缓存。
+- 只保留最近 N 轮，wonder.59 起默认高水位 200 条消息、裁到 160 条，尽量保住前缀缓存；token 高水位由 Auto Compact 处理。
 - 每个 turn 开始前，`AgentContext.compactOldObservations` 把最近 user turn 之前、超过 `maxHistoricalObservationChars`（默认 8,000 字符）的 tool observation 替换为 `{"ok":...,"tool":...,"compacted":true,"originalChars":...}`。UI items 保留完整结果；模型需要时重新调用工具。压缩只在 turn 边界发生。
 - 单条 observation 上限 `maxObservationChars`，超出截断并标记 `truncated: true`。截断只影响发给模型的 transcript；UI 可以保留完整 sanitized 结果供展开查看。
 - 单轮 observation 总字符上限 `maxObservationCharsPerRound`，单 turn 总上限 `maxObservationCharsPerTurn`。
-- 单次请求总输入估算上限 64k tokens；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。
-- 裁剪顺序：先删最老的 user/assistant/tool 对，保留 system 和最近一轮完整工具结果。不拆开 assistant tool call 和对应 tool observation。
-- Phase 2a 不做摘要；历史超限就截断，UI 可以提示「较早对话未发送给模型」。
+- 单次请求总输入按当前模型的窗口估算；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。
+- 每次模型响应后、下一次请求前检查：取请求估算与上次实际 `prompt_tokens` 的较大值，达到窗口 80% 时触发 Auto Compact。Compact 用同一模型把当前 user turn 之前的历史压成一条 System 摘要（输入最多 120K 字符、输出最多 2048 token），保留当前轮的 user/assistant/tool 配对；连续失败 3 次后只走确定性裁剪。
+- 裁剪顺序：先删最老的 user/assistant/tool 对，保留 system 和最近一轮完整工具结果。不拆开 assistant tool call 和对应 tool observation。当前轮自身超过窗口时只能截断，UI 提示「较早对话未发送给模型」。
 
 ### 截断与合法 JSON
 
@@ -904,15 +905,15 @@ Phase 2a 默认值：
 | 每 turn 模型调用 | 由 12 轮工具 guard 和 3 次瞬态重试控制 |
 | 模型调用超时 | 120s |
 | turn 总超时 | 1,800s，确认等待不计入 |
-| 单次输出 | 4,096 tokens |
-| 输入估算 | 64k tokens |
+| 单次输出 | 模型公布上限，受窗口减输入约束（DeepSeek V4 Flash 384K） |
+| 输入估算 | 当前模型窗口（DeepSeek V4 Flash 1M） |
 | 单轮 tool call | 最多 8 个 |
 | 单条 observation | 24,000 字符 |
 | 单轮 observation | 64,000 字符 |
 | 单 turn observation | 128,000 字符 |
 | 单次搜索返回 | 5 个工具，按条目截断 |
 | 单轮搜索次数 | 2 次 |
-| 上下文裁剪 | 48 条高水位，裁到 36 条 |
+| 上下文裁剪 | 200 条高水位，裁到 160 条；token 达到窗口 80% 先 Auto Compact |
 | 旧 observation 压缩 | 超过 8,000 字符且早于最近 user turn |
 | 确认等待 | 5 分钟，单独计时 |
 | 瞬态重试 | 429/5xx/网络错误最多 3 次，指数退避 |
@@ -1385,6 +1386,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
 
+### wonder.59：模型上限、上下文百分比与自动 Compact（2026-11-13）
+
+- 去掉应用内的 4096 输出 / 64k 输入固定预算。新增 `ModelLimits` 能力表：DeepSeek V4 Flash 1M 窗口 / 384K 输出；Grok 4 256K/256K，Fast 2M/2M；未知 provider 省略 `max_tokens` 并用 128K 窗口。请求的 `max_tokens` 取模型上限与「窗口减实际输入减 8K」的较小值，避免 input+output 越界；这不是新的用户预算。
+- Conductor 输入栏显示 `ctx 1% · 14.4k/1M`，达到 80% 变红；每轮 usage 行追加 `ctx=...`。百分比来自最后一次响应的 `prompt_tokens`，没有 usage 时用请求估算。
+- 每次模型响应后、下一次请求前检查上下文：取「请求估算」和「上次实际 prompt tokens」的较大值，达到 80% 就 Compact。Compact 用同一个模型把当前用户轮之前的历史压成一条 System 摘要，保留当前轮的 user/assistant/tool 配对，再发真实请求。摘要输入最多 120K 字符，输出最多 2048 token；失败最多连续 3 次，之后退回确定性裁剪并提示。当前轮本身超限时无法摘要，走原有 trim/fit 路径。
+- 工具调用的流式输出被截断时，错误码改为 `OUTPUT_TRUNCATED`，消息写明命中的输出上限、该回复未执行任何工具，并建议拆小步骤或降低 reasoning。
+- 参考：Claude Code 用「窗口减 min(maxOutput, 20K)」作为有效窗口，约 83% 触发，3 次失败熔断；Grok Build 的 `auto_compact_threshold_percent` 默认 85，`/context` 展示占用。Conductor 按主人要求取 80%，并把摘要做成真实模型调用而不是只丢旧消息。输入栏的上下文表与新 Compact 提示只过编译，需要真机确认。
+
 ### wonder.58：英文工具元数据、文件工具补齐、用户选文件（2026-11-13）
 
 - 工具名、描述、alias、检索关键词统一英文；system prompt 要求模型先把用户意图翻成英文关键词再 `search_tools`，回答仍用用户语言。不维护静态多语言 alias，也不做构建期关键词表。规则写入 `AGENTS.md`，回归语料在 [`conductor-eval.md`](conductor-eval.md)。
@@ -1456,7 +1465,7 @@ trace 里出现 `Service is not running` 时，先查 CFG 的客户端遥测，�
 
 - 工具级 `toolTimeoutMs`，超时回 `tool_timeout` observation；`tailscale_status` 接 `ToolCancellation`；`probe_many` 顺序批量；`select_outbound` 确认、失败回滚。
 - MCP 全部 `AGENT_ONLY`，`DATA_EGRESS` 强制；完整工具定义 SHA-256 fingerprint，定义变化时保留旧工具并提示重新启用；`tools/call` 404 不重试；token 走 Keystore；确认卡保留 URL；stale 刷新并行。
-- `maxInputTokens` 接入 token 估算与裁剪；会话持久化加 512KB 上限；`search_tools` 加 weak 标记；probe 内层改 `reachable`；trace 结构化 usage/finish/耗时；UI 加 Retry、usage 摘要、stick-to-bottom、回到最新、稳定 key；`/clear` 可中断活动 turn；turn/tool/confirm 写 AppLog 审计。
+- `maxInputTokens` 接入 token 估算与裁剪（wonder.59 起改由 `ModelLimits` 提供窗口）；会话持久化加 512KB 上限；`search_tools` 加 weak 标记；probe 内层改 `reachable`；trace 结构化 usage/finish/耗时；UI 加 Retry、usage 摘要、stick-to-bottom、回到最新、稳定 key；`/clear` 可中断活动 turn；turn/tool/confirm 写 AppLog 审计。
 - libbox 没有 per-request outbound binding、DNS query 或 route match API；`probe_many` 仍是顺序执行，`http_fetch_probe` 和 `dns_lookup` 暂不实现。
 
 ### wonder.48：失败 turn 保留 user 与 Retry（2026-11-13）

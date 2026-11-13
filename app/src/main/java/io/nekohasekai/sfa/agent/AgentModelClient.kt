@@ -84,7 +84,8 @@ enum class AgentToolChoice {
 data class AgentModelRequest(
     val messages: List<AgentMessage>,
     val tools: List<AgentToolSchema>,
-    val maxOutputTokens: Int,
+    /** null omits max_tokens and lets the provider use its own default. */
+    val maxOutputTokens: Int?,
     val temperature: Double = 0.2,
     val timeoutMs: Long,
     val toolChoice: AgentToolChoice = AgentToolChoice.AUTO,

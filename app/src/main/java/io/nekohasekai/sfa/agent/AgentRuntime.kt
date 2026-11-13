@@ -22,10 +22,8 @@ data class AgentConfig(
     val turnTimeoutMs: Long = 1_800_000,
     val toolTimeoutMs: Long = 120_000,
     val confirmationTimeoutMs: Long = 300_000,
-    val maxOutputTokens: Int = 4_096,
-    val maxInputTokens: Int = 64_000,
-    val maxMessages: Int = 48,
-    val trimTargetMessages: Int = 36,
+    val maxMessages: Int = 200,
+    val trimTargetMessages: Int = 160,
     val maxHistoricalObservationChars: Int = 8_000,
     val toolRoutingEnabled: Boolean = true,
     val searchLimit: Int = 5,
@@ -52,6 +50,7 @@ class AgentRuntime(
     private val streamingModel: AgentStreamingModelClient? = null,
     private val toolRoutingEnabled: () -> Boolean = { config.toolRoutingEnabled },
     private val reasoningEffort: () -> String? = { null },
+    private val modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
 ) {
     private val confirmationIds = AtomicLong(0)
 
@@ -60,6 +59,11 @@ class AgentRuntime(
 
     @Volatile
     private var preparedHistoryForTurn: List<AgentMessage>? = null
+
+    private var compactFailures = 0
+
+    /** Last actual prompt size; a lower bound for the next request's estimate. */
+    private var lastPromptTokens = 0
 
     fun cancel(reason: String = "user") {
         cancelRequested = true
@@ -131,7 +135,7 @@ class AgentRuntime(
         preparedHistoryForTurn = preparedHistory.takeIf { it !== history }
         val transcript =
             (preparedHistory + AgentMessage.User(formatUserMessage(userText, initialEvent))).toMutableList()
-        val startSize = preparedHistory.size
+        var startSize = preparedHistory.size
         val routingEnabled = toolRoutingEnabled()
         val turnReasoningEffort = reasoningEffort()?.takeIf { it.isNotBlank() }
         val catalog = AgentToolCatalog(tools.definitions())
@@ -154,6 +158,7 @@ class AgentRuntime(
         var toolsEnabled = true
         var budgetNoticeShown = false
         val partialContent = StringBuilder()
+        lastPromptTokens = 0
 
         while (true) {
             if (cancelRequested) {
@@ -177,6 +182,28 @@ class AgentRuntime(
                 )
             }
 
+            val limits = modelLimits()
+            val contextWindow = limits.contextWindow.coerceAtLeast(MIN_CONTEXT_WINDOW)
+            var estimatedContext =
+                maxOf(estimateRequestTokens(systemMessage, requestTools, transcript), lastPromptTokens)
+            if (shouldCompact(estimatedContext, contextWindow)) {
+                val before = estimatedContext
+                val summary = compactTranscript(transcript, systemMessage, requestTools, apiKey, limits, onEvent)
+                if (summary != null) {
+                    // The summary replaces the older history. Persist it at the
+                    // head and keep only the current turn as new messages.
+                    startSize = 1
+                    preparedHistoryForTurn = listOf(summary)
+                    lastPromptTokens = 0
+                    estimatedContext = estimateRequestTokens(systemMessage, requestTools, transcript)
+                    onEvent(
+                        AgentEvent.Notice(
+                            "Context compacted from ${contextPercent(before, contextWindow)}% " +
+                                "to ${contextPercent(estimatedContext, contextWindow)}%.",
+                        ),
+                    )
+                }
+            }
             val trimmedMessages = AgentContext.trim(transcript, config.maxMessages, config.trimTargetMessages)
             val systemTokens = AgentContext.estimateTokens(systemMessage.content)
             val toolTokens =
@@ -185,17 +212,28 @@ class AgentRuntime(
                         AgentContext.estimateTokens(it.description) +
                         AgentContext.estimateTokens(it.parameters.toString())
                 }
-            val messageBudget = (config.maxInputTokens - systemTokens - toolTokens).coerceAtLeast(256)
+            val outputReserve =
+                minOf(limits.maxOutputTokens ?: COMPACT_SUMMARY_TOKENS, COMPACTION_OUTPUT_RESERVE)
+            val inputBudget = (contextWindow - outputReserve).coerceAtLeast(MIN_CONTEXT_WINDOW)
+            val messageBudget = (inputBudget - systemTokens - toolTokens).coerceAtLeast(256)
             val fittedMessages = AgentContext.fitToBudget(trimmedMessages, messageBudget)
-            if (fittedMessages.size < trimmedMessages.size && !budgetNoticeShown) {
-                budgetNoticeShown = true
-                onEvent(AgentEvent.Notice("Earlier conversation was not sent to the model because the context budget is full."))
+            if (fittedMessages.size < trimmedMessages.size) {
+                lastPromptTokens = 0
+                if (!budgetNoticeShown) {
+                    budgetNoticeShown = true
+                    onEvent(
+                        AgentEvent.Notice(
+                            "Earlier conversation was not sent to the model because the context budget is full.",
+                        ),
+                    )
+                }
             }
+            val sentInput = systemTokens + toolTokens + AgentContext.estimateMessagesTokens(fittedMessages)
             val request =
                 AgentModelRequest(
                     messages = listOf(systemMessage) + fittedMessages,
                     tools = requestTools,
-                    maxOutputTokens = config.maxOutputTokens,
+                    maxOutputTokens = outputTokenCap(limits, sentInput),
                     timeoutMs = config.modelTimeoutMs,
                     toolChoice = if (toolsEnabled) AgentToolChoice.AUTO else AgentToolChoice.NONE,
                     reasoningEffort = turnReasoningEffort,
@@ -223,6 +261,15 @@ class AgentRuntime(
                     }
                     throw e
                 }
+            val usedTokens = response.usage?.inputTokens ?: sentInput
+            lastPromptTokens = usedTokens
+            onEvent(
+                AgentEvent.ContextUsage(
+                    usedTokens = usedTokens,
+                    limitTokens = contextWindow,
+                    percent = contextPercent(usedTokens, contextWindow),
+                ),
+            )
             step += 1
 
             if (cancelRequested) {
@@ -242,13 +289,16 @@ class AgentRuntime(
             }
 
             if (response.finishReason == FinishReason.LENGTH && response.toolCalls.isNotEmpty()) {
+                val limitHint = request.maxOutputTokens?.let { " ($it tokens)" }.orEmpty()
                 return finish(
                     transcript,
                     startSize,
                     TurnOutcome.Failed(
                         AgentError(
-                            AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
-                            "The model response was cut off before its tool call was complete.",
+                            AgentTurnErrorCode.OUTPUT_TRUNCATED,
+                            "The model hit its output limit$limitHint before finishing a tool call. " +
+                                "Nothing in that reply was run. Split the work into smaller steps " +
+                                "or lower the reasoning effort.",
                         ),
                     ),
                     onEvent,
@@ -878,6 +928,151 @@ class AgentRuntime(
         )
     }
 
+    private fun estimateRequestTokens(
+        systemMessage: AgentMessage.System,
+        tools: List<AgentToolSchema>,
+        messages: List<AgentMessage>,
+    ): Int =
+        AgentContext.estimateTokens(systemMessage.content) +
+            tools.sumOf {
+                AgentContext.estimateTokens(it.name) +
+                    AgentContext.estimateTokens(it.description) +
+                    AgentContext.estimateTokens(it.parameters.toString())
+            } +
+            AgentContext.estimateMessagesTokens(messages)
+
+    private fun shouldCompact(
+        estimatedTokens: Int,
+        contextWindow: Int,
+    ): Boolean =
+        estimatedTokens.toLong() * 100L >= contextWindow.toLong() * AUTO_COMPACT_PERCENT
+
+    private fun contextPercent(
+        usedTokens: Int,
+        limitTokens: Int,
+    ): Int =
+        if (limitTokens <= 0) {
+            0
+        } else {
+            ((usedTokens.toLong() * 100L) / limitTokens).toInt().coerceIn(0, 100)
+        }
+
+    private fun outputTokenCap(
+        limits: ModelLimits,
+        inputTokens: Int,
+    ): Int? {
+        val modelMax = limits.maxOutputTokens ?: return null
+        val room = limits.contextWindow - inputTokens - OUTPUT_CONTEXT_HEADROOM
+        return minOf(modelMax, room.coerceAtLeast(MIN_OUTPUT_TOKENS))
+    }
+
+    /**
+     * Replaces the history before the current user turn with one model-written
+     * summary. The current turn (including its tool pairs) is kept intact.
+     * A failure falls back to the normal trim path; three failures disable
+     * compaction for this runtime instance.
+     */
+    private suspend fun compactTranscript(
+        transcript: MutableList<AgentMessage>,
+        systemMessage: AgentMessage.System,
+        requestTools: List<AgentToolSchema>,
+        apiKey: String,
+        limits: ModelLimits,
+        onEvent: (AgentEvent) -> Unit,
+    ): AgentMessage.System? {
+        if (compactFailures >= MAX_COMPACT_FAILURES || cancelRequested) return null
+        val lastUserIndex = transcript.indexOfLast { it is AgentMessage.User }
+        if (lastUserIndex <= 0) return null
+        val older = transcript.subList(0, lastUserIndex)
+        if (older.none { it !is AgentMessage.System }) return null
+        val limit = limits.contextWindow.coerceAtLeast(MIN_CONTEXT_WINDOW)
+        val before = estimateRequestTokens(systemMessage, requestTools, transcript)
+        onEvent(
+            AgentEvent.Notice(
+                "Context is at ${contextPercent(before, limit)}%; compacting earlier conversation.",
+            ),
+        )
+        val rendered = renderForSummary(older)
+        if (rendered.isBlank()) return null
+        val summaryText =
+            try {
+                model.complete(
+                    AgentModelRequest(
+                        messages =
+                            listOf(
+                                AgentMessage.System(COMPACT_SYSTEM_PROMPT),
+                                AgentMessage.User("Conversation to summarize:\n\n$rendered"),
+                            ),
+                        tools = emptyList(),
+                        maxOutputTokens = COMPACT_SUMMARY_TOKENS,
+                        timeoutMs = config.modelTimeoutMs,
+                        toolChoice = AgentToolChoice.NONE,
+                    ),
+                    apiKey,
+                ).content?.trim()?.takeIf { it.isNotBlank() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+        if (summaryText == null) {
+            compactFailures += 1
+            onEvent(AgentEvent.Notice("Context compaction failed; older messages will be trimmed instead."))
+            return null
+        }
+        if (cancelRequested) return null
+        compactFailures = 0
+        val summary =
+            AgentMessage.System(
+                "Conversation summary (auto-compacted to save context; use it as background):\n" +
+                    AgentSanitizer.scrubForModelRead(summaryText).take(COMPACT_SUMMARY_MAX_CHARS),
+            )
+        val kept = transcript.subList(lastUserIndex, transcript.size).toList()
+        transcript.clear()
+        transcript.add(summary)
+        transcript.addAll(kept)
+        val after = estimateRequestTokens(systemMessage, requestTools, transcript)
+        onEvent(
+            AgentEvent.ContextUsage(
+                usedTokens = after,
+                limitTokens = limit,
+                percent = contextPercent(after, limit),
+            ),
+        )
+        return summary
+    }
+
+    private fun renderForSummary(messages: List<AgentMessage>): String {
+        val text =
+            buildString {
+                messages.forEach { message ->
+                    when (message) {
+                        is AgentMessage.System ->
+                            appendLine("System note: ${message.content.take(COMPACT_MESSAGE_CHARS)}")
+                        is AgentMessage.User ->
+                            appendLine("User: ${message.content.take(COMPACT_MESSAGE_CHARS)}")
+                        is AgentMessage.Assistant -> {
+                            message.content
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { appendLine("Assistant: ${it.take(COMPACT_MESSAGE_CHARS)}") }
+                            message.toolCalls.forEach { call ->
+                                appendLine(
+                                    "Tool call ${call.name}: ${call.argumentsJson.take(COMPACT_MESSAGE_CHARS)}",
+                                )
+                            }
+                        }
+                        is AgentMessage.Tool ->
+                            appendLine("Tool ${message.name}: ${message.content.take(COMPACT_MESSAGE_CHARS)}")
+                    }
+                }
+            }
+        if (text.length <= COMPACT_MAX_INPUT_CHARS) return text
+        val head = COMPACT_MAX_INPUT_CHARS / 6
+        return text.take(head) +
+            "\n[... middle of the conversation omitted ...]\n" +
+            text.takeLast(COMPACT_MAX_INPUT_CHARS - head)
+    }
+
     private fun appendPartialAssistant(
         transcript: MutableList<AgentMessage>,
         partialContent: StringBuilder,
@@ -912,5 +1107,27 @@ class AgentRuntime(
 
             is TurnOutcome.Completed -> null
         }
+    }
+
+    private companion object {
+        const val MIN_CONTEXT_WINDOW = 4_000
+        const val AUTO_COMPACT_PERCENT = 80
+        const val COMPACT_SUMMARY_TOKENS = 2_048
+        const val COMPACT_SUMMARY_MAX_CHARS = 12_000
+        const val COMPACTION_OUTPUT_RESERVE = 20_000
+        const val COMPACT_MAX_INPUT_CHARS = 120_000
+        const val COMPACT_MESSAGE_CHARS = 4_000
+        const val MAX_COMPACT_FAILURES = 3
+        const val OUTPUT_CONTEXT_HEADROOM = 8_000
+        const val MIN_OUTPUT_TOKENS = 256
+
+        val COMPACT_SYSTEM_PROMPT =
+            """
+            You compact an agent conversation so it can continue in a smaller context.
+            Write a concise brief in the conversation's language. Preserve the user's goals,
+            constraints and decisions; tool names and outcomes; file paths; unresolved errors
+            and next steps. Omit secrets, tokens, subscription URLs, raw logs and the system prompt.
+            Output only the summary.
+            """.trimIndent()
     }
 }

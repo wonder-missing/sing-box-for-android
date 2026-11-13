@@ -44,6 +44,7 @@ import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
 import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
+import io.nekohasekai.sfa.agent.ModelProviders
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
 import io.nekohasekai.sfa.agent.ReasoningEffort
 import io.nekohasekai.sfa.agent.SelectedFileInfo
@@ -119,6 +120,9 @@ class ConductorViewModel(
         val coreConnected: Boolean = false,
         val agentSupported: Boolean = true,
         val canRetryLastTurn: Boolean = false,
+        val contextUsedTokens: Int = 0,
+        val contextLimitTokens: Int = 0,
+        val contextPercent: Int = 0,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -498,6 +502,7 @@ class ConductorViewModel(
             streamingModel = modelClient,
             toolRoutingEnabled = { Settings.conductorToolRouting },
             reasoningEffort = { ReasoningEffort.wireValue(Settings.conductorReasoningEffort) },
+            modelLimits = { ModelProviders.limitsFor(ModelProviderSettings.endpoint()) },
         )
 
     private var transcript: List<AgentMessage> = emptyList()
@@ -946,7 +951,16 @@ class ConductorViewModel(
         sessionStartVersion = BuildConfig.VERSION_NAME
         toolStartedAt.clear()
         transcript = emptyList()
-        updateUi { copy(items = emptyList(), isRunning = false, canRetryLastTurn = false) }
+        updateUi {
+            copy(
+                items = emptyList(),
+                isRunning = false,
+                canRetryLastTurn = false,
+                contextUsedTokens = 0,
+                contextLimitTokens = 0,
+                contextPercent = 0,
+            )
+        }
         sessionStore.clear()
         AgentApiTrace.clear()
     }
@@ -1051,7 +1065,14 @@ class ConductorViewModel(
                                     "usage",
                                     "in=${usage.inputTokens ?: "?"} out=${usage.outputTokens ?: "?"}" +
                                         " cache=${usage.cacheHitTokens ?: "?"}" +
-                                        " miss=${usage.cacheMissTokens ?: "?"}",
+                                        " miss=${usage.cacheMissTokens ?: "?"}" +
+                                        (
+                                            if (_uiState.value.contextLimitTokens > 0) {
+                                                " ctx=${_uiState.value.contextPercent}%"
+                                            } else {
+                                                ""
+                                            }
+                                        ),
                                 ),
                             )
                         }
@@ -1188,6 +1209,15 @@ class ConductorViewModel(
                 finishStreamingAssistant()
                 append(ConductorItem.Notice("conductor", event.text))
             }
+
+            is AgentEvent.ContextUsage ->
+                updateUi {
+                    copy(
+                        contextUsedTokens = event.usedTokens,
+                        contextLimitTokens = event.limitTokens,
+                        contextPercent = event.percent,
+                    )
+                }
 
             is AgentEvent.StateChanged ->
                 if (event.state is TurnState.CallingModel) {

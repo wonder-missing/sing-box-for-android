@@ -106,6 +106,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -124,6 +125,7 @@ private val InputPanelBottomPadding = 60.dp
 private val InputPanelMinHeight = 120.dp
 private const val InputPanelMaxLines = 5
 private const val MaxInputChars = ConductorSessionStore.MAX_DRAFT
+private const val ContextWarningPercent = 80
 
 private val InputFieldSaver =
     listSaver<TextFieldValue, Any>(
@@ -675,6 +677,9 @@ fun ConductorScreen(
             onSend = { send() },
             onStop = viewModel::stopAgent,
             isRunning = uiState.isRunning,
+            contextPercent = uiState.contextPercent,
+            contextUsedTokens = uiState.contextUsedTokens,
+            contextLimitTokens = uiState.contextLimitTokens,
             onSlash = {
                 val press = ConductorInputEdits.slashPress(slashMenuVisible, input, MaxInputChars)
                 if (press.hideMenu) {
@@ -1387,6 +1392,29 @@ private fun CommandSuggestions(
     }
 }
 
+private fun formatTokenCount(tokens: Int): String =
+    when {
+        tokens >= 1_000_000 -> {
+            val value = tokens / 1_000_000.0
+            if (value % 1.0 == 0.0 || value >= 10) {
+                "${value.toInt()}M"
+            } else {
+                String.format(Locale.US, "%.1fM", value)
+            }
+        }
+
+        tokens >= 1_000 -> {
+            val value = tokens / 1_000.0
+            if (value % 1.0 == 0.0 || value >= 100) {
+                "${value.toInt()}k"
+            } else {
+                String.format(Locale.US, "%.1fk", value)
+            }
+        }
+
+        else -> tokens.toString()
+    }
+
 @Composable
 private fun ConductorInputBar(
     modifier: Modifier = Modifier,
@@ -1399,6 +1427,9 @@ private fun ConductorInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     isRunning: Boolean,
+    contextPercent: Int,
+    contextUsedTokens: Int,
+    contextLimitTokens: Int,
     onSlash: () -> Unit,
     onAt: () -> Unit,
     focusRequester: FocusRequester,
@@ -1501,6 +1532,36 @@ private fun ConductorInputBar(
                     onClick = onAt,
                 )
                 Spacer(modifier = Modifier.weight(1f))
+                if (contextLimitTokens > 0) {
+                    val contextDescription =
+                        stringResource(
+                            R.string.conductor_context_usage_description,
+                            contextPercent,
+                            contextUsedTokens,
+                            contextLimitTokens,
+                        )
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.conductor_context_usage,
+                                contextPercent,
+                                formatTokenCount(contextUsedTokens),
+                                formatTokenCount(contextLimitTokens),
+                            ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color =
+                            if (contextPercent >= ContextWarningPercent) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        maxLines = 1,
+                        modifier =
+                        Modifier
+                            .padding(end = 4.dp)
+                            .semantics { contentDescription = contextDescription },
+                    )
+                }
                 if (isRunning) {
                     Box(
                         modifier =

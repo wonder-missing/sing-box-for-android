@@ -125,6 +125,13 @@ sealed interface AgentEvent {
 
     data class Notice(val text: String) : AgentEvent
 
+    /** Prompt tokens currently in the conversation versus the model window. */
+    data class ContextUsage(
+        val usedTokens: Int,
+        val limitTokens: Int,
+        val percent: Int,
+    ) : AgentEvent
+
     data class TurnFinished(val outcome: TurnOutcome) : AgentEvent
 }
 

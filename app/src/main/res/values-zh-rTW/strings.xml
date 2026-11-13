@@ -695,6 +695,8 @@
     <string name="conductor_reasoning_effort_title">推理強度</string>
     <string name="conductor_retry">重試</string>
     <string name="conductor_back_to_latest">回到最新</string>
+    <string name="conductor_context_usage">上下文 %1$d%% · %2$s/%3$s</string>
+    <string name="conductor_context_usage_description">上下文佔用：%1$d%%，%2$d / %3$d tokens</string>
     <string name="conductor_file_request_title">Conductor 需要檔案</string>
     <string name="conductor_file_request_choose">選擇檔案</string>
     <string name="conductor_file_request_choose_one">選擇一個檔案</string>

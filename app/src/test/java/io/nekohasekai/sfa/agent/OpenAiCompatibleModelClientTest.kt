@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -105,6 +106,29 @@ class OpenAiCompatibleModelClientTest {
         assertTrue(requestBody.contains("\"tool_choice\":\"none\""))
         assertEquals(100, response.usage?.cacheHitTokens ?: 0)
         assertEquals(20, response.usage?.cacheMissTokens ?: 0)
+    }
+
+    @Test
+    fun omitsMaxTokensWhenTheProviderDefaultApplies() {
+        responseBody =
+            """
+            {"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]}
+            """.trimIndent()
+
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
+        runBlocking {
+            client.complete(
+                AgentModelRequest(
+                    messages = listOf(AgentMessage.User("hi")),
+                    tools = emptyList(),
+                    maxOutputTokens = null,
+                    timeoutMs = 5_000,
+                ),
+                apiKey = "sk-test",
+            )
+        }
+
+        assertFalse(requestBody.contains("\"max_tokens\""))
     }
 
     @Test
