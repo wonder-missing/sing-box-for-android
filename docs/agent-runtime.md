@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回。
 最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -1384,6 +1384,19 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
+
+### wonder.56：工具搜索召回修正（2026-11-13）
+
+- 分类名查询直接返回整个分类，例如 `network` 返回 5 个 network 工具，`files` 返回 6 个文件工具；不再被同名 alias 截成单个 `network_snapshot`。
+- 去掉 alias 精确命中的提前返回。像「文件」这种泛化 alias 不再遮住 `file_read` / `file_write` / `file_delete` 和 MCP 的 `file_put`；评分仍把精确 alias 排在前面。
+- system prompt 明确「工具搜索每轮有次数上限，合并相关查询」，与 `maxSearchesPerRound` 的运行时行为对齐；golden hash 更新。
+- 来源：Conductor 自测报告 `tool-search-report-20261113.md`（wonder.54），用例可复现，MCP 掉线那段已正确排除。
+
+### wonder.55：性能与抖动遥测（2026-11-13）
+
+- `network_change` 只记当前 default uplink（排除 VPN）的变化，不再把 Wi-Fi 和蜂窝并存的 capabilities 变化成对刷屏；`network_lost` 只在没有可用物理 uplink 时记。
+- 新增 `ui_jank`（前台 Choreographer frame gap，按分钟聚合，只记 severe/janky 窗口）、`tailscale_status`（source/ms/result/error_class）、`service_heartbeat`（15 分钟，uptime）、`conductor_tool`（tool/ms/ok/code，MCP 统一记 mcp）。
+- 主线程/UI 的 telemetry 事件走后台写线程，避免事件文件 IO 自己造成卡顿。
 
 ### wonder.53：生命周期与 search_tools 契约（2026-11-13）
 

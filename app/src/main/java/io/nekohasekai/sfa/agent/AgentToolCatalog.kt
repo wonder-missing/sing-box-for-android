@@ -42,11 +42,14 @@ class AgentToolCatalog(
         if (normalized.isEmpty()) return definitions.take(cappedLimit)
         val named = definitions.filter { it.name.lowercase(Locale.US) == normalized }
         if (named.isNotEmpty()) return named.take(cappedLimit)
-        val aliased =
-            definitions.filter { tool ->
-                tool.aliases.any { it.lowercase(Locale.US) == normalized }
-            }
-        if (aliased.isNotEmpty()) return aliased.sortedBy { it.name }.take(cappedLimit)
+        // A category name is a discovery query, not a single tool alias. Return
+        // the whole group so "network"/"files"/"mcp" do not look like one tool.
+        val categoryMatches =
+            definitions.filter { it.category.equals(normalized, ignoreCase = true) }
+        if (categoryMatches.isNotEmpty()) return categoryMatches.sortedBy { it.name }.take(cappedLimit)
+        // Do not stop at an exact alias. A generic alias such as 文件 or network
+        // would otherwise hide every other tool whose description matches the
+        // same word; scoring keeps the exact alias first and the rest below it.
         return definitions
             .map { it to score(it, normalized) }
             .filter { it.second > 0 }

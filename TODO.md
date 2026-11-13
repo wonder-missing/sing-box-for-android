@@ -25,8 +25,6 @@
 ### P2
 
 - [ ] **服务重启缺口（2026-11-13 12:39）**：CFG 遥测显示 09:11 和 12:39 两次 `service_start`，中间没有 `service_stop`；如果不是手动重启，下轮用 Conductor 的 file tools 读工作目录里的 crash/OOM reports，或对比当时的 `tailscale_status`。排障入口见 [`docs/agent-runtime.md`](docs/agent-runtime.md) 的「服务状态排障」。
-- [ ] **遥测 `network_change` 噪声**：`TelemetrySignals.startNetworkWatch` 对任何非 VPN 网络的 capabilities 变化都记一条，Wi-Fi 和蜂窝并存时会成对刷屏（24h 192 条，02:41–02:56 大量成对事件），不能直接当成默认网络切换。改成只记当前 default uplink 变化，和 `network_lost` / `vpn_revoked` 对齐。
-- [ ] **App 侧抖动可观测**：加 `ui_jank` / `main_thread_stall`（Choreographer frame gap、主线程 watchdog，按分钟聚合，debug 带 tag）、`tailscale_status` 调用耗时/结果、`service_heartbeat`；用来区分 Tailscale 抖动是网络/服务还是 app 阻塞。
 - [ ] **会话编解码移出主线程**：`ConductorSessionStore` 的 JSON encode/decode 和 `AppLog` 同步写文件仍在调用线程；wonder.51 在 submit 时又加了一次 `persistSession()`，长会话可能造成主线程卡顿。先让 `ui_jank` 取证，再把 encode/save 放 IO、load 放后台。
 - [ ] **旧会话 UI 与导出的敏感原文**：wonder.51 只清洗 transcript（模型 egress）；会话 items 和对话导出仍保留旧的 `tailscale_status` 原文，分享导出前需清对话或手动处理。
 - [ ] **[评估] trace 长 body 截断**：usage/finish/错误码/请求 ID 已结构化，内存有总量上限，摘要在会话里持久化；单条 body 超过 200k 字符仍会截断，跨重启只有摘要没有完整 body。
@@ -49,7 +47,7 @@
 
 - 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md) 的「数据面」一节。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.54（tag `v1.15.0-alpha.13-wonder.54`，commit `7a6bd1b`；53 为 `abd0958`，52 为 `6ebbacb`，51 为 `204bfa6`）。下一次从 55 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 当前已发布 wonder.55（tag `v1.15.0-alpha.13-wonder.55`，commit `8db3dc7`；54 为 `7a6bd1b`，53 为 `abd0958`，52 为 `6ebbacb`，51 为 `204bfa6`）。下一次从 56 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
 - 手机上看近期版本（49 到 54）：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。

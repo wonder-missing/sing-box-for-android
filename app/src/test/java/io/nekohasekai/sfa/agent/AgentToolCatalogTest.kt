@@ -46,6 +46,27 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun categoryQueryReturnsTheWholeCategory() {
+        assertEquals(
+            listOf("list_nodes", "probe_via_node"),
+            catalog.search("network").map { it.name },
+        )
+    }
+
+    @Test
+    fun aChineseAliasDoesNotHideOtherMatchingTools() {
+        val fileList = definition("file_list", "files", listOf("文件"))
+        val fileRead = definition("file_read", "files", listOf("读取文件"))
+        val fileWrite = definition("file_write", "files", listOf("写文件"))
+        val scoped = AgentToolCatalog(listOf(fileList, fileRead, fileWrite))
+
+        assertEquals(
+            listOf("file_list", "file_read", "file_write"),
+            scoped.search("文件").map { it.name },
+        )
+    }
+
+    @Test
     fun suggestionsCoverNearMisses() {
         assertTrue(catalog.suggestions("list_node").contains("list_nodes"))
     }
