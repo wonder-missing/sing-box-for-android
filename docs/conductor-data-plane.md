@@ -1,6 +1,6 @@
 # Conductor 数据面：文件、Taildrop 与跨设备投递
 
-状态：设计稿（2026-11-13）。代码未动。
+状态：Phase A 已完成，Phase B 的 `taildrop_peers` / `taildrop_send` 已随 wonder.52 实现；`taildrop_inbox` / `taildrop_receive` 待做。设计稿（2026-11-13）。
 定位：Conductor 不只是 APP 旋钮的控制面，而是主人个人数据搬运、跨设备文件投递和通讯的 Agent。它长在 WonderSing 里，天然知道本机网络、Tailscale peers 和出口状态。
 
 ## 1. 术语
@@ -68,7 +68,7 @@
 
 ## 6. 阶段
 
-### Phase A：文件作用域（目标 wonder.52）
+### Phase A：文件作用域（已完成，wonder.52）
 
 - 建立 `工作目录/conductor/`，TTL/大小/数量清理。
 - `files_list`、`files_stat`、`files_read`、`files_write`、`files_mkdir`、`files_delete`。
@@ -77,7 +77,7 @@
 - 单测：路径穿越、越界读、超限、覆盖保护、原子写。
 - 验收：Conductor 能读 `Taildrop/` 里的文件，只能在 `conductor/` 写；Browse 能看到工作区。
 
-### Phase B：Taildrop 第一类能力（目标 wonder.53）
+### Phase B：Taildrop 第一类能力（部分完成，wonder.52；inbox/receive 待做）
 
 - `taildrop_peers`、`taildrop_inbox`、`taildrop_receive`、`taildrop_send`。
 - 复用 `TaildropSendManager` / `TaildropSendService`；给 `TaildropSendFile` 加 `File` 构造。

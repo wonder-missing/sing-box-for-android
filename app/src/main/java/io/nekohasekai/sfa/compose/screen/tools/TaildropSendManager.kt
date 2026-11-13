@@ -36,13 +36,14 @@ class TaildropSendFile(
     val name: String,
     private val descriptor: ParcelFileDescriptor?,
     private val text: ByteArray? = null,
+    private val file: File? = null,
 ) {
-    val size: Long = text?.size?.toLong() ?: descriptor!!.statSize
+    val size: Long = text?.size?.toLong() ?: file?.length() ?: descriptor!!.statSize
 
-    fun open(): InputStream = if (text != null) {
-        ByteArrayInputStream(text)
-    } else {
-        FileInputStream(descriptor!!.fileDescriptor)
+    fun open(): InputStream = when {
+        text != null -> ByteArrayInputStream(text)
+        file != null -> FileInputStream(file)
+        else -> FileInputStream(descriptor!!.fileDescriptor)
     }
 
     fun close() {

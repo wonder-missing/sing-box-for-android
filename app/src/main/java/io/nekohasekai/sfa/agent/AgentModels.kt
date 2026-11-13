@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.agent
 
 import kotlinx.serialization.json.JsonObject
+import java.io.File
 
 /**
  * Stable tool metadata. The registry exposes the name, description and JSON
@@ -13,6 +14,9 @@ enum class AgentPermission(
     READ_NETWORK_STATE("read_network_state"),
     NETWORK_PROBE("network_probe"),
     NETWORK_CHANGE("network_change"),
+    READ_FILES("read_files"),
+    WRITE_FILES("write_files"),
+    FILE_TRANSFER("file_transfer"),
     DATA_EGRESS("data_egress"),
 }
 
@@ -37,6 +41,9 @@ enum class AgentParameterType(
     val schemaType: String,
 ) {
     STRING("string"),
+    INTEGER("integer"),
+    BOOLEAN("boolean"),
+    STRING_ARRAY("array"),
 }
 
 data class AgentParameterSpec(
@@ -44,6 +51,8 @@ data class AgentParameterSpec(
     val type: AgentParameterType,
     val required: Boolean,
     val description: String,
+    /** Some text parameters legitimately accept an empty string (for example, a path for the root). */
+    val allowBlank: Boolean = false,
 )
 
 data class AgentToolDefinition(
@@ -114,6 +123,36 @@ data class AgentTailscalePeer(
 
 interface TelemetryUploadPort {
     suspend fun upload(cancellation: ToolCancellation? = null): String
+}
+
+/** Current conversation and API trace, rendered as Markdown for diagnostics. */
+interface DiagnosticsSource {
+    fun conversationMarkdown(): String
+
+    fun traceMarkdown(): String
+}
+
+data class TaildropPeerInfo(
+    val name: String,
+    val online: Boolean,
+    val lastSeen: String? = null,
+)
+
+data class TaildropSendResult(
+    val peer: String,
+    val files: List<String>,
+    val ok: Boolean,
+    val message: String? = null,
+)
+
+interface TaildropPort {
+    suspend fun peers(): List<TaildropPeerInfo>
+
+    suspend fun send(
+        peer: String,
+        files: List<File>,
+        cancellation: ToolCancellation? = null,
+    ): TaildropSendResult
 }
 
 /**

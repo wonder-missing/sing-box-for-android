@@ -12,6 +12,7 @@ import io.nekohasekai.libbox.TailscaleStatusUpdate
 import io.nekohasekai.sfa.agent.AgentApiKeyProviderFactory
 import io.nekohasekai.sfa.agent.AgentApiTrace
 import io.nekohasekai.sfa.agent.AgentConfig
+import io.nekohasekai.sfa.agent.AgentDataTools
 import io.nekohasekai.sfa.agent.AgentError
 import io.nekohasekai.sfa.agent.AgentEvent
 import io.nekohasekai.sfa.agent.AgentInvocationResult
@@ -31,6 +32,8 @@ import io.nekohasekai.sfa.agent.AndroidDeviceSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeState
 import io.nekohasekai.sfa.agent.ConfirmationRequest
+import io.nekohasekai.sfa.agent.ConductorFileStore
+import io.nekohasekai.sfa.agent.DiagnosticsSource
 import io.nekohasekai.sfa.agent.DefaultAgentInputGuard
 import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
@@ -38,6 +41,9 @@ import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
 import io.nekohasekai.sfa.agent.ReasoningEffort
+import io.nekohasekai.sfa.agent.TaildropPeerInfo
+import io.nekohasekai.sfa.agent.TaildropPort
+import io.nekohasekai.sfa.agent.TaildropSendResult
 import io.nekohasekai.sfa.agent.TailscaleStatusSource
 import io.nekohasekai.sfa.agent.TelemetryUploadPort
 import io.nekohasekai.sfa.agent.ToolCallView
@@ -54,6 +60,8 @@ import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.compose.screen.tools.TaildropSendFile
+import io.nekohasekai.sfa.compose.screen.tools.TaildropSendManager
 import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
@@ -67,10 +75,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -157,6 +168,127 @@ class ConductorViewModel(
                 TelemetryRuntime.uploadNow(application, cancellation)
         }
 
+    private val workingDir: File = application.getExternalFilesDir(null) ?: application.filesDir
+    private val fileStore = ConductorFileStore(workingDir)
+
+    private val diagnosticsSource =
+        object : DiagnosticsSource {
+            override fun conversationMarkdown(): String = conversationTranscript()
+
+            override fun traceMarkdown(): String = apiTraceMarkdown()
+        }
+
+    private val taildropPort =
+        object : TaildropPort {
+            override suspend fun peers(): List<TaildropPeerInfo> {
+                val update = awaitTailscaleStatus(null)
+                val peers = LinkedHashMap<String, TaildropPeerInfo>()
+                val endpoints = update.endpoints()
+                while (endpoints.hasNext()) {
+                    val endpoint = endpoints.next()
+                    val self = endpoint.getSelf()
+                    val groups = endpoint.userGroups()
+                    while (groups.hasNext()) {
+                        val group = groups.next()
+                        val iterator = group.peers()
+                        while (iterator.hasNext()) {
+                            val peer = iterator.next()
+                            if (self != null && peer.stableID == self.stableID) continue
+                            val name = peerName(peer)
+                            if (!peers.containsKey(name)) {
+                                peers[name] =
+                                    TaildropPeerInfo(
+                                        name = name,
+                                        online = peer.online,
+                                        lastSeen =
+                                            if (!peer.online && peer.lastSeen > 0) {
+                                                formatLastSeen(peer.lastSeen)
+                                            } else {
+                                                null
+                                            },
+                                    )
+                            }
+                        }
+                    }
+                }
+                return peers.values.toList()
+            }
+
+            override suspend fun send(
+                targetPeer: String,
+                files: List<File>,
+                cancellation: ToolCancellation?,
+            ): TaildropSendResult {
+                val update = awaitTailscaleStatus(cancellation)
+                var endpointTag: String? = null
+                var stableID: String? = null
+                var online = false
+                val endpoints = update.endpoints()
+                while (endpoints.hasNext() && stableID == null) {
+                    val endpoint = endpoints.next()
+                    val self = endpoint.getSelf()
+                    val groups = endpoint.userGroups()
+                    while (groups.hasNext() && stableID == null) {
+                        val group = groups.next()
+                        val iterator = group.peers()
+                        while (iterator.hasNext()) {
+                            val peer = iterator.next()
+                            if (self != null && peer.stableID == self.stableID) continue
+                            if (peerName(peer) == targetPeer) {
+                                endpointTag = endpoint.endpointTag
+                                stableID = peer.stableID
+                                online = peer.online
+                                break
+                            }
+                        }
+                    }
+                }
+                val names = files.map { it.name }
+                val endpoint = endpointTag
+                val stable = stableID
+                if (endpoint == null || stable == null) {
+                    return TaildropSendResult(targetPeer, names, ok = false, message = "Unknown peer: $targetPeer")
+                }
+                if (!online) {
+                    return TaildropSendResult(targetPeer, names, ok = false, message = "Peer is offline: $targetPeer")
+                }
+                val sendFiles = files.map { TaildropSendFile(it.name, null, null, it) }
+                val id = TaildropSendManager.send(endpoint, stable, targetPeer, sendFiles)
+                if (id < 0) {
+                    return TaildropSendResult(targetPeer, names, ok = false, message = "Nothing to send.")
+                }
+                cancellation?.onCancel { TaildropSendManager.cancel(id) }
+                val state =
+                    withTimeoutOrNull(TAILDROP_SEND_TIMEOUT_MS) {
+                        TaildropSendManager.sessions
+                            .first { sessions -> sessions.any { it.id == id && it.finished } }
+                            .firstOrNull { it.id == id }
+                    }
+                if (state == null) {
+                    TaildropSendManager.cancel(id)
+                    return TaildropSendResult(
+                        targetPeer,
+                        names,
+                        ok = false,
+                        message = "Timed out waiting for the transfer to finish.",
+                    )
+                }
+                state.errorMessage?.let { message ->
+                    return TaildropSendResult(targetPeer, names, ok = false, message = message)
+                }
+                if (state.files.any { !it.completed }) {
+                    return TaildropSendResult(
+                        targetPeer,
+                        names,
+                        ok = false,
+                        message = "Some files were not completed.",
+                    )
+                }
+                AppLog.info("conductor taildrop send peer=$targetPeer files=${names.joinToString(",")}")
+                return TaildropSendResult(targetPeer, names, ok = true)
+            }
+        }
+
     private val agentConfig = AgentConfig()
 
     private val toolExecutor =
@@ -168,7 +300,12 @@ class ConductorViewModel(
                 selectionPort = selectionPort,
                 tailscaleStatusSource = tailscaleSource,
                 telemetryUploadPort = telemetryPort,
-            ).all,
+            ).all +
+                AgentDataTools(
+                    fileStore = fileStore,
+                    diagnostics = diagnosticsSource,
+                    taildrop = taildropPort,
+                ).all,
             toolTimeoutMs = agentConfig.toolTimeoutMs,
         )
 
@@ -202,6 +339,7 @@ class ConductorViewModel(
 
     init {
         AgentApiTrace.setAppVersion(BuildConfig.VERSION_NAME)
+        runCatching { fileStore.ensureWorkspace() }
         restoreSession()
         _uiState.update { it.copy(agentSupported = apiKeyProvider.supported) }
     }
@@ -1409,5 +1547,6 @@ class ConductorViewModel(
 
     companion object {
         private const val MAX_ITEMS = 200
+        private const val TAILDROP_SEND_TIMEOUT_MS = 120_000L
     }
 }

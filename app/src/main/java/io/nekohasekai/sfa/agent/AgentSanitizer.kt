@@ -85,6 +85,22 @@ internal object AgentSanitizer {
             "[redacted-ip]",
         )
 
+    /**
+     * Text going into the model from a local file: personal identifiers and
+     * credential values are masked, while URLs stay readable so diagnostics
+     * remain useful.
+     */
+    fun scrubForModelRead(text: String): String {
+        var result = scrubPersonalData(text)
+        result =
+            SENSITIVE_KV.replace(result) { match ->
+                "${match.groupValues[1]}=***"
+            }
+        return SENSITIVE_QUERY.replace(result) { match ->
+            match.groupValues[1] + "***"
+        }
+    }
+
     fun sanitizeForLog(text: String): String {
         val withoutUrls = URL_REGEX.replace(text) { "[redacted-url]" }
         return SENSITIVE_KV.replace(withoutUrls) { match ->

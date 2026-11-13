@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）。
 最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -1384,6 +1384,15 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
+
+### wonder.52：数据面第一版（2026-11-13）
+
+- 新增文件工具：`file_list`、`file_stat`、`file_read`（默认 64k，最大 256k，二进制只回元数据）、`file_write`、`file_mkdir`、`file_delete`。读根是整个工作目录（`getExternalFilesDir`），写根只有 `conductor/`；canonical path 检查，拒绝 `..`、绝对路径和越界写。
+- 新增 `diagnostics_export(kind=conversation|trace)`：把当前对话或 API trace 写入 `conductor/`，默认带时间戳文件名，返回 path/size/sha256；内容默认脱敏（邮箱、Tailscale IP、token）。
+- 新增 `taildrop_peers`、`taildrop_send`：按 peer 名字解析 tailnet 节点，只允许工作目录内文件，发送 `ALWAYS` 确认，等待完成并返回结果；复用 `TaildropSendManager` / `TaildropSendService`。
+- 参数 schema 支持 integer、boolean、string array；`AgentParameterSpec.allowBlank` 允许根路径和空文本。
+- `WorkingDirectoryProvider` 对 docId 做 canonical path 检查，越界抛 `FileNotFoundException`。
+- 工具描述保持能力导向，不写具体 peer、应用或一次性场景；新工具不是 core，仍靠 roster 名字 + `search_tools` 渐进披露。
 
 ### wonder.51：跨版本会话修复（2026-11-13）
 

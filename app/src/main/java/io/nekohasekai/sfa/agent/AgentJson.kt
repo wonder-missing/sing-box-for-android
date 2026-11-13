@@ -5,7 +5,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -20,6 +22,9 @@ internal object AgentJson {
                 parameters.forEach { spec ->
                     putJsonObject(spec.name) {
                         put("type", spec.type.schemaType)
+                        if (spec.type == AgentParameterType.STRING_ARRAY) {
+                            putJsonObject("items") { put("type", "string") }
+                        }
                         put("description", spec.description)
                     }
                 }
@@ -38,4 +43,21 @@ internal object AgentJson {
         args: JsonObject,
         key: String,
     ): String? = (args[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    fun int(
+        args: JsonObject,
+        key: String,
+    ): Int? = (args[key] as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull
+
+    fun boolean(
+        args: JsonObject,
+        key: String,
+    ): Boolean? = (args[key] as? JsonPrimitive)?.booleanOrNull
+
+    fun stringList(
+        args: JsonObject,
+        key: String,
+    ): List<String>? =
+        (args[key] as? kotlinx.serialization.json.JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.takeIf { primitive -> primitive.isString }?.content }
 }

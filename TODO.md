@@ -11,8 +11,8 @@
 
 设计见 [`docs/conductor-data-plane.md`](docs/conductor-data-plane.md)。Conductor 的长期定位不只是 APP 控制面，而是个人数据搬运、跨设备文件投递和通讯的 Agent；它长在网络 App 里，天然知道本机网络和 Tailscale peers。当前仍主要是控制面，按下面阶段补。
 
-- [ ] **Phase A 文件作用域（目标 wonder.52）**：读整个工作目录（`getExternalFilesDir`，含 `Taildrop/`、crash/OOM/power reports），写只允许 `工作目录/conductor/`。工具 `files_list`、`files_stat`、`files_read`、`files_write`、`files_mkdir`、`files_delete`；canonical path 检查、拒绝 `..`/symlink、大小/数量/TTL 上限；顺手加固 `WorkingDirectoryProvider` 的 docId 越界。
-- [ ] **Phase B Taildrop（目标 wonder.53）**：`taildrop_peers`、`taildrop_inbox`、`taildrop_receive`、`taildrop_send`。发送只允许工作目录内文件，`ALWAYS` 确认，只允许 tailnet peer；复用 `TaildropSendManager` / `TaildropSendService`，给 `TaildropSendFile` 加 `File` 构造；进度/超时/取消/审计。
+- [x] **Phase A 文件作用域（wonder.52）**：读整个工作目录（`getExternalFilesDir`，含 `Taildrop/`、crash/OOM/power reports），写只允许 `工作目录/conductor/`。工具 `file_list`、`file_stat`、`file_read`、`file_write`、`file_mkdir`、`file_delete`；canonical path 检查、拒绝 `..`/绝对路径/越界；单文件 2MB、20 个文件、24h TTL；`WorkingDirectoryProvider` docId 越界加固。
+- [ ] **Phase B Taildrop（部分完成，wonder.52）**：`taildrop_peers`、`taildrop_send` 已实现；发送只允许工作目录内文件，`ALWAYS` 确认，只允许 tailnet peer；复用 `TaildropSendManager` / `TaildropSendService`，`TaildropSendFile` 已加 `File` 构造；还有 `taildrop_inbox`、`taildrop_receive` 未做。
 - [ ] **Phase C 自省与证据（目标 wonder.54）**：`export_trace`、`export_conversation`、`export_log_tail`、`self_test` 固定套件；报告写工作区；`conductor_eval` 单独开关。目标是 Conductor 自己导出证据、自测、Taildrop 给 Mini 上的 Agent。
 - [ ] **Phase D 通讯与自动化（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍然只走 typed 工具 + 确认。
 
@@ -42,9 +42,9 @@
 
 ## 下个会话接手
 
-- 下一步优先做数据面 Phase A（wonder.52），先读 [`docs/conductor-data-plane.md`](docs/conductor-data-plane.md)：读整个工作目录、写 `conductor/` 子目录、文件工具和路径加固。Phase B 才是 Taildrop 发送。
+- 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-data-plane.md`](docs/conductor-data-plane.md)。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.51（tag `v1.15.0-alpha.13-wonder.51`，commit `204bfa6`；wonder.50 为 `072be92`，wonder.49 为 `7048e2f`）。下一次从 52 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 当前已发布 wonder.52（tag `v1.15.0-alpha.13-wonder.52`；wonder.51 为 `204bfa6`，wonder.50 为 `072be92`）。下一次从 53 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
 - 手机上看 wonder.49/50/51：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
@@ -58,6 +58,10 @@
   - 导出 API trace：应出现 `Request history (persisted)`，包含重启前的请求摘要（时间、版本、状态、耗时、usage）。
   - 问「你能把日志传到 Mini 吗」：模型应先 `search_tools` 找 MCP 能力，不应直接断言没有。
   - 失败卡出现后，下一条消息的请求 event 行应带 `message="..."`（DNS/超时等详情），模型能据此解释失败原因。
+  - 问「把 API trace 和 transcript 发到 Mini」：应先 `diagnostics_export` 写 `conductor/`，再 `taildrop_send`；确认卡显示 peer 和文件；Mini 的 Taildrop 收件箱出现文件。
+  - 让 Conductor `file_list` 工作目录：应看到 `Taildrop/`、报告目录和 `conductor/`；`file_write` 只能写 `conductor/`，写外面应被拒。
+  - `file_read` trace 或日志：token 应打码为 `***`，邮箱/Tailscale IP 也应打码。
+  - `taildrop_send` 给离线 peer 应明确失败，不应卡住。
 - 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：
@@ -78,6 +82,7 @@
 
 ## 最近完成
 
+- wonder.52（2026-11-13）：数据面第一版。读整个工作目录、写 `conductor/`；`file_list/stat/read/write/mkdir/delete`；`diagnostics_export(kind=conversation|trace)`；`taildrop_peers`、`taildrop_send`（只允许工作目录内文件，`ALWAYS` 确认，复用现有 Taildrop service）；参数 schema 支持 integer/boolean/string array；`WorkingDirectoryProvider` docId 越界加固。tag `v1.15.0-alpha.13-wonder.52`。
 - wonder.51（2026-11-13）：跨版本会话修复。提交时先持久化 user；恢复时把 UI 有、transcript 缺的 agent user 按锚点补回；清洗历史 tool 里的邮箱和 Tailscale peer IP；session 记录 appVersion，版本变化加 Notice/`app_updated` 事件，导出写版本 header；trace 摘要跨重启持久化；`turn_failed` 事件带 `message="..."`；`tailscale_status` 改结构化 JSON；MCP 发现提示 + `search_tools` categories；模型取消改代际；prompt 加观察/推断规则。tag `v1.15.0-alpha.13-wonder.51`，commit `204bfa6`。
 - wonder.50（2026-11-13）：P3 清理。trace 加 1M 字符总量上限（旧条目先缩到 20k 再丢弃）、错误码和 `X-Request-Id`；传输错误拆成 `network_dns` / `network_connect` / `network_tls` / `network_handshake` / `network_timeout`；system prompt 加 SHA-256 字节锁；删除无入口的 `AgentIntentParser`。tag `v1.15.0-alpha.13-wonder.50`，commit `072be92`。
 - wonder.49（2026-11-13）：Conductor P1/P2/P3 批次。工具级超时、Tailscale 取消、`probe_many` 顺序批量、`select_outbound` 确认/回滚；MCP 全部 AGENT_ONLY、`DATA_EGRESS` 强制、定义 fingerprint、404 不重试、token Keystore、确认 URL、刷新并行；token 预算、会话 512KB 上限、search weak、probe `reachable`、trace usage/耗时、Retry-After、`/clear`、AppLog 审计；UI Retry/usage/滚动/回到最新。libbox 无 per-request outbound、DNS/route、GET 状态码，probe 真正并发和诊断工具阻塞。评估见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。

@@ -22,6 +22,18 @@ class AgentSanitizerTest {
     }
 
     @Test
+    fun modelReadMasksSecretsButKeepsUrls() {
+        val raw = "GET https://api.example.com/v1?token=abc 100.106.21.44 wonder@example.com"
+
+        val scrubbed = AgentSanitizer.scrubForModelRead(raw)
+
+        assertTrue(scrubbed.contains("https://api.example.com/v1?token=***"))
+        assertFalse(scrubbed.contains("abc"))
+        assertFalse(scrubbed.contains("100.106.21.44"))
+        assertFalse(scrubbed.contains("wonder@example.com"))
+    }
+
+    @Test
     fun confirmationDisplayKeepsUrlHostAndMasksSecrets() {
         val raw =
             """{"url":"https://user:pass@example.com/path?token=SECRET&x=1","note":"token=abc"}"""

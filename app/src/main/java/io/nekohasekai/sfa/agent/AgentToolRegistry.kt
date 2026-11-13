@@ -9,7 +9,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -84,16 +86,50 @@ class AgentToolRegistry(
                     }
                     continue
                 }
-                val primitive = element as? JsonPrimitive
-                if (primitive == null || !primitive.isString) {
+                if (spec.type == AgentParameterType.STRING) {
+                    val primitive = element as? JsonPrimitive
+                    if (primitive == null || !primitive.isString) {
+                        return failure(
+                            name,
+                            "invalid_parameter_type",
+                            "Parameter '${spec.name}' must be a string.",
+                        )
+                    }
+                    if (!spec.allowBlank && primitive.content.isBlank()) {
+                        return failure(name, "invalid_parameter", "Parameter '${spec.name}' must not be blank.")
+                    }
+                    continue
+                }
+                val valid =
+                    when (spec.type) {
+                        AgentParameterType.INTEGER -> {
+                            val primitive = element as? JsonPrimitive
+                            primitive != null && !primitive.isString && primitive.intOrNull != null
+                        }
+
+                        AgentParameterType.BOOLEAN -> {
+                            val primitive = element as? JsonPrimitive
+                            primitive != null && primitive.booleanOrNull != null
+                        }
+
+                        AgentParameterType.STRING_ARRAY -> {
+                            val array = element as? JsonArray
+                            array != null &&
+                                (!spec.required || array.isNotEmpty()) &&
+                                array.all { item ->
+                                    val primitive = item as? JsonPrimitive
+                                    primitive != null && primitive.isString && primitive.content.isNotBlank()
+                                }
+                        }
+
+                        AgentParameterType.STRING -> true
+                    }
+                if (!valid) {
                     return failure(
                         name,
                         "invalid_parameter_type",
                         "Parameter '${spec.name}' must be a ${spec.type.schemaType}.",
                     )
-                }
-                if (primitive.content.isBlank()) {
-                    return failure(name, "invalid_parameter", "Parameter '${spec.name}' must not be blank.")
                 }
             }
             val knownNames = definition.parameters.map { it.name }.toSet()

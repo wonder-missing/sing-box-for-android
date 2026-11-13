@@ -8,6 +8,7 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
 import android.webkit.MimeTypeMap
 import java.io.File
+import java.io.FileNotFoundException
 
 class WorkingDirectoryProvider : DocumentsProvider() {
 
@@ -110,24 +111,31 @@ class WorkingDirectoryProvider : DocumentsProvider() {
     override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean {
         val parent = getFileForDocId(parentDocumentId)
         val child = getFileForDocId(documentId)
-        return child.absolutePath.startsWith(parent.absolutePath)
+        return child == parent || child.path.startsWith(parent.path + File.separator)
     }
 
     private fun getFileForDocId(documentId: String): File {
+        val base = baseDir.canonicalFile
         if (documentId == ROOT_DOC_ID) {
-            return baseDir
+            return base
         }
-        return File(baseDir, documentId)
+        val file = File(base, documentId).canonicalFile
+        if (file != base && !file.path.startsWith(base.path + File.separator)) {
+            throw FileNotFoundException("Document is outside the working directory.")
+        }
+        return file
     }
 
     private fun getDocIdForFile(file: File): String {
-        val path = file.absolutePath
-        val basePath = baseDir.absolutePath
-
-        return if (path == basePath) {
+        val canonical = file.canonicalFile
+        val basePath = baseDir.canonicalFile.path
+        if (canonical.path != basePath && !canonical.path.startsWith(basePath + File.separator)) {
+            throw FileNotFoundException("File is outside the working directory.")
+        }
+        return if (canonical.path == basePath) {
             ROOT_DOC_ID
         } else {
-            path.removePrefix("$basePath/")
+            canonical.path.removePrefix("$basePath/")
         }
     }
 
