@@ -186,10 +186,15 @@ class AgentDataToolsTest {
 
     @Test
     fun fileQueryFindsAllFileTools() {
-        val names = AgentToolCatalog(tools.all.map { it.definition }).search("file").map { it.name }
+        val names =
+            AgentToolCatalog(tools.all.map { it.definition })
+                .search("file", limit = AgentToolCatalog.MAX_LIMIT)
+                .map { it.name }
 
         assertTrue(names.contains("file_list"))
         assertTrue(names.contains("file_read"))
+        assertTrue(names.contains("file_tail"))
+        assertTrue(names.contains("file_grep"))
         assertTrue(names.contains("file_stat"))
         assertTrue(names.contains("file_write"))
         assertTrue(names.contains("file_delete"))
