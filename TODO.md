@@ -13,18 +13,21 @@
 
 - [x] **Phase A 文件作用域（wonder.52）**：读整个工作目录（`getExternalFilesDir`，含 `Taildrop/`、crash/OOM/power reports），写只允许 `工作目录/conductor/`。工具 `file_list`、`file_stat`、`file_read`、`file_write`、`file_mkdir`、`file_delete`；canonical path 检查、拒绝 `..`/绝对路径/越界；单文件 2MB、20 个文件、24h TTL；`WorkingDirectoryProvider` docId 越界加固。
 - [ ] **Phase B Taildrop（部分完成，wonder.52）**：`taildrop_peers`、`taildrop_send` 已实现；发送只允许工作目录内文件，`ALWAYS` 确认，只允许 tailnet peer；复用 `TaildropSendManager` / `TaildropSendService`，`TaildropSendFile` 已加 `File` 构造；还有 `taildrop_inbox`、`taildrop_receive` 未做。
-- [ ] **Phase C 自省与证据（目标 wonder.54）**：`export_trace`、`export_conversation`、`export_log_tail`、`self_test` 固定套件；报告写工作区；`conductor_eval` 单独开关。目标是 Conductor 自己导出证据、自测、Taildrop 给 Mini 上的 Agent。
+- [ ] **Phase C 自省与证据（接下来）**：`export_log_tail`、`self_test` 固定套件、`conductor_eval` 单独开关；报告写工作区。加一个脱敏的 `diagnostics_network_history`：最近 N 条 `network_change` / `service_start` / `service_stop` / `vpn_revoked`，让 Agent 自诊断 Tailscale 抖动。目标是 Conductor 自己导出证据、自测、Taildrop 给 Mini 上的 Agent。
 - [ ] **Phase D 通讯与自动化（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍然只走 typed 工具 + 确认。
 
 ### P1
 
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，只能临时全局切换。`probe_many` 已按顺序批量实现；真正并发需要 daemon/新 API。实验里五次 probe 串行 6 到 15 秒。
-- [ ] **[审查] Conductor 生命周期（剩余）**：旋转已不再取消；提交时已先持久化 user，进程死亡不再丢这条。turn 中途的 tool 卡片和未完成的 assistant 仍不落盘；返回页面仍会取消进行中的 turn。
+- [ ] **[审查] Conductor 生命周期（剩余）**：旋转和返回页面已不再取消（wonder.53 activity 作用域）；提交时已先持久化 user。进程死亡仍会丢 turn 中途的 tool 卡片和未完成 assistant。
 - [ ] **[审查] `TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时、Tailscale 取消已落地；仍没有在 Stop 后 1 秒内把未确认取消转成 turn error。
 
 ### P2
 
 - [ ] **服务重启缺口（2026-11-13 12:39）**：CFG 遥测显示 09:11 和 12:39 两次 `service_start`，中间没有 `service_stop`；如果不是手动重启，下轮用 Conductor 的 file tools 读工作目录里的 crash/OOM reports，或对比当时的 `tailscale_status`。排障入口见 [`docs/agent-runtime.md`](docs/agent-runtime.md) 的「服务状态排障」。
+- [ ] **遥测 `network_change` 噪声**：`TelemetrySignals.startNetworkWatch` 对任何非 VPN 网络的 capabilities 变化都记一条，Wi-Fi 和蜂窝并存时会成对刷屏（24h 192 条，02:41–02:56 大量成对事件），不能直接当成默认网络切换。改成只记当前 default uplink 变化，和 `network_lost` / `vpn_revoked` 对齐。
+- [ ] **App 侧抖动可观测**：加 `ui_jank` / `main_thread_stall`（Choreographer frame gap、主线程 watchdog，按分钟聚合，debug 带 tag）、`tailscale_status` 调用耗时/结果、`service_heartbeat`；用来区分 Tailscale 抖动是网络/服务还是 app 阻塞。
+- [ ] **会话编解码移出主线程**：`ConductorSessionStore` 的 JSON encode/decode 和 `AppLog` 同步写文件仍在调用线程；wonder.51 在 submit 时又加了一次 `persistSession()`，长会话可能造成主线程卡顿。先让 `ui_jank` 取证，再把 encode/save 放 IO、load 放后台。
 - [ ] **旧会话 UI 与导出的敏感原文**：wonder.51 只清洗 transcript（模型 egress）；会话 items 和对话导出仍保留旧的 `tailscale_status` 原文，分享导出前需清对话或手动处理。
 - [ ] **[评估] trace 长 body 截断**：usage/finish/错误码/请求 ID 已结构化，内存有总量上限，摘要在会话里持久化；单条 body 超过 200k 字符仍会截断，跨重启只有摘要没有完整 body。
 - [ ] **批量确认：预览与分级**：整批预检并合成一张含全部工具参数的卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS` / MCP 写工具逐次确认。
