@@ -164,14 +164,21 @@ object AgentApiTrace {
 
     fun lastUsage(): TokenUsage? = synchronized(lock) { entries.peekLast()?.usage }
 
-    fun asMarkdown(): String {
-        val snapshot = synchronized(lock) { entries.toList() }
-        val history = synchronized(lock) { summaryEntries.toList() }
+    fun asMarkdown(lastEntries: Int? = null): String {
+        val allEntries = synchronized(lock) { entries.toList() }
+        val allHistory = synchronized(lock) { summaryEntries.toList() }
+        val limit = lastEntries?.coerceIn(1, MAX_ENTRIES)
+        val snapshot = if (limit != null) allEntries.takeLast(limit) else allEntries
+        val history = if (limit != null) allHistory.takeLast(limit) else allHistory
         if (snapshot.isEmpty() && history.isEmpty()) return "No API calls recorded in this session."
         val text =
             buildString {
                 appendLine("# Conductor API trace")
                 appendLine()
+                if (limit != null) {
+                    appendLine("- showing last $limit requests")
+                    appendLine()
+                }
                 if (history.isNotEmpty()) {
                     appendLine("## Request history (persisted)")
                     appendLine()

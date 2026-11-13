@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -157,8 +158,17 @@ fun ConductorScreen(
     viewModel: ConductorViewModel = activityConductorViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val fileRequest by viewModel.fileRequest.collectAsState()
     val remoteServer by RemoteControlManager.remoteServer.collectAsState()
     val remoteConnected by RemoteControlManager.isConnected.collectAsState()
+
+    var pendingFilePickId by rememberSaveable { mutableStateOf<String?>(null) }
+    val filePicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            val requestId = pendingFilePickId
+            pendingFilePickId = null
+            if (requestId != null) viewModel.onFilesSelected(requestId, uris)
+        }
 
     LaunchedEffect(serviceStatus, remoteServer, remoteConnected) {
         viewModel.onServiceState(
@@ -209,6 +219,9 @@ fun ConductorScreen(
         viewModel.saveDraft(input)
     }
     var inputExpanded by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(fileRequest?.id) {
+        if (fileRequest != null) inputExpanded = false
+    }
     var inputLineCount by remember { mutableStateOf(1) }
     var inputTooLongWarned by remember { mutableStateOf(false) }
     var pendingExport by remember { mutableStateOf<ConductorExport?>(null) }
@@ -607,6 +620,23 @@ fun ConductorScreen(
             }
         }
 
+        fileRequest?.let { request ->
+            FileRequestCard(
+                request = request,
+                onChoose = {
+                    pendingFilePickId = request.id
+                    filePicker.launch(
+                        request.mimeTypes.ifEmpty { listOf("*/*") }.toTypedArray(),
+                    )
+                },
+                onCancel = { viewModel.cancelFileRequest(request.id) },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 16.dp, end = 16.dp, bottom = panelHeight + 8.dp),
+            )
+        }
+
         ConductorInputBar(
             modifier = Modifier.align(Alignment.BottomCenter),
             height = panelHeight,
@@ -650,6 +680,68 @@ fun ConductorScreen(
             },
             focusRequester = focusRequester,
         )
+    }
+}
+
+@Composable
+private fun FileRequestCard(
+    request: FileRequestUi,
+    onChoose: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
+        shadowElevation = 6.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_baseline_file_open_24),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+                Text(
+                    text = stringResource(R.string.conductor_file_request_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            Text(
+                text = request.reason,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onCancel) {
+                    Text(stringResource(R.string.cancel))
+                }
+                Spacer(Modifier.weight(1f))
+                Button(onClick = onChoose) {
+                    Text(
+                        stringResource(
+                            if (request.multiple) {
+                                R.string.conductor_file_request_choose
+                            } else {
+                                R.string.conductor_file_request_choose_one
+                            },
+                        ),
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -68,6 +68,8 @@ data class AgentToolDefinition(
     val allowedUrlParameter: String? = null,
     val parametersSchemaOverride: JsonObject? = null,
     val passthroughArguments: Boolean = false,
+    /** Per-tool execution budget; null uses the registry default. */
+    val timeoutMs: Long? = null,
 ) {
     val parametersSchema: JsonObject
         get() = parametersSchemaOverride ?: AgentJson.schema(parameters)
@@ -129,7 +131,7 @@ interface TelemetryUploadPort {
 interface DiagnosticsSource {
     fun conversationMarkdown(): String
 
-    fun traceMarkdown(): String
+    fun traceMarkdown(lastEntries: Int? = null): String
 }
 
 data class TaildropPeerInfo(
@@ -153,6 +155,47 @@ interface TaildropPort {
         files: List<File>,
         cancellation: ToolCancellation? = null,
     ): TaildropSendResult
+
+    suspend fun sendSelected(
+        peer: String,
+        ids: List<String>,
+        cancellation: ToolCancellation? = null,
+    ): TaildropSendResult
+}
+
+data class SelectedFileInfo(
+    val id: String,
+    val name: String,
+    val size: Long,
+    val mimeType: String? = null,
+)
+
+data class SelectedFileRead(
+    val id: String,
+    val name: String,
+    val size: Long,
+    val text: String,
+    val truncated: Boolean,
+)
+
+data class FileSelectionResult(
+    val files: List<SelectedFileInfo> = emptyList(),
+    val cancelled: Boolean = false,
+    val message: String? = null,
+)
+
+interface FileSelectionPort {
+    suspend fun request(
+        reason: String,
+        multiple: Boolean,
+        mimeTypes: List<String>?,
+        cancellation: ToolCancellation? = null,
+    ): FileSelectionResult
+
+    suspend fun read(
+        id: String,
+        maxBytes: Int,
+    ): SelectedFileRead
 }
 
 /**

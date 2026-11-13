@@ -16,6 +16,7 @@ class AgentDataToolsTest {
     private val workingDir: File = Files.createTempDirectory("conductor-data").toFile()
     private val store = ConductorFileStore(workingDir)
     private val sent = mutableListOf<Pair<String, List<File>>>()
+    private val sentSelected = mutableListOf<Pair<String, List<String>>>()
     private val taildrop =
         object : TaildropPort {
             override suspend fun peers(): List<TaildropPeerInfo> =
@@ -29,12 +30,26 @@ class AgentDataToolsTest {
                 sent += peer to files
                 return TaildropSendResult(peer, files.map { it.name }, ok = true)
             }
+
+            override suspend fun sendSelected(
+                peer: String,
+                ids: List<String>,
+                cancellation: ToolCancellation?,
+            ): TaildropSendResult {
+                sentSelected += peer to ids
+                return TaildropSendResult(peer, ids, ok = true)
+            }
         }
     private val diagnostics =
         object : DiagnosticsSource {
             override fun conversationMarkdown() = "# Conversation\nwonder@example.com 100.106.21.44"
 
-            override fun traceMarkdown() = "# Trace\nhttps://api.example.com/v1?token=secret"
+            var lastTail: Int? = null
+
+            override fun traceMarkdown(lastEntries: Int?): String {
+                lastTail = lastEntries
+                return "# Trace\nhttps://api.example.com/v1?token=secret"
+            }
         }
     private val tools = AgentDataTools(store, diagnostics, taildrop)
 
@@ -53,6 +68,76 @@ class AgentDataToolsTest {
         val list = registry.exec("file_list", """{"path":"conductor"}""")
         val entries = list.output!!.array("entries")
         assertTrue(entries.any { it is JsonObject && (it["path"] as JsonPrimitive).content == "conductor/note.md" })
+    }
+
+    @Test
+    fun fileTailAndGrepWorkThroughTheRegistry() {
+        store.writeText("conductor/lines.txt", "a\nb\nc\nd")
+        val registry = AgentToolRegistry(tools.all)
+
+        val tail = registry.exec("file_tail", """{"path":"conductor/lines.txt","lines":1}""")
+        assertTrue(tail.errorMessage ?: "", tail.ok)
+        assertEquals("d", tail.output!!.string("text"))
+
+        val grep = registry.exec("file_grep", """{"path":"conductor/lines.txt","query":"c","context_lines":1}""")
+        assertTrue(grep.errorMessage ?: "", grep.ok)
+        assertEquals(3, grep.output!!.array("matches").size)
+    }
+
+    @Test
+    fun diagnosticsTailIsForwarded() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val result = registry.exec("diagnostics_export", """{"kind":"trace","tail":2}""")
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals(2, diagnostics.lastTail)
+    }
+
+    @Test
+    fun requestFilesReturnsHandlesAndKeepsTheRequestCapabilities() {
+        val selection =
+            FakeSelection(listOf(SelectedFileInfo("abc123", "picked.txt", 5, "text/plain")))
+        val registry = AgentToolRegistry(AgentDataTools(store, diagnostics, taildrop, selection).all)
+
+        val result =
+            registry.exec(
+                "request_files",
+                """{"reason":"Attach the log","multiple":false,"mime_types":["text/*"]}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("temporary", result.output!!.string("grant"))
+        assertEquals("abc123", (result.output!!.array("files").single() as JsonObject).string("id"))
+        assertEquals("Attach the log", selection.reason)
+        assertEquals(false, selection.multiple)
+        assertEquals(listOf("text/*"), selection.mimeTypes)
+    }
+
+    @Test
+    fun selectedFileReadUsesTheHandle() {
+        val selection = FakeSelection(emptyList())
+        val registry = AgentToolRegistry(AgentDataTools(store, diagnostics, taildrop, selection).all)
+
+        val result = registry.exec("file_read_selected", """{"id":"abc123"}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("hello", result.output!!.string("text"))
+        assertEquals(listOf("abc123"), selection.readIds)
+    }
+
+    @Test
+    fun taildropSendSelectedRequiresConfirmationAndPassesHandles() {
+        val selection = FakeSelection(emptyList())
+        val registry = AgentToolRegistry(AgentDataTools(store, diagnostics, taildrop, selection).all)
+        val args = """{"peer":"peer-a","ids":["one","two"]}"""
+
+        val pending = runBlocking { registry.invokeUserCommand("taildrop_send_selected", args) }
+        assertEquals("confirmation_required", pending.errorCode)
+        assertTrue(sentSelected.isEmpty())
+
+        val confirmed = runBlocking { registry.confirmUserCommand("taildrop_send_selected", args) }
+        assertTrue(confirmed.errorMessage ?: "", confirmed.ok)
+        assertEquals(listOf("peer-a" to listOf("one", "two")), sentSelected)
     }
 
     @Test
@@ -100,8 +185,8 @@ class AgentDataToolsTest {
     }
 
     @Test
-    fun chineseFileQueryFindsAllFileTools() {
-        val names = AgentToolCatalog(tools.all.map { it.definition }).search("文件").map { it.name }
+    fun fileQueryFindsAllFileTools() {
+        val names = AgentToolCatalog(tools.all.map { it.definition }).search("file").map { it.name }
 
         assertTrue(names.contains("file_list"))
         assertTrue(names.contains("file_read"))
@@ -135,6 +220,35 @@ class AgentDataToolsTest {
             assertFalse(tool.definition.name, description.contains("mini"))
             assertFalse(tool.definition.name, description.contains("主人"))
             assertFalse(tool.definition.name, description.contains("upload api trace"))
+        }
+    }
+
+    private class FakeSelection(
+        private val files: List<SelectedFileInfo>,
+    ) : FileSelectionPort {
+        var reason: String? = null
+        var multiple: Boolean? = null
+        var mimeTypes: List<String>? = null
+        val readIds = mutableListOf<String>()
+
+        override suspend fun request(
+            reason: String,
+            multiple: Boolean,
+            mimeTypes: List<String>?,
+            cancellation: ToolCancellation?,
+        ): FileSelectionResult {
+            this.reason = reason
+            this.multiple = multiple
+            this.mimeTypes = mimeTypes
+            return FileSelectionResult(files = files)
+        }
+
+        override suspend fun read(
+            id: String,
+            maxBytes: Int,
+        ): SelectedFileRead {
+            readIds += id
+            return SelectedFileRead(id, "picked.txt", 5, "hello", truncated = false)
         }
     }
 

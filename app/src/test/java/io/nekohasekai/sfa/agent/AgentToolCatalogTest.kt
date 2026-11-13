@@ -8,15 +8,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentToolCatalogTest {
-    private val listNodes = definition("list_nodes", "network", listOf("nodes", "节点"), core = true)
+    private val listNodes = definition("list_nodes", "network", listOf("nodes"), core = true)
     private val probe =
         definition(
             "probe_via_node",
             "network",
-            listOf("probe", "探测"),
+            listOf("probe"),
             confirmationPolicy = ConfirmationPolicy.ALWAYS,
         )
-    private val tailscale = definition("tailscale_status", "devices", listOf("devices", "设备"))
+    private val tailscale = definition("tailscale_status", "devices", listOf("devices"))
     private val catalog = AgentToolCatalog(listOf(tailscale, probe, listNodes))
 
     @Test
@@ -28,10 +28,10 @@ class AgentToolCatalogTest {
     }
 
     @Test
-    fun exactNameAndChineseAliasBothWork() {
+    fun exactNameAndEnglishAliasBothWork() {
         assertEquals("probe_via_node", catalog.search("probe_via_node").first().name)
-        assertEquals("list_nodes", catalog.search("节点").first().name)
-        assertEquals("tailscale_status", catalog.search("设备").first().name)
+        assertEquals("list_nodes", catalog.search("nodes").first().name)
+        assertEquals("tailscale_status", catalog.search("devices").first().name)
     }
 
     @Test
@@ -54,15 +54,15 @@ class AgentToolCatalogTest {
     }
 
     @Test
-    fun aChineseAliasDoesNotHideOtherMatchingTools() {
-        val fileList = definition("file_list", "files", listOf("文件"))
-        val fileRead = definition("file_read", "files", listOf("读取文件"))
-        val fileWrite = definition("file_write", "files", listOf("写文件"))
+    fun aGenericAliasDoesNotHideOtherMatchingTools() {
+        val fileList = definition("file_list", "files", listOf("file"))
+        val fileRead = definition("file_read", "files", listOf("read file"))
+        val fileWrite = definition("file_write", "files", listOf("write file"))
         val scoped = AgentToolCatalog(listOf(fileList, fileRead, fileWrite))
 
         assertEquals(
             listOf("file_list", "file_read", "file_write"),
-            scoped.search("文件").map { it.name },
+            scoped.search("file").map { it.name },
         )
     }
 

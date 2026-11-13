@@ -14,9 +14,9 @@
 - [x] **Phase A 文件作用域（wonder.52）**：读整个工作目录（`getExternalFilesDir`，含 `Taildrop/`、crash/OOM/power reports），写只允许 `工作目录/conductor/`。工具 `file_list`、`file_stat`、`file_read`、`file_write`、`file_mkdir`、`file_delete`；canonical path 检查、拒绝 `..`/绝对路径/越界；单文件 2MB、20 个文件、24h TTL；`WorkingDirectoryProvider` docId 越界加固。
 - [ ] **Phase B Taildrop（部分完成，wonder.52）**：`taildrop_peers`、`taildrop_send` 已实现；发送只允许工作目录内文件，`ALWAYS` 确认，只允许 tailnet peer；复用 `TaildropSendManager` / `TaildropSendService`，`TaildropSendFile` 已加 `File` 构造；还有 `taildrop_inbox`、`taildrop_receive` 未做。
 - [ ] **Phase C 自省与证据（接下来）**：`export_log_tail`、`self_test` 固定套件、`conductor_eval` 单独开关；报告写工作区。加一个脱敏的 `diagnostics_network_history`：最近 N 条 `network_change` / `service_start` / `service_stop` / `vpn_revoked`，让 Agent 自诊断 Tailscale 抖动。目标是 Conductor 自己导出证据、自测、Taildrop 给 Mini 上的 Agent。
-- [ ] **工具元数据只用英文（务实版）**：工具名、描述、alias、system prompt 的搜索指引统一英文；prompt 明确「把用户意图翻成英文关键词再 `search_tools`」。清掉现有中文 alias（包括 wonder.57 临时加的 `file_stat`「文件信息」），英文同义词保留。发布时批量生成多语言关键词的流水线记 backlog，不做：模型本身就是翻译层，静态多语言 alias 会带来维护和误匹配成本。加一小段中文 prompt → 英文 query 的评测语料进 `docs/conductor-eval.md`。
-- [ ] **文件工具补齐（对齐前沿 Agent 的最小集）**：当前 `file_read` 只能从头读最多 256KB，1MB 的 trace 无法截最后三轮。加 `file_read` 的 `offset`/`limit`（按行）和 `file_tail`、`file_grep`（有界匹配/上下文）、`diagnostics_export(kind=trace, tail=N)`；不做通用 shell / apply_patch。验收：让 Conductor 把 trace 最后三轮摘出来 Taildrop 到 Mini，全程不把 1MB 正文塞进模型。
-- [ ] **用户选文件（Agent 发起文件申请）**：新增 `request_files(reason, multiple=true)`，打开系统 `OpenMultipleDocuments` 选择器；工具本身不复制、不改属性，只返回 `{id, name, size, mime}`；URI 只留在内存，不 `takePersistableUriPermission`，会话/进程结束即失效。随后 `file_read_selected(id, max_bytes)` / `taildrop_send_selected(peer, ids)` 按需读取或投递。选择器本身就是用户同意；限制 10 个文件、读取 256KB、投递 8MB；离开页面或取消就结束等待。参考 Android SAF 和 MCP elicitation，不申请 `MANAGE_EXTERNAL_STORAGE`。中等工程，排在文件工具补齐之后。
+- [x] **工具元数据只用英文（wonder.58）**：工具名、描述、alias、检索关键词统一英文；prompt 要求模型先把用户意图翻成英文关键词再 `search_tools`，回答仍用用户语言。清掉了中文 alias（含 wonder.57 的 `file_stat`「文件信息」）。规则进 `AGENTS.md`，中文 prompt → 英文 query 的语料进 `docs/conductor-eval.md`。构建期多语言关键词流水线不做。
+- [x] **文件工具补齐（wonder.58）**：`file_read(offset, limit)`、`file_tail`、`file_grep`、`diagnostics_export(kind=trace, tail=N)`。按行分页最多 2000 行，grep 最多 50 条匹配/50k 行扫描，字节上限仍是 256KB；不做 shell / apply_patch。
+- [x] **用户选文件（wonder.58）**：`request_files(reason, multiple, mime_types)` 拉起系统 `OpenMultipleDocuments`，只返回 `{id, name, size, mime}`；`file_read_selected` / `taildrop_send_selected` 按 handle 读取或投递。URI 只在 ViewModel 内存，不复制、不改属性、不持久化授权；单次 10 个文件、保留 30 个 handle、读取 256KB、投递 8MB、选择等待 9 分钟。取消、停止、清空、关闭会话都会结束等待。
 - [ ] **Phase D 通讯与自动化（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍然只走 typed 工具 + 确认。
 
 ### P1
@@ -51,7 +51,7 @@
 - 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md) 的「数据面」一节。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
 - 当前已发布 wonder.57（tag `v1.15.0-alpha.13-wonder.57`，commit `6e4008f`；56 为 `a473fca`，55 为 `8db3dc7`，54 为 `7a6bd1b`）。下一次从 58 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
-- 手机上看近期版本（49 到 54）：
+- 手机上看近期版本（49 到 58）：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
   - 说「把出口切到 direct」应出确认卡；执行后用 `list_nodes` 读回。失败时应回滚旧选择。
@@ -71,6 +71,9 @@
   - 发消息后立刻划屏幕边缘回主界面，再进 Conductor：turn 应继续，发送按钮应仍是停止；不应悄悄取消。
   - 如果某条消息确实没跑成，下一轮问「你看到我上一条没发出去的消息了吗」：模型应能说出内容。
   - 让模型「列出所有工具」或空 query 搜索：应返回 catalog，不应报 `search_tools requires a non-blank 'query'`。
+  - 对 Conductor 说「让我挑几个文件给你」：应出现文件请求卡，点「选择文件」拉起系统多选；选完模型只能拿到文件名/大小/handle，不应声称已读正文。点「取消」后模型应收到 cancelled，不应反复弹卡。
+  - 说「把 API trace 最后三轮摘出来投递到 Mini」：应先 `diagnostics_export(kind=trace, tail=3)` 再 `taildrop_send`，确认卡只列文件名；不应把整份 trace 读进上下文。
+  - 中文提问工具能力（如「哪些设备在线」）：`search_tools` 的 query 应是英文，仍应用中文回答。
 - 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：

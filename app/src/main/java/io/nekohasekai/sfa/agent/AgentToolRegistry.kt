@@ -183,9 +183,10 @@ class AgentToolRegistry(
 
         val cancellation = ToolCancellationImpl()
         activeCancellations.add(cancellation)
+        val timeout = (definition.timeoutMs ?: toolTimeoutMs).coerceAtLeast(1L)
         return try {
             val execution =
-                withTimeout(toolTimeoutMs.coerceAtLeast(1L)) {
+                withTimeout(timeout) {
                     withContext(Dispatchers.IO) {
                         tool.execute(args, cancellation)
                     }
@@ -219,7 +220,7 @@ class AgentToolRegistry(
             failure(
                 name,
                 "tool_timeout",
-                "Tool timed out after ${toolTimeoutMs.coerceAtLeast(1L)}ms.",
+                "Tool timed out after ${timeout}ms.",
             )
         } catch (e: CancellationException) {
             throw e

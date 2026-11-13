@@ -33,6 +33,21 @@
 | 17 | 刚才那条失败的消息你还记得吗 | 无工具 | 检查失败 turn 上下文 |
 | 18 | 现在几点，用设备时间 | `network_snapshot` | 不靠模型猜 |
 
+## 英文检索约定（2026-11-13 定）
+
+工具名、描述、alias、检索关键词一律英文；模型在调用 `search_tools` 前自己把用户意图翻成英文关键词，回答仍用用户语言。不新增某语言的 alias，也不做构建期多语言关键词表。
+
+下面这组 prompt 做回归：记录实际 query，query 应全为英文，且命中期望工具。
+
+| prompt | 期望英文 query 命中 |
+|---|---|
+| 看看哪些设备在线 | `device online` → `tailscale_status` |
+| 把这段日志投递到 Mac Mini | `send file peer` → `taildrop_send` |
+| 读一下这个文件的最后几行 | `file tail last lines` → `file_tail` |
+| 在文件里搜一下 error | `file grep search` → `file_grep` |
+| 让我挑几个文件给你 | `request files picker` → `request_files` |
+| 看最近三次 API 请求 | `diagnostics trace last requests` → `diagnostics_export` |
+
 ## 指标
 
 - 工具选择准确率：期望能力是否被调用，是否调用了不存在的工具。

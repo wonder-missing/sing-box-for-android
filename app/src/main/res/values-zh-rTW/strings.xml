@@ -695,6 +695,9 @@
     <string name="conductor_reasoning_effort_title">推理強度</string>
     <string name="conductor_retry">重試</string>
     <string name="conductor_back_to_latest">回到最新</string>
+    <string name="conductor_file_request_title">Conductor 需要檔案</string>
+    <string name="conductor_file_request_choose">選擇檔案</string>
+    <string name="conductor_file_request_choose_one">選擇一個檔案</string>
     <string name="conductor_reasoning_effort_default">預設</string>
     <string name="conductor_reasoning_effort_low">低</string>
     <string name="conductor_reasoning_effort_medium">中</string>

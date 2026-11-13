@@ -185,6 +185,37 @@ class AgentToolRegistryTest {
         assertFalse(result.ok)
         assertEquals("tool_timeout", result.errorCode)
     }
+
+    @Test
+    fun perToolTimeoutOverridesTheRegistryDefault() {
+        val slow =
+            object : AgentTool {
+                override val definition =
+                    AgentToolDefinition(
+                        name = "slow_tool_with_budget",
+                        description = "slow",
+                        permission = AgentPermission.READ_FILES,
+                        parameters = emptyList(),
+                        confirmationPolicy = ConfirmationPolicy.NEVER,
+                        category = "test",
+                        timeoutMs = 50,
+                    )
+
+                override suspend fun execute(
+                    args: kotlinx.serialization.json.JsonObject,
+                    cancellation: ToolCancellation,
+                ): ToolExecution {
+                    delay(1_000)
+                    return ToolExecution(output = kotlinx.serialization.json.buildJsonObject { })
+                }
+            }
+        val slowRegistry = AgentToolRegistry(listOf(slow), toolTimeoutMs = 5_000)
+
+        val result = runBlocking { slowRegistry.invokeUserCommand("slow_tool_with_budget", "{}") }
+
+        assertFalse(result.ok)
+        assertEquals("tool_timeout", result.errorCode)
+    }
 }
 
 private fun AgentToolRegistry.userExec(

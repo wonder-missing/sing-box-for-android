@@ -15,7 +15,7 @@ class AgentPromptStabilityTest {
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "network",
-                    aliases = listOf("network", "网络状态"),
+                    aliases = listOf("network", "network status"),
                     core = true,
                 ),
             ),
@@ -49,7 +49,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("ab5f72269748ce2171aa078aff47c5f57363e16f62ab2e078721901727af2b1c", digest)
+        assertEquals("59b4154ffd779e90f3881b92ed963a932e52bc004f0d72b99004aa06c9e2a325", digest)
     }
 
     @Test

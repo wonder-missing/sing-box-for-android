@@ -1385,6 +1385,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
 
+### wonder.58：英文工具元数据、文件工具补齐、用户选文件（2026-11-13）
+
+- 工具名、描述、alias、检索关键词统一英文；system prompt 要求模型先把用户意图翻成英文关键词再 `search_tools`，回答仍用用户语言。不维护静态多语言 alias，也不做构建期关键词表。规则写入 `AGENTS.md`，回归语料在 [`conductor-eval.md`](conductor-eval.md)。
+- `file_read` 增加 `offset` / `limit`（按行，页大小 200，最多 2000 行）；新增 `file_tail(path, lines, max_bytes)`、`file_grep(path, query, regex, context_lines, max_matches)`；`diagnostics_export` 增加 `tail`，只导出 trace 最后 N 条请求。保留 256KB 字节上限和二进制拒绝。
+- 新增 `request_files(reason, multiple, mime_types)`：拉起系统 `OpenMultipleDocuments`，Conductor 在上方面板显示请求卡；工具只返回 handle、文件名、大小、MIME 和 `grant=temporary`，不读正文。`file_read_selected` 按 handle 读文本（256KB 上限），`taildrop_send_selected` 发送选中的文件（`ALWAYS` 确认，总量 8MB）。
+- URI 只存在 ViewModel 内存里，不复制、不改属性、不 `takePersistableUriPermission`；activity 的临时读授权失效后，读取会返回明确的「不再可用」。选文件卡出现时收起展开的输入面板；停止、清空、关闭会话都会结束等待。
+- 超时与上限：选择器等待 9 分钟（低于工具注册表 10 分钟预算，超时以结构化 cancelled 返回）；单次最多 10 个文件，保留最近 30 个 handle；同名重复选择各自有独立 handle。
+
 ### wonder.56：工具搜索召回修正（2026-11-13）
 
 - 分类名查询直接返回整个分类，例如 `network` 返回 5 个 network 工具，`files` 返回 6 个文件工具；不再被同名 alias 截成单个 `network_snapshot`。

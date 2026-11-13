@@ -1,8 +1,10 @@
 package io.nekohasekai.sfa.conductor
 
 import android.app.Application
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.nekohasekai.libbox.OutboundGroup
@@ -36,12 +38,16 @@ import io.nekohasekai.sfa.agent.ConfirmationRequest
 import io.nekohasekai.sfa.agent.ConductorFileStore
 import io.nekohasekai.sfa.agent.DiagnosticsSource
 import io.nekohasekai.sfa.agent.DefaultAgentInputGuard
+import io.nekohasekai.sfa.agent.FileSelectionPort
+import io.nekohasekai.sfa.agent.FileSelectionResult
 import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
 import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
 import io.nekohasekai.sfa.agent.ReasoningEffort
+import io.nekohasekai.sfa.agent.SelectedFileInfo
+import io.nekohasekai.sfa.agent.SelectedFileRead
 import io.nekohasekai.sfa.agent.TaildropPeerInfo
 import io.nekohasekai.sfa.agent.TaildropPort
 import io.nekohasekai.sfa.agent.TaildropSendResult
@@ -92,7 +98,16 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
+
+/** A pending request_files call, shown above the composer until the user picks or cancels. */
+data class FileRequestUi(
+    val id: String,
+    val reason: String,
+    val multiple: Boolean,
+    val mimeTypes: List<String>,
+)
 
 class ConductorViewModel(
     application: Application,
@@ -177,7 +192,7 @@ class ConductorViewModel(
         object : DiagnosticsSource {
             override fun conversationMarkdown(): String = conversationTranscript()
 
-            override fun traceMarkdown(): String = apiTraceMarkdown()
+            override fun traceMarkdown(lastEntries: Int?): String = apiTraceMarkdown(lastEntries)
         }
 
     private val taildropPort =
@@ -220,74 +235,228 @@ class ConductorViewModel(
                 targetPeer: String,
                 files: List<File>,
                 cancellation: ToolCancellation?,
+            ): TaildropSendResult =
+                sendTaildropFiles(
+                    targetPeer = targetPeer,
+                    sendFiles = files.map { TaildropSendFile(it.name, null, null, it) },
+                    names = files.map { it.name },
+                    cancellation = cancellation,
+                )
+
+            override suspend fun sendSelected(
+                peer: String,
+                ids: List<String>,
+                cancellation: ToolCancellation?,
             ): TaildropSendResult {
-                val update = awaitTailscaleStatus(cancellation, "taildrop")
-                var endpointTag: String? = null
-                var stableID: String? = null
-                var online = false
-                val endpoints = update.endpoints()
-                while (endpoints.hasNext() && stableID == null) {
-                    val endpoint = endpoints.next()
-                    val self = endpoint.getSelf()
-                    val groups = endpoint.userGroups()
-                    while (groups.hasNext() && stableID == null) {
-                        val group = groups.next()
-                        val iterator = group.peers()
-                        while (iterator.hasNext()) {
-                            val peer = iterator.next()
-                            if (self != null && peer.stableID == self.stableID) continue
-                            if (peerName(peer) == targetPeer) {
-                                endpointTag = endpoint.endpointTag
-                                stableID = peer.stableID
-                                online = peer.online
-                                break
-                            }
+                val picked =
+                    synchronized(selectedFilesLock) {
+                        ids.map { id ->
+                            selectedFiles[id]
+                                ?: return TaildropSendResult(
+                                    peer,
+                                    ids,
+                                    ok = false,
+                                    message = "Unknown file handle '$id'. Call request_files again.",
+                                )
                         }
                     }
+                val names = picked.map { it.info.name }
+                val declaredTotal = picked.sumOf { it.info.size }
+                if (declaredTotal > TAILDROP_MAX_BYTES) {
+                    return TaildropSendResult(
+                        peer,
+                        names,
+                        ok = false,
+                        message = "Total size is larger than $TAILDROP_MAX_BYTES bytes.",
+                    )
                 }
-                val names = files.map { it.name }
-                val endpoint = endpointTag
-                val stable = stableID
-                if (endpoint == null || stable == null) {
-                    return TaildropSendResult(targetPeer, names, ok = false, message = "Unknown peer: $targetPeer")
-                }
-                if (!online) {
-                    return TaildropSendResult(targetPeer, names, ok = false, message = "Peer is offline: $targetPeer")
-                }
-                val sendFiles = files.map { TaildropSendFile(it.name, null, null, it) }
-                val id = TaildropSendManager.send(endpoint, stable, targetPeer, sendFiles)
-                if (id < 0) {
-                    return TaildropSendResult(targetPeer, names, ok = false, message = "Nothing to send.")
-                }
-                cancellation?.onCancel { TaildropSendManager.cancel(id) }
-                val state =
-                    withTimeoutOrNull(TAILDROP_SEND_TIMEOUT_MS) {
-                        TaildropSendManager.sessions
-                            .first { sessions -> sessions.any { it.id == id && it.finished } }
-                            .firstOrNull { it.id == id }
+                val sendFiles =
+                    withContext(Dispatchers.IO) {
+                        TaildropSendManager.openURIs(picked.map { it.uri })
                     }
-                if (state == null) {
-                    TaildropSendManager.cancel(id)
+                if (sendFiles.sumOf { it.size } > TAILDROP_MAX_BYTES) {
+                    sendFiles.forEach { runCatching { it.close() } }
                     return TaildropSendResult(
-                        targetPeer,
+                        peer,
                         names,
                         ok = false,
-                        message = "Timed out waiting for the transfer to finish.",
+                        message = "Total size is larger than $TAILDROP_MAX_BYTES bytes.",
                     )
                 }
-                state.errorMessage?.let { message ->
-                    return TaildropSendResult(targetPeer, names, ok = false, message = message)
+                return sendTaildropFiles(peer, sendFiles, names, cancellation)
+            }
+        }
+
+    /**
+     * Shared Taildrop transfer used by the working-directory tool and by
+     * user-selected files. The send manager closes [sendFiles] once the
+     * session ends; early failures close them here instead.
+     */
+    private suspend fun sendTaildropFiles(
+        targetPeer: String,
+        sendFiles: List<TaildropSendFile>,
+        names: List<String>,
+        cancellation: ToolCancellation?,
+    ): TaildropSendResult {
+        fun fail(message: String): TaildropSendResult {
+            sendFiles.forEach { runCatching { it.close() } }
+            return TaildropSendResult(targetPeer, names, ok = false, message = message)
+        }
+        val update = awaitTailscaleStatus(cancellation, "taildrop")
+        var endpointTag: String? = null
+        var stableID: String? = null
+        var online = false
+        val endpoints = update.endpoints()
+        while (endpoints.hasNext() && stableID == null) {
+            val endpoint = endpoints.next()
+            val self = endpoint.getSelf()
+            val groups = endpoint.userGroups()
+            while (groups.hasNext() && stableID == null) {
+                val group = groups.next()
+                val iterator = group.peers()
+                while (iterator.hasNext()) {
+                    val peer = iterator.next()
+                    if (self != null && peer.stableID == self.stableID) continue
+                    if (peerName(peer) == targetPeer) {
+                        endpointTag = endpoint.endpointTag
+                        stableID = peer.stableID
+                        online = peer.online
+                        break
+                    }
                 }
-                if (state.files.any { !it.completed }) {
-                    return TaildropSendResult(
-                        targetPeer,
-                        names,
-                        ok = false,
-                        message = "Some files were not completed.",
+            }
+        }
+        val endpoint = endpointTag
+        val stable = stableID
+        if (endpoint == null || stable == null) {
+            return fail("Unknown peer: $targetPeer")
+        }
+        if (!online) {
+            return fail("Peer is offline: $targetPeer")
+        }
+        val id = TaildropSendManager.send(endpoint, stable, targetPeer, sendFiles)
+        if (id < 0) {
+            return fail("Nothing to send.")
+        }
+        cancellation?.onCancel { TaildropSendManager.cancel(id) }
+        val state =
+            withTimeoutOrNull(TAILDROP_SEND_TIMEOUT_MS) {
+                TaildropSendManager.sessions
+                    .first { sessions -> sessions.any { it.id == id && it.finished } }
+                    .firstOrNull { it.id == id }
+            }
+        if (state == null) {
+            TaildropSendManager.cancel(id)
+            return TaildropSendResult(
+                targetPeer,
+                names,
+                ok = false,
+                message = "Timed out waiting for the transfer to finish.",
+            )
+        }
+        state.errorMessage?.let { message ->
+            return TaildropSendResult(targetPeer, names, ok = false, message = message)
+        }
+        if (state.files.any { !it.completed }) {
+            return TaildropSendResult(
+                targetPeer,
+                names,
+                ok = false,
+                message = "Some files were not completed.",
+            )
+        }
+        AppLog.info("conductor taildrop send peer=$targetPeer files=${names.joinToString(",")}")
+        return TaildropSendResult(targetPeer, names, ok = true)
+    }
+
+    /**
+     * Bridges request_files to the system picker. Files are kept as content
+     * URIs under the activity's temporary read grant: nothing is copied,
+     * renamed or modified, and no persistable grant is taken.
+     */
+    private val fileSelectionPort =
+        object : FileSelectionPort {
+            override suspend fun request(
+                reason: String,
+                multiple: Boolean,
+                mimeTypes: List<String>?,
+                cancellation: ToolCancellation?,
+            ): FileSelectionResult {
+                val request =
+                    PendingFileRequest(
+                        id = UUID.randomUUID().toString().take(8),
+                        multiple = multiple,
+                        deferred = CompletableDeferred(),
+                    )
+                synchronized(selectedFilesLock) {
+                    if (pendingFileRequest != null) {
+                        return FileSelectionResult(
+                            cancelled = true,
+                            message = "Another file request is already waiting for the user.",
+                        )
+                    }
+                    pendingFileRequest = request
+                }
+                _fileRequest.value =
+                    FileRequestUi(
+                        id = request.id,
+                        reason = reason.take(MAX_FILE_REQUEST_REASON_CHARS),
+                        multiple = multiple,
+                        mimeTypes = mimeTypes.orEmpty(),
+                    )
+                cancellation?.onCancel {
+                    completeFileRequest(
+                        request,
+                        FileSelectionResult(cancelled = true, message = "The request was cancelled."),
                     )
                 }
-                AppLog.info("conductor taildrop send peer=$targetPeer files=${names.joinToString(",")}")
-                return TaildropSendResult(targetPeer, names, ok = true)
+                return try {
+                    withTimeoutOrNull(FILE_PICK_TIMEOUT_MS) { request.deferred.await() }
+                        ?: FileSelectionResult(
+                            cancelled = true,
+                            message = "The user did not choose files in time.",
+                        )
+                } finally {
+                    clearFileRequest(request.id)
+                }
+            }
+
+            override suspend fun read(
+                id: String,
+                maxBytes: Int,
+            ): SelectedFileRead {
+                val file =
+                    synchronized(selectedFilesLock) { selectedFiles[id] }
+                        ?: throw IllegalArgumentException("Unknown file handle '$id'. Call request_files again.")
+                return withContext(Dispatchers.IO) {
+                    val cap = maxBytes.coerceIn(1, ConductorFileStore.MAX_READ_BYTES)
+                    val resolver = getApplication<Application>().contentResolver
+                    val stream =
+                        resolver.openInputStream(file.uri)
+                            ?: throw IllegalStateException("The selected file is no longer available.")
+                    stream.use {
+                        val buffer = ByteArray(8 * 1024)
+                        val collected = java.io.ByteArrayOutputStream(cap + 1)
+                        var remaining = cap + 1
+                        while (remaining > 0) {
+                            val read = it.read(buffer, 0, minOf(buffer.size, remaining))
+                            if (read <= 0) break
+                            collected.write(buffer, 0, read)
+                            remaining -= read
+                        }
+                        val bytes = collected.toByteArray()
+                        if (bytes.any { byte -> byte.toInt() == 0 }) {
+                            throw IllegalArgumentException("The selected file is binary.")
+                        }
+                        SelectedFileRead(
+                            id = id,
+                            name = file.info.name,
+                            size = file.info.size,
+                            text = bytes.copyOf(minOf(bytes.size, cap)).decodeToString(),
+                            truncated = bytes.size > cap || file.info.size > cap,
+                        )
+                    }
+                }
             }
         }
 
@@ -307,6 +476,7 @@ class ConductorViewModel(
                     fileStore = fileStore,
                     diagnostics = diagnosticsSource,
                     taildrop = taildropPort,
+                    fileSelection = fileSelectionPort,
                 ).all,
             toolTimeoutMs = agentConfig.toolTimeoutMs,
         )
@@ -339,6 +509,24 @@ class ConductorViewModel(
     private var autoApproveAgentToolName: String? = null
 
     private var pendingCommandConfirmation: Pair<String, String>? = null
+
+    private data class PendingFileRequest(
+        val id: String,
+        val multiple: Boolean,
+        val deferred: CompletableDeferred<FileSelectionResult>,
+    )
+
+    private data class SelectedFile(
+        val info: SelectedFileInfo,
+        val uri: Uri,
+    )
+
+    private val selectedFilesLock = Any()
+    private val selectedFiles = LinkedHashMap<String, SelectedFile>()
+    private var pendingFileRequest: PendingFileRequest? = null
+
+    private val _fileRequest = MutableStateFlow<FileRequestUi?>(null)
+    val fileRequest: StateFlow<FileRequestUi?> = _fileRequest.asStateFlow()
 
     init {
         AgentApiTrace.setAppVersion(BuildConfig.VERSION_NAME)
@@ -524,6 +712,7 @@ class ConductorViewModel(
         if (!_uiState.value.isRunning || stopRequested) return
         stopRequested = true
         autoApproveAgentToolName = null
+        cancelPendingFileRequest("The turn was stopped.")
         pendingAgentConfirmation?.complete(false)
         removeConfirmationItems()
         runtime.cancel()
@@ -539,6 +728,149 @@ class ConductorViewModel(
                 )
             }
         }
+    }
+
+    /** The system picker returned; empty [uris] means the user dismissed it. */
+    fun onFilesSelected(
+        requestId: String,
+        uris: List<Uri>,
+    ) {
+        val request =
+            synchronized(selectedFilesLock) {
+                pendingFileRequest?.takeIf { it.id == requestId }
+            } ?: return
+        if (uris.isEmpty()) {
+            completeFileRequest(request, FileSelectionResult(cancelled = true))
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val resolver = getApplication<Application>().contentResolver
+            val picked = mutableListOf<SelectedFile>()
+            for (uri in uris.take(if (request.multiple) MAX_SELECTED_FILES else 1)) {
+                val described = describeUri(resolver, uri) ?: continue
+                picked +=
+                    SelectedFile(
+                        info =
+                            SelectedFileInfo(
+                                id = UUID.randomUUID().toString().take(8),
+                                name = described.first,
+                                size = described.second,
+                                mimeType = described.third,
+                            ),
+                        uri = uri,
+                    )
+            }
+            if (picked.isEmpty()) {
+                completeFileRequest(
+                    request,
+                    FileSelectionResult(cancelled = true, message = "The selected files could not be read."),
+                )
+                return@launch
+            }
+            val stillPending =
+                synchronized(selectedFilesLock) {
+                    if (pendingFileRequest !== request) {
+                        false
+                    } else {
+                        picked.forEach { selectedFiles[it.info.id] = it }
+                        while (selectedFiles.size > MAX_RETAINED_SELECTED_FILES) {
+                            selectedFiles.remove(selectedFiles.keys.first())
+                        }
+                        true
+                    }
+                }
+            if (!stillPending) return@launch
+            val kept = picked.size
+            val omitted = uris.size - kept
+            val result =
+                FileSelectionResult(
+                    files = picked.map { it.info },
+                    message =
+                        if (omitted > 0) {
+                            "Only the first $kept files were kept; $omitted were ignored."
+                        } else {
+                            null
+                        },
+                )
+            completeFileRequest(request, result)
+        }
+    }
+
+    /** The user dismissed the in-app card without opening the picker. */
+    fun cancelFileRequest(requestId: String) {
+        val request =
+            synchronized(selectedFilesLock) {
+                pendingFileRequest?.takeIf { it.id == requestId }
+            } ?: return
+        completeFileRequest(
+            request,
+            FileSelectionResult(cancelled = true, message = "The user dismissed the file request."),
+        )
+    }
+
+    private fun cancelPendingFileRequest(message: String) {
+        val request = synchronized(selectedFilesLock) { pendingFileRequest } ?: return
+        completeFileRequest(request, FileSelectionResult(cancelled = true, message = message))
+    }
+
+    private fun completeFileRequest(
+        request: PendingFileRequest,
+        result: FileSelectionResult,
+    ) {
+        synchronized(selectedFilesLock) {
+            if (pendingFileRequest !== request) return
+            pendingFileRequest = null
+        }
+        _fileRequest.value = null
+        request.deferred.complete(result)
+    }
+
+    private fun clearFileRequest(id: String) {
+        synchronized(selectedFilesLock) {
+            if (pendingFileRequest?.id == id) pendingFileRequest = null
+        }
+        _fileRequest.update { current -> if (current?.id == id) null else current }
+    }
+
+    private fun describeUri(
+        resolver: android.content.ContentResolver,
+        uri: Uri,
+    ): Triple<String, Long, String?>? {
+        var name: String? = null
+        var size = -1L
+        runCatching {
+            resolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                        name = cursor.getString(nameIndex)
+                    }
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                        size = cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+        }
+        if (size < 0) {
+            size =
+                runCatching {
+                    resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+                }.getOrDefault(-1L)
+        }
+        val displayName =
+            (name ?: uri.lastPathSegment?.substringAfterLast('/'))
+                ?.take(MAX_FILE_NAME_CHARS)
+                ?.takeIf { it.isNotBlank() }
+                ?: return null
+        val mimeType = runCatching { resolver.getType(uri) }.getOrNull()
+        return Triple(displayName, size.coerceAtLeast(0L), mimeType)
     }
 
     /**
@@ -604,6 +936,8 @@ class ConductorViewModel(
         pendingAgentConfirmation = null
         pendingTurnEvent = null
         pendingCommandConfirmation = null
+        cancelPendingFileRequest("The conversation was cleared.")
+        synchronized(selectedFilesLock) { selectedFiles.clear() }
         sessionStartVersion = BuildConfig.VERSION_NAME
         toolStartedAt.clear()
         transcript = emptyList()
@@ -618,6 +952,8 @@ class ConductorViewModel(
         }
         runtime.cancel()
         McpRuntimes.get(getApplication()).cancelActive()
+        cancelPendingFileRequest("The conversation was closed.")
+        synchronized(selectedFilesLock) { selectedFiles.clear() }
         agentJob?.cancel()
         commandClient.disconnect()
         ModelProviderSettings.unpin()
@@ -1436,7 +1772,7 @@ class ConductorViewModel(
             }
         }.trim()
 
-    fun apiTraceMarkdown(): String = AgentApiTrace.asMarkdown()
+    fun apiTraceMarkdown(lastEntries: Int? = null): String = AgentApiTrace.asMarkdown(lastEntries)
 
     fun hasApiTrace(): Boolean = AgentApiTrace.hasEntries()
 
@@ -1614,5 +1950,14 @@ class ConductorViewModel(
     companion object {
         private const val MAX_ITEMS = 200
         private const val TAILDROP_SEND_TIMEOUT_MS = 120_000L
+        private const val TAILDROP_MAX_BYTES = 8L * 1024 * 1024
+
+        // Keep the picker deadline below the tool's 10-minute registry budget
+        // so a timeout comes back as a structured cancelled result.
+        private const val FILE_PICK_TIMEOUT_MS = 9L * 60L * 1000L
+        private const val MAX_SELECTED_FILES = 10
+        private const val MAX_RETAINED_SELECTED_FILES = 30
+        private const val MAX_FILE_NAME_CHARS = 200
+        private const val MAX_FILE_REQUEST_REASON_CHARS = 240
     }
 }

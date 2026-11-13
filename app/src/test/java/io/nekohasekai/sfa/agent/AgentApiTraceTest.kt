@@ -41,6 +41,34 @@ class AgentApiTraceTest {
     }
 
     @Test
+    fun markdownCanKeepOnlyTheLastRequests() {
+        AgentApiTrace.clear()
+        repeat(2) { index ->
+            AgentApiTrace.record(
+                ApiTraceEntry(
+                    timestamp = 1_700_000_000_000L + index,
+                    method = "POST",
+                    url = "https://api.deepseek.com/chat/completions",
+                    requestHeaders = emptyMap(),
+                    requestBody = """{"index":$index}""",
+                    status = 200,
+                    responseHeaders = emptyMap(),
+                    responseBody = "{}",
+                    error = null,
+                ),
+            )
+        }
+
+        val markdown = AgentApiTrace.asMarkdown(lastEntries = 1)
+
+        assertTrue(markdown.contains("- showing last 1 requests"))
+        assertTrue(markdown.contains("## 1. POST"))
+        assertFalse(markdown.contains("## 2. POST"))
+        assertTrue(markdown.contains("\"index\": 1"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
     fun summariesSurviveRestoreAndAppearInMarkdown() {
         AgentApiTrace.clear()
         AgentApiTrace.setAppVersion("test-version")

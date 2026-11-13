@@ -16,6 +16,7 @@
 - 批次 10：完成（wonder.55，commit `8db3dc7`）。`network_change` 只记 default uplink；新增 `ui_jank`、`tailscale_status`、`service_heartbeat`、`conductor_tool` 遥测。
 - 批次 11：完成（wonder.56，commit `a473fca`）。修工具搜索分类/中文召回，声明每轮搜索上限；来源是 Conductor 自测报告。
 - 批次 12：完成（wonder.57，commit `6e4008f`）。补 `file_stat` 中文 alias，让「文件」查询召回全部文件工具。
+- 批次 13：完成（wonder.58）。工具元数据改英文单轨；文件工具补 `file_read(offset/limit)`、`file_tail`、`file_grep`、`diagnostics_export(tail)`；新增用户选文件链路 `request_files` → `file_read_selected` / `taildrop_send_selected`（系统 SAF 多选、临时 URI、不复制）。
 
 ## 数据面（自 wonder.52 起）
 
@@ -48,13 +49,16 @@
 - 工具参数支持 integer、boolean、string array；`WorkingDirectoryProvider` docId 越界加固。
 - 工具描述保持能力导向，不写具体 peer/应用/一次性场景；新工具不是 core，roster 只加分类名，schema 走 `search_tools`。
 
+已实现（wonder.58）：
+
+- 工具元数据统一英文（名称、描述、alias、检索词）；模型先在内部把用户意图翻成英文再 `search_tools`，回答仍用用户语言。不做构建期多语言关键词表。回归语料见 [`conductor-eval.md`](conductor-eval.md)「英文检索约定」。
+- 文件工具补齐：`file_read(offset, limit)`、`file_tail(path, lines, max_bytes)`、`file_grep(path, query, regex, context_lines, max_matches)`、`diagnostics_export(kind=trace, tail=N)`。分页上限 2000 行、grep 50 条匹配、50k 行扫描；不做 shell / apply_patch。
+- 用户选文件：`request_files(reason, multiple, mime_types)` 拉起系统 `OpenMultipleDocuments`，只返回 `{id, name, size, mime}`；`file_read_selected(id, max_bytes)` 按需读取；`taildrop_send_selected(peer, ids)` 发送。URI 只留在内存，不复制、不改属性、不 `takePersistableUriPermission`；每次请求最多 10 个文件、保留 30 个 handle、投递总量 8MB、读取上限 256KB。用户在卡片上取消、停止 turn、清空会话都会结束等待；选择器打开 9 分钟后按超时返回。
+
 待做：
 
 - `taildrop_inbox`、`taildrop_receive`（接收方向）。
 - `export_log_tail`、`self_test` 固定套件、`conductor_eval`。
-- 工具元数据统一英文；不维护静态多语言 alias，由模型在 `search_tools` 前翻译用户意图。发布时批量生成翻译的流水线不做。
-- 文件工具补齐：`file_read` 的 offset/limit、`file_tail`、`file_grep`、`diagnostics_export(tail=N)`；不做 shell / apply_patch。
-- 用户选文件：`request_files` 打开系统多选文件选择器，只返回文件名/大小/临时 handle；后续 `file_read_selected` / `taildrop_send_selected`。不复制、不改属性、不持久化 URI。
 - 角色 prompt 从 network control plane 扩成 data courier + control plane（等接收方向和自测闭环齐了再改，避免承诺没有的能力）。
 - 通讯与自动化：短消息、通知、定时检查、收件箱监听、A → B 中继；仍然只走 typed 工具 + 确认。
 

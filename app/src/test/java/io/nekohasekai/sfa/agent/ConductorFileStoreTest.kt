@@ -57,6 +57,24 @@ class ConductorFileStoreTest {
     }
 
     @Test
+    fun readsLineRangesTailsAndGreps() {
+        store.writeText("conductor/lines.txt", "a\nb\nc\nd")
+
+        val page = store.readLines("conductor/lines.txt", offset = 1, limit = 2)
+        assertEquals("b\nc", page.text)
+        assertEquals(2, page.lineCount)
+        assertTrue(page.truncated)
+
+        val tail = store.tail("conductor/lines.txt", lines = 2)
+        assertEquals("c\nd", tail.text)
+        assertEquals(2, tail.offset)
+
+        val grep = store.grep("conductor/lines.txt", "c", contextLines = 1)
+        assertEquals(listOf(2, 3, 4), grep.matches.map { it.line })
+        assertEquals("b\nc\nd", grep.matches.joinToString("\n") { it.text })
+    }
+
+    @Test
     fun listsAndDeletesInsideTheWorkspace() {
         store.writeText("conductor/a.txt", "a")
         store.mkdir("conductor/sub")

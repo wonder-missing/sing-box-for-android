@@ -43,7 +43,7 @@ class AgentTools(
                         ),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "network",
-                    aliases = listOf("nodes", "outbounds", "节点", "出站", "节点列表"),
+                    aliases = listOf("nodes", "outbounds", "node list"),
                     core = true,
                 )
 
@@ -159,7 +159,7 @@ class AgentTools(
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "network",
-                    aliases = listOf("network", "status", "snapshot", "网络状态", "网络快照"),
+                    aliases = listOf("network", "status", "snapshot"),
                     core = true,
                 )
 
@@ -255,7 +255,7 @@ class AgentTools(
                         ),
                     confirmationPolicy = ConfirmationPolicy.ALWAYS,
                     category = "network",
-                    aliases = listOf("probe", "latency", "url test", "探测", "测速", "延迟"),
+                    aliases = listOf("probe", "latency", "url test"),
                     core = true,
                     confirmationReason =
                         "The probe temporarily selects this outbound, sends one HTTP HEAD request, " +
@@ -350,7 +350,7 @@ class AgentTools(
                         ),
                     confirmationPolicy = ConfirmationPolicy.ALWAYS,
                     category = "network",
-                    aliases = listOf("batch probe", "probe all", "批量探测", "批量测速"),
+                    aliases = listOf("batch probe", "probe all", "batch test"),
                     core = true,
                     confirmationReason =
                         "This probes several outbounds by temporarily changing the running core's selected outbound " +
@@ -472,7 +472,7 @@ class AgentTools(
                         ),
                     confirmationPolicy = ConfirmationPolicy.ALWAYS,
                     category = "network",
-                    aliases = listOf("switch outbound", "select outbound", "切换节点", "选择出口"),
+                    aliases = listOf("switch outbound", "select outbound", "select node"),
                     core = true,
                     confirmationReason =
                         "This changes the running core's selected outbound. App traffic may switch immediately. " +
@@ -528,7 +528,7 @@ class AgentTools(
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "devices",
-                    aliases = listOf("tailscale", "devices", "peers", "设备", "设备列表"),
+                    aliases = listOf("tailscale", "devices", "peers"),
                 )
 
             override suspend fun execute(
@@ -561,7 +561,7 @@ class AgentTools(
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
                     category = "telemetry",
-                    aliases = listOf("telemetry", "upload", "遥测", "上传"),
+                    aliases = listOf("telemetry", "upload"),
                     confirmationReason =
                         "This uploads pending telemetry from this device to the configured ingest endpoint.",
                 )

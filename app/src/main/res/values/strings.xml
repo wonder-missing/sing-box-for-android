@@ -66,6 +66,9 @@
     <string name="conductor_probe_cancel">Cancel</string>
     <string name="conductor_retry">Retry</string>
     <string name="conductor_back_to_latest">Back to latest</string>
+    <string name="conductor_file_request_title">Conductor needs files</string>
+    <string name="conductor_file_request_choose">Choose files</string>
+    <string name="conductor_file_request_choose_one">Choose a file</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Conductor</string>

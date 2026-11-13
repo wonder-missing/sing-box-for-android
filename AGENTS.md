@@ -33,6 +33,11 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 - Design specs, tokens and the handoff checklist live in `design/README.md`.
 - Conductor-specific UI decisions live in `docs/agent-control-plane.md`.
 
+## Conductor tool metadata
+
+- Tool names, descriptions, aliases and search keywords are English-only. The model translates the user's intent into English before `search_tools` and answers in the user's language.
+- Do not add localized aliases or a build-time multilingual keyword pipeline. Regression prompts live in `docs/conductor-eval.md`.
+
 ## Release flow
 1. Set `WONDER_BUILD=N` in `version.properties`. `VERSION_CODE` and `VERSION_NAME` are derived from `CORE_VERSION` and `WONDER_BUILD`; only change `CORE_VERSION` when moving to a new upstream core.
 2. Commit, `git push origin dev`, wait for green Test CI.

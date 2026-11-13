@@ -18,6 +18,27 @@ data class FileReadResult(
     val truncated: Boolean,
 )
 
+data class FileLinesResult(
+    val path: String,
+    val size: Long,
+    val offset: Int,
+    val text: String,
+    val lineCount: Int,
+    val truncated: Boolean,
+)
+
+data class FileGrepMatch(
+    val line: Int,
+    val text: String,
+)
+
+data class FileGrepResult(
+    val path: String,
+    val matches: List<FileGrepMatch>,
+    val scannedLines: Int,
+    val truncated: Boolean,
+)
+
 /**
  * Two roots, one policy:
  * - the working directory is readable;
@@ -81,6 +102,150 @@ class ConductorFileStore(
             size = size,
             text = String(bytes, Charsets.UTF_8),
             truncated = size > bytes.size.toLong(),
+        )
+    }
+
+    fun readLines(
+        path: String,
+        offset: Int = 0,
+        limit: Int = DEFAULT_PAGE_LINES,
+        maxBytes: Int = DEFAULT_READ_BYTES,
+    ): FileLinesResult {
+        val file = resolve(workingDir, path, allowRoot = false)
+        if (!file.isFile) throw IllegalArgumentException("Not a file: $path")
+        val start = offset.coerceAtLeast(0)
+        val count = limit.coerceIn(1, MAX_PAGE_LINES)
+        val byteCap = maxBytes.coerceIn(1, MAX_READ_BYTES)
+        val out = StringBuilder()
+        var lineNo = 0
+        var lineCount = 0
+        var bytes = 0
+        var truncated = false
+        file.bufferedReader(Charsets.UTF_8).use { reader ->
+            while (true) {
+                val line = reader.readLine() ?: break
+                lineNo += 1
+                if (lineNo <= start) continue
+                if (lineCount >= count) {
+                    truncated = true
+                    break
+                }
+                val piece = if (line.length > byteCap) line.take(byteCap) else line
+                val pieceBytes = piece.toByteArray(Charsets.UTF_8).size + 1
+                if (bytes + pieceBytes > byteCap) {
+                    if (lineCount == 0) {
+                        out.append(piece.take(byteCap))
+                        lineCount = 1
+                    }
+                    truncated = true
+                    break
+                }
+                if (lineCount > 0) out.append('\n')
+                out.append(piece)
+                bytes += pieceBytes
+                lineCount += 1
+            }
+        }
+        return FileLinesResult(
+            path = relativePath(file),
+            size = file.length(),
+            offset = start,
+            text = out.toString(),
+            lineCount = lineCount,
+            truncated = truncated,
+        )
+    }
+
+    fun tail(
+        path: String,
+        lines: Int = DEFAULT_TAIL_LINES,
+        maxBytes: Int = DEFAULT_READ_BYTES,
+    ): FileLinesResult {
+        val file = resolve(workingDir, path, allowRoot = false)
+        if (!file.isFile) throw IllegalArgumentException("Not a file: $path")
+        val keep = lines.coerceIn(1, MAX_PAGE_LINES)
+        val byteCap = maxBytes.coerceIn(1, MAX_READ_BYTES)
+        val window = ArrayDeque<String>()
+        var totalLines = 0
+        file.bufferedReader(Charsets.UTF_8).use { reader ->
+            while (true) {
+                val line = reader.readLine() ?: break
+                totalLines += 1
+                window.addLast(line)
+                while (window.size > keep) window.removeFirst()
+            }
+        }
+        var bytes = window.sumOf { it.toByteArray(Charsets.UTF_8).size + 1 }
+        var trimmed = false
+        while (bytes > byteCap && window.size > 1) {
+            bytes -= window.removeFirst().toByteArray(Charsets.UTF_8).size + 1
+            trimmed = true
+        }
+        val text = StringBuilder()
+        window.forEachIndexed { index, line ->
+            if (index > 0) text.append('\n')
+            text.append(if (line.length > byteCap) line.take(byteCap) else line)
+        }
+        if (window.isNotEmpty() && window.first().toByteArray(Charsets.UTF_8).size > byteCap) trimmed = true
+        return FileLinesResult(
+            path = relativePath(file),
+            size = file.length(),
+            offset = (totalLines - window.size).coerceAtLeast(0),
+            text = text.toString(),
+            lineCount = window.size,
+            truncated = trimmed || totalLines > window.size,
+        )
+    }
+
+    fun grep(
+        path: String,
+        query: String,
+        regex: Boolean = false,
+        contextLines: Int = 0,
+        maxMatches: Int = DEFAULT_GREP_MATCHES,
+        maxBytes: Int = DEFAULT_READ_BYTES,
+    ): FileGrepResult {
+        if (query.isBlank()) throw IllegalArgumentException("query must not be blank")
+        val file = resolve(workingDir, path, allowRoot = false)
+        if (!file.isFile) throw IllegalArgumentException("Not a file: $path")
+        val pattern = if (regex) Regex(query) else null
+        val context = contextLines.coerceIn(0, MAX_GREP_CONTEXT)
+        val matchCap = maxMatches.coerceIn(1, MAX_GREP_MATCHES)
+        val byteCap = maxBytes.coerceIn(1, MAX_READ_BYTES)
+        val lines = file.useLines { it.take(MAX_GREP_LINES).toList() }
+        val selected = sortedSetOf<Int>()
+        var matches = 0
+        var scanned = 0
+        for (index in lines.indices) {
+            scanned = index + 1
+            val line = lines[index]
+            val hit = if (pattern != null) pattern.containsMatchIn(line) else line.contains(query, ignoreCase = true)
+            if (!hit) continue
+            matches += 1
+            val from = (index - context).coerceAtLeast(0)
+            val to = (index + context).coerceAtMost(lines.lastIndex)
+            for (i in from..to) selected.add(i)
+            if (matches >= matchCap) break
+        }
+        val out = mutableListOf<FileGrepMatch>()
+        var bytes = 0
+        for (index in selected) {
+            val line = lines[index]
+            val piece = if (line.length > byteCap) line.take(byteCap) else line
+            val lineBytes = piece.toByteArray(Charsets.UTF_8).size + 1
+            if (bytes + lineBytes > byteCap) break
+            out += FileGrepMatch(index + 1, piece)
+            bytes += lineBytes
+        }
+        return FileGrepResult(
+            path = relativePath(file),
+            matches = out,
+            scannedLines = scanned,
+            truncated =
+                matches >= matchCap ||
+                    selected.size > out.size ||
+                    lines.size >= MAX_GREP_LINES ||
+                    bytes >= byteCap,
         )
     }
 
@@ -212,6 +377,13 @@ class ConductorFileStore(
     companion object {
         internal const val DEFAULT_READ_BYTES = 64 * 1024
         internal const val MAX_READ_BYTES = 256 * 1024
+        internal const val DEFAULT_PAGE_LINES = 200
+        internal const val DEFAULT_TAIL_LINES = 50
+        internal const val DEFAULT_GREP_MATCHES = 20
+        private const val MAX_PAGE_LINES = 2000
+        private const val MAX_GREP_MATCHES = 50
+        private const val MAX_GREP_CONTEXT = 3
+        private const val MAX_GREP_LINES = 50_000
         private const val MAX_LIST_ENTRIES = 200
         private const val MAX_PATH_CHARS = 512
     }
