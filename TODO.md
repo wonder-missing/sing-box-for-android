@@ -44,7 +44,7 @@
 
 - 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-data-plane.md`](docs/conductor-data-plane.md)。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.52（tag `v1.15.0-alpha.13-wonder.52`；wonder.51 为 `204bfa6`，wonder.50 为 `072be92`）。下一次从 53 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 当前已发布 wonder.52（tag `v1.15.0-alpha.13-wonder.52`，commit `6ebbacb`；wonder.51 为 `204bfa6`，wonder.50 为 `072be92`）。下一次从 53 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
 - 手机上看 wonder.49/50/51：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
@@ -82,7 +82,7 @@
 
 ## 最近完成
 
-- wonder.52（2026-11-13）：数据面第一版。读整个工作目录、写 `conductor/`；`file_list/stat/read/write/mkdir/delete`；`diagnostics_export(kind=conversation|trace)`；`taildrop_peers`、`taildrop_send`（只允许工作目录内文件，`ALWAYS` 确认，复用现有 Taildrop service）；参数 schema 支持 integer/boolean/string array；`WorkingDirectoryProvider` docId 越界加固。tag `v1.15.0-alpha.13-wonder.52`。
+- wonder.52（2026-11-13）：数据面第一版。读整个工作目录、写 `conductor/`；`file_list/stat/read/write/mkdir/delete`；`diagnostics_export(kind=conversation|trace)`；`taildrop_peers`、`taildrop_send`（只允许工作目录内文件，`ALWAYS` 确认，复用现有 Taildrop service）；参数 schema 支持 integer/boolean/string array；`WorkingDirectoryProvider` docId 越界加固。tag `v1.15.0-alpha.13-wonder.52`，commit `6ebbacb`。
 - wonder.51（2026-11-13）：跨版本会话修复。提交时先持久化 user；恢复时把 UI 有、transcript 缺的 agent user 按锚点补回；清洗历史 tool 里的邮箱和 Tailscale peer IP；session 记录 appVersion，版本变化加 Notice/`app_updated` 事件，导出写版本 header；trace 摘要跨重启持久化；`turn_failed` 事件带 `message="..."`；`tailscale_status` 改结构化 JSON；MCP 发现提示 + `search_tools` categories；模型取消改代际；prompt 加观察/推断规则。tag `v1.15.0-alpha.13-wonder.51`，commit `204bfa6`。
 - wonder.50（2026-11-13）：P3 清理。trace 加 1M 字符总量上限（旧条目先缩到 20k 再丢弃）、错误码和 `X-Request-Id`；传输错误拆成 `network_dns` / `network_connect` / `network_tls` / `network_handshake` / `network_timeout`；system prompt 加 SHA-256 字节锁；删除无入口的 `AgentIntentParser`。tag `v1.15.0-alpha.13-wonder.50`，commit `072be92`。
 - wonder.49（2026-11-13）：Conductor P1/P2/P3 批次。工具级超时、Tailscale 取消、`probe_many` 顺序批量、`select_outbound` 确认/回滚；MCP 全部 AGENT_ONLY、`DATA_EGRESS` 强制、定义 fingerprint、404 不重试、token Keystore、确认 URL、刷新并行；token 预算、会话 512KB 上限、search weak、probe `reachable`、trace usage/耗时、Retry-After、`/clear`、AppLog 审计；UI Retry/usage/滚动/回到最新。libbox 无 per-request outbound、DNS/route、GET 状态码，probe 真正并发和诊断工具阻塞。评估见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。
