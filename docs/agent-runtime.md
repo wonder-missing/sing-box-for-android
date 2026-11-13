@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user。
 最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -1384,6 +1384,25 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 值在 turn 开始时读一次。同一轮后面的模型请求不再跟着设置页的改动变。
 - 不提供 `none` / `max` / `xhigh`：DeepSeek 和 xAI 对这几档的接受范围不一样，发错会让整轮 400。
 - 未发送草稿写入 `draft_v1`。Conductor 用系统返回离开时导航条目会被丢掉，`rememberSaveable` 留不住输入；草稿跟着 `conductor_session` 走。
+
+### wonder.53：生命周期与 search_tools 契约（2026-11-13）
+
+- `ConductorScreen` 的 ViewModel 改为 activity 作用域。离开 Conductor 页面不再清掉 ViewModel，进行中的 turn 继续跑；只有 Activity 结束时 `onCleared` 才取消。
+- `search_tools` 空 query 不再报 `non-blank 'query'`；`AgentRuntime` 遇到空 query 调用 `AgentToolCatalog.catalogOutput`，返回 name/category/description/requiresConfirmation，不带 schema；具体 schema 仍靠按名字搜索。system prompt 的提示与运行时契约一致。
+
+### wonder.54：恢复未应答 user（2026-11-13）
+
+- 恢复会话时，所有非 `/` 的 UI user 都算 agent 消息，不再要求后面必须跟着 Assistant/Tool/Error。最后一条没跑成的 user 也会补回 transcript。
+- 覆盖场景：发消息后离开页面导致 turn 被取消（wonder.53 之前），消息留在 UI、下一轮模型不知道。单测覆盖「两个 user 中间夹一条未应答消息」和「最后一条 user 没有 agent 输出」。
+
+### 服务状态排障（2026-11-13）
+
+trace 里出现 `Service is not running` 时，先查 CFG 的客户端遥测，不要只凭 trace 猜：
+
+- `python3 ~/workspace/CFG/cli/bin/cfg clientlog report --hours 6`
+- 或读 `~/.local/share/cfg/client_telemetry.jsonl` 里的 `service_start`、`service_stop`、`vpn_session_id`。
+
+2026-11-13 的 trace 就是例子：遥测显示 12:39:58 才有一条 `service_start`，之前的 `tailscale_status` 「Service is not running」与当时状态一致，不是 `CommandTarget` 误报。服务在 09:11 和 12:39 各 start 一次、中间没有 stop，可能是被杀/重启，也可能是 stop 批次没上传；先看遥测再归因。
 
 ### wonder.52：数据面第一版（2026-11-13）
 
