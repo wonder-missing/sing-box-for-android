@@ -11,7 +11,8 @@
 - 批次 5：完成（wonder.50，commit `072be92`）。补齐批次 3 的 event reason 细分、prompt 字节锁、`AgentIntentParser` 清理；另加 trace 内存上限和错误码/请求 ID。tag `v1.15.0-alpha.13-wonder.50`，Release 绿，飞书通知已发送。
 - 批次 6：完成（wonder.51，commit `204bfa6`）。跨版本会话修复：提交即持久化 user、恢复对账、历史 tool 脱敏、MCP 发现、失败详情事件、版本边界、trace 摘要持久化、Tailscale JSON、取消代际、观察/推断 prompt 规则。
 - 批次 7：完成（wonder.52，commit `6ebbacb`）。数据面第一版：文件作用域、`diagnostics_export`、`taildrop_send`、结构化参数、provider 加固。
-- 批次 8：进行中（wonder.53）。修 `search_tools` 空 query 契约和 Conductor 页面离开即取消 turn 的生命周期问题；文档合并。
+- 批次 8：完成（wonder.53，commit `abd0958`）。Conductor ViewModel 改为 activity 作用域，离开页面不再取消 turn；`search_tools` 空 query 现在返回 catalog（不含 schema）；数据面设计并入本页。
+- 批次 9：进行中（wonder.54）。恢复会话时，所有非 `/` 的 UI user 都补进 transcript，不再要求后面必须跟着 agent 产物；修「消息留在流里、下一轮 Agent 不知道」。
 
 ## 数据面（自 wonder.52 起）
 

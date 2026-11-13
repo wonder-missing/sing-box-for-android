@@ -37,6 +37,55 @@ class ConductorSessionRepairTest {
     }
 
     @Test
+    fun restoresAnUnansweredUserMessageBetweenTwoUsers() {
+        val transcript =
+            listOf(
+                AgentMessage.User("first"),
+                AgentMessage.Assistant("answer", emptyList()),
+                AgentMessage.User("what happened"),
+                AgentMessage.Assistant("checking", emptyList()),
+            )
+        val items =
+            listOf(
+                ConductorItem.User("first"),
+                ConductorItem.Assistant("answer"),
+                ConductorItem.User("export the trace"),
+                ConductorItem.User("what happened"),
+                ConductorItem.Assistant("checking"),
+            )
+
+        val repaired = reconcileAgentUserMessages(transcript, items)
+
+        assertEquals(
+            listOf("first", "export the trace", "what happened"),
+            repaired.filterIsInstance<AgentMessage.User>().map { it.content },
+        )
+        assertTrue(validateTranscriptPairing(repaired))
+    }
+
+    @Test
+    fun restoresALastUserMessageWithNoAgentOutput() {
+        val transcript =
+            listOf(
+                AgentMessage.User("first"),
+                AgentMessage.Assistant("answer", emptyList()),
+            )
+        val items =
+            listOf(
+                ConductorItem.User("first"),
+                ConductorItem.Assistant("answer"),
+                ConductorItem.User("second"),
+            )
+
+        val repaired = reconcileAgentUserMessages(transcript, items)
+
+        assertEquals(
+            listOf("first", "second"),
+            repaired.filterIsInstance<AgentMessage.User>().map { it.content },
+        )
+    }
+
+    @Test
     fun ignoresCommandUserItems() {
         val transcript =
             listOf(

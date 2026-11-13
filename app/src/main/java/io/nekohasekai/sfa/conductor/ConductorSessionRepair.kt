@@ -68,30 +68,10 @@ internal fun reconcileAgentUserMessages(
     return result
 }
 
-private fun agentUserTexts(items: List<ConductorItem>): List<String> {
-    val result = mutableListOf<String>()
-    items.forEachIndexed { index, item ->
-        if (item !is ConductorItem.User || item.text.startsWith("/")) return@forEachIndexed
-        var agentTurn = false
-        for (next in index + 1 until items.size) {
-            val candidate = items[next]
-            if (candidate is ConductorItem.User) break
-            if (candidate.isAgentProduced()) {
-                agentTurn = true
-                break
-            }
-        }
-        if (agentTurn) result += item.text
+private fun agentUserTexts(items: List<ConductorItem>): List<String> =
+    items.mapNotNull { item ->
+        if (item is ConductorItem.User && !item.text.startsWith("/")) item.text else null
     }
-    return result
-}
-
-private fun ConductorItem.isAgentProduced(): Boolean =
-    this is ConductorItem.Assistant ||
-        this is ConductorItem.Tool ||
-        this is ConductorItem.Reasoning ||
-        (this is ConductorItem.Error && title == "agent") ||
-        (this is ConductorItem.Notice && title == "conductor")
 
 private fun userContentMatches(
     content: String,
