@@ -7,6 +7,10 @@
 
 > 2026-11-13 的 Conductor 审查见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)，综合评估（实验数据 + 审查 + TODO 去重）见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。下面标 `[审查]` 和 `[评估]` 的项来自这两份文档；TODO 仍是唯一工作清单，文档只放分析和证据。
 
+### 平台能力（计划）
+
+- [ ] **只读虚拟目录（计划）**：App Tools 页面开放工作目录/`conductor/`/`.runtime` 的只读虚拟目录；Mini 侧 WebDAV 引擎按需拉取，`mount_webdav` + Docker 只读 bind；`docker_run` 加固定 `mount=app-workdir` 和输出 workspace，不接受宿主路径。Spike 已过（WebDAV + Docker ro bind）。设计见 `~/notes/virtual-directory-plan-2026-11-14.md`。
+
 ### 数据面（长期定位：数据搬运 / Taildrop / 通讯）
 
 设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md) 的「数据面」一节。Conductor 的长期定位不只是 APP 控制面，而是个人数据搬运、跨设备文件投递和通讯的 Agent；它长在网络 App 里，天然知道本机网络和 Tailscale peers。当前仍主要是控制面，按下面阶段补。
