@@ -32,6 +32,7 @@
 - [ ] **[评估] `probe_via_node` 的 HEAD 歧义**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；`speed_test` 后续。
 - [ ] **对话级 LLM 摘要**：wonder.36 只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要还没做。
 - [ ] **跨版本旧 tool schema 归一（剩余）**：wonder.51 已加版本 Notice、`app_updated` 事件和导出 header；旧 tool observation 里的 `ok` 等字段仍按旧语义留在 transcript，没有逐条改写。
+- [ ] **[评估] 设备上下文版本历史（低优先级）**：模型建议在 device context 加 `appVersionHistory` 或 `updateCount`；当前只有 `appVersion` + `app_updated` 事件，答不出精确更新次数。跨版本复用不常发生，先记着。
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康（订阅在 CFG 项目打磨），不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
 - [ ] **Provider capability 矩阵**：wonder.42 起 Settings 和 `/reasoning` 共用 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
@@ -44,8 +45,8 @@
 
 - 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md) 的「数据面」一节。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.52（tag `v1.15.0-alpha.13-wonder.52`，commit `6ebbacb`；wonder.51 为 `204bfa6`，wonder.50 为 `072be92`）。下一次从 53 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
-- 手机上看 wonder.49/50/51：
+- 当前已发布 wonder.54（tag `v1.15.0-alpha.13-wonder.54`，commit `7a6bd1b`；53 为 `abd0958`，52 为 `6ebbacb`，51 为 `204bfa6`）。下一次从 55 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 手机上看近期版本（49 到 54）：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
   - 说「把出口切到 direct」应出确认卡；执行后用 `list_nodes` 读回。失败时应回滚旧选择。
@@ -62,6 +63,9 @@
   - 让 Conductor `file_list` 工作目录：应看到 `Taildrop/`、报告目录和 `conductor/`；`file_write` 只能写 `conductor/`，写外面应被拒。
   - `file_read` trace 或日志：token 应打码为 `***`，邮箱/Tailscale IP 也应打码。
   - `taildrop_send` 给离线 peer 应明确失败，不应卡住。
+  - 发消息后立刻划屏幕边缘回主界面，再进 Conductor：turn 应继续，发送按钮应仍是停止；不应悄悄取消。
+  - 如果某条消息确实没跑成，下一轮问「你看到我上一条没发出去的消息了吗」：模型应能说出内容。
+  - 让模型「列出所有工具」或空 query 搜索：应返回 catalog，不应报 `search_tools requires a non-blank 'query'`。
 - 给 Portal 的 `readOnlyHint` 建议先别整理。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：
@@ -82,6 +86,8 @@
 
 ## 最近完成
 
+- wonder.54（2026-11-13）：恢复会话时，所有非 `/` 的 UI user 都算 agent 消息，不再要求后面必须跟着 agent 产物；最后一条没跑成的 user 也会补回 transcript。修「消息留在流里、下一轮 Agent 不知道」。tag `v1.15.0-alpha.13-wonder.54`，commit `7a6bd1b`。
+- wonder.53（2026-11-13）：Conductor ViewModel 改为 activity 作用域，离开页面不再取消进行中的 turn；`search_tools` 空 query 返回 catalog（不含 schema），修掉提示词契约与实现不一致；数据面设计合并进工作规划。tag `v1.15.0-alpha.13-wonder.53`，commit `abd0958`。
 - wonder.52（2026-11-13）：数据面第一版。读整个工作目录、写 `conductor/`；`file_list/stat/read/write/mkdir/delete`；`diagnostics_export(kind=conversation|trace)`；`taildrop_peers`、`taildrop_send`（只允许工作目录内文件，`ALWAYS` 确认，复用现有 Taildrop service）；参数 schema 支持 integer/boolean/string array；`WorkingDirectoryProvider` docId 越界加固。tag `v1.15.0-alpha.13-wonder.52`，commit `6ebbacb`。
 - wonder.51（2026-11-13）：跨版本会话修复。提交时先持久化 user；恢复时把 UI 有、transcript 缺的 agent user 按锚点补回；清洗历史 tool 里的邮箱和 Tailscale peer IP；session 记录 appVersion，版本变化加 Notice/`app_updated` 事件，导出写版本 header；trace 摘要跨重启持久化；`turn_failed` 事件带 `message="..."`；`tailscale_status` 改结构化 JSON；MCP 发现提示 + `search_tools` categories；模型取消改代际；prompt 加观察/推断规则。tag `v1.15.0-alpha.13-wonder.51`，commit `204bfa6`。
 - wonder.50（2026-11-13）：P3 清理。trace 加 1M 字符总量上限（旧条目先缩到 20k 再丢弃）、错误码和 `X-Request-Id`；传输错误拆成 `network_dns` / `network_connect` / `network_tls` / `network_handshake` / `network_timeout`；system prompt 加 SHA-256 字节锁；删除无入口的 `AgentIntentParser`。tag `v1.15.0-alpha.13-wonder.50`，commit `072be92`。

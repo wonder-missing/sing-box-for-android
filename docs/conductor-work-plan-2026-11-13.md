@@ -12,7 +12,7 @@
 - 批次 6：完成（wonder.51，commit `204bfa6`）。跨版本会话修复：提交即持久化 user、恢复对账、历史 tool 脱敏、MCP 发现、失败详情事件、版本边界、trace 摘要持久化、Tailscale JSON、取消代际、观察/推断 prompt 规则。
 - 批次 7：完成（wonder.52，commit `6ebbacb`）。数据面第一版：文件作用域、`diagnostics_export`、`taildrop_send`、结构化参数、provider 加固。
 - 批次 8：完成（wonder.53，commit `abd0958`）。Conductor ViewModel 改为 activity 作用域，离开页面不再取消 turn；`search_tools` 空 query 现在返回 catalog（不含 schema）；数据面设计并入本页。
-- 批次 9：进行中（wonder.54）。恢复会话时，所有非 `/` 的 UI user 都补进 transcript，不再要求后面必须跟着 agent 产物；修「消息留在流里、下一轮 Agent 不知道」。
+- 批次 9：完成（wonder.54，commit `7a6bd1b`）。恢复会话时，所有非 `/` 的 UI user 都补进 transcript，不再要求后面必须跟着 agent 产物；最后一条没跑成的 user 也会补回。修「消息留在流里、下一轮 Agent 不知道」。
 
 ## 数据面（自 wonder.52 起）
 
