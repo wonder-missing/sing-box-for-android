@@ -7,6 +7,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 - Fork: `wonder-missing/sing-box-for-android`, work branch `dev`. Upstream is SagerNet.
 - **Always pass `-R wonder-missing/sing-box-for-android` to every `gh` command** (default resolves to upstream).
 - Workspace: `~/workspace` on clawdy-mini. CFG repo: `~/workspace/CFG`.
+- CFG is a neighboring project. Use its CLI tools as needed (`python3 ~/workspace/CFG/cli/bin/cfg ...`, e.g. `clientlog report --hours N` for WonderSing app telemetry); do not modify CFG code from this repo.
 - The Mini has no JDK/Android emulator; compile and unit tests run in CI. UI changes are compile-checked only and need a device check.
 - `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
 - **The user's "Groups page" is the Dashboard Groups bottom sheet** (`showGroupsSheet`, `GroupsCard(asSheet = true)`); its title/actions row is the `listHeaderContent` in `MainActivity`. `Screen.Groups` is a wide-screen `NavigationRail` destination with no phone entry; do not treat it as the Groups page in UI discussions.
