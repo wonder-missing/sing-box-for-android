@@ -20,17 +20,17 @@
 | Tailscale peers | 读状态 | 无 | 只给名字、online、lastSeen；不暴露 IP、账号邮箱 |
 | Taildrop | 列表/接收 | 发送 | 发送 `ALWAYS` 确认；只允许 tailnet peer |
 
-原则：文件字节不默认进模型。工具返回 manifest（相对路径、大小、mtime、sha256、脱敏摘要）；只有 `files_read` 明确读文本时才进上下文，且要截断和审计。
+原则：文件字节不默认进模型。工具返回 manifest（相对路径、大小、mtime、sha256、脱敏摘要）；只有 `file_read` 明确读文本时才进上下文，且要截断和审计。
 
 ## 3. 工具
 
 ### 3.1 文件
 
-- `files_list(path = "")`：在工作目录内列目录；返回相对路径、类型、大小、mtime；目录在前。
-- `files_stat(path)`：类型、大小、mtime、sha256（可选）。
-- `files_read(path, max_bytes = 262144)`：只读 UTF-8 文本；超限截断并标记；二进制只回元数据。默认过 `AgentSanitizer` 的 URL/token 打码；需要原文时用单独的 `files_read_raw`（debug/确认），避免 crash/log 里的订阅链接和 token 直接进模型。
-- `files_write(path, text, overwrite = false)`：仅 `工作目录/conductor/`；原子写；默认不覆盖；单文件 1MB。
-- `files_mkdir(path)`、`files_delete(path)`：仅 `conductor/`。
+- `file_list(path = "")`：在工作目录内列目录；返回相对路径、类型、大小、mtime；目录在前。
+- `file_stat(path)`：类型、大小、mtime。
+- `file_read(path, max_bytes = 65536)`：只读 UTF-8 文本；最大 262144，超限截断并标记；二进制只回元数据。默认过 `AgentSanitizer` 的 token/邮箱/Tailscale IP 打码，HTTP(S) URL 保留；需要原文时走 debug 工具（尚未实现）。
+- `file_write(path, text, overwrite = false)`：仅 `工作目录/conductor/`；原子写；默认不覆盖；单文件 2MB。
+- `file_mkdir(path)`、`file_delete(path)`：仅 `conductor/`。
 - 路径安全：canonical path 必须在根内；拒绝 `..`、绝对路径、symlink、空名；深度上限；大小/数量上限。
 
 ### 3.2 Taildrop
@@ -43,14 +43,14 @@
 
 ### 3.3 自省与证据
 
-- `export_trace()`、`export_conversation()`、`export_log_tail(lines, level)`：写 `conductor/`，内部 reader 先脱敏；模型只看 manifest。
+- `diagnostics_export(kind=conversation|trace)`：写 `conductor/`，默认带时间戳文件名；内容先脱敏；模型只看 path/size/sha256 manifest。`export_log_tail` 尚未实现。
 - `self_test(kind)`：固定检查，不跑任意代码。prompt hash、tool catalog、transcript pairing/trim、session roundtrip、trace summary、MCP 连接/工具 fingerprint、Tailscale snapshot 形状。报告写 `conductor/`。
 - `conductor_eval(prompts)`：模型在环路由 A/B，单独开关，确认成本；不放进默认自测。
 
 ## 4. 权限与确认
 
 - 工作区写：先 `AGENT_ONLY`，稳定后可在工作区内免确认；工作区外永远不允许 raw write。
-- 工作目录读：允许；`files_read` 的文本进入模型，需要在 UI/审计可见。
+- 工作目录读：允许；`file_read` 的文本进入模型，需要在 UI/审计可见。
 - Taildrop 列表/接收：`AGENT_ONLY`。
 - Taildrop 发送：`ALWAYS`，这是唯一的出网边界。
 - 删除：仅工作区；`AGENT_ONLY`。
@@ -61,7 +61,7 @@
 - 不做通用 shell、不做任意 app 目录读写、不做自动发送、不做任意 host/port。
 - 文件内容是 untrusted input；system prompt 明确，发送确认是最后一道闸。
 - 脱敏复用 `AgentSanitizer`（订阅 URL、token、邮箱、Tailscale IP）。
-- 上限：单文件 1MB，工作区 20 个文件，TTL 24h，单次发送 8MB。
+- 上限：单文件 2MB，工作区 20 个文件，TTL 24h，单次发送 8MB。
 - Taildrop 只允许 tailnet peer；peer 名字解析失败就拒绝。
 - 工作目录是 external files dir，不加密；TTL 清理，不放长期敏感数据。
 - 顺手加固 `WorkingDirectoryProvider`：`getFileForDocId` 做 canonical path 检查，`isChildDocument` 用带分隔符的前缀比较，拒绝 `..` 和越界 docId。
@@ -71,22 +71,22 @@
 ### Phase A：文件作用域（已完成，wonder.52）
 
 - 建立 `工作目录/conductor/`，TTL/大小/数量清理。
-- `files_list`、`files_stat`、`files_read`、`files_write`、`files_mkdir`、`files_delete`。
-- 读根 = 工作目录；写根 = `conductor/`；canonical path 检查、symlink 拒绝。
+- `file_list`、`file_stat`、`file_read`、`file_write`、`file_mkdir`、`file_delete`。
+- 读根 = 工作目录；写根 = `conductor/`；canonical path 检查，越界 symlink 会被拒绝。
 - `WorkingDirectoryProvider` 路径加固。
 - 单测：路径穿越、越界读、超限、覆盖保护、原子写。
 - 验收：Conductor 能读 `Taildrop/` 里的文件，只能在 `conductor/` 写；Browse 能看到工作区。
 
 ### Phase B：Taildrop 第一类能力（部分完成，wonder.52；inbox/receive 待做）
 
-- `taildrop_peers`、`taildrop_inbox`、`taildrop_receive`、`taildrop_send`。
+- `taildrop_peers`、`taildrop_send` 已完成；`taildrop_inbox`、`taildrop_receive` 待做。
 - 复用 `TaildropSendManager` / `TaildropSendService`；给 `TaildropSendFile` 加 `File` 构造。
-- 发送确认卡、进度、超时、取消、审计。
-- 验收：手机 → `clawdy-mini` 发一个 Markdown；Mini 上出现；收件箱能列出来；失败有明确错误。
+- 发送确认卡（peer + 文件路径）、进度、超时、取消、审计；文件大小和结果在工具返回里。
+- 验收：手机 → 一个 tailnet peer 发 Markdown；对方 Taildrop 收件箱出现；失败有明确错误。
 
 ### Phase C：自省与证据闭环（目标 wonder.54）
 
-- `export_trace`、`export_conversation`、`export_log_tail`。
+- `diagnostics_export` 已做 conversation/trace；`export_log_tail` 待做。
 - `self_test` 固定套件；报告写工作区。
 - `conductor_eval` 单独开关。
 - 验收：Conductor 自己导出 trace/对话，跑自测，写报告，Taildrop 到 Mini；Mini 上的 Agent 能读。
