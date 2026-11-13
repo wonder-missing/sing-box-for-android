@@ -101,7 +101,7 @@ class AgentDataToolsTest {
 
     @Test
     fun chineseFileQueryFindsAllFileTools() {
-        val names = AgentToolCatalog(tools.all).search("文件").map { it.name }
+        val names = AgentToolCatalog(tools.all.map { it.definition }).search("文件").map { it.name }
 
         assertTrue(names.contains("file_list"))
         assertTrue(names.contains("file_read"))
