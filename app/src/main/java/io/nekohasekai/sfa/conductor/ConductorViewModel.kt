@@ -817,7 +817,7 @@ class ConductorViewModel(
                 )
                 toolStartedAt.remove(event.result.callId)?.let { startedAt ->
                     TelemetryEventLog.recordAsync(
-                        application,
+                        getApplication<Application>(),
                         "conductor_tool",
                         mapOf(
                             "tool" to telemetryToolName(event.result.name),
@@ -1184,7 +1184,7 @@ class ConductorViewModel(
         errorClass: String? = null,
     ) {
         TelemetryEventLog.recordAsync(
-            application,
+            getApplication<Application>(),
             "tailscale_status",
             buildMap {
                 put("source", source)
