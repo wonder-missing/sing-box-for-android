@@ -220,6 +220,11 @@ class AgentDataToolsTest {
             assertFalse(tool.definition.name, description.contains("mini"))
             assertFalse(tool.definition.name, description.contains("主人"))
             assertFalse(tool.definition.name, description.contains("upload api trace"))
+            val metadata = listOf(tool.definition.name, tool.definition.description) + tool.definition.aliases
+            assertTrue(
+                "tool '${tool.definition.name}' metadata must stay English: $metadata",
+                metadata.none { text -> text.any { it.code in 0x4E00..0x9FFF } },
+            )
         }
     }
 

@@ -414,7 +414,27 @@ class AgentToolsTest {
         assertEquals("node-b", result.output!!.string("previous"))
         assertEquals("node-a", result.output!!.string("selected"))
     }
+
+    @Test
+    fun toolMetadataStaysEnglish() {
+        val definitions =
+            AgentTools(
+                nodeSource = FakeNodeSource(),
+                deviceSource = FakeDeviceSource(),
+                probePort = FakeProbePort(),
+            ).all.map { it.definition }
+
+        definitions.forEach { definition ->
+            val metadata = listOf(definition.name, definition.description) + definition.aliases
+            assertTrue(
+                "tool '${definition.name}' metadata must stay English: $metadata",
+                metadata.none { text -> text.any { it.code in CJK_RANGE } },
+            )
+        }
+    }
 }
+
+private val CJK_RANGE = 0x4E00..0x9FFF
 
 private fun JsonObject.string(key: String): String = (getValue(key) as JsonPrimitive).content
 
