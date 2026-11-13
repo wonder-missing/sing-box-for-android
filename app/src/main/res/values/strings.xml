@@ -483,6 +483,41 @@
     <string name="tool_outbound">Outbound</string>
     <string name="tool_default_outbound">Default</string>
 
+    <!-- Virtual Directory -->
+    <string name="virtual_directory_title">Virtual Directory</string>
+    <string name="virtual_directory_help">Read-only access to Conductor files and generated runtime diagnostics. This phone connects out to your Mini; nothing listens on the phone.</string>
+    <string name="virtual_directory_enable">Enable</string>
+    <string name="virtual_directory_endpoint">Endpoint</string>
+    <string name="virtual_directory_endpoint_placeholder" translatable="false">ws://mini:18081/provider</string>
+    <string name="virtual_directory_endpoint_help">ws:// or wss://. A bare host adds /provider.</string>
+    <string name="virtual_directory_token">Token</string>
+    <string name="virtual_directory_token_help">Optional. Sent as a Bearer token.</string>
+    <string name="virtual_directory_token_saved">A token is saved. Leave this field blank to keep it.</string>
+    <string name="virtual_directory_token_remove">Remove saved token</string>
+    <string name="virtual_directory_token_undo_remove">Keep saved token</string>
+    <string name="virtual_directory_token_will_clear">The saved token will be removed when you save.</string>
+    <string name="virtual_directory_token_show">Show token</string>
+    <string name="virtual_directory_token_hide">Hide token</string>
+    <string name="virtual_directory_save">Save</string>
+    <string name="virtual_directory_saved">Saved.</string>
+    <string name="virtual_directory_error_url">Enter a ws:// or wss:// endpoint.</string>
+    <string name="virtual_directory_error_save">Could not save these settings.</string>
+    <string name="virtual_directory_status">Status</string>
+    <string name="virtual_directory_server">Server</string>
+    <string name="virtual_directory_since">Connected since</string>
+    <string name="virtual_directory_scope">Scope</string>
+    <string name="virtual_directory_scope_value">conductor/ (read-only)\n.runtime/trace.md, conversation.md, system_prompt.md (generated on read)</string>
+    <string name="virtual_directory_last_request">Last request</string>
+    <string name="virtual_directory_requests">Requests</string>
+    <string name="virtual_directory_bytes_read">Bytes read</string>
+    <string name="virtual_directory_last_error">Last error</string>
+    <string name="virtual_directory_never">Never</string>
+    <string name="virtual_directory_retry_auto">Retrying automatically.</string>
+    <string name="virtual_directory_summary_off">Off</string>
+    <string name="virtual_directory_summary_connecting">Connecting…</string>
+    <string name="virtual_directory_summary_connected">Connected</string>
+    <string name="virtual_directory_summary_error">Not connected</string>
+
     <!-- Tailscale -->
     <string name="tailscale" translatable="false">Tailscale</string>
     <string name="tailscale_with_tag" translatable="false">Tailscale: %s</string>

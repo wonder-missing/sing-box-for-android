@@ -67,9 +67,19 @@ object AgentApiTrace {
     @Volatile
     private var appVersion: String = ""
 
+    @Volatile
+    private var systemPrompt: String? = null
+
     fun setAppVersion(version: String) {
         appVersion = version
     }
+
+    /** The main Conductor prompt, not the separate compaction prompt. */
+    fun recordSystemPrompt(prompt: String) {
+        systemPrompt = prompt
+    }
+
+    fun lastSystemPrompt(): String? = systemPrompt
 
     fun record(entry: ApiTraceEntry) {
         synchronized(lock) {
@@ -102,6 +112,7 @@ object AgentApiTrace {
         synchronized(lock) {
             entries.clear()
             summaryEntries.clear()
+            systemPrompt = null
         }
     }
 

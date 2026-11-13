@@ -144,6 +144,7 @@ class AgentRuntime(
                 deviceSummary,
                 if (routingEnabled) catalog.promptSection() else null,
             )
+        AgentApiTrace.recordSystemPrompt(systemMessage.content)
         val requestTools =
             if (routingEnabled) {
                 AgentMetaTools.schemas()

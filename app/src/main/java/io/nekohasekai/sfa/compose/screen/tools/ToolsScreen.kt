@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.NetworkCheck
@@ -63,6 +64,7 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.terminal.DEFAULT_SSH_TERMINAL_TYPE
 import io.nekohasekai.sfa.terminal.TailscaleSSHPresentedSession
 import io.nekohasekai.sfa.utils.RemoteControlManager
+import io.nekohasekai.sfa.vfs.VirtualDirectoryRuntime
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -115,6 +117,7 @@ fun ToolsScreen(
     val openConnectState by openConnectViewModel.uiState.collectAsState()
     val openVPNState by openVPNViewModel.uiState.collectAsState()
     val remoteServer by RemoteControlManager.remoteServer.collectAsState()
+    val virtualDirectoryState by VirtualDirectoryRuntime.state.collectAsState()
 
     val scaffoldPadding = LocalScaffoldPadding.current
 
@@ -307,6 +310,45 @@ fun ToolsScreen(
                     )
                 }
             }
+        }
+
+        Text(
+            text = stringResource(R.string.virtual_directory_title),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            ),
+        ) {
+            ListItem(
+                headlineContent = {
+                    Text(
+                        stringResource(R.string.virtual_directory_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                },
+                supportingContent = {
+                    VirtualDirectoryStatusLabel(state = virtualDirectoryState)
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Outlined.FolderOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { navController.navigate("tools/virtual_directory") },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
         }
 
         if (usbIPState.servers.isNotEmpty()) {
