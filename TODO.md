@@ -37,7 +37,7 @@
 - [ ] **[评估] 设备上下文版本历史（低优先级）**：模型建议在 device context 加 `appVersionHistory` 或 `updateCount`；当前只有 `appVersion` + `app_updated` 事件，答不出精确更新次数。跨版本复用不常发生，先记着。
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康（订阅在 CFG 项目打磨），不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持，Phase 3 方向。
-- [ ] **Provider capability 矩阵**：wonder.42 起 Settings 和 `/reasoning` 共用 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
+- [ ] **Provider capability 矩阵（部分完成，wonder.59）**：wonder.42 起 Settings 和 `/reasoning` 共用 Reasoning effort（默认不传；`low` / `medium` / `high` 写入 `reasoning_effort`）；wonder.59 把上下文窗口和输出上限收进 `ModelLimits`（DeepSeek 1M/384K，xAI 256K/256K，Fast 2M/2M，未知 provider 省略 `max_tokens`）。仍未做：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权，以及 DeepSeek `none`/`max`、xAI `xhigh` 这类不能三家共用的档位。
 - [ ] **增量更新（低优先级）**：整包 bsdiff 方案，评估见 [`docs/incremental-update.md`](docs/incremental-update.md)；约 3–4 个工作日，等有整块时间再做。归档感知不做。
 - [ ] **[审查] trace release 驻留**：`DATA_EGRESS` 和 AppLog 审计已做；trace 内存有总量上限，摘要跨重启保留；`AgentApiTrace` 仍在 release 默认驻留完整请求/响应，直到进程结束。
 - [ ] **[审查] 路由 A/B 真机执行**：语料见 [`docs/conductor-eval.md`](docs/conductor-eval.md)；native/routing 对比还没跑。
@@ -47,8 +47,8 @@
 
 - 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md) 的「数据面」一节。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
-- 当前已发布 wonder.58（tag `v1.15.0-alpha.13-wonder.58`，commit `0aa2271`；57 为 `6e4008f`，56 为 `a473fca`，55 为 `8db3dc7`，54 为 `7a6bd1b`）。下一次从 59 开始。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
-- 手机上看近期版本（49 到 58）：
+- 当前已发布 wonder.59（tag `v1.15.0-alpha.13-wonder.59`，commit `895f57c`；58 为 `0aa2271`，57 为 `6e4008f`，56 为 `a473fca`，55 为 `8db3dc7`）。下一次从 60 开始。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
+- 手机上看近期版本（49 到 59）：
   - 长按最后一条用户消息，菜单应有「复制」和「全选」；失败后错误卡应有「重试」，点后只保留一份用户消息。
   - 说「把某组前 5 个节点都测一遍」应触发 `probe_many`：一次确认，返回结果表；不要再弹 5 张确认卡。
   - 说「把出口切到 direct」应出确认卡；执行后用 `list_nodes` 读回。失败时应回滚旧选择。
@@ -71,6 +71,9 @@
   - 对 Conductor 说「让我挑几个文件给你」：应出现文件请求卡，点「选择文件」拉起系统多选；选完模型只能拿到文件名/大小/handle，不应声称已读正文。点「取消」后模型应收到 cancelled，不应反复弹卡。
   - 说「把 API trace 最后三轮摘出来投递到 Mini」：应先 `diagnostics_export(kind=trace, tail=3)` 再 `taildrop_send`，确认卡只列文件名；不应把整份 trace 读进上下文。
   - 中文提问工具能力（如「哪些设备在线」）：`search_tools` 的 query 应是英文，仍应用中文回答。
+  - 输入栏底部应显示 `ctx X% · 已用/上限`（DeepSeek V4 Flash 是 `.../1M`）；每轮 usage 行应带 `ctx=X%`。
+  - 让 Conductor 连续写大文件或多个文件：不应再因为应用固定的 4096 输出预算被截断；真撞到模型输出上限时，错误应写明上限、未执行任何工具，并建议拆步或降低 reasoning。
+  - 长对话接近窗口 80% 时：应出现「compacting earlier conversation」和「Context compacted from X% to Y%」，当前轮的 user/assistant/tool 不应丢；摘要失败时应回退到裁剪并提示。
 - Portal 的 `readOnlyHint`/annotations 建议已连同工具层建议写入 `~/notes/clawdy-portal-mcp-tool-suggestions-2026-11-13.md`，待主人转发。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：
@@ -87,10 +90,11 @@
   - `TOOL_CANCEL_TIMEOUT` 精确 1 秒；返回页面仍会取消进行中的 turn；turn 中途 tool 卡片不落盘。
   - 批量确认整批预览；trace 单条长 body 截断、跨重启无完整 body、release 驻留；会话编解码仍在主线程。
   - 路由 A/B 真机执行；旧 tool schema 归一；旧会话 UI/导出的敏感原文。
-  - Provider capability、probe 链路复测、连接可观测、LLM 摘要、增量更新。
+  - Provider capability 剩余项、probe 链路复测、连接可观测、Auto Compact 的摘要质量与真机验证、增量更新。
 
 ## 最近完成
 
+- wonder.59（2026-11-13）：去掉固定 4096 输出 / 64k 输入预算，按 `ModelLimits` 使用 DeepSeek 1M 窗口 / 384K 输出；输入栏显示 `ctx X% · 已用/上限`，usage 行带 `ctx=`；上下文到 80% 时用模型摘要 Compact（保留当前轮，连续失败 3 次回退裁剪，摘要超时 60s）；截断工具调用改用 `OUTPUT_TRUNCATED`，写明上限和「未执行任何工具」。tag `v1.15.0-alpha.13-wonder.59`，commit `895f57c`。
 - wonder.58（2026-11-13）：工具元数据改英文单轨（规则进 `AGENTS.md`，回归语料进 `docs/conductor-eval.md`）；文件工具补 `file_read(offset/limit)`、`file_tail`、`file_grep`、`diagnostics_export(kind=trace, tail=N)`；新增 `request_files` 系统选文件与 `file_read_selected` / `taildrop_send_selected`（临时 URI、不复制、不持久化授权）。tag `v1.15.0-alpha.13-wonder.58`，commit `0aa2271`。
 - wonder.57（2026-11-13）：补 `file_stat` 的中文 alias「文件信息」，让「文件」查询能召回全部文件工具；加回归测试。tag `v1.15.0-alpha.13-wonder.57`，commit `6e4008f`。
 - wonder.56（2026-11-13）：工具搜索召回修正。分类名查询返回整个分类（network/files/mcp 等）；去掉 alias 精确命中的提前返回，中文泛化 alias 不再遮住其他工具；system prompt 声明每轮搜索次数上限；golden hash 更新。来源是 Conductor 自测报告 `tool-search-report-20261113.md`。tag `v1.15.0-alpha.13-wonder.56`，commit `a473fca`。
