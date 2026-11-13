@@ -44,7 +44,6 @@ import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
 import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
-import io.nekohasekai.sfa.agent.ModelProviders
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
 import io.nekohasekai.sfa.agent.ReasoningEffort
 import io.nekohasekai.sfa.agent.SelectedFileInfo
@@ -502,7 +501,7 @@ class ConductorViewModel(
             streamingModel = modelClient,
             toolRoutingEnabled = { Settings.conductorToolRouting },
             reasoningEffort = { ReasoningEffort.wireValue(Settings.conductorReasoningEffort) },
-            modelLimits = { ModelProviders.limitsFor(ModelProviderSettings.endpoint()) },
+            modelLimits = { ModelProviderSettings.limitsFor(ModelProviderSettings.endpoint()) },
         )
 
     private var transcript: List<AgentMessage> = emptyList()

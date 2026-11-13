@@ -229,11 +229,12 @@ class AgentRuntime(
                 }
             }
             val sentInput = systemTokens + toolTokens + AgentContext.estimateMessagesTokens(fittedMessages)
+            val capInput = maxOf(sentInput, lastPromptTokens)
             val request =
                 AgentModelRequest(
                     messages = listOf(systemMessage) + fittedMessages,
                     tools = requestTools,
-                    maxOutputTokens = outputTokenCap(limits, sentInput),
+                    maxOutputTokens = outputTokenCap(limits, capInput),
                     timeoutMs = config.modelTimeoutMs,
                     toolChoice = if (toolsEnabled) AgentToolChoice.AUTO else AgentToolChoice.NONE,
                     reasoningEffort = turnReasoningEffort,
@@ -1112,7 +1113,7 @@ class AgentRuntime(
     private companion object {
         const val MIN_CONTEXT_WINDOW = 4_000
         const val AUTO_COMPACT_PERCENT = 80
-        const val COMPACT_SUMMARY_TOKENS = 2_048
+        const val COMPACT_SUMMARY_TOKENS = 4_096
         const val COMPACT_SUMMARY_MAX_CHARS = 12_000
         const val COMPACTION_OUTPUT_RESERVE = 20_000
         const val COMPACT_MAX_INPUT_CHARS = 120_000

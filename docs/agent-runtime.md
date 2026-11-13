@@ -878,7 +878,7 @@ fun interface AgentInputGuard {
 - 单条 observation 上限 `maxObservationChars`，超出截断并标记 `truncated: true`。截断只影响发给模型的 transcript；UI 可以保留完整 sanitized 结果供展开查看。
 - 单轮 observation 总字符上限 `maxObservationCharsPerRound`，单 turn 总上限 `maxObservationCharsPerTurn`。
 - 单次请求总输入按当前模型的窗口估算；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。
-- 每次模型响应后、下一次请求前检查：取请求估算与上次实际 `prompt_tokens` 的较大值，达到窗口 80% 时触发 Auto Compact。Compact 用同一模型把当前 user turn 之前的历史压成一条 System 摘要（输入最多 120K 字符、输出最多 2048 token），保留当前轮的 user/assistant/tool 配对；连续失败 3 次后只走确定性裁剪。
+- 每次模型响应后、下一次请求前检查：取请求估算与上次实际 `prompt_tokens` 的较大值，达到窗口 80% 时触发 Auto Compact。Compact 用同一模型把当前 user turn 之前的历史压成一条 System 摘要（输入最多 120K 字符、输出最多 4096 token），保留当前轮的 user/assistant/tool 配对；连续失败 3 次后只走确定性裁剪。
 - 裁剪顺序：先删最老的 user/assistant/tool 对，保留 system 和最近一轮完整工具结果。不拆开 assistant tool call 和对应 tool observation。当前轮自身超过窗口时只能截断，UI 提示「较早对话未发送给模型」。
 
 ### 截断与合法 JSON
@@ -1390,7 +1390,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 - 去掉应用内的 4096 输出 / 64k 输入固定预算。新增 `ModelLimits` 能力表：DeepSeek V4 Flash 1M 窗口 / 384K 输出；Grok 4 256K/256K，Fast 2M/2M；未知 provider 省略 `max_tokens` 并用 128K 窗口。请求的 `max_tokens` 取模型上限与「窗口减实际输入减 8K」的较小值，避免 input+output 越界；这不是新的用户预算。
 - Conductor 输入栏显示 `ctx 1% · 14.4k/1M`，达到 80% 变红；每轮 usage 行追加 `ctx=...`。百分比来自最后一次响应的 `prompt_tokens`，没有 usage 时用请求估算。
-- 每次模型响应后、下一次请求前检查上下文：取「请求估算」和「上次实际 prompt tokens」的较大值，达到 80% 就 Compact。Compact 用同一个模型把当前用户轮之前的历史压成一条 System 摘要，保留当前轮的 user/assistant/tool 配对，再发真实请求。摘要输入最多 120K 字符，输出最多 2048 token；失败最多连续 3 次，之后退回确定性裁剪并提示。当前轮本身超限时无法摘要，走原有 trim/fit 路径。
+- 每次模型响应后、下一次请求前检查上下文：取「请求估算」和「上次实际 prompt tokens」的较大值，达到 80% 就 Compact。Compact 用同一个模型把当前用户轮之前的历史压成一条 System 摘要，保留当前轮的 user/assistant/tool 配对，再发真实请求。摘要输入最多 120K 字符，输出最多 4096 token；失败最多连续 3 次，之后退回确定性裁剪并提示。当前轮本身超限时无法摘要，走原有 trim/fit 路径。
 - 工具调用的流式输出被截断时，错误码改为 `OUTPUT_TRUNCATED`，消息写明命中的输出上限、该回复未执行任何工具，并建议拆小步骤或降低 reasoning。
 - 参考：Claude Code 用「窗口减 min(maxOutput, 20K)」作为有效窗口，约 83% 触发，3 次失败熔断；Grok Build 的 `auto_compact_threshold_percent` 默认 85，`/context` 展示占用。Conductor 按主人要求取 80%，并把摘要做成真实模型调用而不是只丢旧消息。输入栏的上下文表与新 Compact 提示只过编译，需要真机确认。
 
