@@ -15,7 +15,7 @@
 - 批次 9：完成（wonder.54，commit `7a6bd1b`）。恢复会话时，所有非 `/` 的 UI user 都补进 transcript，不再要求后面必须跟着 agent 产物；最后一条没跑成的 user 也会补回。修「消息留在流里、下一轮 Agent 不知道」。
 - 批次 10：完成（wonder.55，commit `8db3dc7`）。`network_change` 只记 default uplink；新增 `ui_jank`、`tailscale_status`、`service_heartbeat`、`conductor_tool` 遥测。
 - 批次 11：完成（wonder.56，commit `a473fca`）。修工具搜索分类/中文召回，声明每轮搜索上限；来源是 Conductor 自测报告。
-- 批次 12：完成（wonder.57，commit `6e4008f`）。补 `file_stat` 中文 alias，让「文件」查询召回全部文件工具。
+- 批次 12：完成（wonder.57，commit `6e4008f`）。补 `file_stat` 中文 alias，让「文件」查询召回全部文件工具（wonder.58 起撤销，改为英文单轨）。
 - 批次 13：完成（wonder.58）。工具元数据改英文单轨；文件工具补 `file_read(offset/limit)`、`file_tail`、`file_grep`、`diagnostics_export(tail)`；新增用户选文件链路 `request_files` → `file_read_selected` / `taildrop_send_selected`（系统 SAF 多选、临时 URI、不复制）。
 
 ## 数据面（自 wonder.52 起）

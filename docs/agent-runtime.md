@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回；wonder.57 补文件工具召回；wonder.58 改为英文工具元数据，补齐文件分页/tail/grep 和用户选文件链路。
 最后更新：2026-11-13
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -306,7 +306,7 @@ data class AgentToolDefinition(
 )
 ```
 
-`category` 是搜索和 system prompt roster 的分组，必填。`aliases` 放中英文关键词，供 `search_tools` 匹配，例如「节点」「探测」。`core = true` 的工具在 system prompt 里给出完整用法，模型可以直接 `route_call`，不必先搜索。
+`category` 是搜索和 system prompt roster 的分组，必填。`aliases` 只放英文关键词，供 `search_tools` 匹配，例如 `node list`、`probe`。模型负责在搜索前把用户意图翻成英文，不维护中文 alias。`core = true` 的工具在 system prompt 里给出完整用法，模型可以直接 `route_call`，不必先搜索。
 
 `route_call` / `search_tools` 不是 `AgentToolDefinition`，不进注册表，也不出现在 `definitions()` 里。它们是运行时元工具，schema 写在 `AgentMetaTools`。
 
@@ -671,7 +671,7 @@ MCP 客户端（wonder.44）见 [`mcp.md`](mcp.md)。用户在 Settings 里打�
 
 - `limit` 默认 5，上限 8。搜索结果按条目截断；超出字符预算时从最后一名开始丢，并标记 `truncated: true`。
 - query 精确等于注册名时走快路径，直接返回该工具，省掉二次搜索。
-- 别名必须包含中文关键词：`list_nodes` 至少有「节点」「出站」，`probe_via_node` 至少有「探测」「测速」，`tailscale_status` 至少有「设备」。
+- 别名只用英文关键词：`list_nodes` 保留 `nodes` / `outbounds` / `node list`，`probe_via_node` 保留 `probe` / `latency` / `url test`，`tailscale_status` 保留 `tailscale` / `devices` / `peers`。中文意图由模型翻成英文 query，不写进 alias。
 - 无匹配时返回空 `matches` 和一条「按能力换一种说法，或使用 roster 里的工具名」的提示，不要让模型凭空发明工具。
 - 搜索结果形如：
 
@@ -680,7 +680,7 @@ MCP 客户端（wonder.44）见 [`mcp.md`](mcp.md)。用户在 Settings 里打�
   "ok": true,
   "tool": "search_tools",
   "output": {
-    "query": "探测",
+    "query": "probe",
     "total": 1,
     "truncated": false,
     "matches": [
@@ -790,7 +790,7 @@ Never target route_call or search_tools with route_call.
 
 测试至少覆盖：
 
-- `AgentToolCatalogTest`：排序、精确名快路径、中文别名、建议、roster、搜索结果结构。
+- `AgentToolCatalogTest`：排序、精确名快路径、英文别名、建议、roster、搜索结果结构。
 - `AgentMetaToolsTest`：两个 schema 的必填字段和稳定字节。
 - `AgentRuntimeRoutingTest`（或并入 `AgentRuntimeTest`）：搜索后 route_call、unknown_tool 建议、确认暂停显示内层工具、不能以元工具为目标、搜索预算。
 - `AgentPromptStabilityTest`：同一目录和 `deviceSummary` 下 system prompt 与 tools 字节不变。
@@ -1261,7 +1261,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 范围：
 
-- 工具目录与路由：`route_call` / `search_tools`、`AgentToolCatalog`、分发前 unwrap、静态 roster、中文别名、结构化 unknown_tool 建议、搜索预算。开关 `toolRoutingEnabled` 默认开，保留原生模式回退。
+- 工具目录与路由：`route_call` / `search_tools`、`AgentToolCatalog`、分发前 unwrap、静态 roster、英文别名（wonder.58 起）、结构化 unknown_tool 建议、搜索预算。开关 `toolRoutingEnabled` 默认开，保留原生模式回退。
 - 缓存修正：`AgentContext.trim` 滞后批量裁剪；工具轮数耗尽用 `toolChoice = NONE`，不再把 `tools` 置空；DeepSeek usage 解析 cache hit/miss token。
 - 工具轮数 guard 默认 12，保持宽松。
 - Stop 真取消：OkHttp `Call.cancel()`、suspend 工具、`withTimeout`、工具资源清理。

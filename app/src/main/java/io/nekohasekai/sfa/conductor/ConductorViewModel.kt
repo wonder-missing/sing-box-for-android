@@ -283,7 +283,12 @@ class ConductorViewModel(
                         message = "Total size is larger than $TAILDROP_MAX_BYTES bytes.",
                     )
                 }
-                return sendTaildropFiles(peer, sendFiles, names, cancellation)
+                return try {
+                    sendTaildropFiles(peer, sendFiles, names, cancellation)
+                } catch (e: Exception) {
+                    sendFiles.forEach { runCatching { it.close() } }
+                    throw e
+                }
             }
         }
 
