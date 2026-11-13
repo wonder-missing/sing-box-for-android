@@ -529,6 +529,9 @@ class AgentDataTools(
 
     private fun invalid(message: String): ToolExecution = ToolExecution(errorCode = "invalid_parameter", errorMessage = message)
 
+    private fun unavailable(): ToolExecution =
+        ToolExecution(errorCode = "tool_unavailable", errorMessage = "this tool is not available in the current build")
+
     private fun failure(error: Throwable): ToolExecution =
         ToolExecution(
             errorCode = "tool_failed",
