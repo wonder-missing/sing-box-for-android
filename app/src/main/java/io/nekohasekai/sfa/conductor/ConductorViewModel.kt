@@ -826,7 +826,7 @@ class ConductorViewModel(
             if (pendingFileRequest !== request) return
             pendingFileRequest = null
         }
-        _fileRequest.value = null
+        _fileRequest.update { current -> if (current?.id == request.id) null else current }
         request.deferred.complete(result)
     }
 
