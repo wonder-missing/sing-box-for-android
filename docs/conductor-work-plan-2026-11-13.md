@@ -52,7 +52,7 @@
 已实现（wonder.58）：
 
 - 工具元数据统一英文（名称、描述、alias、检索词）；模型先在内部把用户意图翻成英文再 `search_tools`，回答仍用用户语言。不做构建期多语言关键词表。回归语料见 [`conductor-eval.md`](conductor-eval.md)「英文检索约定」。
-- 文件工具补齐：`file_read(offset, limit)`、`file_tail(path, lines, max_bytes)`、`file_grep(path, query, regex, context_lines, max_matches)`、`diagnostics_export(kind=trace, tail=N)`。分页上限 2000 行、grep 50 条匹配、50k 行扫描；不做 shell / apply_patch。
+- 文件工具补齐：`file_read(offset, limit)`、`file_tail(path, lines, max_bytes)`、`file_grep(path, query, regex, context_lines, max_matches)`、`diagnostics_export(kind=trace, tail=N)`。分页上限 2000 行、grep 50 条匹配、50k 行扫描、8MB 文件上限；不做 shell / apply_patch。
 - 用户选文件：`request_files(reason, multiple, mime_types)` 拉起系统 `OpenMultipleDocuments`，只返回 `{id, name, size, mime}`；`file_read_selected(id, max_bytes)` 按需读取；`taildrop_send_selected(peer, ids)` 发送。URI 只留在内存，不复制、不改属性、不 `takePersistableUriPermission`；每次请求最多 10 个文件、保留 30 个 handle、投递总量 8MB、读取上限 256KB。用户在卡片上取消、停止 turn、清空会话都会结束等待；选择器打开 9 分钟后按超时返回。
 
 待做：

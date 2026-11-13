@@ -208,6 +208,11 @@ class ConductorFileStore(
         if (query.isBlank()) throw IllegalArgumentException("query must not be blank")
         val file = resolve(workingDir, path, allowRoot = false)
         if (!file.isFile) throw IllegalArgumentException("Not a file: $path")
+        if (file.length() > MAX_GREP_BYTES) {
+            throw IllegalArgumentException(
+                "File is larger than $MAX_GREP_BYTES bytes; use file_tail or file_read with a line range.",
+            )
+        }
         val pattern = if (regex) Regex(query) else null
         val context = contextLines.coerceIn(0, MAX_GREP_CONTEXT)
         val matchCap = maxMatches.coerceIn(1, MAX_GREP_MATCHES)
@@ -384,6 +389,7 @@ class ConductorFileStore(
         private const val MAX_GREP_MATCHES = 50
         private const val MAX_GREP_CONTEXT = 3
         private const val MAX_GREP_LINES = 50_000
+        private const val MAX_GREP_BYTES = 8L * 1024 * 1024
         private const val MAX_LIST_ENTRIES = 200
         private const val MAX_PATH_CHARS = 512
     }

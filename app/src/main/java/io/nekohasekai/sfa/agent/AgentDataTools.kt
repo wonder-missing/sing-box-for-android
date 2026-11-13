@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -253,7 +254,8 @@ class AgentDataTools(
                     name = "file_grep",
                     description =
                         "Search a UTF-8 text file under the working directory for a literal string or regex. " +
-                            "Returns matching line numbers with bounded context.",
+                            "Returns matching line numbers with bounded context. Files larger than 8MB are " +
+                            "rejected; use file_read with a line range instead.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
                         listOf(
