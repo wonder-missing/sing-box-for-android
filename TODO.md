@@ -9,7 +9,7 @@
 
 ### 平台能力（计划）
 
-- [ ] **只读虚拟目录（App provider 已实现，待 CI/真机验证）**：`~/workspace/vfs` 的 `vfsd` 已实现 provider 协议 v1、只读 WebDAV、缓存、macOS 挂载和 `/.vfsd/status`；本地 provider 与真实反向 provider 的 mount + Docker 读取均已验证。App 侧已加 Tools > Virtual Directory（开关、端点、加密令牌、只读 `conductor/` 与 `.runtime/{trace,conversation,system_prompt}.md`、连接状态与最近请求），JVM 单测覆盖协议、会话、路径约束、源文件、重连与退避。待做：CI 与真机验证、Portal `docker_run` 的 `mount=app-workdir` 和 `/work` 输出 enum、grant/审计/多设备。设计见 `~/notes/virtual-directory-plan-2026-11-14.md`。
+- [ ] **只读虚拟目录（App provider 已实现，待 CI/真机验证）**：`~/workspace/vfs` 的 `vfsd` 已实现 provider 协议 v1、只读 WebDAV、缓存、macOS 挂载和 `/.vfsd/status`；本地 provider 与真实反向 provider 的 mount + Docker 读取均已验证。App 侧已加 Tools > Virtual Directory（开关、端点、加密令牌、只读 `conductor/` 与 `.runtime/{trace,conversation,system_prompt}.md`、连接状态与最近请求），JVM 单测覆盖协议、会话、路径约束、源文件、重连与退避。待做：真机验证、Portal `docker_run` 的 `mount=virtual-directory`（挂到 `/vfs:ro`）和 `/work` 输出 enum、grant/审计/多设备。设计见 `~/notes/virtual-directory-plan-2026-11-14.md`。
 
 ### 数据面（长期定位：数据搬运 / Taildrop / 通讯）
 
