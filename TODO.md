@@ -71,7 +71,7 @@
   - 对 Conductor 说「让我挑几个文件给你」：应出现文件请求卡，点「选择文件」拉起系统多选；选完模型只能拿到文件名/大小/handle，不应声称已读正文。点「取消」后模型应收到 cancelled，不应反复弹卡。
   - 说「把 API trace 最后三轮摘出来投递到 Mini」：应先 `diagnostics_export(kind=trace, tail=3)` 再 `taildrop_send`，确认卡只列文件名；不应把整份 trace 读进上下文。
   - 中文提问工具能力（如「哪些设备在线」）：`search_tools` 的 query 应是英文，仍应用中文回答。
-- 给 Portal 的 `readOnlyHint` 建议先别整理。
+- Portal 的 `readOnlyHint`/annotations 建议已连同工具层建议写入 `~/notes/clawdy-portal-mcp-tool-suggestions-2026-11-13.md`，待主人转发。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：
   - 设置根页 App 行：标题下方直接是裸版本号，没有「应用版本」字样。右侧是刷新图标，不是「更新」按钮。点图标仍会检查更新；已有新版本时下面多一行提示。
