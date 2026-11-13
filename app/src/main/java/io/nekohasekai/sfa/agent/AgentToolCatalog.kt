@@ -111,6 +111,54 @@ class AgentToolCatalog(
         return output
     }
 
+    /**
+     * Catalog view for an empty search query: names, categories and
+     * descriptions, without parameter schemas. The model follows up with a
+     * name search when it needs a schema.
+     */
+    fun catalogOutput(maxChars: Int = DEFAULT_MAX_CHARS): JsonObject {
+        val categories = definitions.groupingBy { it.category }.eachCount().toSortedMap()
+        val tools =
+            definitions
+                .map { tool ->
+                    buildJsonObject {
+                        put("name", tool.name)
+                        put("category", tool.category)
+                        put("description", tool.description)
+                        put("requiresConfirmation", tool.confirmationPolicy != ConfirmationPolicy.NEVER)
+                    }
+                }.toMutableList()
+        var output = buildCatalogOutput(categories, tools, truncated = false)
+        while (tools.size > 1 && output.toString().length > maxChars) {
+            tools.removeAt(tools.lastIndex)
+            output = buildCatalogOutput(categories, tools, truncated = true)
+        }
+        return output
+    }
+
+    private fun buildCatalogOutput(
+        categories: Map<String, Int>,
+        tools: List<JsonObject>,
+        truncated: Boolean,
+    ): JsonObject =
+        buildJsonObject {
+            put(
+                "categories",
+                buildJsonObject {
+                    categories.forEach { (name, count) -> put(name, count) }
+                },
+            )
+            put("total", tools.size)
+            put("truncated", truncated)
+            put(
+                "tools",
+                buildJsonArray {
+                    tools.forEach { add(it) }
+                },
+            )
+            put("hint", "Search by tool name to get its parameter schema, or with capability keywords to find a tool.")
+        }
+
     fun promptSection(): String =
         buildString {
             appendLine("Registered capabilities for this app version:")

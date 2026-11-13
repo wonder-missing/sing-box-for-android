@@ -9,7 +9,7 @@
 
 ### 数据面（长期定位：数据搬运 / Taildrop / 通讯）
 
-设计见 [`docs/conductor-data-plane.md`](docs/conductor-data-plane.md)。Conductor 的长期定位不只是 APP 控制面，而是个人数据搬运、跨设备文件投递和通讯的 Agent；它长在网络 App 里，天然知道本机网络和 Tailscale peers。当前仍主要是控制面，按下面阶段补。
+设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md) 的「数据面」一节。Conductor 的长期定位不只是 APP 控制面，而是个人数据搬运、跨设备文件投递和通讯的 Agent；它长在网络 App 里，天然知道本机网络和 Tailscale peers。当前仍主要是控制面，按下面阶段补。
 
 - [x] **Phase A 文件作用域（wonder.52）**：读整个工作目录（`getExternalFilesDir`，含 `Taildrop/`、crash/OOM/power reports），写只允许 `工作目录/conductor/`。工具 `file_list`、`file_stat`、`file_read`、`file_write`、`file_mkdir`、`file_delete`；canonical path 检查、拒绝 `..`/绝对路径/越界；单文件 2MB、20 个文件、24h TTL；`WorkingDirectoryProvider` docId 越界加固。
 - [ ] **Phase B Taildrop（部分完成，wonder.52）**：`taildrop_peers`、`taildrop_send` 已实现；发送只允许工作目录内文件，`ALWAYS` 确认，只允许 tailnet peer；复用 `TaildropSendManager` / `TaildropSendService`，`TaildropSendFile` 已加 `File` 构造；还有 `taildrop_inbox`、`taildrop_receive` 未做。
@@ -42,7 +42,7 @@
 
 ## 下个会话接手
 
-- 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-data-plane.md`](docs/conductor-data-plane.md)。
+- 下一步做数据面 Phase B 的剩余部分（`taildrop_inbox`、`taildrop_receive`）和 Phase C（`export_log_tail`、`self_test` 固定套件、证据闭环）。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md) 的「数据面」一节。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
 - 当前已发布 wonder.52（tag `v1.15.0-alpha.13-wonder.52`，commit `6ebbacb`；wonder.51 为 `204bfa6`，wonder.50 为 `072be92`）。下一次从 53 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
 - 手机上看 wonder.49/50/51：

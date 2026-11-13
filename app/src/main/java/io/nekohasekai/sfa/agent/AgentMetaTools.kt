@@ -53,15 +53,16 @@ object AgentMetaTools {
             name = SEARCH_TOOLS,
             description =
                 "Search the registered capability catalog. Returns matching tools with their " +
-                    "parameter schemas. Results are appended to the conversation as tool output; " +
-                    "they do not change the system prompt or the tools list.",
+                    "parameter schemas. Call with an empty query to list the catalog by name, " +
+                    "category and description without schemas. Results are appended to the " +
+                    "conversation as tool output; they do not change the system prompt or the tools list.",
             parameters =
                 buildJsonObject {
                     put("type", "object")
                     putJsonObject("properties") {
                         putJsonObject("query") {
                             put("type", "string")
-                            put("description", "Tool name, capability keywords, or a short capability description.")
+                            put("description", "Tool name, capability keywords, or an empty string to list the catalog.")
                         }
                     }
                     putJsonArray("required") {

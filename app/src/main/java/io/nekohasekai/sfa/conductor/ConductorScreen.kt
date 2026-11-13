@@ -1,7 +1,9 @@
 package io.nekohasekai.sfa.conductor
 
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
@@ -136,10 +138,23 @@ private val InputFieldSaver =
 
 private enum class ConductorExport { Conversation, ApiTrace }
 
+/**
+ * The chat outlives this navigation destination. Scoping the ViewModel to the
+ * activity keeps an in-flight turn alive when the user leaves the screen and
+ * comes back; it is only cleared when the activity finishes.
+ */
+@Composable
+private fun activityConductorViewModel(): ConductorViewModel {
+    val activity =
+        LocalActivity.current as? ComponentActivity
+            ?: error("ConductorScreen requires a ComponentActivity host")
+    return viewModel(viewModelStoreOwner = activity)
+}
+
 @Composable
 fun ConductorScreen(
     serviceStatus: Status = Status.Stopped,
-    viewModel: ConductorViewModel = viewModel(),
+    viewModel: ConductorViewModel = activityConductorViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val remoteServer by RemoteControlManager.remoteServer.collectAsState()

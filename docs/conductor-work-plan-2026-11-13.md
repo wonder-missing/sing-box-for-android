@@ -1,15 +1,55 @@
-# Conductor P1/P2/P3 执行计划（2026-11-13）
+# Conductor 执行与数据面计划（2026-11-13）
 
-预算：4 小时。工作清单仍以 [`TODO.md`](../TODO.md) 为准；本页只记执行顺序和验收。
+工作清单仍以 [`TODO.md`](../TODO.md) 为准；本页记执行顺序、数据面设计和验收。数据面设计已并入本页，不再单独维护 `conductor-data-plane.md`。
 
 ## 状态（2026-11-13 晚）
 
-- 批次 1：完成。旋转不再取消 turn；工具级超时、Tailscale 取消、MCP 确认/加密/pinning、token 预算、会话字节上限、`probe_many` 顺序批量、`select_outbound` 已落地。返回或进程死亡仍会取消中途 turn，精确 1 秒的 `TOOL_CANCEL_TIMEOUT` 仍未完成。
+- 批次 1：完成。旋转不再取消 turn；工具级超时、Tailscale 取消、MCP 确认/加密/pinning、token 预算、会话字节上限、`probe_many` 顺序批量、`select_outbound` 已落地。进程死亡仍会丢 turn 中途的 tool 卡片，精确 1 秒的 `TOOL_CANCEL_TIMEOUT` 仍未完成。
 - 批次 2：大部分完成。`search_tools` 弱匹配、`reachable`、trace usage、Tailscale 脱敏、MCP 刷新并行、同工具自动批准、UI 滚动/回到最新已落地。`dns_lookup` / `route_decision` 和 `http_fetch_probe` 被 libbox API 阻塞；整批确认预览和真机 A/B 未做。
 - 批次 3：完成。`/capabilities` MCP params、未知工具上限、`truncateObservation` 预算、`Retry-After`、`/clear`、`network_snapshot` 字段合并在 wonder.49；event reason 细分、prompt golden 字节锁、`AgentIntentParser` 清理在 wonder.50。
 - 批次 4：完成。Test CI 绿，tag `v1.15.0-alpha.13-wonder.49`（commit `7048e2f`），Release 绿，`SFA-1.15.0-alpha.13-wonder.49-arm64-v8a.apk` 已上传，飞书通知已发送。
 - 批次 5：完成（wonder.50，commit `072be92`）。补齐批次 3 的 event reason 细分、prompt 字节锁、`AgentIntentParser` 清理；另加 trace 内存上限和错误码/请求 ID。tag `v1.15.0-alpha.13-wonder.50`，Release 绿，飞书通知已发送。
-- 批次 6：进行中（wonder.51）。按跨版本会话实验挑 10 条：提交即持久化 user、恢复对账、历史 tool 脱敏、MCP 发现、失败详情事件、版本边界、trace 摘要持久化、Tailscale JSON、取消代际、观察/推断 prompt 规则。
+- 批次 6：完成（wonder.51，commit `204bfa6`）。跨版本会话修复：提交即持久化 user、恢复对账、历史 tool 脱敏、MCP 发现、失败详情事件、版本边界、trace 摘要持久化、Tailscale JSON、取消代际、观察/推断 prompt 规则。
+- 批次 7：完成（wonder.52，commit `6ebbacb`）。数据面第一版：文件作用域、`diagnostics_export`、`taildrop_send`、结构化参数、provider 加固。
+- 批次 8：进行中（wonder.53）。修 `search_tools` 空 query 契约和 Conductor 页面离开即取消 turn 的生命周期问题；文档合并。
+
+## 数据面（自 wonder.52 起）
+
+长期定位：Conductor 不只是 APP 控制面，而是个人数据搬运、跨设备文件投递和通讯的 Agent。它长在网络 App 里，天然知道本机网络、Tailscale peers 和出口状态。
+
+术语：
+
+- **工作目录**：`getExternalFilesDir(null)`，Settings > Core > Working Directory > Browse 看到的根。Agent 的读范围。
+- **Conductor 工作区**：`工作目录/conductor/`。Agent 唯一的 raw write 区域。
+- **WorkingDirectoryProvider**：把工作目录暴露给系统文件选择器的 SAF DocumentsProvider。它不是工作区，只是查看入口。
+- **Taildrop**：Tailscale 的身份绑定文件传输通道，不是目录；收件落在 `工作目录/Taildrop/`。
+
+权限：
+
+| 范围 | 读 | 写 | 说明 |
+|---|---|---|---|
+| 工作目录（含 `Taildrop/`、crash/OOM/power reports） | 允许 | 禁止 | 只读；发送前确认 |
+| `工作目录/conductor/` | 允许 | 允许 | 唯一 raw write 区域；2MB/文件、20 个文件、24h TTL |
+| 内部 `filesDir` / `shared_prefs` / keystore | 禁止 raw | 禁止 raw | 需要时走 typed reader（trace、conversation、log tail），先脱敏 |
+| Tailscale peers | 读状态 | 无 | 只给名字、online、lastSeen；不暴露 IP、账号邮箱 |
+| Taildrop | 列表/接收 | 发送 | 发送 `ALWAYS` 确认；只允许 tailnet peer |
+
+原则：文件字节默认不进模型；工具返回 manifest（路径、大小、mtime、sha256、脱敏摘要）；`file_read` 默认打码 token/邮箱/Tailscale IP；发送是唯一出网边界，只允许工作目录内文件 + tailnet peer + 用户确认。
+
+已实现（wonder.52）：
+
+- `file_list`、`file_stat`、`file_read`、`file_write`、`file_mkdir`、`file_delete`；读根工作目录，写根 `conductor/`；canonical path 检查、绝对路径/`..`/越界拒绝。
+- `diagnostics_export(kind=conversation|trace)`：写 `conductor/`，默认时间戳文件名，返回 path/size/sha256，内容先脱敏。
+- `taildrop_peers`、`taildrop_send`：只允许工作目录内文件，`ALWAYS` 确认，等待完成，取消/超时/审计；复用 `TaildropSendManager` / `TaildropSendService`。
+- 工具参数支持 integer、boolean、string array；`WorkingDirectoryProvider` docId 越界加固。
+- 工具描述保持能力导向，不写具体 peer/应用/一次性场景；新工具不是 core，roster 只加分类名，schema 走 `search_tools`。
+
+待做：
+
+- `taildrop_inbox`、`taildrop_receive`（接收方向）。
+- `export_log_tail`、`self_test` 固定套件、`conductor_eval`。
+- 角色 prompt 从 network control plane 扩成 data courier + control plane（等接收方向和自测闭环齐了再改，避免承诺没有的能力）。
+- 通讯与自动化：短消息、通知、定时检查、收件箱监听、A → B 中继；仍然只走 typed 工具 + 确认。
 
 ## 批次
 

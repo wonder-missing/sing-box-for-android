@@ -270,6 +270,30 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun emptySearchListsTheCatalog() {
+        val search = ToolCall("call_1", AgentMetaTools.SEARCH_TOOLS, """{"query":""}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(search), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+        val runtime = runtime(model, executor, key = "sk-test", config = AgentConfig(maxToolRounds = 2))
+
+        val result = runBlocking { runtime.runTurn("what can you do", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        val observation =
+            result.messages
+                .filterIsInstance<AgentMessage.Tool>()
+                .first { it.toolCallId == "call_1" }
+        assertTrue(observation.content.contains("list_nodes"))
+        assertTrue(observation.content.contains("categories"))
+    }
+
+    @Test
     fun unknownRouteTargetReturnsSuggestionsWithoutExecuting() {
         val route = ToolCall("call_1", AgentMetaTools.ROUTE_CALL, """{"tool":"list_node","args":{}}""")
         val model =

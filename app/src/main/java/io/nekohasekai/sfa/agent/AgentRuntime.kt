@@ -395,11 +395,15 @@ class AgentRuntime(
                                 ok = true,
                                 tool = AgentMetaTools.SEARCH_TOOLS,
                                 output =
-                                    catalog.searchOutput(
-                                        prepared.query,
-                                        config.searchLimit,
-                                        config.maxObservationChars,
-                                    ),
+                                    if (prepared.query.isBlank()) {
+                                        catalog.catalogOutput(config.maxObservationChars)
+                                    } else {
+                                        catalog.searchOutput(
+                                            prepared.query,
+                                            config.searchLimit,
+                                            config.maxObservationChars,
+                                        )
+                                    },
                             )
                         }
                     recordObservation(call, observation)
@@ -514,15 +518,6 @@ class AgentRuntime(
                         ),
                     )
             val query = AgentJson.string(args, "query")?.trim().orEmpty()
-            if (query.isBlank()) {
-                return PreparedCall.Invalid(
-                    metaError(
-                        AgentMetaTools.SEARCH_TOOLS,
-                        "missing_parameter",
-                        "search_tools requires a non-blank 'query'.",
-                    ),
-                )
-            }
             return PreparedCall.Search(query)
         }
         if (call.name != AgentMetaTools.ROUTE_CALL) return PreparedCall.Direct(call)

@@ -81,6 +81,21 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun catalogOutputListsNamesAndCategoriesWithoutSchemas() {
+        val mcp = definition("mcp_demo_echo", "mcp", listOf("echo", "Demo", "mcp"))
+        val scoped = AgentToolCatalog(listOf(listNodes, mcp))
+
+        val output = scoped.catalogOutput()
+
+        assertEquals("2", (output["total"] as JsonPrimitive).content)
+        val categories = output["categories"] as JsonObject
+        assertEquals("1", (categories["mcp"] as JsonPrimitive).content)
+        val tools = output["tools"] as JsonArray
+        assertTrue(tools.any { it is JsonObject && (it["name"] as JsonPrimitive).content == "mcp_demo_echo" })
+        assertTrue(tools.none { it is JsonObject && it.containsKey("parameters") })
+    }
+
+    @Test
     fun searchOutputMarksWeakMatches() {
         val weak = catalog.searchOutput("something unrelated", limit = 5)
         assertEquals("true", (weak["weak"] as JsonPrimitive).content)
