@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.conductor
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -163,11 +164,18 @@ fun ConductorScreen(
     val remoteConnected by RemoteControlManager.isConnected.collectAsState()
 
     var pendingFilePickId by rememberSaveable { mutableStateOf<String?>(null) }
-    val filePicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-            val requestId = pendingFilePickId
-            pendingFilePickId = null
-            if (requestId != null) viewModel.onFilesSelected(requestId, uris)
+    fun deliverPickedFiles(uris: List<Uri>) {
+        val requestId = pendingFilePickId
+        pendingFilePickId = null
+        if (requestId != null) viewModel.onFilesSelected(requestId, uris)
+    }
+    val multiFilePicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) {
+            deliverPickedFiles(it)
+        }
+    val singleFilePicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            deliverPickedFiles(listOfNotNull(uri))
         }
 
     LaunchedEffect(serviceStatus, remoteServer, remoteConnected) {
@@ -625,9 +633,12 @@ fun ConductorScreen(
                 request = request,
                 onChoose = {
                     pendingFilePickId = request.id
-                    filePicker.launch(
-                        request.mimeTypes.ifEmpty { listOf("*/*") }.toTypedArray(),
-                    )
+                    val mimeTypes = request.mimeTypes.ifEmpty { listOf("*/*") }.toTypedArray()
+                    if (request.multiple) {
+                        multiFilePicker.launch(mimeTypes)
+                    } else {
+                        singleFilePicker.launch(mimeTypes)
+                    }
                 },
                 onCancel = { viewModel.cancelFileRequest(request.id) },
                 modifier =
