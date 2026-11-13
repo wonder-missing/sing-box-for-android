@@ -9,7 +9,7 @@
 
 ### 平台能力（计划）
 
-- [ ] **只读虚拟目录（计划）**：App Tools 页面开放工作目录/`conductor/`/`.runtime` 的只读虚拟目录；Mini 侧 WebDAV 引擎按需拉取，`mount_webdav` + Docker 只读 bind；`docker_run` 加固定 `mount=app-workdir` 和输出 workspace，不接受宿主路径。Spike 已过（WebDAV + Docker ro bind）。设计见 `~/notes/virtual-directory-plan-2026-11-14.md`。
+- [ ] **只读虚拟目录（引擎原型完成）**：`~/workspace/vfs` 的 `vfsd` 已实现 provider 协议 v1、只读 WebDAV、缓存、macOS 挂载和 `/.vfsd/status`；本地 provider 与真实反向 provider 的 mount + Docker 读取均已验证。待做：App Tools 页面/provider、Portal `docker_run` 的 `mount=app-workdir` 和 `/work` 输出 enum、grant/审计/多设备。设计见 `~/notes/virtual-directory-plan-2026-11-14.md`。
 
 ### 数据面（长期定位：数据搬运 / Taildrop / 通讯）
 
