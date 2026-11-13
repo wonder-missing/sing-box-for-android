@@ -205,6 +205,7 @@ class AgentRuntime(
                 }
             }
             val trimmedMessages = AgentContext.trim(transcript, config.maxMessages, config.trimTargetMessages)
+            if (trimmedMessages.size < transcript.size) lastPromptTokens = 0
             val systemTokens = AgentContext.estimateTokens(systemMessage.content)
             val toolTokens =
                 requestTools.sumOf {
@@ -1005,7 +1006,7 @@ class AgentRuntime(
                                 AgentMessage.User("Conversation to summarize:\n\n$rendered"),
                             ),
                         tools = emptyList(),
-                        maxOutputTokens = COMPACT_SUMMARY_TOKENS,
+                        maxOutputTokens = minOf(COMPACT_SUMMARY_TOKENS, limits.maxOutputTokens ?: COMPACT_SUMMARY_TOKENS),
                         timeoutMs = config.modelTimeoutMs,
                         toolChoice = AgentToolChoice.NONE,
                     ),
