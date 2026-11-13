@@ -129,6 +129,7 @@ class VirtualDirectoryProviderTest {
         val harness = Harness()
 
         harness.start()
+        harness.transport.listener().onOpen()
 
         assertEquals(1, harness.transport.connects)
         assertEquals("ws://mini:18081/provider", harness.transport.url)
