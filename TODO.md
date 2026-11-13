@@ -14,6 +14,9 @@
 - [x] **Phase A 文件作用域（wonder.52）**：读整个工作目录（`getExternalFilesDir`，含 `Taildrop/`、crash/OOM/power reports），写只允许 `工作目录/conductor/`。工具 `file_list`、`file_stat`、`file_read`、`file_write`、`file_mkdir`、`file_delete`；canonical path 检查、拒绝 `..`/绝对路径/越界；单文件 2MB、20 个文件、24h TTL；`WorkingDirectoryProvider` docId 越界加固。
 - [ ] **Phase B Taildrop（部分完成，wonder.52）**：`taildrop_peers`、`taildrop_send` 已实现；发送只允许工作目录内文件，`ALWAYS` 确认，只允许 tailnet peer；复用 `TaildropSendManager` / `TaildropSendService`，`TaildropSendFile` 已加 `File` 构造；还有 `taildrop_inbox`、`taildrop_receive` 未做。
 - [ ] **Phase C 自省与证据（接下来）**：`export_log_tail`、`self_test` 固定套件、`conductor_eval` 单独开关；报告写工作区。加一个脱敏的 `diagnostics_network_history`：最近 N 条 `network_change` / `service_start` / `service_stop` / `vpn_revoked`，让 Agent 自诊断 Tailscale 抖动。目标是 Conductor 自己导出证据、自测、Taildrop 给 Mini 上的 Agent。
+- [ ] **工具元数据只用英文（务实版）**：工具名、描述、alias、system prompt 的搜索指引统一英文；prompt 明确「把用户意图翻成英文关键词再 `search_tools`」。清掉现有中文 alias（包括 wonder.57 临时加的 `file_stat`「文件信息」），英文同义词保留。发布时批量生成多语言关键词的流水线记 backlog，不做：模型本身就是翻译层，静态多语言 alias 会带来维护和误匹配成本。加一小段中文 prompt → 英文 query 的评测语料进 `docs/conductor-eval.md`。
+- [ ] **文件工具补齐（对齐前沿 Agent 的最小集）**：当前 `file_read` 只能从头读最多 256KB，1MB 的 trace 无法截最后三轮。加 `file_read` 的 `offset`/`limit`（按行）和 `file_tail`、`file_grep`（有界匹配/上下文）、`diagnostics_export(kind=trace, tail=N)`；不做通用 shell / apply_patch。验收：让 Conductor 把 trace 最后三轮摘出来 Taildrop 到 Mini，全程不把 1MB 正文塞进模型。
+- [ ] **用户选文件（Agent 发起文件申请）**：新增 `request_files(reason, multiple=true)`，打开系统 `OpenMultipleDocuments` 选择器；工具本身不复制、不改属性，只返回 `{id, name, size, mime}`；URI 只留在内存，不 `takePersistableUriPermission`，会话/进程结束即失效。随后 `file_read_selected(id, max_bytes)` / `taildrop_send_selected(peer, ids)` 按需读取或投递。选择器本身就是用户同意；限制 10 个文件、读取 256KB、投递 8MB；离开页面或取消就结束等待。参考 Android SAF 和 MCP elicitation，不申请 `MANAGE_EXTERNAL_STORAGE`。中等工程，排在文件工具补齐之后。
 - [ ] **Phase D 通讯与自动化（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍然只走 typed 工具 + 确认。
 
 ### P1

@@ -52,6 +52,9 @@
 
 - `taildrop_inbox`、`taildrop_receive`（接收方向）。
 - `export_log_tail`、`self_test` 固定套件、`conductor_eval`。
+- 工具元数据统一英文；不维护静态多语言 alias，由模型在 `search_tools` 前翻译用户意图。发布时批量生成翻译的流水线不做。
+- 文件工具补齐：`file_read` 的 offset/limit、`file_tail`、`file_grep`、`diagnostics_export(tail=N)`；不做 shell / apply_patch。
+- 用户选文件：`request_files` 打开系统多选文件选择器，只返回文件名/大小/临时 handle；后续 `file_read_selected` / `taildrop_send_selected`。不复制、不改属性、不持久化 URI。
 - 角色 prompt 从 network control plane 扩成 data courier + control plane（等接收方向和自测闭环齐了再改，避免承诺没有的能力）。
 - 通讯与自动化：短消息、通知、定时检查、收件箱监听、A → B 中继；仍然只走 typed 工具 + 确认。
 
