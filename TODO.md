@@ -7,6 +7,15 @@
 
 > 2026-11-13 的 Conductor 审查见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)，综合评估（实验数据 + 审查 + TODO 去重）见 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。下面标 `[审查]` 和 `[评估]` 的项来自这两份文档；TODO 仍是唯一工作清单，文档只放分析和证据。
 
+### 数据面（长期定位：数据搬运 / Taildrop / 通讯）
+
+设计见 [`docs/conductor-data-plane.md`](docs/conductor-data-plane.md)。Conductor 的长期定位不只是 APP 控制面，而是个人数据搬运、跨设备文件投递和通讯的 Agent；它长在网络 App 里，天然知道本机网络和 Tailscale peers。当前仍主要是控制面，按下面阶段补。
+
+- [ ] **Phase A 文件作用域（目标 wonder.52）**：读整个工作目录（`getExternalFilesDir`，含 `Taildrop/`、crash/OOM/power reports），写只允许 `工作目录/conductor/`。工具 `files_list`、`files_stat`、`files_read`、`files_write`、`files_mkdir`、`files_delete`；canonical path 检查、拒绝 `..`/symlink、大小/数量/TTL 上限；顺手加固 `WorkingDirectoryProvider` 的 docId 越界。
+- [ ] **Phase B Taildrop（目标 wonder.53）**：`taildrop_peers`、`taildrop_inbox`、`taildrop_receive`、`taildrop_send`。发送只允许工作目录内文件，`ALWAYS` 确认，只允许 tailnet peer；复用 `TaildropSendManager` / `TaildropSendService`，给 `TaildropSendFile` 加 `File` 构造；进度/超时/取消/审计。
+- [ ] **Phase C 自省与证据（目标 wonder.54）**：`export_trace`、`export_conversation`、`export_log_tail`、`self_test` 固定套件；报告写工作区；`conductor_eval` 单独开关。目标是 Conductor 自己导出证据、自测、Taildrop 给 Mini 上的 Agent。
+- [ ] **Phase D 通讯与自动化（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍然只走 typed 工具 + 确认。
+
 ### P1
 
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，只能临时全局切换。`probe_many` 已按顺序批量实现；真正并发需要 daemon/新 API。实验里五次 probe 串行 6 到 15 秒。
@@ -33,6 +42,7 @@
 
 ## 下个会话接手
 
+- 下一步优先做数据面 Phase A（wonder.52），先读 [`docs/conductor-data-plane.md`](docs/conductor-data-plane.md)：读整个工作目录、写 `conductor/` 子目录、文件工具和路径加固。Phase B 才是 Taildrop 发送。
 - Conductor 综合评估（2026-11-13）：先读 [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。wonder.49/50/51 已落地 P1/P2/P3 大部分（P3 已全部完成），剩余项和阻塞证据见该文档；审查证据见 [`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md)。
 - 当前已发布 wonder.51（tag `v1.15.0-alpha.13-wonder.51`，commit `204bfa6`；wonder.50 为 `072be92`，wonder.49 为 `7048e2f`）。下一次从 52 开始，先别打 tag。发布 tag 用 annotated tag。能说清的话在注解里写 `Agent-Time` 和 `Agent-Loops`，说不清就留空，通知会省略。不要为了补这两行去移动已有 tag。
 - 手机上看 wonder.49/50/51：
