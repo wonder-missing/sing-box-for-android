@@ -34,6 +34,8 @@
 | P7-12 | 可选：Portal 管理页轮换或停用该 knock | 当前 provider WS 断 4401，下一次连接 401；App 清理 Link 和信任，提示重新授权 | Portal 管理页、close 4401、下一次 401、App 状态 |
 | P7-13 | 可选：用 `PORTAL_VFS_LINK_IDLE_MS` 很短的 dev Portal 模拟 15 天过期 | 过期后 `vfs_link_request` 重签，旧 Link 清理；生产 Portal 不动 | dev Portal 配置、Link 前后对比、Portal 日志 |
 
+2026-11-15 v2 实测：P7-4b 通过（01:33:16 provider connect，01:33:35 Link reuse，01:33:47 / 01:35:18 两次 docker 读，间隔 91 秒；provider 01:36:41 才退后台，`.71` 无错误）。P7-5 未验：两个 `/work` 目录为空，没有 `out.txt`；`/vfs` 只读和 `/work` 写由 vfsd e2e 覆盖，本轮不要求补跑。
+
 P7 导出摩擦（2026-11-14 真机）：`diagnostics_export(kind=trace, name=api-trace.json)` 写入的是 Markdown 文本，先改用 `.md` 名称。App 侧待做：按 kind 自动纠正扩展名，或名称与内容不符时提示。
 
 P7-5 的参考命令：

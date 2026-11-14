@@ -106,6 +106,7 @@
 
 ## 最近完成
 
+- 2026-11-15：VFS v2 收口。P7-4b 通过（idle 91 秒后两次 docker 读，provider 保持到 01:36:41）；P7-5 未验（`/work` 空，e2e 覆盖）。结论：数据面能力已验证，产品价值仍窄；后台断连是主要阻塞，暂不扩 background provider/bundle，只保留“远程 Agent 读手机 Conductor 数据”的用例，其余继续走导出/Taildrop。
 - wonder.72（2026-11-15）：Portal 去兼容层后的干净版。Link 只认 v2 `server`，不再双读 v1 `issuer`；信任文件升 v2（`server` 键，旧 v1 信任作废重确认）；`McpServerConfig` 用 `serverBase` JSON 键；App 不再知道 Portal 的 `/knocks/mcp/hk_` 形状，`VfsServerBase.matches` 用「Link server 是配置 MCP URL 的前缀」或显式 `serverBase` 精确匹配；`vfs_connect` 结果加 `expiresInSeconds`，描述说明不要从 `expiresAt` 估天数；VFS 容器读最多 30 秒缓存，旧读不是 Link 快照。未出包，等 v2/P7 收口后走常规版本。
 - 2026-11-15：收 wonder.70 全量工作目录实验为冻结基线（Link v1，模型驱动四项 scope 一次到位，含可见范围误报），见 [`docs/vfs-cases/2026-11-15-wonder70-whole-workspace/`](docs/vfs-cases/2026-11-15-wonder70-whole-workspace/)。Link v2 后另建新案例，不直接拿它判 v2。
 - wonder.71（2026-11-15）：Link v2 双读。`VfsLink.server`，v1 读 `issuer`、v2 读 `server`；`VfsIssuer` → `VfsServerBase`；连接状态、consent、`vfs_connect` 输出统一 `server`。信任文件 `VfsTrustEntry` 用 `@SerialName("issuer")` 保持旧数据；`McpServerConfig.serverBase` 保留 `issuerBase` JSON 键。Portal 默认仍 v1，`.71` 装好后再由 Portal 切 v2；`.72` 停读 v1、删 `GRANT_PATH` fallback。同时补 VFS 可见范围规则：本地工作目录不等于 `/vfs`，最终陈述以 `vfs_connect.visibleRoots` 或 `docker_run(vfs=true)` 的 `/vfs` 实测为准，`file_list` 描述同步。
