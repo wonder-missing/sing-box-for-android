@@ -1,10 +1,9 @@
 package io.nekohasekai.sfa.conductor
 
 import android.net.Uri
+import android.app.Application
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
@@ -101,8 +100,11 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.AndroidViewModelFactory
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
@@ -143,22 +145,27 @@ private val InputFieldSaver =
 private enum class ConductorExport { Conversation, ApiTrace }
 
 /**
- * The chat outlives this navigation destination. Scoping the ViewModel to the
- * activity keeps an in-flight turn alive when the user leaves the screen and
- * comes back; it is only cleared when the activity finishes.
+ * The Conductor session is process-scoped. An in-flight turn survives leaving
+ * the screen, finishing the activity, and coming back. Only process death ends
+ * it; that case is restored from the session store as an interrupted turn.
  */
+private object ConductorViewModelOwner : ViewModelStoreOwner {
+    override val viewModelStore = ViewModelStore()
+}
+
 @Composable
-private fun activityConductorViewModel(): ConductorViewModel {
-    val activity =
-        LocalActivity.current as? ComponentActivity
-            ?: error("ConductorScreen requires a ComponentActivity host")
-    return viewModel(viewModelStoreOwner = activity)
+private fun conductorViewModel(): ConductorViewModel {
+    val application = LocalContext.current.applicationContext as Application
+    return viewModel(
+        viewModelStoreOwner = ConductorViewModelOwner,
+        factory = AndroidViewModelFactory.getInstance(application),
+    )
 }
 
 @Composable
 fun ConductorScreen(
     serviceStatus: Status = Status.Stopped,
-    viewModel: ConductorViewModel = activityConductorViewModel(),
+    viewModel: ConductorViewModel = conductorViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val fileRequest by viewModel.fileRequest.collectAsState()
@@ -1510,15 +1517,15 @@ private fun ConductorInputBar(
             }
 
             Row(
-                // 48dp touch targets overhang the 36dp visuals by 6dp on each
-                // side; 6dp row padding keeps the visual circles 12dp from the
-                // panel edges. The row centers them 30dp above the bottom.
+                // Keep the 48dp controls outside the system back-gesture zone.
+                // A swipe from the right edge must not land on the send/stop
+                // button and silently cancel a running turn.
                 modifier =
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
                     .height(InputPanelBottomPadding)
-                    .padding(horizontal = 6.dp),
+                    .padding(horizontal = 24.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 InputGlyphButton(

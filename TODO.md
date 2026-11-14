@@ -23,7 +23,7 @@
 ### P1
 
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，只能临时全局切换。`probe_many` 已按顺序批量实现；真正并发需要 daemon/新 API。实验里五次 probe 串行 6 到 15 秒。
-- [ ] **[审查] Conductor 生命周期（剩余）**：旋转和返回页面已不再取消（wonder.53 activity 作用域）；提交时已先持久化 user。进程死亡仍会丢 turn 中途的 tool 卡片和未完成 assistant。
+- [ ] **[审查] Conductor 生命周期（剩余）**：wonder.53 改为 activity 作用域；wonder.61 再改为进程级 ViewModel，结束 Activity 也不再取消进行中的 turn，发送/停止按钮移出系统返回手势区。提交时已先持久化 user。进程死亡仍会丢 turn 中途的 tool 卡片和未完成 assistant。
 - [ ] **[审查] `TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时、Tailscale 取消已落地；仍没有在 Stop 后 1 秒内把未确认取消转成 turn error。
 
 ### P2
@@ -91,7 +91,7 @@
 - 仍未做，按阻塞原因：
   - probe 真正并发：libbox 没有 per-request outbound binding；`probe_many` 目前顺序执行。
   - `dns_lookup` / `route_decision` / `http_fetch_probe`：libbox 没有 DNS/route API，GET 也没有状态码和 body 上限。
-  - `TOOL_CANCEL_TIMEOUT` 精确 1 秒；返回页面仍会取消进行中的 turn；turn 中途 tool 卡片不落盘。
+  - `TOOL_CANCEL_TIMEOUT` 精确 1 秒；进程死亡仍会中断进行中的 turn；turn 中途 tool 卡片不落盘。
   - 批量确认整批预览；trace 单条长 body 截断、跨重启无完整 body、release 驻留；会话编解码仍在主线程。
   - 路由 A/B 真机执行；旧 tool schema 归一；旧会话 UI/导出的敏感原文。
   - Provider capability 剩余项、probe 链路复测、连接可观测、Auto Compact 的摘要质量与真机验证、增量更新。
