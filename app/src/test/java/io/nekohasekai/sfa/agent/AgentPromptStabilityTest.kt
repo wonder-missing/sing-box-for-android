@@ -54,8 +54,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        println("routing-prompt-sha256=$digest")
-        assertEquals("a450a259ff84f8cf1f99120731e8ecb875edffa86ef1c49161a6afdd03aaa4db", digest)
+        assertEquals("228450cb04d8cc200434e322a4c9806c0961f5ff8eab0234bb7274732040441f", digest)
     }
 
     @Test

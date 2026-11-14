@@ -1600,15 +1600,17 @@ private fun ConductorInputBar(
             }
 
             Row(
-                // Keep the 48dp controls outside the system back-gesture zone.
-                // A swipe from the right edge must not land on the send/stop
-                // button and silently cancel a running turn.
+                // 48dp touch targets overhang the 36dp visuals by 6dp on each
+                // side; 6dp row padding keeps the visual circles 12dp from the
+                // panel edges. The earlier 24dp inset was based on an edge-
+                // gesture theory that the stale cancel flag has since explained;
+                // the tighter visual margin is the intended composer layout.
                 modifier =
                 Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
                     .height(InputPanelBottomPadding)
-                    .padding(horizontal = 24.dp),
+                    .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 InputGlyphButton(
