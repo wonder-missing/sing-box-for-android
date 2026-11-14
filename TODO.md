@@ -28,6 +28,7 @@
 
 ### P2
 
+- [ ] **VFS P7 真机摩擦（2026-11-14）**：`diagnostics_export(kind=trace)` 产出 Markdown 但允许 `.json` 扩展名，按 kind 自动纠正或名称不符时提示；App 退后台 4000 断 provider，读取中会 EIO 并让 `docker_run(vfs=true)` 回 `VFS_UNAVAILABLE`，前台重连后重试成功。P7 期间保持前台，清单见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md) P7-4c。
 - [ ] **服务重启缺口（2026-11-13 12:39）**：CFG 遥测显示 09:11 和 12:39 两次 `service_start`，中间没有 `service_stop`；如果不是手动重启，下轮用 Conductor 的 file tools 读工作目录里的 crash/OOM reports，或对比当时的 `tailscale_status`。排障入口见 [`docs/agent-runtime.md`](docs/agent-runtime.md) 的「服务状态排障」。
 - [ ] **会话编解码移出主线程**：`ConductorSessionStore` 的 JSON encode/decode 和 `AppLog` 同步写文件仍在调用线程；wonder.51 在 submit 时又加了一次 `persistSession()`，长会话可能造成主线程卡顿。先让 `ui_jank` 取证，再把 encode/save 放 IO、load 放后台。
 - [ ] **旧会话 UI 与导出的敏感原文**：wonder.51 只清洗 transcript（模型 egress）；会话 items 和对话导出仍保留旧的 `tailscale_status` 原文，分享导出前需清对话或手动处理。
