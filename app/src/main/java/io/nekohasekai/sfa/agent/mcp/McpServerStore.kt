@@ -25,9 +25,11 @@ data class McpServerConfig(
     val url: String,
     val token: String = "",
     val enabled: Boolean = false,
+    /** Optional VFS issuer base; derived from [url] when blank. */
+    val issuerBase: String = "",
 ) {
     override fun toString(): String =
-        "McpServerConfig(id=$id, name=$name, url=$url, enabled=$enabled, hasToken=${token.isNotBlank()})"
+        "McpServerConfig(id=$id, name=$name, url=$url, enabled=$enabled, hasToken=${token.isNotBlank()}, hasIssuerBase=${issuerBase.isNotBlank()})"
 }
 
 interface McpServerRepository {
