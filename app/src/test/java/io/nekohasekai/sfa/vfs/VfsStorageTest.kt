@@ -57,4 +57,113 @@ class VfsStorageTest {
         store.put("https://example.com", "link_1", "token-a")
         assertNotNull(store.get("https://example.com", "link_1"))
     }
+
+    @Test
+    fun trustPersistsAcrossStoreInstances() {
+        val file = File(temp.root, "trust.json")
+        val now = 1_000L
+        val issuer = "https://example.com"
+        val first =
+            VfsTrustStore(
+                now = { now },
+                inactivityMs = 1_000L,
+                persistence = FileVfsTrustPersistence(file),
+            )
+        first.grant(
+            VfsTrust(
+                issuer = issuer,
+                scope = setOf(VfsScope.CONDUCTOR),
+                lastUsedAt = now,
+                expiresAt = now + 1_000L,
+                processScoped = false,
+            ),
+        )
+
+        val second =
+            VfsTrustStore(
+                now = { now },
+                inactivityMs = 1_000L,
+                persistence = FileVfsTrustPersistence(file),
+            )
+
+        assertNotNull(second.find(issuer, setOf(VfsScope.CONDUCTOR)))
+    }
+
+    @Test
+    fun processTrustIsNotPersisted() {
+        val file = File(temp.root, "trust.json")
+        val now = 1_000L
+        val issuer = "https://example.com"
+        val first =
+            VfsTrustStore(
+                now = { now },
+                inactivityMs = 1_000L,
+                persistence = FileVfsTrustPersistence(file),
+            )
+        first.grant(
+            VfsTrust(
+                issuer = issuer,
+                scope = setOf(VfsScope.CONVERSATION),
+                lastUsedAt = now,
+                expiresAt = 0L,
+                processScoped = true,
+            ),
+        )
+
+        val second =
+            VfsTrustStore(
+                now = { now },
+                inactivityMs = 1_000L,
+                persistence = FileVfsTrustPersistence(file),
+            )
+
+        assertNull(second.find(issuer, setOf(VfsScope.CONVERSATION)))
+    }
+
+    @Test
+    fun revokePersists() {
+        val file = File(temp.root, "trust.json")
+        val now = 1_000L
+        val issuer = "https://example.com"
+        val first =
+            VfsTrustStore(
+                now = { now },
+                inactivityMs = 1_000L,
+                persistence = FileVfsTrustPersistence(file),
+            )
+        first.grant(
+            VfsTrust(
+                issuer = issuer,
+                scope = setOf(VfsScope.CONDUCTOR),
+                lastUsedAt = now,
+                expiresAt = now + 1_000L,
+                processScoped = false,
+            ),
+        )
+        first.revoke(issuer)
+
+        val second =
+            VfsTrustStore(
+                now = { now },
+                inactivityMs = 1_000L,
+                persistence = FileVfsTrustPersistence(file),
+            )
+
+        assertNull(second.find(issuer, setOf(VfsScope.CONDUCTOR)))
+    }
+
+    @Test
+    fun corruptTrustFileMeansNoTrustInsteadOfACrash() {
+        val file = File(temp.root, "trust.json")
+        file.writeText("{not json", Charsets.UTF_8)
+
+        val store =
+            VfsTrustStore(
+                now = { 1_000L },
+                inactivityMs = 1_000L,
+                persistence = FileVfsTrustPersistence(file),
+            )
+
+        assertNull(store.find("https://example.com", setOf(VfsScope.CONDUCTOR)))
+    }
 }

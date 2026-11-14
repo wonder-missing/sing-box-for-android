@@ -122,6 +122,9 @@ import io.nekohasekai.sfa.compose.component.ServiceStatusBar
 import io.nekohasekai.sfa.compose.component.SnackbarHost
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
 import io.nekohasekai.sfa.compose.component.UptimeText
+import io.nekohasekai.sfa.compose.component.VfsStatusBar
+import io.nekohasekai.sfa.vfs.VfsConnectionState
+import io.nekohasekai.sfa.vfs.VfsRuntime
 import io.nekohasekai.sfa.compose.model.Connection
 import io.nekohasekai.sfa.compose.model.GroupLayoutPreference
 import io.nekohasekai.sfa.compose.navigation.NavHost
@@ -815,6 +818,8 @@ class MainActivity :
         val remoteServer by RemoteControlManager.remoteServer.collectAsState()
         val remoteConnected by RemoteControlManager.isConnected.collectAsState()
         val remoteStartedAt by RemoteControlManager.startedAt.collectAsState()
+        val vfsState by VfsRuntime.state.collectAsState()
+        val vfsConnected = vfsState as? VfsConnectionState.Connected
         val isRemote = remoteServer != null
 
         // Initialize the dashboard view model and store reference
@@ -1120,6 +1125,13 @@ class MainActivity :
                     val statusBarVisible = showStatusBar && !isSubScreen
                     var statusBarHeightPx by remember { mutableStateOf(0) }
                     val statusBarHeight = with(LocalDensity.current) { statusBarHeightPx.toDp() }
+                    val vfsBarVisible = vfsConnected != null && !isSubScreen
+                    var vfsBarHeightPx by remember { mutableStateOf(0) }
+                    val vfsBarHeight = with(LocalDensity.current) { vfsBarHeightPx.toDp() }
+                    val bottomStatusHeight =
+                        (if (statusBarVisible) statusBarHeight else 0.dp) +
+                            (if (statusBarVisible && vfsBarVisible) 8.dp else 0.dp) +
+                            (if (vfsBarVisible) vfsBarHeight else 0.dp)
 
                     NavHost(
                         navController = navController,
@@ -1143,8 +1155,8 @@ class MainActivity :
                             .fillMaxSize()
                             .padding(
                                 bottom =
-                                if (statusBarVisible && !useNavigationRail) {
-                                    statusBarHeight
+                                if ((statusBarVisible || vfsBarVisible) && !useNavigationRail) {
+                                    bottomStatusHeight
                                 } else {
                                     0.dp
                                 },
@@ -1187,6 +1199,23 @@ class MainActivity :
                                     .onSizeChanged { statusBarHeightPx = it.height },
                             )
                         }
+                    }
+
+                    if (vfsBarVisible && !useNavigationRail) {
+                        val vfsBarBottom =
+                            bottomOverlayPadding +
+                                (if (statusBarVisible) statusBarHeight else 0.dp) +
+                                (if (statusBarVisible) 8.dp else 0.dp)
+                        VfsStatusBar(
+                            serverName = vfsConnected?.serverName ?: "VFS",
+                            scope = vfsConnected?.scope ?: emptySet(),
+                            onDisconnect = { VfsRuntime.disconnect() },
+                            modifier =
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(start = 16.dp, end = 16.dp, bottom = vfsBarBottom)
+                                .onSizeChanged { vfsBarHeightPx = it.height },
+                        )
                     }
 
                     val showPadFab = useNavigationRail && !isSubScreen && (showStartFab || showStatusBar)

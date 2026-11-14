@@ -59,6 +59,7 @@ class VfsConnectionManagerTest {
         resumes: VfsResumeTokenStore = InMemoryVfsResumeTokenStore(),
         foreground: Boolean = true,
         resolver: suspend (String) -> VfsServerTarget? = { target },
+        sleeper: suspend (Long) -> Unit = {},
     ): VfsConnectionManager =
         VfsConnectionManager(
             resolveServer = resolver,
@@ -73,6 +74,7 @@ class VfsConnectionManagerTest {
                 ),
             now = { now },
             isForeground = { foreground },
+            sleeper = sleeper,
         )
 
     @Test
@@ -228,6 +230,50 @@ class VfsConnectionManagerTest {
             assertEquals("VFS_UNAUTHORIZED", error.code)
             assertNull(resumes.get(issuer, link.linkId))
             assertNull(trust.find(issuer, link.scope))
+        }
+
+    @Test
+    fun reconnectLastReusesTheResumeTokenAfterBackground() =
+        runBlocking {
+            val connector = FakeConnector()
+            val manager = manager(connector)
+
+            manager.connect(link)
+            manager.disconnect(VfsCloseCodes.BACKGROUND, "background")
+            connector.hello = VfsServerHello("vfsd", "resume-2", 6_000L)
+            manager.reconnectLast()
+
+            assertEquals("resume-1", connector.requests.last().resumeToken)
+            assertTrue(manager.state.value is VfsConnectionState.Connected)
+        }
+
+    @Test
+    fun reconnectLastStopsOnATerminalError() =
+        runBlocking {
+            val connector = FakeConnector()
+            val manager = manager(connector)
+
+            manager.connect(link)
+            manager.disconnect(VfsCloseCodes.BACKGROUND, "background")
+            connector.error = VfsConnectException("VFS_UNAUTHORIZED", "token rotated")
+            manager.reconnectLast()
+
+            assertEquals(2, connector.requests.size)
+            assertTrue(manager.state.value is VfsConnectionState.Error)
+        }
+
+    @Test
+    fun forgetLastLinkStopsAutoReconnect() =
+        runBlocking {
+            val connector = FakeConnector()
+            val manager = manager(connector)
+
+            manager.connect(link)
+            manager.disconnect(VfsCloseCodes.BACKGROUND, "user")
+            manager.forgetLastLink()
+            manager.reconnectLast()
+
+            assertEquals(1, connector.requests.size)
         }
 
     private suspend fun failure(block: suspend () -> Unit): VfsConnectException {

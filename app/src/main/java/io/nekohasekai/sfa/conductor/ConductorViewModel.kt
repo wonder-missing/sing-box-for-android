@@ -88,6 +88,8 @@ import io.nekohasekai.sfa.vfs.VfsConsentRequest
 import io.nekohasekai.sfa.vfs.VfsCooldownStore
 import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
 import io.nekohasekai.sfa.vfs.VfsIssuer
+import io.nekohasekai.sfa.vfs.VfsResumeTokenStore
+import io.nekohasekai.sfa.vfs.VfsRuntime
 import io.nekohasekai.sfa.vfs.VfsScopedSource
 import io.nekohasekai.sfa.vfs.VfsScope
 import io.nekohasekai.sfa.vfs.VfsServerTarget
@@ -504,7 +506,7 @@ class ConductorViewModel(
             File(getApplication<Application>().filesDir, "conductor/vfs-resume.json"),
             McpTokenCipherFactory.create(),
         )
-    private val vfsTrustStore = VfsTrustStore()
+    private val vfsTrustStore = VfsRuntime.trustStore(getApplication())
     private val vfsCooldownStore = VfsCooldownStore()
     private val vfsConsentLock = Any()
     private var pendingVfsConsent: PendingVfsConsent? = null
@@ -580,6 +582,10 @@ class ConductorViewModel(
             cooldowns = vfsCooldownStore,
             isForeground = { AppLifecycleObserver.isForeground.value },
         )
+
+    init {
+        VfsRuntime.attach(vfsConnectionManager)
+    }
 
     fun resolveVfsConsent(decision: VfsConsentDecision) {
         val pending = synchronized(vfsConsentLock) { pendingVfsConsent } ?: return

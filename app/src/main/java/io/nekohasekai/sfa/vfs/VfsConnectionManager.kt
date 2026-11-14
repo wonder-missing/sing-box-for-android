@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.vfs
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +38,7 @@ class VfsConnectionManager(
     private val cooldowns: VfsCooldownStore = VfsCooldownStore(),
     private val now: () -> Long = System::currentTimeMillis,
     private val isForeground: () -> Boolean = { true },
+    private val sleeper: suspend (Long) -> Unit = { delay(it) },
 ) : VfsConnectPort {
     private data class ActiveConnection(
         val issuer: String,
@@ -45,10 +47,15 @@ class VfsConnectionManager(
         val session: VfsProviderSession,
         val expiresAt: Long?,
         val connectedAt: Long,
+        val serverName: String,
     )
 
     private val gate = Mutex()
     private var active: ActiveConnection? = null
+
+    @Volatile
+    private var lastLink: VfsLink? = null
+
     private val _state = MutableStateFlow<VfsConnectionState>(VfsConnectionState.Idle)
     val state: StateFlow<VfsConnectionState> = _state.asStateFlow()
 
@@ -77,7 +84,12 @@ class VfsConnectionManager(
         active?.let { current ->
             if (current.issuer == issuer && current.scope.containsAll(link.scope)) {
                 _state.value =
-                    VfsConnectionState.Connected(current.issuer, current.scope, current.connectedAt)
+                    VfsConnectionState.Connected(
+                        current.issuer,
+                        current.scope,
+                        current.connectedAt,
+                        current.serverName,
+                    )
                 return VfsConnectResult(current.issuer, current.scope, current.expiresAt)
             }
         }
@@ -140,7 +152,12 @@ class VfsConnectionManager(
         val resume = resumeTokens.get(issuer, link.linkId)
         if (previous != null && previous.linkId == link.linkId && resume.isNullOrBlank()) {
             _state.value =
-                VfsConnectionState.Connected(previous.issuer, previous.scope, previous.connectedAt)
+                VfsConnectionState.Connected(
+                    previous.issuer,
+                    previous.scope,
+                    previous.connectedAt,
+                    previous.serverName,
+                )
             return VfsConnectResult(previous.issuer, previous.scope, previous.expiresAt)
         }
 
@@ -182,14 +199,49 @@ class VfsConnectionManager(
                 session = session,
                 expiresAt = hello.expiresAt,
                 connectedAt = connectedAt,
+                serverName = target.name,
             )
         if (!hello.resumeToken.isNullOrBlank()) {
             resumeTokens.put(issuer, link.linkId, hello.resumeToken)
         }
         trust.touch(issuer, link.scope)
         cooldown.reset()
-        _state.value = VfsConnectionState.Connected(issuer, link.scope, connectedAt)
+        lastLink = link
+        _state.value = VfsConnectionState.Connected(issuer, link.scope, connectedAt, target.name)
         return VfsConnectResult(issuer, link.scope, hello.expiresAt)
+    }
+
+    /**
+     * Foreground heal. Waits for the screen to settle, then retries the last
+     * approved Link with the standard backoff. Terminal and consent errors stop
+     * the loop.
+     */
+    suspend fun reconnectLast() {
+        val link = lastLink ?: return
+        if (!isForeground()) return
+        if (trust.find(link.issuer, link.scope) == null) return
+        sleeper(1_500L)
+        val backoff = VfsBackoff()
+        while (isForeground()) {
+            try {
+                connect(link)
+                return
+            } catch (error: VfsConnectException) {
+                if (stopsReconnect(error.code)) return
+                val wait = backoff.nextDelayMs() ?: return
+                _state.value =
+                    VfsConnectionState.Backoff(
+                        attempt = backoff.attemptCount,
+                        retryInMs = wait,
+                        reason = error.message ?: error.code,
+                    )
+                sleeper(wait)
+            }
+        }
+    }
+
+    fun forgetLastLink() {
+        lastLink = null
     }
 
     suspend fun disconnect(
@@ -204,6 +256,7 @@ class VfsConnectionManager(
         runCatching { current.session.close(code, reason) }
         active = null
         if (code == 4001) {
+            lastLink = null
             resumeTokens.remove(current.issuer, current.linkId)
             trust.revoke(current.issuer)
         }
@@ -222,11 +275,26 @@ class VfsConnectionManager(
             "VFS_LINK_INVALID",
             "VFS_LINK_REVOKED",
             "VFS_LINK_EXPIRED" -> {
+                lastLink = null
                 resumeTokens.remove(issuer, linkId)
                 trust.revoke(issuer)
             }
         }
     }
+
+    private fun stopsReconnect(code: String): Boolean =
+        code == "VFS_USER_DENIED" ||
+            code == "VFS_CONFIRMATION_COOLDOWN" ||
+            code == "VFS_CONFIRMATION_TIMEOUT" ||
+            code == "VFS_CONFIRMATION_REQUIRED" ||
+            code == "VFS_ISSUER_UNKNOWN" ||
+            code == "VFS_SCOPE_UNSUPPORTED" ||
+            code == "VFS_UNAUTHORIZED" ||
+            code == "VFS_DEVICE_MISMATCH" ||
+            code == "VFS_DEVICE_REBIND_REQUIRED" ||
+            code == "VFS_LINK_INVALID" ||
+            code == "VFS_LINK_REVOKED" ||
+            code == "VFS_LINK_EXPIRED"
 
     private fun cooldownError(remainingMs: Long): VfsConnectException {
         val seconds = ((remainingMs + 999L) / 1000L).coerceAtLeast(1L)

@@ -14,6 +14,7 @@ sealed interface VfsConnectionState {
         val issuer: String,
         val scope: Set<VfsScope>,
         val since: Long,
+        val serverName: String? = null,
     ) : VfsConnectionState
 
     data class Backoff(

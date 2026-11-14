@@ -33,6 +33,7 @@ import io.nekohasekai.sfa.compose.screen.settings.CoreSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.EditRemoteServerScreen
 import io.nekohasekai.sfa.compose.screen.settings.FDroidMirrorScreen
 import io.nekohasekai.sfa.compose.screen.settings.McpServersScreen
+import io.nekohasekai.sfa.compose.screen.settings.VfsAccessScreen
 import io.nekohasekai.sfa.compose.screen.settings.PrivilegeSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.ProfileOverrideScreen
 import io.nekohasekai.sfa.compose.screen.settings.RemoteControlScreen
@@ -661,6 +662,16 @@ fun NavHost(
             popExitTransition = slideOutToRight,
         ) {
             McpServersScreen(navController = navController)
+        }
+
+        composable(
+            route = "settings/vfs_access",
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            VfsAccessScreen(navController = navController)
         }
 
         composable(
