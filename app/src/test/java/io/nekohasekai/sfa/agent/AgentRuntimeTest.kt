@@ -202,6 +202,24 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun aCancelLeftByAnAbandonedTurnDoesNotStopTheNextTurn() {
+        val model = ScriptedModel(mutableListOf(response("hello")))
+        val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+        val runtime = runtime(model, executor, key = "sk-test")
+
+        // Clear conversation cancels the runtime, then cancels the turn job
+        // before finish() can clear the flag. The next turn starts fresh.
+        runtime.cancel()
+        runtime.resetCancel()
+
+        val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals("hello", (result.outcome as TurnOutcome.Completed).answer)
+        assertEquals(1, model.requests.size)
+    }
+
+    @Test
     fun sensitiveInputNeverReachesTheModel() {
         val model = ScriptedModel(mutableListOf(response("should not run")))
         val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }

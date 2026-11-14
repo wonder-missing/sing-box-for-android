@@ -1104,6 +1104,7 @@ class ConductorViewModel(
         agentJob?.cancel()
         agentJob = null
         stopRequested = false
+        runtime.resetCancel()
         autoApproveAgentToolName = null
         pendingAgentConfirmation = null
         pendingTurnEvent = null
@@ -1147,6 +1148,7 @@ class ConductorViewModel(
             return
         }
         stopRequested = false
+        runtime.resetCancel()
         autoApproveAgentToolName = null
         updateUi { copy(isRunning = true, canRetryLastTurn = false) }
         val initialEvent = pendingTurnEvent
