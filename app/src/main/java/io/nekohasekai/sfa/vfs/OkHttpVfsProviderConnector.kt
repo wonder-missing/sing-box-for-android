@@ -184,5 +184,9 @@ internal fun mapProviderFailure(
             ?: message
             ?: status?.let { "HTTP $it" }
             ?: "Could not connect to the VFS provider."
-    return VfsConnectException(code, detail)
+    return VfsConnectException(
+        code = code,
+        message = detail,
+        retryAfterMs = if (status == 429) VfsCloseCodes.retryAfterMs(body) else null,
+    )
 }

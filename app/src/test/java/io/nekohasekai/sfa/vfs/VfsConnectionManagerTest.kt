@@ -116,7 +116,8 @@ class VfsConnectionManagerTest {
 
             manager.connect(link)
             connector.hello = VfsServerHello("vfsd", "resume-2", 6_000L)
-            val result = manager.connect(link)
+            val wider = link.copy(scope = link.scope + VfsScope.SYSTEM_PROMPT)
+            val result = manager.connect(wider)
 
             assertEquals("resume-1", connector.requests.last().resumeToken)
             assertEquals(4004, connector.sessions.first().closedCode)
@@ -132,6 +133,7 @@ class VfsConnectionManagerTest {
             val manager = manager(connector, resumes = resumes)
 
             manager.connect(link)
+            manager.disconnect(VfsCloseCodes.BACKGROUND, "test")
             connector.hello = VfsServerHello("vfsd", null, 6_000L)
             manager.connect(link)
 
@@ -219,6 +221,7 @@ class VfsConnectionManagerTest {
             assertNotNull(resumes.get(issuer, link.linkId))
             assertNotNull(trust.find(issuer, link.scope))
 
+            manager.disconnect(VfsCloseCodes.BACKGROUND, "test")
             connector.error = VfsConnectException("VFS_UNAUTHORIZED", "token rotated")
             val error = failure { manager.connect(link) }
 

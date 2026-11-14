@@ -25,6 +25,10 @@ class VfsProviderErrorTest {
         assertEquals("VFS_LINK_INVALID", mapProviderFailure(404, null, null).code)
         assertEquals("VFS_LINK_EXPIRED", mapProviderFailure(410, null, null).code)
         assertEquals("VFS_CONNECT_FAILED", mapProviderFailure(503, null, null).code)
+        assertEquals(
+            1_500L,
+            mapProviderFailure(429, """{"retryAfterMs":1500}""", null).retryAfterMs,
+        )
     }
 
     @Test
@@ -39,5 +43,8 @@ class VfsProviderErrorTest {
         assertTrue(VfsCloseCodes.isBackoff(VfsCloseCodes.RATE_LIMITED))
         assertFalse(VfsCloseCodes.isTerminal(VfsCloseCodes.REPLACED))
         assertFalse(VfsCloseCodes.isBackoff(VfsCloseCodes.REPLACED))
+        assertEquals("VFS_DEVICE_REBIND_REQUIRED", VfsCloseCodes.errorCode(VfsCloseCodes.REBIND_REQUIRED))
+        assertEquals("VFS_CONNECT_FAILED", VfsCloseCodes.errorCode(VfsCloseCodes.RATE_LIMITED))
+        assertEquals(2_500L, VfsCloseCodes.retryAfterMs("rate limited retryAfterMs=2500"))
     }
 }
