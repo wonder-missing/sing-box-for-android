@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Tool results cross the conversation boundary, so anything that looks like a
@@ -41,6 +42,19 @@ internal object AgentSanitizer {
     private val TAILSCALE_IPV6_REGEX =
         Regex("""(?i)\bfd7a:115c:a1e0:[0-9a-f:]+\b""")
     private const val TRAILING_PUNCTUATION = ".,;:)]}\"'"
+    private val VFS_LINK_KEYS = setOf("issuer", "linkId", "scope")
+
+    /**
+     * A VFS Link is an address, not a credential: the model must be able to
+     * pass issuer/linkId/scope back to vfs_connect unchanged. Tool results
+     * nest it under "link" and normally carry type="vfs-link"; the field
+     * shape is the fallback for older servers.
+     */
+    private fun isVfsLinkObject(obj: JsonObject): Boolean {
+        val type = (obj["type"] as? JsonPrimitive)?.contentOrNull
+        return type == "vfs-link" ||
+            (obj.containsKey("issuer") && obj.containsKey("linkId") && obj.containsKey("scope"))
+    }
 
     fun sanitizeText(
         text: String,
@@ -115,11 +129,12 @@ internal object AgentSanitizer {
         when (element) {
             is JsonObject -> {
                 buildJsonObject {
+                    val vfsLink = isVfsLinkObject(element)
                     element.forEach { (key, value) ->
-                        if (SENSITIVE_KEY.matches(key)) {
-                            put(key, JsonPrimitive("***"))
-                        } else {
-                            put(key, sanitizeElement(value, allowedUrls))
+                        when {
+                            SENSITIVE_KEY.matches(key) -> put(key, JsonPrimitive("***"))
+                            vfsLink && key in VFS_LINK_KEYS -> put(key, value)
+                            else -> put(key, sanitizeElement(value, allowedUrls))
                         }
                     }
                 }
