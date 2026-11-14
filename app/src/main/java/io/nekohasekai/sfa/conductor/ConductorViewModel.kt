@@ -1468,6 +1468,10 @@ class ConductorViewModel(
                     is TurnState.RunningTool -> setTurnStatus("Running ${state.call.name}")
                     is TurnState.AwaitingConfirmation -> setTurnStatus("Waiting for your approval")
                     TurnState.Idle, is TurnState.Cancelling -> Unit
+                    is TurnState.Completed,
+                    is TurnState.Cancelled,
+                    is TurnState.Failed,
+                    -> clearTurnStatus()
                 }
 
             is AgentEvent.TurnStarted -> Unit
