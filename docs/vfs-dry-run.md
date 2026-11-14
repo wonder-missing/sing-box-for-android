@@ -18,6 +18,7 @@
 |---|---|---|---|
 | P7-1 | 安装 App，使用现有 WonderSing MCP Server；必要时刷新或重连工具列表 | 现有凭证不改；`vfs_link_request` 出现在该 Server 的工具列表 | App 设置页、Conductor 的 `/mcp` 或工具列表 |
 | P7-2 | 让 Conductor 调 `vfs_link_request`，再调本地 `vfs_connect`；确认框选「仅本次」 | 确认框显示 Server 名、issuer、scope 路径；批准后状态条出现，Portal 记为一次 provider 连接。Link 只含 `type`/`version`/`issuer`/`linkId`/`scope`，不含 token、endpoint 或签名 | 确认框截图或文字记录、Link 字段检查、状态条、Portal 日志时间戳 |
+| P7-2b | 用原话说「你把咱们这个 APP 的整个工作目录都挂到 Portal 上去」 | Conductor 自己映射到全部四个 scope（conductor、trace、system_prompt、conversation），不反问 scope/参数，不让用户记参数；确认框用人类标签列出四项 | 工具调用参数、Link 的 scope、确认框文字 |
 | P7-3 | 断开后重新走一遍，确认框选「信任 15 天」 | Settings > Security > VFS access 出现该 issuer 和精确 scope；再次连接不再弹框 | Settings 页面、第二次连接无确认框 |
 | P7-4 | 前台连接后按 Home，等 2 秒以上，再回到 App | 后台时状态条消失，Portal 收到 close 4000；回前台约 1.5 秒后自动愈合，状态条恢复，无需重新请求 Link | Portal 日志 close/connect、状态条出现时间 |
 | P7-4b | 连接建立后闲置 35 秒（不操作、不切后台），再调 `docker_run(vfs=true)` | 必须仍然成功。Portal 每 30 秒发应用层 ping，App 回 pong，Portal 转发 `alive` 给 vfsd；vfsd 不能把 idle provider 判离线 | Portal 日志 ping/pong/`alive`、vfsd status、`docker_run` 输出 |
