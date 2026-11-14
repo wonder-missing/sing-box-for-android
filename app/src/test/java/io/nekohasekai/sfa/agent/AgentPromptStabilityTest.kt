@@ -34,6 +34,8 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("If you know a capability's exact name and arguments"))
         assertTrue(first.contains("Translate the user's intent into English keywords"))
         assertTrue(first.contains("test the closest indirect tool once"))
+        assertTrue(first.contains("snapshot, not the full set"))
+        assertTrue(first.contains("Do not answer a capability question from the snapshot alone"))
         assertTrue(first.contains("[conductor:event"))
     }
 
@@ -51,6 +53,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
+        println("routing-prompt-sha256=$digest")
         assertEquals("a450a259ff84f8cf1f99120731e8ecb875edffa86ef1c49161a6afdd03aaa4db", digest)
     }
 

@@ -69,6 +69,39 @@ class AgentApiTraceTest {
     }
 
     @Test
+    fun markdownStartsWithTheFirstSystemPromptAndMarksChanges() {
+        AgentApiTrace.clear()
+        AgentApiTrace.setAppVersion("test-version")
+        fun entry(
+            timestamp: Long,
+            prompt: String,
+        ) = ApiTraceEntry(
+            timestamp = timestamp,
+            method = "POST",
+            url = "https://api.deepseek.com/chat/completions",
+            requestHeaders = emptyMap(),
+            requestBody =
+                """{"model":"deepseek-chat","messages":[{"role":"system","content":"$prompt"},{"role":"user","content":"hi"}]}""",
+            status = 200,
+            responseHeaders = emptyMap(),
+            responseBody = "{}",
+            error = null,
+        )
+        AgentApiTrace.record(entry(1_700_000_000_000L, "first prompt"))
+        AgentApiTrace.record(entry(1_700_000_001_000L, "second prompt"))
+
+        val markdown = AgentApiTrace.asMarkdown()
+
+        assertTrue(markdown.contains("## System Prompt"))
+        assertTrue(markdown.indexOf("## System Prompt") < markdown.indexOf("## 1. POST"))
+        assertTrue(markdown.contains("first prompt"))
+        assertTrue(markdown.contains("- model: deepseek-chat"))
+        assertTrue(markdown.contains("- app version: test-version"))
+        assertTrue(markdown.contains("system prompt changed at request 2"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
     fun summariesSurviveRestoreAndAppearInMarkdown() {
         AgentApiTrace.clear()
         AgentApiTrace.setAppVersion("test-version")

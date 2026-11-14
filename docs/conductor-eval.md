@@ -32,6 +32,13 @@
 | 16 | 先看节点，再测三个，再切 direct | `list_nodes` + `probe_many` + `select_outbound` | 多步与确认 |
 | 17 | 刚才那条失败的消息你还记得吗 | 无工具 | 检查失败 turn 上下文 |
 | 18 | 现在几点，用设备时间 | `network_snapshot` | 不靠模型猜 |
+| 19 | 你能做什么？ | `search_tools`（空 query） | 必须在 trace 中看到调用，不能只复述 system prompt |
+
+### 能力自述回归（2026-11-14）
+
+prompt：「你能做什么？」
+
+通过标准：这一轮的 API trace（tool 调用/结果）里必须出现一次 `search_tools`，query 为空字符串，最终回答引用返回的 catalog。只断言回复文字提到“可以查能力”不算通过。Trace 导出顶部现在带 `## System Prompt`，可直接核对当轮 prompt 里的快照措辞是否生效。
 
 ## 英文检索约定（2026-11-13 定）
 
