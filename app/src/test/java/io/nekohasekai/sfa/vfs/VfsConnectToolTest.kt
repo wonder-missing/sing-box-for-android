@@ -78,6 +78,10 @@ class VfsConnectToolTest {
                 listOf("conversation", "system_prompt"),
                 execution.output?.get("missingScopes")?.jsonArray?.map { it.jsonPrimitive.content },
             )
+            assertEquals(
+                listOf("Full conversation", "System prompt"),
+                execution.output?.get("missingScopeLabels")?.jsonArray?.map { it.jsonPrimitive.content },
+            )
             assertTrue(
                 execution.output?.get("hint")?.jsonPrimitive?.content.orEmpty()
                     .contains("Never ask the user to name scopes"),
