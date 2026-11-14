@@ -1,0 +1,29 @@
+Portal side /vfs listing during the wonder.70 experiment (UTC in container, local +08:00):
+
+== /vfs
+total 0
+dr-xr-xr-x    2 root     root             0 Jan  1  1970 .
+drwxr-xr-x    1 root     root            18 Nov 14 16:30 ..
+dr-xr-xr-x    2 root     root             0 Nov 14 16:30 .runtime
+dr-xr-xr-x    2 root     root             0 Nov 14 16:05 conductor
+
+== /vfs/.runtime
+conversation.md   22002
+system_prompt.md   6431
+trace.md         435622
+
+== /vfs/conductor
+api-trace-tail.json   645345
+api-trace.json       1018416
+api-trace.md         1066946
+conversation-20261114-134937.md 139115
+note.json               7955
+trace-20261114-134938.md 579321
+
+Hidden private paths (not exposed by VFS):
+crash_reports
+Taildrop
+tailscale
+cache.db
+CrashReport-Application.log
+PlatformMetadata-Application.json

@@ -1,0 +1,116 @@
+{
+  "caseId": "2026-11-15-wonder70-whole-workspace",
+  "status": "frozen",
+  "frozenAt": "2026-11-15T00:36:00+08:00",
+  "purpose": "Baseline for drift after Conductor system prompt or tool description changes",
+  "app": {
+    "version": "1.15.0-alpha.13-wonder.70",
+    "source": "79adb77",
+    "dev": "6216254",
+    "apk": "~/Downloads/vfs-dry-run-apk/wonder.70/SFA-1.15.0-alpha.13-wonder.70-arm64-v8a.apk",
+    "apkBytes": 34711157,
+    "apkSha256": "3bfd6e129ab9c0493124a50f9ecf52377e77930bc48fd6924f9ff5c838d54ab7"
+  },
+  "model": "deepseek-v4-flash",
+  "portal": {
+    "code": "a587ef0",
+    "repoHeadAtCapture": "49bf7d3"
+  },
+  "vfsd": {
+    "commit": "9e98497"
+  },
+  "device": "Samsung SM-F741U, Android 15",
+  "prompt": "你帮我把 APP 这边的工作目录挂到 Portal 上去，我让 Poral 上的 Agent 分析一下",
+  "link": {
+    "version": 1,
+    "linkId": "l_538b15cd14e5658a73416f85d68908f3",
+    "scope": [
+      "conductor",
+      "trace",
+      "system_prompt",
+      "conversation"
+    ]
+  },
+  "providerId": "p_f20d859986105800",
+  "vfsConnect": {
+    "connected": true,
+    "visibleRoots": [
+      ".runtime/conversation.md",
+      ".runtime/system_prompt.md",
+      ".runtime/trace.md",
+      "conductor/**"
+    ]
+  },
+  "runtimeFiles": {
+    "conversation.md": 22002,
+    "system_prompt.md": 6431,
+    "trace.md": 435622
+  },
+  "actualVfsRoots": [
+    ".runtime",
+    "conductor"
+  ],
+  "privatePathsHidden": [
+    "crash_reports",
+    "Taildrop",
+    "tailscale",
+    "cache.db",
+    "CrashReport-Application.log",
+    "PlatformMetadata-Application.json"
+  ],
+  "toolCalls": [
+    {
+      "tool": "search_tools",
+      "query": "vfs mount workspace portal connect",
+      "outcome": "weak_matches"
+    },
+    {
+      "tool": "search_tools",
+      "query": "",
+      "outcome": "catalog_27_tools"
+    },
+    {
+      "tool": "search_tools",
+      "query": "mcp_clawdy_portal_knocks_vfs_link_request",
+      "outcome": "schema"
+    },
+    {
+      "tool": "mcp_clawdy_portal_knocks_vfs_link_request",
+      "scope": [
+        "conductor",
+        "trace",
+        "system_prompt",
+        "conversation"
+      ],
+      "outcome": "link_issued"
+    },
+    {
+      "tool": "search_tools",
+      "query": "vfs_connect",
+      "outcome": "schema"
+    },
+    {
+      "tool": "vfs_connect",
+      "outcome": "connected"
+    },
+    {
+      "tool": "file_list",
+      "outcome": "app_local_root_listing"
+    }
+  ],
+  "errors": [],
+  "knownDeviations": [
+    "Final answer claimed App private directories were readable by Portal Agent; actual /vfs exposes only .runtime and conductor.",
+    "Provider went background at 00:22:37 and 00:25:53; capture succeeded at 00:29:47, so Portal Agent reads depend on the App being foreground."
+  ],
+  "baselineChecks": [
+    "The same natural-language prompt does not ask the user for scope names.",
+    "The Link scope covers every VFS-visible root the App defines.",
+    "The App shows one human-readable consent, not a scope-name question.",
+    "No VFS_* errors, no search_budget_exceeded, no user round trip for missing scope.",
+    "vfs_connect succeeds and returns correct visibleRoots.",
+    "The final answer's visibility statement matches visibleRoots or a real /vfs listing.",
+    "trace.md, conversation.md and system_prompt.md are reachable on demand."
+  ],
+  "driftNote": "Tool order and search queries may vary. Compare scope coverage, errors, visibleRoots, final visibility statement and foreground dependency. This is a v1 Link baseline; create a separate case after Link v2 and App .71."
+}
