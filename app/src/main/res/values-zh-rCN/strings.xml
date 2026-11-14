@@ -477,40 +477,6 @@
     <string name="tool_outbound">出站</string>
     <string name="tool_default_outbound">默认</string>
 
-    <!-- Virtual Directory -->
-    <string name="virtual_directory_title">虚拟目录</string>
-    <string name="virtual_directory_help">把 Conductor 文件和运行时诊断以只读方式提供给 Mini。手机主动连接，不在手机上监听端口。</string>
-    <string name="virtual_directory_enable">启用</string>
-    <string name="virtual_directory_endpoint">端点</string>
-    <string name="virtual_directory_endpoint_help">ws:// 或 wss://。只填主机时会自动加上 /provider。</string>
-    <string name="virtual_directory_token">令牌</string>
-    <string name="virtual_directory_token_help">可选，作为 Bearer 令牌发送。</string>
-    <string name="virtual_directory_token_saved">已保存令牌。留空表示继续使用它。</string>
-    <string name="virtual_directory_token_remove">删除已保存令牌</string>
-    <string name="virtual_directory_token_undo_remove">保留已保存令牌</string>
-    <string name="virtual_directory_token_will_clear">保存后将删除已保存的令牌。</string>
-    <string name="virtual_directory_token_show">显示令牌</string>
-    <string name="virtual_directory_token_hide">隐藏令牌</string>
-    <string name="virtual_directory_save">保存</string>
-    <string name="virtual_directory_saved">已保存。</string>
-    <string name="virtual_directory_error_url">请输入 ws:// 或 wss:// 端点。</string>
-    <string name="virtual_directory_error_save">保存设置失败。</string>
-    <string name="virtual_directory_status">状态</string>
-    <string name="virtual_directory_server">服务端</string>
-    <string name="virtual_directory_since">连接时间</string>
-    <string name="virtual_directory_scope">范围</string>
-    <string name="virtual_directory_scope_value">conductor/（只读）\n.runtime/trace.md、conversation.md、system_prompt.md（读取时生成）</string>
-    <string name="virtual_directory_last_request">最近请求</string>
-    <string name="virtual_directory_requests">请求数</string>
-    <string name="virtual_directory_bytes_read">已读字节</string>
-    <string name="virtual_directory_last_error">最近错误</string>
-    <string name="virtual_directory_never">从未</string>
-    <string name="virtual_directory_retry_auto">将自动重试。</string>
-    <string name="virtual_directory_summary_off">已关闭</string>
-    <string name="virtual_directory_summary_connecting">正在连接…</string>
-    <string name="virtual_directory_summary_connected">已连接</string>
-    <string name="virtual_directory_summary_error">未连接</string>
-
     <!-- STUN Test -->
     <!-- Tailscale -->
     <string name="tailscale_endpoints">端点</string>

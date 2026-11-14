@@ -52,11 +52,6 @@ object SettingsKey {
     const val CONDUCTOR_TOOL_ROUTING = "conductor_tool_routing"
     const val CONDUCTOR_REASONING_EFFORT = "conductor_reasoning_effort"
 
-    // Virtual directory
-    const val VIRTUAL_DIRECTORY_ENABLED = "virtual_directory_enabled"
-    const val VIRTUAL_DIRECTORY_URL = "virtual_directory_url"
-    const val VIRTUAL_DIRECTORY_TOKEN = "virtual_directory_token"
-
     // Remote Control
     const val ACTIVE_REMOTE_SERVER_ID = "active_remote_server_id"
 

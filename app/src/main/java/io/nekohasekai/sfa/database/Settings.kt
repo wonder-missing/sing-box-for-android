@@ -115,11 +115,6 @@ object Settings {
     var conductorToolRouting by dataStore.boolean(SettingsKey.CONDUCTOR_TOOL_ROUTING) { true }
     var conductorReasoningEffort by dataStore.string(SettingsKey.CONDUCTOR_REASONING_EFFORT) { "default" }
 
-    // Virtual directory
-    var virtualDirectoryEnabled by dataStore.boolean(SettingsKey.VIRTUAL_DIRECTORY_ENABLED) { false }
-    var virtualDirectoryUrl by dataStore.string(SettingsKey.VIRTUAL_DIRECTORY_URL) { "" }
-    var virtualDirectoryTokenBlob by dataStore.string(SettingsKey.VIRTUAL_DIRECTORY_TOKEN) { "" }
-
     // Tailscale SSH
     var tailscaleSSHRememberedUsernames by dataStore.map(SettingsKey.TAILSCALE_SSH_REMEMBERED_USERNAMES)
     var tailscaleSSHRememberedTerminalTypes by dataStore.map(SettingsKey.TAILSCALE_SSH_REMEMBERED_TERMINAL_TYPES)

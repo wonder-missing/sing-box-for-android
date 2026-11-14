@@ -71,7 +71,6 @@ import io.nekohasekai.sfa.compose.screen.tools.TailscaleSSHSharedViewModel
 import io.nekohasekai.sfa.compose.screen.tools.TailscaleSSHTerminalScreen
 import io.nekohasekai.sfa.compose.screen.tools.TailscaleStatusViewModel
 import io.nekohasekai.sfa.compose.screen.tools.ToolsScreen
-import io.nekohasekai.sfa.compose.screen.tools.VirtualDirectoryScreen
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPDeviceDetailScreen
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPServerScreen
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPStatusViewModel
@@ -276,16 +275,6 @@ fun NavHost(
         }
 
         // Tools subscreens with slide animations
-        composable(
-            route = "tools/virtual_directory",
-            enterTransition = slideInFromRight,
-            exitTransition = slideOutToLeft,
-            popEnterTransition = slideInFromLeft,
-            popExitTransition = slideOutToRight,
-        ) {
-            VirtualDirectoryScreen(navController = navController)
-        }
-
         composable(
             route = "tools/network_quality",
             enterTransition = slideInFromRight,

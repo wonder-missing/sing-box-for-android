@@ -30,7 +30,6 @@ import io.nekohasekai.sfa.utils.HookModuleUpdateNotifier
 import io.nekohasekai.sfa.utils.HookStatusClient
 import io.nekohasekai.sfa.utils.PrivilegeSettingsClient
 import io.nekohasekai.sfa.vendor.Vendor
-import io.nekohasekai.sfa.vfs.VirtualDirectoryRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -73,8 +72,6 @@ class Application : Application() {
         @Suppress("OPT_IN_USAGE")
         GlobalScope.launch(Dispatchers.IO) {
             Settings.dataStore.initialize()
-            VirtualDirectoryRuntime.initialize(this@Application)
-            VirtualDirectoryRuntime.reload()
             HookStatusClient.register(this@Application)
             PrivilegeSettingsClient.register(this@Application)
             runCatching {
