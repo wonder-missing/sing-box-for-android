@@ -1,9 +1,16 @@
 package io.nekohasekai.sfa.vfs
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -39,6 +46,7 @@ class VfsConnectionManager(
     private val now: () -> Long = System::currentTimeMillis,
     private val isForeground: () -> Boolean = { true },
     private val sleeper: suspend (Long) -> Unit = { delay(it) },
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : VfsConnectPort {
     private data class ActiveConnection(
         val issuer: String,
@@ -52,6 +60,7 @@ class VfsConnectionManager(
 
     private val gate = Mutex()
     private var active: ActiveConnection? = null
+    private var closeJob: Job? = null
 
     @Volatile
     private var lastLink: VfsLink? = null
@@ -188,6 +197,8 @@ class VfsConnectionManager(
                 throw wrapped
             }
 
+        closeJob?.cancel()
+        closeJob = null
         previous?.let { old -> runCatching { old.session.close(4004, "replaced") } }
         val hello = session.hello
         val connectedAt = now()
@@ -201,6 +212,14 @@ class VfsConnectionManager(
                 connectedAt = connectedAt,
                 serverName = target.name,
             )
+        closeJob =
+            session.closeEvent?.let { events ->
+                scope.launch {
+                    events.filterNotNull().first().let { close ->
+                        handleClose(session, link, close)
+                    }
+                }
+            }
         if (!hello.resumeToken.isNullOrBlank()) {
             resumeTokens.put(issuer, link.linkId, hello.resumeToken)
         }
@@ -244,6 +263,60 @@ class VfsConnectionManager(
         lastLink = null
     }
 
+    private suspend fun handleClose(
+        session: VfsProviderSession,
+        link: VfsLink,
+        close: VfsSessionClose,
+    ) {
+        var retry = false
+        gate.withLock {
+            if (active?.session !== session) return@withLock
+            active = null
+            closeJob = null
+            when (close.code) {
+                VfsCloseCodes.REPLACED -> Unit
+                VfsCloseCodes.BACKGROUND -> _state.value = VfsConnectionState.Idle
+                VfsCloseCodes.REVOKED ->
+                    terminalClose(link, "VFS_LINK_REVOKED", close.reason ?: "The server revoked this Link.")
+                VfsCloseCodes.LINK_EXPIRED ->
+                    terminalClose(link, "VFS_LINK_EXPIRED", close.reason ?: "The Link expired.")
+                VfsCloseCodes.UNAUTHORIZED ->
+                    terminalClose(link, "VFS_UNAUTHORIZED", close.reason ?: "The MCP token is no longer valid.")
+                VfsCloseCodes.DEVICE_MISMATCH ->
+                    terminalClose(link, "VFS_DEVICE_MISMATCH", close.reason ?: "Another device is using this token.")
+                VfsCloseCodes.REBIND_REQUIRED ->
+                    terminalClose(
+                        link,
+                        "VFS_DEVICE_REBIND_REQUIRED",
+                        close.reason ?: "Revoke the old token and issue a new one.",
+                    )
+
+                else -> {
+                    val wait = VfsCloseCodes.retryAfterMs(close.reason) ?: 1_000L
+                    _state.value =
+                        VfsConnectionState.Backoff(
+                            attempt = 1,
+                            retryInMs = wait,
+                            reason = close.reason ?: "The provider connection closed.",
+                        )
+                    retry = true
+                }
+            }
+        }
+        if (retry) reconnectLast()
+    }
+
+    private fun terminalClose(
+        link: VfsLink,
+        code: String,
+        message: String,
+    ) {
+        lastLink = null
+        resumeTokens.remove(link.issuer, link.linkId)
+        trust.revoke(link.issuer)
+        _state.value = VfsConnectionState.Error(code, message)
+    }
+
     suspend fun disconnect(
         code: Int = 4000,
         reason: String = "background",
@@ -254,6 +327,8 @@ class VfsConnectionManager(
             return@withLock
         }
         runCatching { current.session.close(code, reason) }
+        closeJob?.cancel()
+        closeJob = null
         active = null
         if (code == 4001) {
             lastLink = null

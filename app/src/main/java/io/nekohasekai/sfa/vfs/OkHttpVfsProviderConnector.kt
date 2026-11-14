@@ -139,7 +139,7 @@ class OkHttpVfsProviderConnector(
         private val scope: CoroutineScope,
         closeEvents: MutableStateFlow<VfsSessionClose?>,
     ) : VfsProviderSession {
-        val closeEvent: StateFlow<VfsSessionClose?> = closeEvents.asStateFlow()
+        override val closeEvent: StateFlow<VfsSessionClose?> = closeEvents.asStateFlow()
 
         override fun close(
             code: Int,

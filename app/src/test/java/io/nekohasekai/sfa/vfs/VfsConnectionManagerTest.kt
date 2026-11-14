@@ -1,6 +1,10 @@
 package io.nekohasekai.sfa.vfs
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -27,6 +31,8 @@ class VfsConnectionManagerTest {
     private class FakeSession(
         override val hello: VfsServerHello,
     ) : VfsProviderSession {
+        val closeEvents = MutableStateFlow<VfsSessionClose?>(null)
+        override val closeEvent: StateFlow<VfsSessionClose?> = closeEvents
         var closedCode: Int? = null
         var closedReason: String? = null
 
@@ -260,6 +266,29 @@ class VfsConnectionManagerTest {
 
             assertEquals(2, connector.requests.size)
             assertTrue(manager.state.value is VfsConnectionState.Error)
+        }
+
+    @Test
+    fun serverClose4401ClearsResumeAndTrust() =
+        runBlocking {
+            val connector = FakeConnector()
+            val resumes = InMemoryVfsResumeTokenStore()
+            val trust = VfsTrustStore(now = { now }, inactivityMs = 1_000L)
+            val manager = manager(connector, resumes = resumes, trust = trust)
+
+            manager.connect(link)
+            assertNotNull(resumes.get(issuer, link.linkId))
+            assertNotNull(trust.find(issuer, link.scope))
+
+            connector.sessions.single().closeEvents.value = VfsSessionClose(4401, "token rotated")
+            val state =
+                withTimeout(2_000L) {
+                    manager.state.first { it is VfsConnectionState.Error }
+                }
+
+            assertEquals("VFS_UNAUTHORIZED", (state as VfsConnectionState.Error).code)
+            assertNull(resumes.get(issuer, link.linkId))
+            assertNull(trust.find(issuer, link.scope))
         }
 
     @Test

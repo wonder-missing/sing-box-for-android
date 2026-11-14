@@ -1,5 +1,7 @@
 package io.nekohasekai.sfa.vfs
 
+import kotlinx.coroutines.flow.StateFlow
+
 data class VfsProviderConnectRequest(
     val url: String,
     val token: String,
@@ -17,6 +19,10 @@ data class VfsServerHello(
 
 interface VfsProviderSession {
     val hello: VfsServerHello
+
+    /** Null for test sessions that do not expose a close stream. */
+    val closeEvent: StateFlow<VfsSessionClose?>?
+        get() = null
 
     fun close(
         code: Int,
