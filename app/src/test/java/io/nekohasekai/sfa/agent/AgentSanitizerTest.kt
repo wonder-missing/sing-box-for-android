@@ -1,5 +1,13 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,5 +52,69 @@ class AgentSanitizerTest {
         assertFalse(display.contains("SECRET"))
         assertFalse(display.contains("user:pass"))
         assertFalse(display.contains("abc"))
+    }
+
+    @Test
+    fun vfsLinkKeepsTheIssuerLinkIdAndScope() {
+        val output =
+            buildJsonObject {
+                put(
+                    "link",
+                    buildJsonObject {
+                        put("type", "vfs-link")
+                        put("version", 1)
+                        put("issuer", "https://clawdy-mini.tailf665f5.ts.net")
+                        put("linkId", "l_cbb79c6a9e92830cf0d22f577f059c88")
+                        putJsonArray("scope") { add("conductor") }
+                    },
+                )
+                put("expiresAt", 1_700_000_000_000L)
+            }
+
+        val sanitized = AgentSanitizer.sanitizeElement(output) as JsonObject
+        val link = sanitized["link"] as JsonObject
+
+        assertEquals(
+            "https://clawdy-mini.tailf665f5.ts.net",
+            (link["issuer"] as JsonPrimitive).content,
+        )
+        assertEquals(
+            "l_cbb79c6a9e92830cf0d22f577f059c88",
+            (link["linkId"] as JsonPrimitive).content,
+        )
+        assertEquals(
+            "conductor",
+            ((link["scope"] as JsonArray)[0] as JsonPrimitive).content,
+        )
+    }
+
+    @Test
+    fun aVfsLinkStillRedactsOtherUrls() {
+        val output =
+            buildJsonObject {
+                put("type", "vfs-link")
+                put("issuer", "https://clawdy-mini.tailf665f5.ts.net")
+                put("linkId", "l_cbb79c6a9e92830cf0d22f577f059c88")
+                putJsonArray("scope") { add("conductor") }
+                put("note", "https://example.com/sub?token=SECRET")
+            }
+
+        val sanitized = AgentSanitizer.sanitizeElement(output).toString()
+
+        assertTrue(sanitized.contains("clawdy-mini.tailf665f5.ts.net"))
+        assertTrue(sanitized.contains("[redacted-url]"))
+        assertFalse(sanitized.contains("example.com"))
+        assertFalse(sanitized.contains("SECRET"))
+    }
+
+    @Test
+    fun nonVfsToolUrlsStayRedacted() {
+        val output = buildJsonObject { put("url", "https://example.com/sub?token=SECRET") }
+
+        val sanitized = AgentSanitizer.sanitizeElement(output).toString()
+
+        assertTrue(sanitized.contains("[redacted-url]"))
+        assertFalse(sanitized.contains("example.com"))
+        assertFalse(sanitized.contains("SECRET"))
     }
 }
