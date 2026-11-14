@@ -119,4 +119,4 @@ App 本地 `file_list` 还能看到 `crash_reports`、`Taildrop`、`tailscale`�
 - `actual-vfs-roots.txt`：Portal 侧实测的 `/vfs` 根和隐藏私有目录。
 - `manifest.sha256`：三份原始材料的 SHA-256。
 
-材料只在本机 `~/notes/vfs-cases/`，不含 MCP token、Portal 会话或飞书凭证。Link 本身不是密钥。
+材料在 App 仓库 `docs/vfs-cases/2026-11-15-wonder70-whole-workspace/`，不含 MCP token、Portal 会话或飞书凭证。Link 本身不是密钥。
