@@ -52,4 +52,4 @@
 
 - wonder.72（2026-11-15）：Link v2 干净版。只认 `server`，去掉 v1 `issuer`/`issuerBase`/`GRANT_PATH`；scope 由模型按工具描述决定，App 不再猜；`vfs_connect` 加 `expiresInSeconds` 和 30 秒读缓存说明；VFS 可见范围以 `visibleRoots`/`/vfs` 实测为准。正式 Release，arm64 APK 已发，Feishu 通知成功。
 - VFS 战役收口（2026-11-15）：P7-4b 通过（idle 91 秒后两次 docker 读，provider 保持到 01:36:41）；P7-5 未验（`/work` 空，e2e 覆盖）。`.70` 全量工作目录案例冻结在 [`docs/vfs-cases/2026-11-15-wonder70-whole-workspace/`](docs/vfs-cases/2026-11-15-wonder70-whole-workspace/)。结论：数据面能力已验证，产品价值仍窄；后台断连是主要阻塞，后续只保留“远程 Agent 读手机 Conductor 数据”的用例。
-- wonder.66/68/64（2026-11-14）：Stop 打断重试退避并在 3 秒内强制结束；输入栏 turn 状态行（带秒数）；`/clear` 后过期取消标记修复。细节见对应 commit 和 Release。
+- wonder.66/68/64（2026-11-14）：Stop 打断重试退避并在 3 秒内强制结束；输入栏 turn 状态行（带秒数）；`/clear` 后过期取消标记修复。细节见对应 commit。
