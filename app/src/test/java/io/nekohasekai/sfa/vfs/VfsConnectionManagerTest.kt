@@ -86,6 +86,7 @@ class VfsConnectionManagerTest {
 
             assertEquals(null, connector.requests.single().resumeToken)
             assertEquals("device-1", connector.requests.single().deviceId)
+            assertEquals(link.scope, connector.requests.single().scope)
             assertEquals(5_000L, result.expiresAt)
             assertEquals("resume-1", resumes.get(issuer, link.linkId))
             assertTrue(manager.state.value is VfsConnectionState.Connected)

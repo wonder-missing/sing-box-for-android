@@ -76,8 +76,9 @@ import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
 import io.nekohasekai.sfa.utils.AppLifecycleObserver
+import io.nekohasekai.sfa.vfs.AndroidVirtualDirectorySource
 import io.nekohasekai.sfa.vfs.FileVfsResumeTokenStore
-import io.nekohasekai.sfa.vfs.UnavailableVfsProviderConnector
+import io.nekohasekai.sfa.vfs.OkHttpVfsProviderConnector
 import io.nekohasekai.sfa.vfs.VfsConnectException
 import io.nekohasekai.sfa.vfs.VfsConnectTool
 import io.nekohasekai.sfa.vfs.VfsConnectionManager
@@ -87,6 +88,7 @@ import io.nekohasekai.sfa.vfs.VfsConsentRequest
 import io.nekohasekai.sfa.vfs.VfsCooldownStore
 import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
 import io.nekohasekai.sfa.vfs.VfsIssuer
+import io.nekohasekai.sfa.vfs.VfsScopedSource
 import io.nekohasekai.sfa.vfs.VfsScope
 import io.nekohasekai.sfa.vfs.VfsServerTarget
 import io.nekohasekai.sfa.vfs.VfsTrustStore
@@ -560,11 +562,18 @@ class ConductorViewModel(
         )
     }
 
+    private val vfsConnector =
+        OkHttpVfsProviderConnector(
+            sourceFactory = { scopes ->
+                VfsScopedSource(AndroidVirtualDirectorySource(getApplication()), scopes)
+            },
+        )
+
     private val vfsConnectionManager =
         VfsConnectionManager(
             resolveServer = ::resolveVfsServer,
             consent = vfsConsentPort,
-            connector = UnavailableVfsProviderConnector,
+            connector = vfsConnector,
             deviceId = { vfsDeviceIdStore.getOrCreate() },
             resumeTokens = vfsResumeTokenStore,
             trust = vfsTrustStore,

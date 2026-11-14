@@ -30,6 +30,12 @@ sealed interface VfsIncoming {
     data class ServerHello(
         val version: Int,
         val server: String?,
+        val resumeToken: String? = null,
+        val expiresAt: Long? = null,
+    ) : VfsIncoming
+
+    data class Ping(
+        val id: Long,
     ) : VfsIncoming
 
     data class Stat(
@@ -122,12 +128,24 @@ object VfsProtocol {
             if (!message.isNullOrBlank()) put("message", message)
         }
 
+    fun pong(id: Long): String = response("pong", id) {}
+
     fun parseIncoming(raw: String): VfsIncoming? {
         val objectValue = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return null
         return when (objectValue.stringField("type")) {
             "hello" -> {
                 val version = objectValue.intField("version") ?: return null
-                VfsIncoming.ServerHello(version, objectValue.stringField("server"))
+                VfsIncoming.ServerHello(
+                    version = version,
+                    server = objectValue.stringField("server"),
+                    resumeToken = objectValue.stringField("resumeToken"),
+                    expiresAt = objectValue.longField("expiresAt"),
+                )
+            }
+
+            "ping" -> {
+                val id = objectValue.idField() ?: return null
+                VfsIncoming.Ping(id)
             }
 
             "stat" -> {

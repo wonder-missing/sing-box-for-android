@@ -154,6 +154,7 @@ class VfsConnectionManager(
                         linkId = link.linkId,
                         deviceId = deviceId(),
                         resumeToken = resume,
+                        scope = link.scope,
                     ),
                 )
             } catch (error: VfsConnectException) {
@@ -218,6 +219,7 @@ class VfsConnectionManager(
             "VFS_UNAUTHORIZED",
             "VFS_DEVICE_MISMATCH",
             "VFS_DEVICE_REBIND_REQUIRED",
+            "VFS_LINK_INVALID",
             "VFS_LINK_REVOKED",
             "VFS_LINK_EXPIRED" -> {
                 resumeTokens.remove(issuer, linkId)

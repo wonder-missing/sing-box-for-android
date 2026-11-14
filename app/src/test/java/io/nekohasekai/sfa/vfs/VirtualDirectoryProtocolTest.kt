@@ -111,6 +111,28 @@ class VirtualDirectoryProtocolTest {
     }
 
     @Test
+    fun parsesServerHelloResumeAndExpiry() {
+        val message =
+            VfsProtocol.parseIncoming(
+                """{"type":"hello","version":1,"server":"vfsd","resumeToken":"r1","expiresAt":5000}""",
+            )
+
+        assertEquals(VfsIncoming.ServerHello(1, "vfsd", "r1", 5_000L), message)
+    }
+
+    @Test
+    fun parsesPingAndBuildsPong() {
+        assertEquals(
+            VfsIncoming.Ping(7),
+            VfsProtocol.parseIncoming("""{"type":"ping","id":7}"""),
+        )
+
+        val pong = encode(VfsProtocol.pong(7))
+        assertEquals("pong", pong["type"]!!.jsonPrimitive.content)
+        assertEquals(7L, pong["id"]!!.jsonPrimitive.long)
+    }
+
+    @Test
     fun parsesStatListAndRead() {
         assertEquals(
             VfsIncoming.Stat(1, "conductor/a.md"),

@@ -53,7 +53,7 @@ class VfsConnectTool(
                     put("additionalProperties", false)
                 },
             passthroughArguments = true,
-            timeoutMs = 5L * 60L * 1000L,
+            timeoutMs = 5L * 60L * 1000L + 30_000L,
         )
 
     override suspend fun execute(

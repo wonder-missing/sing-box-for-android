@@ -6,6 +6,7 @@ data class VfsProviderConnectRequest(
     val linkId: String,
     val deviceId: String,
     val resumeToken: String?,
+    val scope: Set<VfsScope>,
 )
 
 data class VfsServerHello(

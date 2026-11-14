@@ -15,6 +15,7 @@ class VirtualDirectorySession(
     suspend fun respond(message: VfsIncoming): VfsReply? =
         when (message) {
             is VfsIncoming.ServerHello -> null
+            is VfsIncoming.Ping -> null
             is VfsIncoming.Stat ->
                 replyText(message.id) {
                     VfsProtocol.entry(message.id, source.stat(message.path))
