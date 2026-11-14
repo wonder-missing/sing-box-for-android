@@ -9,7 +9,7 @@
 
 ### 平台能力（计划）
 
-- [ ] **VFS / 只读虚拟目录（新设计）**：设计以 `~/notes/agent-oriented-vfs.md` 为准，Portal 侧契约在 `~/workspace/clawdy-portal/VFS.md`。App 侧 P6 mock 阶段已完成并在 `5ffe6b9`（Test CI `43586726757`）通过：Link 解析、App 级确认框、拒绝冷却、issuerBase 匹配、scope 过滤、deviceId、加密 resume、应用层 ping/pong、`/vfs/provider` OkHttp connector、close code、trust 持久化、Settings > Security 的 VFS 访问页、常驻状态条、前后台自动愈合与 1-60 秒退避。待做 P6e：进程被杀后恢复最后一条 Link（只存 issuer/linkId/scope 公开字段，放 `noBackupFilesDir/vfs`，仅 15 天信任自动愈合，“仅本次”重启后由 Conductor 重新发起）。真数据面已用真 vfsd 容器 + FUSE + Docker + 真 Portal + fake App 跑通（16MiB sha256、只读、`/work` 写入、refs 释放，`scripts/e2e-vfs-vm.mjs`，commit `755bf9f`），只差 vfsd watchdog；watchdog 提交后发真机联调卡。P7 dry-run 清单见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)。旧 Tools > Virtual Directory 入口已删除，旧配置不迁移。
+- [ ] **VFS / 只读虚拟目录（新设计）**：设计以 `~/notes/agent-oriented-vfs.md` 为准，Portal 侧契约在 `~/workspace/clawdy-portal/VFS.md`。App 侧 P6 mock 阶段已完成并在 `5ffe6b9`（Test CI `43586726757`）通过：Link 解析、App 级确认框、拒绝冷却、issuerBase 匹配、scope 过滤、deviceId、加密 resume、应用层 ping/pong、`/vfs/provider` OkHttp connector、close code、trust 持久化、Settings > Security 的 VFS 访问页、常驻状态条、前后台自动愈合与 1-60 秒退避。待做 P6e：进程被杀后恢复最后一条 Link（只存 issuer/linkId/scope 公开字段，放 `noBackupFilesDir/vfs`，仅 15 天信任自动愈合，“仅本次”重启后由 Conductor 重新发起）。真数据面已用真 vfsd 容器 + FUSE + Docker + 真 Portal + fake App 跑通（16MiB sha256、只读、`/work` 写入、refs 释放，`scripts/e2e-vfs-vm.mjs`，commit `755bf9f`）。vfsd watchdog `5fd2c1a` 已完成；生产部署脚本和 `alive` 消费（Portal `e225e32`）未交，等这两项后发真机联调卡。P7 dry-run 清单见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)。旧 Tools > Virtual Directory 入口已删除，旧配置不迁移。
 
 ### 数据面（长期定位：数据搬运 / Taildrop / 通讯）
 
