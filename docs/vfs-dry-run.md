@@ -8,16 +8,14 @@
 
 - App：本分支的 arm64 APK，安装到真机；不要再用旧 Tools > Virtual Directory 配置。
 - Portal：P3b 及以上；vfsd：P4 VM runtime、FUSE、watchdog `5fd2c1a` 已完成；生产部署脚本和 `alive` 消费未交；`scripts/e2e-vfs-vm.mjs` 已通过。`docker_run(vfs=true)` 的 `output_dir` 由 Portal `e239f14` 起返回；`alive` 转发由 Portal `e225e32` 起生效。
-- MCP Server：用 `portal-knock` 或管理页生成 `handler=mcp`、启用 `vfs_link_request` 的 grant；把 `call.mcp` 里的 URL 和 Token 填进 App 的 Settings > Conductor > MCP servers，并打开该 Server。
-  - URL 形如 `https://<host>/knocks/mcp/hk_...`。
-  - Token 是 Bearer secret，不写进任何记录。
+- MCP Server：直接用手机上已有的 WonderSing MCP Server 和 Token，不要新增、修改或重配。Portal 侧已给现有 WonderSing grant 加上 `vfs_link_request`，Token 没变。如果 App 缓存了工具列表，刷新或重连该 MCP Server，不要改凭证；不要使用新的 `vfs-dry-run-app` grant。
 - 记录：App 侧用 `adb logcat` 或 App 里的日志页；Portal 侧用 `~/Library/Logs/clawdy-portal.log`。所有记录先脱敏。
 
 ## 1. 用例
 
 | ID | 操作 | 预期 | 证据 |
 |---|---|---|---|
-| P7-1 | 安装 App，配置并启用标准 `call.mcp` 入口 | MCP Server 显示已连接，`vfs_link_request` 出现在工具列表 | App 设置页、Conductor 的 `/mcp` 或工具列表 |
+| P7-1 | 安装 App，使用现有 WonderSing MCP Server；必要时刷新或重连工具列表 | 现有凭证不改；`vfs_link_request` 出现在该 Server 的工具列表 | App 设置页、Conductor 的 `/mcp` 或工具列表 |
 | P7-2 | 让 Conductor 调 `vfs_link_request`，再调本地 `vfs_connect`；确认框选「仅本次」 | 确认框显示 Server 名、issuer、scope 路径；批准后状态条出现，Portal 记为一次 provider 连接。Link 只含 `type`/`version`/`issuer`/`linkId`/`scope`，不含 token、endpoint 或签名 | 确认框截图或文字记录、Link 字段检查、状态条、Portal 日志时间戳 |
 | P7-3 | 断开后重新走一遍，确认框选「信任 15 天」 | Settings > Security > VFS access 出现该 issuer 和精确 scope；再次连接不再弹框 | Settings 页面、第二次连接无确认框 |
 | P7-4 | 前台连接后按 Home，等 2 秒以上，再回到 App | 后台时状态条消失，Portal 收到 close 4000；回前台约 1.5 秒后自动愈合，状态条恢复，无需重新请求 Link | Portal 日志 close/connect、状态条出现时间 |
