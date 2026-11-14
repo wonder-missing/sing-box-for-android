@@ -18,8 +18,6 @@ enum class VfsScope(
     ;
 
     companion object {
-        val DEFAULT_SCOPE: Set<VfsScope> = setOf(CONDUCTOR, TRACE, SYSTEM_PROMPT)
-
         fun fromWire(value: String): VfsScope? = entries.firstOrNull { it.wire == value }
     }
 }
