@@ -1,6 +1,5 @@
 package io.nekohasekai.sfa.agent.mcp
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -27,7 +26,6 @@ data class McpServerConfig(
     val token: String = "",
     val enabled: Boolean = false,
     /** Optional VFS server base; derived from [url] when blank. */
-    @SerialName("issuerBase")
     val serverBase: String = "",
 ) {
     override fun toString(): String =

@@ -10,13 +10,13 @@ import org.junit.Test
 
 class VfsLinkTest {
     @Test
-    fun parsesV1IssuerAndNormalizesIt() {
+    fun parsesV2Server() {
         val link =
             VfsLinkParser.parse(
                 buildJsonObject {
                     put("type", "vfs-link")
-                    put("version", 1)
-                    put("issuer", "HTTPS://Example.com:443/base/")
+                    put("version", 2)
+                    put("server", "HTTPS://Example.com:443/base/")
                     put("linkId", " link_1 ")
                     put("scope", scopeArray("conductor", "trace"))
                     put("ignored", "ok")
@@ -29,33 +29,16 @@ class VfsLinkTest {
     }
 
     @Test
-    fun parsesV2Server() {
-        val link =
-            VfsLinkParser.parse(
-                buildJsonObject {
-                    put("type", "vfs-link")
-                    put("version", 2)
-                    put("server", "HTTPS://Example.com:443/base/")
-                    put("linkId", "link_2")
-                    put("scope", scopeArray("conductor", "conversation"))
-                },
-            )
-
-        assertEquals("https://example.com/base", link.server)
-        assertEquals(setOf(VfsScope.CONDUCTOR, VfsScope.CONVERSATION), link.scope)
-    }
-
-    @Test
     fun rejectsWrongTypeOrUnsupportedVersion() {
         assertEquals("VFS_LINK_INVALID", failure { parse(link(type = "other")) }.code)
+        assertEquals("VFS_LINK_INVALID", failure { parse(link(version = 1)) }.code)
         assertEquals("VFS_LINK_INVALID", failure { parse(link(version = 3)) }.code)
-        assertEquals("VFS_LINK_INVALID", failure { parse(link(version = 2, server = "")) }.code)
-        assertEquals("VFS_LINK_INVALID", failure { parse(link(version = 1, server = "")) }.code)
+        assertEquals("VFS_LINK_INVALID", failure { parse(link(server = "")) }.code)
     }
 
     @Test
     fun rejectsMissingOrInvalidFields() {
-        assertEquals("VFS_LINK_INVALID", failure { parse(link(version = 1, server = "")) }.code)
+        assertEquals("VFS_LINK_INVALID", failure { parse(link(server = "")) }.code)
         assertEquals("VFS_LINK_INVALID", failure { parse(link(linkId = "")) }.code)
         assertEquals("VFS_LINK_INVALID", failure { parse(link(scope = null)) }.code)
         assertEquals("VFS_LINK_INVALID", failure { parse(link(scope = emptyList())) }.code)
@@ -80,11 +63,7 @@ class VfsLinkTest {
     ) = buildJsonObject {
         put("type", type)
         put("version", version)
-        when (version) {
-            1 -> put("issuer", server)
-            2 -> put("server", server)
-            else -> put("server", server)
-        }
+        put("server", server)
         put("linkId", linkId)
         scope?.let { put("scope", scopeArray(*it.toTypedArray())) }
     }

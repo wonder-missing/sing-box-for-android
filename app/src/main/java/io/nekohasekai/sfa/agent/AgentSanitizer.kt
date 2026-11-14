@@ -43,22 +43,19 @@ internal object AgentSanitizer {
     private val TAILSCALE_IPV6_REGEX =
         Regex("""(?i)\bfd7a:115c:a1e0:[0-9a-f:]+\b""")
     private const val TRAILING_PUNCTUATION = ".,;:)]}\"'"
-    private val VFS_LINK_KEYS = setOf("issuer", "server", "linkId", "scope")
+    private val VFS_LINK_KEYS = setOf("server", "linkId", "scope")
 
     /**
      * A VFS Link is an address, not a credential: the model must be able to
      * pass server/linkId/scope back to vfs_connect unchanged. Tool results
      * nest it under "link" and normally carry type="vfs-link"; a connect
-     * result carries server+scope at the top level without a linkId. Version 1
-     * used "issuer"; both names are preserved during the Link v2 transition.
+     * result carries server+scope at the top level without a linkId.
      */
     private fun isVfsLinkObject(obj: JsonObject): Boolean {
         val type = (obj["type"] as? JsonPrimitive)?.contentOrNull
         if (type == "vfs-link") return true
         val connected = (obj["connected"] as? JsonPrimitive)?.booleanOrNull == true
-        return connected &&
-            (obj.containsKey("issuer") || obj.containsKey("server")) &&
-            obj.containsKey("scope")
+        return connected && obj.containsKey("server") && obj.containsKey("scope")
     }
 
     fun sanitizeText(

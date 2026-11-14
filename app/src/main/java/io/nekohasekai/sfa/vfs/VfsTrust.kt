@@ -1,6 +1,5 @@
 package io.nekohasekai.sfa.vfs
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -88,17 +87,16 @@ class FileVfsTrustPersistence(
 
 @Serializable
 private data class VfsTrustFile(
-    val version: Int = 1,
+    val version: Int = 2,
     val trusts: List<VfsTrustEntry> = emptyList(),
 ) {
     companion object {
-        const val VERSION: Int = 1
+        const val VERSION: Int = 2
     }
 }
 
 @Serializable
 private data class VfsTrustEntry(
-    @SerialName("issuer")
     val server: String,
     val scope: List<String>,
     val lastUsedAt: Long,

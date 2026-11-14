@@ -25,7 +25,6 @@ enum class VfsScope(
 /**
  * A routing handle issued by the MCP server. It carries no secret and no
  * endpoint; the app dials its configured server after matching [server].
- * Version 1 used the field name `issuer`; version 2 uses `server`.
  */
 data class VfsLink(
     val server: String,
@@ -35,7 +34,6 @@ data class VfsLink(
     companion object {
         const val TYPE = "vfs-link"
         const val VERSION = 2
-        val SUPPORTED_VERSIONS = setOf(1, 2)
         const val MAX_LINK_ID_CHARS = 256
     }
 }
@@ -53,18 +51,11 @@ object VfsLinkParser {
         val type = value.stringField("type") ?: invalid("Link is missing type.")
         if (type != VfsLink.TYPE) invalid("Link type is not ${VfsLink.TYPE}.")
         val version = value.intField("version") ?: invalid("Link is missing version.")
-        if (version !in VfsLink.SUPPORTED_VERSIONS) invalid("Link version $version is not supported.")
-
-        val serverRaw =
-            when (version) {
-                1 -> value.stringField("issuer") ?: invalid("Link v1 is missing issuer.")
-                2 -> value.stringField("server") ?: invalid("Link v2 is missing server.")
-                else -> invalid("Link version $version is not supported.")
-            }
+        if (version != VfsLink.VERSION) invalid("Link version $version is not supported.")
         val server =
-            serverRaw
-                .trim()
-                .takeIf { it.isNotEmpty() }
+            value.stringField("server")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
                 ?.let { VfsServerBase.normalize(it) }
                 ?: invalid("Link server is not a valid base URL.")
 

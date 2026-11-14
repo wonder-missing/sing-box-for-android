@@ -55,40 +55,6 @@ class AgentSanitizerTest {
     }
 
     @Test
-    fun vfsLinkKeepsTheIssuerLinkIdAndScope() {
-        val output =
-            buildJsonObject {
-                put(
-                    "link",
-                    buildJsonObject {
-                        put("type", "vfs-link")
-                        put("version", 1)
-                        put("issuer", "https://clawdy-mini.tailf665f5.ts.net")
-                        put("linkId", "l_cbb79c6a9e92830cf0d22f577f059c88")
-                        putJsonArray("scope") { add("conductor") }
-                    },
-                )
-                put("expiresAt", 1_700_000_000_000L)
-            }
-
-        val sanitized = AgentSanitizer.sanitizeElement(output) as JsonObject
-        val link = sanitized["link"] as JsonObject
-
-        assertEquals(
-            "https://clawdy-mini.tailf665f5.ts.net",
-            (link["issuer"] as JsonPrimitive).content,
-        )
-        assertEquals(
-            "l_cbb79c6a9e92830cf0d22f577f059c88",
-            (link["linkId"] as JsonPrimitive).content,
-        )
-        assertEquals(
-            "conductor",
-            ((link["scope"] as JsonArray)[0] as JsonPrimitive).content,
-        )
-    }
-
-    @Test
     fun vfsV2LinkKeepsServerLinkIdAndScope() {
         val output =
             buildJsonObject {
@@ -128,25 +94,10 @@ class AgentSanitizerTest {
     }
 
     @Test
-    fun vfsConnectOutputKeepsTheIssuerWithoutALinkId() {
+    fun aPlainServerAndScopeObjectIsStillRedacted() {
         val output =
             buildJsonObject {
-                put("connected", true)
-                put("issuer", "https://clawdy-mini.tailf665f5.ts.net")
-                putJsonArray("scope") { add("conductor") }
-                putJsonArray("visibleRoots") { add("conductor/**") }
-            }
-
-        val sanitized = AgentSanitizer.sanitizeElement(output).toString()
-
-        assertTrue(sanitized.contains("https://clawdy-mini.tailf665f5.ts.net"))
-    }
-
-    @Test
-    fun aPlainIssuerAndScopeObjectIsStillRedacted() {
-        val output =
-            buildJsonObject {
-                put("issuer", "https://example.com/secret")
+                put("server", "https://example.com/secret")
                 putJsonArray("scope") { add("x") }
             }
 
@@ -161,7 +112,7 @@ class AgentSanitizerTest {
         val output =
             buildJsonObject {
                 put("type", "vfs-link")
-                put("issuer", "https://clawdy-mini.tailf665f5.ts.net")
+                put("server", "https://clawdy-mini.tailf665f5.ts.net")
                 put("linkId", "l_cbb79c6a9e92830cf0d22f577f059c88")
                 putJsonArray("scope") { add("conductor") }
                 put("note", "https://example.com/sub?token=SECRET")
