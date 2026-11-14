@@ -106,7 +106,10 @@ class OkHttpVfsProviderConnector(
                     ) {
                         closeEvent.value = VfsSessionClose(response?.code, t.message)
                         if (!hello.isCompleted) {
-                            hello.completeExceptionally(mapFailure(response, t))
+                            val body = runCatching { response?.body?.string() }.getOrNull()
+                            hello.completeExceptionally(
+                                mapProviderFailure(response?.code, body, t.message),
+                            )
                         }
                     }
                 },
@@ -128,27 +131,6 @@ class OkHttpVfsProviderConnector(
             scope.cancel()
             throw error
         }
-    }
-
-    private fun mapFailure(
-        response: Response?,
-        error: Throwable,
-    ): VfsConnectException {
-        val code =
-            when (response?.code) {
-                401 -> "VFS_UNAUTHORIZED"
-                403 -> "VFS_DEVICE_MISMATCH"
-                404 -> "VFS_LINK_INVALID"
-                409 -> "VFS_ALREADY_CONNECTED"
-                410 -> "VFS_LINK_EXPIRED"
-                429 -> "VFS_CONNECT_FAILED"
-                else -> "VFS_CONNECT_FAILED"
-            }
-        val detail =
-            response?.let { "HTTP ${it.code}" }
-                ?: error.message
-                ?: "Could not connect to the VFS provider."
-        return VfsConnectException(code, detail)
     }
 
     private class OkHttpVfsProviderSession(
@@ -179,4 +161,28 @@ class OkHttpVfsProviderConnector(
                 .pingInterval(0, TimeUnit.MILLISECONDS)
                 .build()
     }
+}
+
+internal fun mapProviderFailure(
+    status: Int?,
+    body: String?,
+    message: String?,
+): VfsConnectException {
+    val rebind = status == 409 && body.orEmpty().contains("rebind", ignoreCase = true)
+    val code =
+        when (status) {
+            401 -> "VFS_UNAUTHORIZED"
+            403 -> "VFS_DEVICE_MISMATCH"
+            404 -> "VFS_LINK_INVALID"
+            409 -> if (rebind) "VFS_DEVICE_REBIND_REQUIRED" else "VFS_ALREADY_CONNECTED"
+            410 -> "VFS_LINK_EXPIRED"
+            429 -> "VFS_CONNECT_FAILED"
+            else -> "VFS_CONNECT_FAILED"
+        }
+    val detail =
+        body?.trim()?.take(200)?.takeIf { it.isNotEmpty() }
+            ?: message
+            ?: status?.let { "HTTP $it" }
+            ?: "Could not connect to the VFS provider."
+    return VfsConnectException(code, detail)
 }
