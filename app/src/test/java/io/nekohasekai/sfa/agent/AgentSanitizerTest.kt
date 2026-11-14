@@ -89,6 +89,21 @@ class AgentSanitizerTest {
     }
 
     @Test
+    fun vfsConnectOutputKeepsTheIssuerWithoutALinkId() {
+        val output =
+            buildJsonObject {
+                put("connected", true)
+                put("issuer", "https://clawdy-mini.tailf665f5.ts.net")
+                putJsonArray("scope") { add("conductor") }
+                putJsonArray("visibleRoots") { add("conductor/**") }
+            }
+
+        val sanitized = AgentSanitizer.sanitizeElement(output).toString()
+
+        assertTrue(sanitized.contains("https://clawdy-mini.tailf665f5.ts.net"))
+    }
+
+    @Test
     fun aVfsLinkStillRedactsOtherUrls() {
         val output =
             buildJsonObject {

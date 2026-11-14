@@ -545,6 +545,7 @@ class AgentRuntimeTest {
         val toolMessages = result.messages.filterIsInstance<AgentMessage.Tool>()
         assertEquals(3, toolMessages.size)
         assertTrue(toolMessages.last().content.contains("search_budget_exceeded"))
+        assertTrue(toolMessages.last().content.contains("\"catalog\""))
         assertTrue(validateTranscriptPairing(result.messages))
     }
 

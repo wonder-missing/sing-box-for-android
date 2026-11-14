@@ -47,13 +47,13 @@ internal object AgentSanitizer {
     /**
      * A VFS Link is an address, not a credential: the model must be able to
      * pass issuer/linkId/scope back to vfs_connect unchanged. Tool results
-     * nest it under "link" and normally carry type="vfs-link"; the field
-     * shape is the fallback for older servers.
+     * nest it under "link" and normally carry type="vfs-link"; a connect
+     * result carries issuer+scope at the top level without a linkId.
      */
     private fun isVfsLinkObject(obj: JsonObject): Boolean {
         val type = (obj["type"] as? JsonPrimitive)?.contentOrNull
         return type == "vfs-link" ||
-            (obj.containsKey("issuer") && obj.containsKey("linkId") && obj.containsKey("scope"))
+            (obj.containsKey("issuer") && obj.containsKey("scope"))
     }
 
     fun sanitizeText(
