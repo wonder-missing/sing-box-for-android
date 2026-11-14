@@ -103,6 +103,7 @@
 
 ## 最近完成
 
+- wonder.64（2026-11-14）：修 `/clear` 后的第一轮被误判为 `Stopped by user.`。`clearConversation()` 先 `runtime.cancel()` 再取消 job，`finish()` 没机会清掉 `cancelRequested`；下一条消息的 `runTurn` 一进来就看到过期的取消标记。现在清理会话后和每次提交前都 `resetCancel()`，并加单测。
 - wonder.59（2026-11-13）：去掉固定 4096 输出 / 64k 输入预算，按 `ModelLimits` 使用 DeepSeek 1M 窗口 / 384K 输出；输入栏显示 `ctx X% · 已用/上限`，usage 行带 `ctx=`；上下文到 80% 时用模型摘要 Compact（保留当前轮，连续失败 3 次回退裁剪，摘要超时 60s）；截断工具调用改用 `OUTPUT_TRUNCATED`，写明上限和「未执行任何工具」。tag `v1.15.0-alpha.13-wonder.59`，commit `895f57c`。
 - wonder.58（2026-11-13）：工具元数据改英文单轨（规则进 `AGENTS.md`，回归语料进 `docs/conductor-eval.md`）；文件工具补 `file_read(offset/limit)`、`file_tail`、`file_grep`、`diagnostics_export(kind=trace, tail=N)`；新增 `request_files` 系统选文件与 `file_read_selected` / `taildrop_send_selected`（临时 URI、不复制、不持久化授权）。tag `v1.15.0-alpha.13-wonder.58`，commit `0aa2271`。
 - wonder.57（2026-11-13）：补 `file_stat` 的中文 alias「文件信息」，让「文件」查询能召回全部文件工具；加回归测试。tag `v1.15.0-alpha.13-wonder.57`，commit `6e4008f`。

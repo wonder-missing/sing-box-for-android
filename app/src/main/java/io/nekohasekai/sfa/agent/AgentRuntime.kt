@@ -71,6 +71,16 @@ class AgentRuntime(
         tools.cancelActive()
     }
 
+    /**
+     * Clears a cancel left behind when the previous turn was abandoned before
+     * [runTurn] could reach [finish] (for example, Clear conversation cancels
+     * the job right after cancelling the runtime).
+     */
+    fun resetCancel() {
+        cancelRequested = false
+        streamingModel?.resetCancel()
+    }
+
     suspend fun runTurn(
         userText: String,
         history: List<AgentMessage>,
