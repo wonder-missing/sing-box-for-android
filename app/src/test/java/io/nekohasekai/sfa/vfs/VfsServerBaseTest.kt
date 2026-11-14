@@ -26,28 +26,65 @@ class VfsServerBaseTest {
     }
 
     @Test
-    fun derivesBaseByRemovingTheGrantPath() {
-        assertEquals(
-            "https://clawdy-mini.tailf665f5.ts.net",
-            VfsServerBase.resolve(null, "https://clawdy-mini.tailf665f5.ts.net/knocks/mcp/hk_abc123"),
+    fun matchesTheConfiguredUrlUnderTheLinkServer() {
+        assertTrue(
+            VfsServerBase.matches(
+                "https://clawdy-mini.tailf665f5.ts.net/",
+                null,
+                "https://clawdy-mini.tailf665f5.ts.net/knocks/mcp/hk_abc123",
+            ),
         )
-        assertEquals(
-            "https://example.com/base",
-            VfsServerBase.resolve(null, "https://example.com/base/knocks/mcp/hk_abc/"),
+        assertTrue(
+            VfsServerBase.matches(
+                "https://example.com/base",
+                null,
+                "https://example.com/base/knocks/mcp/hk_abc/",
+            ),
         )
-        assertEquals(
-            "https://example.com/mcp",
-            VfsServerBase.resolve(null, "https://example.com/mcp"),
+        assertTrue(
+            VfsServerBase.matches(
+                "https://example.com",
+                null,
+                "https://example.com/mcp",
+            ),
+        )
+        assertFalse(
+            VfsServerBase.matches(
+                "https://other.example",
+                null,
+                "https://example.com/knocks/mcp/hk_abc",
+            ),
+        )
+        assertFalse(
+            VfsServerBase.matches(
+                "https://example.com/base",
+                null,
+                "https://example.com/base2/knocks/mcp/hk_abc",
+            ),
         )
     }
 
     @Test
-    fun explicitServerBaseWins() {
-        assertEquals(
-            "https://example.com/base",
-            VfsServerBase.resolve(
-                "https://EXAMPLE.com/base/",
+    fun anExplicitServerBaseMustMatchExactly() {
+        assertTrue(
+            VfsServerBase.matches(
+                "https://example.com/base/",
+                "https://EXAMPLE.com/base",
                 "https://example.com/knocks/mcp/hk_abc",
+            ),
+        )
+        assertFalse(
+            VfsServerBase.matches(
+                "https://example.com/base",
+                "https://example.com/other",
+                "https://example.com/base/knocks/mcp/hk_abc",
+            ),
+        )
+        assertFalse(
+            VfsServerBase.matches(
+                "https://example.com",
+                "https://example.com/base",
+                "https://example.com",
             ),
         )
     }

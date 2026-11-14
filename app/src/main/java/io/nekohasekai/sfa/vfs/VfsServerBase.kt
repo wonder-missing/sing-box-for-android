@@ -5,32 +5,14 @@ import java.util.Locale
 
 /**
  * Canonical server-base matching. A Link server is the MCP server base URL,
- * never the grant path. The app stores an optional serverBase; when it is
- * absent, the base is derived from the configured MCP URL by removing the
- * known grant path.
+ * never the grant path. An explicitly configured serverBase must match exactly;
+ * otherwise the configured MCP URL must sit under the Link server. This keeps
+ * the app from knowing any particular server's grant-path shape.
  */
 object VfsServerBase {
-    // TODO(.72): remove this fallback once portal-knock always supplies serverBase.
-    private val GRANT_PATH = Regex("/knocks/mcp/hk_[A-Za-z0-9]+/?$")
-
     fun normalize(raw: String): String? {
         val uri = parse(raw) ?: return null
         return canonical(uri, uri.rawPath.orEmpty())
-    }
-
-    /**
-     * Prefer an explicitly configured serverBase. Otherwise treat the MCP URL
-     * as a grant URL and strip `/knocks/mcp/{hk_...}` before canonicalizing.
-     */
-    fun resolve(
-        configuredServerBase: String?,
-        mcpUrl: String,
-    ): String? {
-        val explicit = configuredServerBase?.trim().orEmpty()
-        if (explicit.isNotEmpty()) return normalize(explicit)
-        val uri = parse(mcpUrl) ?: return null
-        val basePath = uri.rawPath.orEmpty().replace(GRANT_PATH, "")
-        return canonical(uri, basePath)
     }
 
     fun matches(
@@ -38,9 +20,12 @@ object VfsServerBase {
         configuredServerBase: String?,
         mcpUrl: String,
     ): Boolean {
-        val expected = resolve(configuredServerBase, mcpUrl) ?: return false
         val actual = normalize(linkServer) ?: return false
-        return actual == expected
+        val explicit = configuredServerBase?.trim().orEmpty()
+        if (explicit.isNotEmpty()) return normalize(explicit) == actual
+        val configured = parse(mcpUrl) ?: return false
+        val configuredUrl = canonical(configured, configured.rawPath.orEmpty())
+        return configuredUrl == actual || configuredUrl.startsWith("$actual/")
     }
 
     /** The fixed provider endpoint under the matched server base. */
