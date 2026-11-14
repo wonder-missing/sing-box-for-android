@@ -95,7 +95,6 @@ import io.nekohasekai.sfa.vfs.VfsScopedSource
 import io.nekohasekai.sfa.vfs.VfsScope
 import io.nekohasekai.sfa.vfs.VfsServerTarget
 import io.nekohasekai.sfa.vfs.VfsTrustStore
-import io.nekohasekai.sfa.vfs.isWholeWorkspaceRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
@@ -646,14 +645,7 @@ class ConductorViewModel(
                     taildrop = taildropPort,
                     fileSelection = fileSelectionPort,
                 ).all +
-                listOf(
-                    VfsConnectTool(
-                        vfsConnectionManager,
-                        fullWorkspaceIntent = {
-                            McpRuntimes.get(getApplication()).hasVfsWorkspaceIntent()
-                        },
-                    ),
-                ),
+                listOf(VfsConnectTool(vfsConnectionManager)),
             toolTimeoutMs = agentConfig.toolTimeoutMs,
         )
 
@@ -942,7 +934,6 @@ class ConductorViewModel(
             stopRequested = false
             runtime.resetCancel()
             toolStartedAt.clear()
-            clearVfsWorkspaceIntent()
             ModelProviderSettings.unpin()
             persistSession()
         }
@@ -1157,7 +1148,6 @@ class ConductorViewModel(
         agentJob = null
         stopRequested = false
         runtime.resetCancel()
-        clearVfsWorkspaceIntent()
         autoApproveAgentToolName = null
         pendingAgentConfirmation = null
         pendingTurnEvent = null
@@ -1193,7 +1183,6 @@ class ConductorViewModel(
         synchronized(selectedFilesLock) { selectedFiles.clear() }
         agentJob?.cancel()
         commandClient.disconnect()
-        clearVfsWorkspaceIntent()
         ModelProviderSettings.unpin()
         super.onCleared()
     }
@@ -1202,12 +1191,6 @@ class ConductorViewModel(
         if (!apiKeyProvider.supported) {
             append(ConductorItem.Error("agent", "The Conductor agent requires Android 7.0 or newer."))
             return
-        }
-        val mcpRuntimes = McpRuntimes.get(getApplication())
-        if (isWholeWorkspaceRequest(text)) {
-            mcpRuntimes.requestVfsWorkspaceScope()
-        } else {
-            mcpRuntimes.clearVfsWorkspaceScope()
         }
         stopRequested = false
         runtime.resetCancel()
@@ -1234,7 +1217,6 @@ class ConductorViewModel(
                             )
                         }
                         append(ConductorItem.Notice("conductor", "Stopped by user."))
-                        clearVfsWorkspaceIntent()
                         persistSession()
                     }
                     return@launch
@@ -1289,7 +1271,6 @@ class ConductorViewModel(
                     pendingAgentConfirmation = null
                     stopRequested = false
                     autoApproveAgentToolName = null
-                    clearVfsWorkspaceIntent()
                     ModelProviderSettings.unpin()
                     when (outcome) {
                         is TurnOutcome.Failed ->
@@ -1517,10 +1498,6 @@ class ConductorViewModel(
         updateUi {
             if (turnStatus == null) this else copy(turnStatus = null, turnStatusSince = 0L)
         }
-    }
-
-    private fun clearVfsWorkspaceIntent() {
-        McpRuntimes.get(getApplication()).clearVfsWorkspaceScope()
     }
 
     private fun appendReasoningPlaceholder() {

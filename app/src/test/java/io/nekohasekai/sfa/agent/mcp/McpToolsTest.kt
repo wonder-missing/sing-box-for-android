@@ -1,13 +1,9 @@
 package io.nekohasekai.sfa.agent.mcp
 
 import io.nekohasekai.sfa.agent.ToolCancellation
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
@@ -115,35 +111,6 @@ class McpToolsTest {
         val definition = mcpAgentTools("Demo", "demo", listOf(tool), unusedSession()).single().definition
 
         assertFalse(definition.description.contains("Whole workspace"))
-    }
-
-    @Test
-    fun aWholeWorkspaceTurnExpandsASubsetScope() {
-        val arguments =
-            buildJsonObject {
-                put(
-                    "scope",
-                    buildJsonArray {
-                        add("conductor")
-                    },
-                )
-            }
-
-        val expanded = expandVfsScopeArguments(arguments)
-
-        assertEquals(
-            listOf("conductor", "trace", "system_prompt", "conversation"),
-            (expanded["scope"] as JsonArray).map { it.jsonPrimitive.content },
-        )
-    }
-
-    @Test
-    fun aMissingScopeBecomesFullAndAStringScopeIsLeftAlone() {
-        val expanded = expandVfsScopeArguments(buildJsonObject {})
-        assertEquals(4, (expanded["scope"] as JsonArray).size)
-
-        val raw = buildJsonObject { put("scope", "conductor") }
-        assertEquals(raw, expandVfsScopeArguments(raw))
     }
 
     @Test
