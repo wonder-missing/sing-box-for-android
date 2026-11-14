@@ -19,6 +19,7 @@ import kotlinx.serialization.json.putJsonObject
  */
 class VfsConnectTool(
     private val manager: VfsConnectPort,
+    private val fullWorkspaceIntent: () -> Boolean = { false },
 ) : AgentTool {
     override val definition =
         AgentToolDefinition(
@@ -26,7 +27,8 @@ class VfsConnectTool(
             description =
                 "Connect to a VFS Link returned by vfs_link_request. The app shows its own consent dialog; " +
                     "this call waits for the user's decision and then connects. Use it only with a link " +
-                    "issued by a configured MCP server.",
+                    "issued by a configured MCP server. The result lists visibleRoots; if a path is missing, " +
+                    "request a new Link with the needed scope and never ask the user to name scopes.",
             permission = AgentPermission.READ_FILES,
             parameters = emptyList(),
             confirmationPolicy = ConfirmationPolicy.NEVER,
@@ -67,7 +69,11 @@ class VfsConnectTool(
             )
         return try {
             val link = VfsLinkParser.parse(linkObject)
+            if (fullWorkspaceIntent() && !link.scope.containsAll(VfsScope.entries)) {
+                return incompleteScope(link.scope)
+            }
             val result = manager.connect(link)
+            val missing = VfsScope.entries.filter { it !in result.scope }
             ToolExecution(
                 output =
                     buildJsonObject {
@@ -79,6 +85,25 @@ class VfsConnectTool(
                                 result.scope.map { it.wire }.sorted().forEach { add(it) }
                             },
                         )
+                        put(
+                            "visibleRoots",
+                            buildJsonArray {
+                                result.scope.map { it.path }.sorted().forEach { add(it) }
+                            },
+                        )
+                        if (missing.isNotEmpty()) {
+                            put(
+                                "missingScopes",
+                                buildJsonArray {
+                                    missing.map { it.wire }.sorted().forEach { add(it) }
+                                },
+                            )
+                            put(
+                                "hint",
+                                "If a path is missing, request a new vfs_link_request with the needed scope. " +
+                                    "Never ask the user to name scopes.",
+                            )
+                        }
                         result.expiresAt?.let { put("expiresAt", it) }
                     },
             )
@@ -87,6 +112,29 @@ class VfsConnectTool(
         } catch (error: Exception) {
             failure("VFS_CONNECT_FAILED", error.message ?: "Could not connect to the VFS provider.")
         }
+    }
+
+    private fun incompleteScope(granted: Set<VfsScope>): ToolExecution {
+        val missing = VfsScope.entries.filter { it !in granted }
+        return ToolExecution(
+            output =
+                buildJsonObject {
+                    put("error", "VFS_SCOPE_INCOMPLETE")
+                    put(
+                        "missingScopes",
+                        buildJsonArray {
+                            missing.map { it.wire }.sorted().forEach { add(it) }
+                        },
+                    )
+                    put(
+                        "hint",
+                        "The user asked for the whole workspace. Request a new vfs_link_request with " +
+                            "all scopes, then vfs_connect again. Never ask the user to name scopes.",
+                    )
+                },
+            errorCode = "VFS_SCOPE_INCOMPLETE",
+            errorMessage = "The Link does not cover the whole workspace.",
+        )
     }
 
     private fun failure(

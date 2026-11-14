@@ -21,6 +21,7 @@
 | P7-3 | 断开后重新走一遍，确认框选「信任 15 天」 | Settings > Security > VFS access 出现该 issuer 和精确 scope；再次连接不再弹框 | Settings 页面、第二次连接无确认框 |
 | P7-4 | 前台连接后按 Home，等 2 秒以上，再回到 App | 后台时状态条消失，Portal 收到 close 4000；回前台约 1.5 秒后自动愈合，状态条恢复，无需重新请求 Link | Portal 日志 close/connect、状态条出现时间 |
 | P7-4b | 连接建立后闲置 35 秒（不操作、不切后台），再调 `docker_run(vfs=true)` | 必须仍然成功。Portal 每 30 秒发应用层 ping，App 回 pong，Portal 转发 `alive` 给 vfsd；vfsd 不能把 idle provider 判离线 | Portal 日志 ping/pong/`alive`、vfsd status、`docker_run` 输出 |
+| P7-4c | `docker_run(vfs=true)` 执行期间不要切后台 | 切后台会 close 4000；若正读到一半，FUSE 读返回 EIO，调用回 `VFS_UNAVAILABLE`。回前台自动重连后重试即可；P7 只在 App 前台时跑长时间 `docker_run` | Portal close/connect、FUSE 错误、重连后重试结果 |
 | P7-5 | 让 Conductor 调 `docker_run(vfs=true, ...)`，容器读 `/vfs/conductor` 和 `/vfs/.runtime/trace.md`，写 `/work/out.txt` | 容器能读到文件，`/vfs` 只读（写入失败），`/work` 可写；Portal 返回 `output_dir`（`vfs.workDir`）；`/vfs` 下看不到 `vfs/trust.json`、`resume.json`、`device-id` | 容器 stdout、sha256、`output_dir` 内容、`ls -la /vfs` |
 | P7-6 | 状态条点「断开」 | 连接关闭，状态条消失；trust 保留；不自动重连 | 状态条、Portal close、再次 `vfs_connect` 不弹框（信任仍在） |
 | P7-7 | Settings > Security > VFS access 撤销该 Server | 当前连接立即关闭；trust 消失；下一次 `vfs_link_request` + `vfs_connect` 重新弹确认框 | 撤销前后列表、Portal close 4001、确认框 |
@@ -30,6 +31,8 @@
 | P7-11 | 可选：第二台设备用同一个 MCP Token 连接 | 预期 `VFS_DEVICE_MISMATCH` 或 HTTP 403；第一台连接不被替换；第二台 App 进终态，不自动重试。没有第二台设备就记录未测 | 第二台错误、第一台状态条、Portal 日志 |
 | P7-12 | 可选：Portal 管理页轮换或停用该 knock | 当前 provider WS 断 4401，下一次连接 401；App 清理 Link 和信任，提示重新授权 | Portal 管理页、close 4401、下一次 401、App 状态 |
 | P7-13 | 可选：用 `PORTAL_VFS_LINK_IDLE_MS` 很短的 dev Portal 模拟 15 天过期 | 过期后 `vfs_link_request` 重签，旧 Link 清理；生产 Portal 不动 | dev Portal 配置、Link 前后对比、Portal 日志 |
+
+P7 导出摩擦（2026-11-14 真机）：`diagnostics_export(kind=trace, name=api-trace.json)` 写入的是 Markdown 文本，先改用 `.md` 名称。App 侧待做：按 kind 自动纠正扩展名，或名称与内容不符时提示。
 
 P7-5 的参考命令：
 

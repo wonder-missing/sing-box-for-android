@@ -6,9 +6,11 @@ import io.nekohasekai.sfa.agent.AgentToolDefinition
 import io.nekohasekai.sfa.agent.ConfirmationPolicy
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolExecution
+import io.nekohasekai.sfa.vfs.VfsScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.Locale
@@ -44,7 +46,7 @@ fun mcpAgentTools(
                     aliases = aliases(serverName, serverId, tool.name, localName),
                     core = false,
                     confirmationReason = "This sends the arguments to the MCP server \"$serverName\".",
-                    parametersSchemaOverride = tool.inputSchema,
+                    parametersSchemaOverride = withVfsScopeHint(tool.name, tool.inputSchema),
                     passthroughArguments = true,
                     timeoutMs =
                         if (tool.name == DOCKER_RUN_TOOL) {
@@ -92,8 +94,36 @@ private fun describe(
     serverName: String,
     tool: McpRemoteTool,
 ): String {
-    val text = "$serverName: ${tool.description.ifBlank { tool.name }}"
-    return if (text.length <= 240) text else text.take(239) + "…"
+    val base = "$serverName: ${tool.description.ifBlank { tool.name }}"
+    val text =
+        if (tool.name == VFS_LINK_REQUEST_TOOL) {
+            "$VFS_SCOPE_HINT $base"
+        } else {
+            base
+        }
+    val limit = if (tool.name == VFS_LINK_REQUEST_TOOL) 400 else 240
+    return if (text.length <= limit) text else text.take(limit - 1) + "…"
+}
+
+private val VFS_SCOPE_HINT =
+    "Whole workspace / all files: pass all scopes in one request (" +
+        VfsScope.entries.joinToString(", ") { it.wire } +
+        "). Never ask the user to name scopes."
+
+/**
+ * Puts the scope mapping next to the parameter the model actually fills in.
+ * The remote schema is otherwise passed through unchanged.
+ */
+private fun withVfsScopeHint(
+    name: String,
+    schema: JsonObject,
+): JsonObject {
+    if (name != VFS_LINK_REQUEST_TOOL) return schema
+    val properties = schema["properties"] as? JsonObject ?: return schema
+    val scope = properties["scope"] as? JsonObject ?: return schema
+    val updatedScope = JsonObject(scope + ("description" to JsonPrimitive(VFS_SCOPE_HINT)))
+    val updatedProperties = JsonObject(properties + ("scope" to updatedScope))
+    return JsonObject(schema + ("properties" to updatedProperties))
 }
 
 private class McpBoundTool(

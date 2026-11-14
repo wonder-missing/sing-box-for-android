@@ -28,6 +28,7 @@
 
 ### P2
 
+- [ ] **VFS P7 真机摩擦（2026-11-14）**：`diagnostics_export(kind=trace)` 产出 Markdown 但允许 `.json` 扩展名，按 kind 自动纠正或名称不符时提示；App 退后台 4000 断 provider，读取中会 EIO 并让 `docker_run(vfs=true)` 回 `VFS_UNAVAILABLE`，前台重连后重试成功。P7 期间保持前台，清单见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md) P7-4c。
 - [ ] **服务重启缺口（2026-11-13 12:39）**：CFG 遥测显示 09:11 和 12:39 两次 `service_start`，中间没有 `service_stop`；如果不是手动重启，下轮用 Conductor 的 file tools 读工作目录里的 crash/OOM reports，或对比当时的 `tailscale_status`。排障入口见 [`docs/agent-runtime.md`](docs/agent-runtime.md) 的「服务状态排障」。
 - [ ] **会话编解码移出主线程**：`ConductorSessionStore` 的 JSON encode/decode 和 `AppLog` 同步写文件仍在调用线程；wonder.51 在 submit 时又加了一次 `persistSession()`，长会话可能造成主线程卡顿。先让 `ui_jank` 取证，再把 encode/save 放 IO、load 放后台。
 - [ ] **旧会话 UI 与导出的敏感原文**：wonder.51 只清洗 transcript（模型 egress）；会话 items 和对话导出仍保留旧的 `tailscale_status` 原文，分享导出前需清对话或手动处理。
@@ -103,6 +104,7 @@
 
 ## 最近完成
 
+- wonder.69（2026-11-14）：VFS 意图层。用户在整轮里说「整个工作目录 / whole workspace」时，App 把 `vfs_link_request` 的 `scope` 自动扩成四个；`vfs_connect` 遇到旧的小 Link 直接回 `VFS_SCOPE_INCOMPLETE` 并列出 `missingScopes`，模型必须重新申请，不追问用户。确认框改人类可读标签；`vfs_connect` 结果带 `visibleRoots` / `missingScopes`。工具描述和 schema 都写明「whole workspace → 全部 scope，不要让用户记 scope」。加 `VfsIntentTest`、`VfsConnectToolTest`、`expandVfsScopeArguments` 单测。
 - wonder.68（2026-11-14）：输入栏加 turn 状态行。`isRunning` 时在底部显示当前阶段（Preparing tools / Waiting for the provider / Running <tool> / Waiting for your approval / Provider request failed; retrying / Receiving response）加 spinner 和秒数计时，替代静默的 “Thinking” 等待；turn 结束/停止/清空时清除。状态只在 UI，不写 transcript。
 - wonder.67（2026-11-14）：修 `vfs_link_request` 的 Link 在工具结果里被 URL 脱敏成 `[redacted-url]`，导致 `vfs_connect` 报 `VFS_LINK_INVALID`。`AgentSanitizer.sanitizeElement` 现在识别 `type=vfs-link`（或含 `issuer`/`linkId`/`scope` 的对象），原样保留这三个字段；其它 URL、凭证照旧脱敏。加 `AgentSanitizerTest` 三例：Link 保留、Link 内其它 URL 仍脱敏、普通工具 URL 仍脱敏。
 - wonder.66（2026-11-14）：Stop 不再等重试退避。停止时重试等待按 100ms 检查取消标记；重试中收到取消改成 `Cancelled` 而不是把 provider 异常当失败；3 秒内 turn 还没确认取消就强制结束，把运行中的工具标成 cancelled 并发 “Stopped by user.”，输入栏回到 Send。加单测 `aStopDuringRetryBackoffEndsTheTurnWithoutWaitingForTheDelay`。

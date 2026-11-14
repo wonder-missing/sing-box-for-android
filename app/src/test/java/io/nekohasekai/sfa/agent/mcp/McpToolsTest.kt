@@ -1,9 +1,15 @@
 package io.nekohasekai.sfa.agent.mcp
 
 import io.nekohasekai.sfa.agent.ToolCancellation
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -67,6 +73,77 @@ class McpToolsTest {
             MCP_TOOL_TIMEOUT_MS,
             definitions.first { it.name.endsWith("orb_status") }.timeoutMs,
         )
+    }
+
+    @Test
+    fun vfsLinkRequestCarriesTheWholeWorkspaceScopeHint() {
+        val tool =
+            McpRemoteTool(
+                name = "vfs_link_request",
+                description = "Request a VFS Link.",
+                inputSchema =
+                    buildJsonObject {
+                        put("type", "object")
+                        putJsonObject("properties") {
+                            putJsonObject("scope") { put("type", "array") }
+                        }
+                    },
+                readOnly = false,
+            )
+
+        val definition = mcpAgentTools("Portal", "portal", listOf(tool), unusedSession()).single().definition
+
+        assertTrue(definition.description.contains("Whole workspace"))
+        assertTrue(definition.description.contains("conversation"))
+        val scope =
+            ((definition.parametersSchemaOverride["properties"] as JsonObject)["scope"] as JsonObject)
+        val hint = (scope["description"] as JsonPrimitive).content
+        assertTrue(hint.contains("conductor, trace, system_prompt, conversation"))
+        assertTrue(hint.contains("Never ask the user to name scopes"))
+    }
+
+    @Test
+    fun nonVfsToolsDoNotGetTheScopeHint() {
+        val tool =
+            McpRemoteTool(
+                name = "orb_status",
+                description = "Orb status",
+                inputSchema = buildJsonObject { put("type", "object") },
+                readOnly = true,
+            )
+
+        val definition = mcpAgentTools("Demo", "demo", listOf(tool), unusedSession()).single().definition
+
+        assertFalse(definition.description.contains("Whole workspace"))
+    }
+
+    @Test
+    fun aWholeWorkspaceTurnExpandsASubsetScope() {
+        val arguments =
+            buildJsonObject {
+                put(
+                    "scope",
+                    buildJsonArray {
+                        add("conductor")
+                    },
+                )
+            }
+
+        val expanded = expandVfsScopeArguments(arguments)
+
+        assertEquals(
+            listOf("conductor", "trace", "system_prompt", "conversation"),
+            (expanded["scope"] as JsonArray).map { it.jsonPrimitive.content },
+        )
+    }
+
+    @Test
+    fun aMissingScopeBecomesFullAndAStringScopeIsLeftAlone() {
+        val expanded = expandVfsScopeArguments(buildJsonObject {})
+        assertEquals(4, (expanded["scope"] as JsonArray).size)
+
+        val raw = buildJsonObject { put("scope", "conductor") }
+        assertEquals(raw, expandVfsScopeArguments(raw))
     }
 
     @Test

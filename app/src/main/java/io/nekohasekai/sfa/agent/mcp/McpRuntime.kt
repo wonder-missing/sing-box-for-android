@@ -20,6 +20,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class McpPhase {
     OFF,
@@ -80,6 +81,7 @@ class McpRuntime(
     private val _listed = MutableStateFlow<List<McpListedTool>>(emptyList())
     val listed: StateFlow<List<McpListedTool>> = _listed.asStateFlow()
     private val cancels = CopyOnWriteArrayList<McpCancel>()
+    private val vfsWorkspaceIntent = AtomicBoolean(false)
 
     @Volatile
     private var toolSnapshot: List<AgentTool> = emptyList()
@@ -110,6 +112,16 @@ class McpRuntime(
     fun cancelActive() {
         cancels.forEach { it.cancel() }
     }
+
+    fun requestVfsWorkspaceScope() {
+        vfsWorkspaceIntent.set(true)
+    }
+
+    fun clearVfsWorkspaceScope() {
+        vfsWorkspaceIntent.set(false)
+    }
+
+    fun hasVfsWorkspaceIntent(): Boolean = vfsWorkspaceIntent.get()
 
     suspend fun add(
         name: String,
@@ -271,6 +283,7 @@ class McpRuntime(
                 token = config.token,
                 clientVersion = clientVersion,
                 deviceId = deviceId,
+                vfsWorkspaceIntent = ::hasVfsWorkspaceIntent,
             )
         val cancel = McpCancel()
         cancels.add(cancel)
