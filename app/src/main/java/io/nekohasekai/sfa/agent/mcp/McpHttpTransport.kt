@@ -25,6 +25,7 @@ class McpHttpTransport(
         sessionId: String?,
         cancellation: ToolCancellation?,
         extraHeaders: Map<String, String>,
+        readTimeoutMs: Int?,
     ): McpExchange =
         withContext(Dispatchers.IO) {
             if (cancellation?.isCancelled() == true) throw CancellationException("cancelled")
@@ -33,7 +34,7 @@ class McpHttpTransport(
             try {
                 connection.requestMethod = "POST"
                 connection.connectTimeout = connectTimeoutMs
-                connection.readTimeout = readTimeoutMs
+                connection.readTimeout = readTimeoutMs ?: this@McpHttpTransport.readTimeoutMs
                 connection.instanceFollowRedirects = false
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")

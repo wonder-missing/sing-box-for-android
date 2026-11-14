@@ -127,6 +127,19 @@ class McpClientTest {
         }
 
     @Test
+    fun dockerRunUsesTheLongReadTimeoutOnly() =
+        runBlocking {
+            val transport = ScriptTransport()
+            val session = McpSession(transport, token = "secret-token")
+
+            session.call(DOCKER_RUN_TOOL, buildJsonObject {})
+            assertEquals(MCP_DOCKER_RUN_READ_TIMEOUT_MS, transport.readTimeouts.last())
+
+            session.call("orb_status", buildJsonObject {})
+            assertNull(transport.readTimeouts.last())
+        }
+
+    @Test
     fun nonVfsToolsDoNotSendADeviceHeader() =
         runBlocking {
             val transport = ScriptTransport()
@@ -571,6 +584,7 @@ private class ScriptTransport : McpTransport {
     val bodies = mutableListOf<String>()
     val sessions = mutableListOf<String?>()
     val headers = mutableListOf<Map<String, String>>()
+    val readTimeouts = mutableListOf<Int?>()
     var failInitialize = false
     private var lists = 0
 
@@ -579,10 +593,12 @@ private class ScriptTransport : McpTransport {
         sessionId: String?,
         cancellation: ToolCancellation?,
         extraHeaders: Map<String, String>,
+        readTimeoutMs: Int?,
     ): McpExchange {
         bodies += body
         sessions += sessionId
         headers += extraHeaders
+        readTimeouts += readTimeoutMs
         val parsed = Json.parseToJsonElement(body).jsonObject
         val method = parsed["method"]!!.jsonPrimitive.content
         val id = (parsed["id"] as? JsonPrimitive)?.contentOrNull
