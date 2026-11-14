@@ -183,7 +183,6 @@ class MainActivity :
     private var showBackgroundLocationDialog by mutableStateOf(false)
     private var showLocalNetworkPermissionDialog by mutableStateOf(false)
     private var notificationPermissionRequested = false
-    private var localNetworkPermissionRequested = false
     private var restoreAfterUpdateAttempted = false
     private var showImportProfileDialog by mutableStateOf(false)
     private var pendingImportProfile by mutableStateOf<Triple<String, String, String>?>(null)
@@ -220,9 +219,7 @@ class MainActivity :
         }
 
     private val localNetworkPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            startService()
-        }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     private val prepareLauncher =
         registerForActivityResult(
@@ -249,6 +246,17 @@ class MainActivity :
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
             LauncherShortcuts.publish(this, currentServiceStatus)
+        }
+
+        if (savedInstanceState == null &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
+            !hasPermission(Manifest.permission.ACCESS_LOCAL_NETWORK)
+        ) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_LOCAL_NETWORK)) {
+                showLocalNetworkPermissionDialog = true
+            } else {
+                localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+            }
         }
 
         lifecycleScope.launch {
@@ -368,18 +376,6 @@ class MainActivity :
                     onServiceAlert(Alert.RequestNotificationPermission, null)
                     return@launch
                 }
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
-                !hasPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) &&
-                !localNetworkPermissionRequested
-            ) {
-                localNetworkPermissionRequested = true
-                if (ActivityCompat.shouldShowRequestPermissionRationale(this@MainActivity, Manifest.permission.ACCESS_LOCAL_NETWORK)) {
-                    showLocalNetworkPermissionDialog = true
-                } else {
-                    localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-                }
-                return@launch
             }
             startService0()
         }
@@ -632,10 +628,7 @@ class MainActivity :
             LocalNetworkPermissionDialog(onConfirm = {
                 showLocalNetworkPermissionDialog = false
                 localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-            }, onDismiss = {
-                showLocalNetworkPermissionDialog = false
-                startService()
-            })
+            }, onDismiss = { showLocalNetworkPermissionDialog = false })
         }
 
         // Handle import remote profile dialog
