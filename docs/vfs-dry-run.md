@@ -7,6 +7,7 @@
 ## 0. 前置
 
 - App：本分支的 arm64 APK，安装到真机；不要再用旧 Tools > Virtual Directory 配置。
+- APK 签名：与官方 wonder.62 的 v2/v3 证书一致（subject `O=wonder-missing`/`CN=WonderSing`，SHA-256 `EC:9D:FF:DB:2D:31:FA:4F:3F:70:20:13:47:80:D6:26:34:CF:FF:87:91:3F:C7:17:88:9A:BD:9B:C5:CF:79:37`）；只要手机上是官方 WonderSing，可直接覆盖安装，不需要卸载。
 - Portal：P3b 及以上；vfsd：P4 VM runtime、FUSE、watchdog `5fd2c1a` 已完成；生产部署脚本和 `alive` 消费未交；`scripts/e2e-vfs-vm.mjs` 已通过。`docker_run(vfs=true)` 的 `output_dir` 由 Portal `e239f14` 起返回；`alive` 转发由 Portal `e225e32` 起生效。
 - MCP Server：直接用手机上已有的 WonderSing MCP Server 和 Token，不要新增、修改或重配。Portal 侧已给现有 WonderSing grant 加上 `vfs_link_request`，Token 没变。如果 App 缓存了工具列表，刷新或重连该 MCP Server，不要改凭证；不要使用新的 `vfs-dry-run-app` grant。
 - 记录：App 侧用 `adb logcat` 或 App 里的日志页；Portal 侧用 `~/Library/Logs/clawdy-portal.log`。所有记录先脱敏。
