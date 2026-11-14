@@ -11,7 +11,7 @@ sealed interface VfsConnectionState {
     data object Connecting : VfsConnectionState
 
     data class Connected(
-        val issuer: String,
+        val server: String,
         val scope: Set<VfsScope>,
         val since: Long,
         val serverName: String? = null,
@@ -42,7 +42,7 @@ sealed interface VfsConnectionEvent {
     ) : VfsConnectionEvent
 
     data class Open(
-        val issuer: String,
+        val server: String,
         val scope: Set<VfsScope>,
         val since: Long,
     ) : VfsConnectionEvent
@@ -95,7 +95,7 @@ object VfsConnectionStateMachine {
 
             is VfsConnectionEvent.Open ->
                 if (state == VfsConnectionState.Connecting) {
-                    VfsConnectionState.Connected(event.issuer, event.scope, event.since)
+                    VfsConnectionState.Connected(event.server, event.scope, event.since)
                 } else {
                     state
                 }

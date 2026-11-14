@@ -1,20 +1,20 @@
 package io.nekohasekai.sfa.vfs
 
-/** One denial counter per issuer; process-scoped like the confirmation itself. */
+/** One denial counter per server; process-scoped like the confirmation itself. */
 class VfsCooldownStore(
     private val factory: () -> VfsCooldown = { VfsCooldown() },
 ) {
-    private val byIssuer = mutableMapOf<String, VfsCooldown>()
+    private val byServer = mutableMapOf<String, VfsCooldown>()
     private val lock = Any()
 
-    fun forIssuer(issuer: String): VfsCooldown =
+    fun forServer(server: String): VfsCooldown =
         synchronized(lock) {
-            byIssuer.getOrPut(issuer, factory)
+            byServer.getOrPut(server, factory)
         }
 
-    fun reset(issuer: String) {
+    fun reset(server: String) {
         synchronized(lock) {
-            byIssuer.remove(issuer)
+            byServer.remove(server)
         }
     }
 }

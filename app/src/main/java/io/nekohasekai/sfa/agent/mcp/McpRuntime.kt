@@ -4,7 +4,7 @@ import android.content.Context
 import io.nekohasekai.sfa.agent.AgentTool
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
-import io.nekohasekai.sfa.vfs.VfsIssuer
+import io.nekohasekai.sfa.vfs.VfsServerBase
 import io.nekohasekai.sfa.vfs.VfsPrivateFiles
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -93,15 +93,15 @@ class McpRuntime(
 
     suspend fun listedTools(): List<McpListedTool> = gate.withLock { listLocked() }
 
-    /** Resolve exactly one enabled server whose issuer base matches a Link. */
-    suspend fun resolveServerForVfs(issuer: String): McpServerConfig? =
+    /** Resolve exactly one enabled server whose server base matches a Link. */
+    suspend fun resolveServerForVfs(server: String): McpServerConfig? =
         gate.withLock {
             servers
                 .filter { config ->
                     config.enabled &&
-                        VfsIssuer.matches(
-                            issuer,
-                            config.issuerBase.takeIf { it.isNotBlank() },
+                        VfsServerBase.matches(
+                            server,
+                            config.serverBase.takeIf { it.isNotBlank() },
                             config.url,
                         )
                 }.singleOrNull()

@@ -74,7 +74,7 @@ class VfsConnectTool(
                 output =
                     buildJsonObject {
                         put("connected", true)
-                        put("issuer", result.issuer)
+                        put("server", result.server)
                         put(
                             "scope",
                             buildJsonArray {

@@ -99,12 +99,12 @@ fun VfsAccessScreen(navController: NavController) {
                     ),
                 ) {
                     ListItem(
-                        headlineContent = { Text(trust.issuer) },
+                        headlineContent = { Text(trust.server) },
                         supportingContent = { Text(trustDetail(context, trust)) },
                         trailingContent = {
                             TextButton(
                                 onClick = {
-                                    VfsRuntime.revoke(trust.issuer, trust.scope)
+                                    VfsRuntime.revoke(trust.server, trust.scope)
                                     trusts = store.list()
                                 },
                             ) {

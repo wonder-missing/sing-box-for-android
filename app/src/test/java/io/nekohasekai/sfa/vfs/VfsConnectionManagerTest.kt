@@ -13,8 +13,8 @@ import org.junit.Test
 
 class VfsConnectionManagerTest {
     private var now = 1_000L
-    private val issuer = "https://example.com"
-    private val link = VfsLink(issuer, "link_1", setOf(VfsScope.CONDUCTOR, VfsScope.TRACE))
+    private val server = "https://example.com"
+    private val link = VfsLink(server, "link_1", setOf(VfsScope.CONDUCTOR, VfsScope.TRACE))
     private val target = VfsServerTarget("Portal", "wss://example.com/vfs/provider", "mcp-token")
 
     private class FakeConsent(
@@ -96,7 +96,7 @@ class VfsConnectionManagerTest {
             assertEquals("device-1", connector.requests.single().deviceId)
             assertEquals(link.scope, connector.requests.single().scope)
             assertEquals(5_000L, result.expiresAt)
-            assertEquals("resume-1", resumes.get(issuer, link.linkId))
+            assertEquals("resume-1", resumes.get(server, link.linkId))
             assertTrue(manager.state.value is VfsConnectionState.Connected)
         }
 
@@ -108,7 +108,7 @@ class VfsConnectionManagerTest {
             val manager = manager(connector, resumes = resumes)
 
             manager.connect(link)
-            resumes.remove(issuer, link.linkId)
+            resumes.remove(server, link.linkId)
             val result = manager.connect(link)
 
             assertEquals(1, connector.requests.size)
@@ -145,11 +145,11 @@ class VfsConnectionManagerTest {
             connector.hello = VfsServerHello("vfsd", null, 6_000L)
             manager.connect(link)
 
-            assertEquals("resume-1", resumes.get(issuer, link.linkId))
+            assertEquals("resume-1", resumes.get(server, link.linkId))
         }
 
     @Test
-    fun unknownIssuerIsRejectedBeforeConsent() =
+    fun unknownserverIsRejectedBeforeConsent() =
         runBlocking {
             val connector = FakeConnector()
             val consent = FakeConsent()
@@ -202,7 +202,7 @@ class VfsConnectionManagerTest {
             val trust = VfsTrustStore(now = { now }, inactivityMs = 1_000L)
             trust.grant(
                 VfsTrust(
-                    issuer = issuer,
+                    server = server,
                     scope = link.scope,
                     lastUsedAt = now,
                     expiresAt = now + 1_000L,
@@ -226,16 +226,16 @@ class VfsConnectionManagerTest {
             val manager = manager(connector, resumes = resumes, trust = trust)
 
             manager.connect(link)
-            assertNotNull(resumes.get(issuer, link.linkId))
-            assertNotNull(trust.find(issuer, link.scope))
+            assertNotNull(resumes.get(server, link.linkId))
+            assertNotNull(trust.find(server, link.scope))
 
             manager.disconnect(VfsCloseCodes.BACKGROUND, "test")
             connector.error = VfsConnectException("VFS_UNAUTHORIZED", "token rotated")
             val error = failure { manager.connect(link) }
 
             assertEquals("VFS_UNAUTHORIZED", error.code)
-            assertNull(resumes.get(issuer, link.linkId))
-            assertNull(trust.find(issuer, link.scope))
+            assertNull(resumes.get(server, link.linkId))
+            assertNull(trust.find(server, link.scope))
         }
 
     @Test
@@ -277,8 +277,8 @@ class VfsConnectionManagerTest {
             val manager = manager(connector, resumes = resumes, trust = trust)
 
             manager.connect(link)
-            assertNotNull(resumes.get(issuer, link.linkId))
-            assertNotNull(trust.find(issuer, link.scope))
+            assertNotNull(resumes.get(server, link.linkId))
+            assertNotNull(trust.find(server, link.scope))
 
             connector.sessions.single().closeEvents.value = VfsSessionClose(4401, "token rotated")
             val state =
@@ -287,8 +287,8 @@ class VfsConnectionManagerTest {
                 }
 
             assertEquals("VFS_UNAUTHORIZED", (state as VfsConnectionState.Error).code)
-            assertNull(resumes.get(issuer, link.linkId))
-            assertNull(trust.find(issuer, link.scope))
+            assertNull(resumes.get(server, link.linkId))
+            assertNull(trust.find(server, link.scope))
         }
 
     @Test

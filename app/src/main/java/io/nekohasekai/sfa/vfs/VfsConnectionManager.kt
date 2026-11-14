@@ -21,7 +21,7 @@ data class VfsServerTarget(
 )
 
 data class VfsConnectResult(
-    val issuer: String,
+    val server: String,
     val scope: Set<VfsScope>,
     val expiresAt: Long?,
 )
@@ -36,7 +36,7 @@ interface VfsConnectPort {
  * under one mutex so two vfs_connect calls cannot race.
  */
 class VfsConnectionManager(
-    private val resolveServer: suspend (issuer: String) -> VfsServerTarget?,
+    private val resolveServer: suspend (server: String) -> VfsServerTarget?,
     private val consent: VfsConsentPort,
     private val connector: VfsProviderConnector,
     private val deviceId: () -> String,
@@ -49,7 +49,7 @@ class VfsConnectionManager(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : VfsConnectPort {
     private data class ActiveConnection(
-        val issuer: String,
+        val server: String,
         val linkId: String,
         val scope: Set<VfsScope>,
         val session: VfsProviderSession,
@@ -78,39 +78,39 @@ class VfsConnectionManager(
             )
         }
 
-        val issuer = VfsIssuer.normalize(link.issuer)
-            ?: throw VfsConnectException("VFS_LINK_INVALID", "The Link issuer is not a valid base URL.")
-        val target = resolveServer(issuer)
+        val server = VfsServerBase.normalize(link.server)
+            ?: throw VfsConnectException("VFS_LINK_INVALID", "The Link server is not a valid base URL.")
+        val target = resolveServer(server)
             ?: throw VfsConnectException("VFS_ISSUER_UNKNOWN", "No configured MCP server matches this Link.")
         if (target.token.isBlank()) {
             throw VfsConnectException("VFS_UNAUTHORIZED", "The matched MCP server has no token.")
         }
 
-        val cooldown = cooldowns.forIssuer(issuer)
+        val cooldown = cooldowns.forServer(server)
         val remaining = cooldown.remainingMs()
         if (remaining > 0L) throw cooldownError(remaining)
 
         active?.let { current ->
-            if (current.issuer == issuer && current.scope.containsAll(link.scope)) {
+            if (current.server == server && current.scope.containsAll(link.scope)) {
                 _state.value =
                     VfsConnectionState.Connected(
-                        current.issuer,
+                        current.server,
                         current.scope,
                         current.connectedAt,
                         current.serverName,
                     )
-                return VfsConnectResult(current.issuer, current.scope, current.expiresAt)
+                return VfsConnectResult(current.server, current.scope, current.expiresAt)
             }
         }
 
-        if (trust.find(issuer, link.scope) == null) {
+        if (trust.find(server, link.scope) == null) {
             _state.value = VfsConnectionState.Confirming(link, target.name)
             val decision =
                 try {
                     consent.request(
                         VfsConsentRequest(
                             serverName = target.name,
-                            issuer = issuer,
+                            server = server,
                             scope = link.scope,
                         ),
                     )
@@ -134,7 +134,7 @@ class VfsConnectionManager(
                 VfsConsentDecision.ONCE -> {
                     trust.grant(
                         VfsTrust(
-                            issuer = issuer,
+                            server = server,
                             scope = link.scope,
                             lastUsedAt = now(),
                             expiresAt = 0L,
@@ -146,7 +146,7 @@ class VfsConnectionManager(
                 VfsConsentDecision.TRUST_15_DAYS -> {
                     trust.grant(
                         VfsTrust(
-                            issuer = issuer,
+                            server = server,
                             scope = link.scope,
                             lastUsedAt = now(),
                             expiresAt = trust.expiryFromNow(),
@@ -158,16 +158,16 @@ class VfsConnectionManager(
         }
 
         val previous = active
-        val resume = resumeTokens.get(issuer, link.linkId)
+        val resume = resumeTokens.get(server, link.linkId)
         if (previous != null && previous.linkId == link.linkId && resume.isNullOrBlank()) {
             _state.value =
                 VfsConnectionState.Connected(
-                    previous.issuer,
+                    previous.server,
                     previous.scope,
                     previous.connectedAt,
                     previous.serverName,
                 )
-            return VfsConnectResult(previous.issuer, previous.scope, previous.expiresAt)
+            return VfsConnectResult(previous.server, previous.scope, previous.expiresAt)
         }
 
         _state.value = VfsConnectionState.Connecting
@@ -184,7 +184,7 @@ class VfsConnectionManager(
                     ),
                 )
             } catch (error: VfsConnectException) {
-                clearIfTerminal(error, issuer, link.linkId)
+                clearIfTerminal(error, server, link.linkId)
                 _state.value = VfsConnectionState.Error(error.code, error.message ?: error.code)
                 throw error
             } catch (error: Exception) {
@@ -204,7 +204,7 @@ class VfsConnectionManager(
         val connectedAt = now()
         active =
             ActiveConnection(
-                issuer = issuer,
+                server = server,
                 linkId = link.linkId,
                 scope = link.scope,
                 session = session,
@@ -221,13 +221,13 @@ class VfsConnectionManager(
                 }
             }
         if (!hello.resumeToken.isNullOrBlank()) {
-            resumeTokens.put(issuer, link.linkId, hello.resumeToken)
+            resumeTokens.put(server, link.linkId, hello.resumeToken)
         }
-        trust.touch(issuer, link.scope)
+        trust.touch(server, link.scope)
         cooldown.reset()
         lastLink = link
-        _state.value = VfsConnectionState.Connected(issuer, link.scope, connectedAt, target.name)
-        return VfsConnectResult(issuer, link.scope, hello.expiresAt)
+        _state.value = VfsConnectionState.Connected(server, link.scope, connectedAt, target.name)
+        return VfsConnectResult(server, link.scope, hello.expiresAt)
     }
 
     /**
@@ -238,7 +238,7 @@ class VfsConnectionManager(
     suspend fun reconnectLast() {
         val link = lastLink ?: return
         if (!isForeground()) return
-        if (trust.find(link.issuer, link.scope) == null) return
+        if (trust.find(link.server, link.scope) == null) return
         sleeper(1_500L)
         val backoff = VfsBackoff()
         while (isForeground()) {
@@ -312,8 +312,8 @@ class VfsConnectionManager(
         message: String,
     ) {
         lastLink = null
-        resumeTokens.remove(link.issuer, link.linkId)
-        trust.revoke(link.issuer)
+        resumeTokens.remove(link.server, link.linkId)
+        trust.revoke(link.server)
         _state.value = VfsConnectionState.Error(code, message)
     }
 
@@ -332,15 +332,15 @@ class VfsConnectionManager(
         active = null
         if (code == 4001) {
             lastLink = null
-            resumeTokens.remove(current.issuer, current.linkId)
-            trust.revoke(current.issuer)
+            resumeTokens.remove(current.server, current.linkId)
+            trust.revoke(current.server)
         }
         _state.value = VfsConnectionState.Idle
     }
 
     private fun clearIfTerminal(
         error: VfsConnectException,
-        issuer: String,
+        server: String,
         linkId: String,
     ) {
         when (error.code) {
@@ -351,8 +351,8 @@ class VfsConnectionManager(
             "VFS_LINK_REVOKED",
             "VFS_LINK_EXPIRED" -> {
                 lastLink = null
-                resumeTokens.remove(issuer, linkId)
-                trust.revoke(issuer)
+                resumeTokens.remove(server, linkId)
+                trust.revoke(server)
             }
         }
     }

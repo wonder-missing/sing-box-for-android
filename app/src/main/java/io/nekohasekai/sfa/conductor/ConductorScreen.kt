@@ -808,7 +808,7 @@ private fun VfsConsentDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = stringResource(R.string.vfs_consent_server, request.issuer),
+                    text = stringResource(R.string.vfs_consent_server, request.server),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

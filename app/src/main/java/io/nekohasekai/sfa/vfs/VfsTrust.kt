@@ -1,11 +1,12 @@
 package io.nekohasekai.sfa.vfs
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 
 data class VfsTrust(
-    val issuer: String,
+    val server: String,
     val scope: Set<VfsScope>,
     val lastUsedAt: Long,
     val expiresAt: Long,
@@ -37,11 +38,11 @@ class FileVfsTrustPersistence(
             }.getOrNull() ?: return emptyList()
         if (parsed.version != VfsTrustFile.VERSION) return emptyList()
         return parsed.trusts.mapNotNull { entry ->
-            val issuer = VfsIssuer.normalize(entry.issuer) ?: return@mapNotNull null
+            val server = VfsServerBase.normalize(entry.server) ?: return@mapNotNull null
             val scope = entry.scope.mapNotNull(VfsScope::fromWire).toSet()
             if (scope.isEmpty()) return@mapNotNull null
             VfsTrust(
-                issuer = issuer,
+                server = server,
                 scope = scope,
                 lastUsedAt = entry.lastUsedAt,
                 expiresAt = entry.expiresAt,
@@ -58,7 +59,7 @@ class FileVfsTrustPersistence(
                 .filterNot { it.processScoped }
                 .map { trust ->
                     VfsTrustEntry(
-                        issuer = trust.issuer,
+                        server = trust.server,
                         scope = trust.scope.map { it.wire }.sorted(),
                         lastUsedAt = trust.lastUsedAt,
                         expiresAt = trust.expiresAt,
@@ -97,14 +98,15 @@ private data class VfsTrustFile(
 
 @Serializable
 private data class VfsTrustEntry(
-    val issuer: String,
+    @SerialName("issuer")
+    val server: String,
     val scope: List<String>,
     val lastUsedAt: Long,
     val expiresAt: Long,
 )
 
 /**
- * Trust is keyed by issuer plus the exact scope set that was confirmed. A
+ * Trust is keyed by server plus the exact scope set that was confirmed. A
  * stored trust may cover a subset request; any wider request needs a new
  * confirmation. Process-scoped trust dies with the app process.
  */
@@ -120,9 +122,9 @@ class VfsTrustStore(
         runCatching {
             persistence.load().forEach { trust ->
                 if (trust.processScoped) return@forEach
-                val issuer = VfsIssuer.normalize(trust.issuer) ?: return@forEach
+                val server = VfsServerBase.normalize(trust.server) ?: return@forEach
                 if (trust.scope.isEmpty()) return@forEach
-                val stored = trust.copy(issuer = issuer)
+                val stored = trust.copy(server = server)
                 persistent[key(stored)] = stored
             }
         }
@@ -130,21 +132,21 @@ class VfsTrustStore(
 
     @Synchronized
     fun find(
-        issuer: String,
+        server: String,
         requested: Set<VfsScope>,
     ): VfsTrust? {
         if (requested.isEmpty()) return null
-        val normalized = VfsIssuer.normalize(issuer) ?: return null
+        val normalized = VfsServerBase.normalize(server) ?: return null
         return (process.values + persistent.values).firstOrNull { trust ->
-            trust.issuer == normalized && trust.scope.containsAll(requested) && isActive(trust)
+            trust.server == normalized && trust.scope.containsAll(requested) && isActive(trust)
         }
     }
 
     @Synchronized
     fun grant(trust: VfsTrust) {
         require(trust.scope.isNotEmpty()) { "trust scope must not be empty" }
-        val normalized = VfsIssuer.normalize(trust.issuer) ?: return
-        val stored = trust.copy(issuer = normalized)
+        val normalized = VfsServerBase.normalize(trust.server) ?: return
+        val stored = trust.copy(server = normalized)
         val target = if (stored.processScoped) process else persistent
         target[key(stored)] = stored
         if (!stored.processScoped) savePersistent()
@@ -152,10 +154,10 @@ class VfsTrustStore(
 
     @Synchronized
     fun touch(
-        issuer: String,
+        server: String,
         scope: Set<VfsScope>,
     ) {
-        val trust = find(issuer, scope) ?: return
+        val trust = find(server, scope) ?: return
         val updated = trust.copy(lastUsedAt = now(), expiresAt = expiryFromNow())
         val target = if (updated.processScoped) process else persistent
         target[key(updated)] = updated
@@ -163,23 +165,23 @@ class VfsTrustStore(
     }
 
     @Synchronized
-    fun revoke(issuer: String) {
-        val normalized = VfsIssuer.normalize(issuer) ?: return
-        persistent.keys.filter { persistent[it]?.issuer == normalized }.forEach { persistent.remove(it) }
-        process.keys.filter { process[it]?.issuer == normalized }.forEach { process.remove(it) }
+    fun revoke(server: String) {
+        val normalized = VfsServerBase.normalize(server) ?: return
+        persistent.keys.filter { persistent[it]?.server == normalized }.forEach { persistent.remove(it) }
+        process.keys.filter { process[it]?.server == normalized }.forEach { process.remove(it) }
         savePersistent()
     }
 
     @Synchronized
     fun revoke(
-        issuer: String,
+        server: String,
         scope: Set<VfsScope>,
     ) {
-        val normalized = VfsIssuer.normalize(issuer) ?: return
+        val normalized = VfsServerBase.normalize(server) ?: return
         val exactKey =
             key(
                 VfsTrust(
-                    issuer = normalized,
+                    server = normalized,
                     scope = scope,
                     lastUsedAt = 0L,
                     expiresAt = 0L,
@@ -207,7 +209,7 @@ class VfsTrustStore(
     private fun isActive(trust: VfsTrust): Boolean = trust.processScoped || trust.expiresAt >= now()
 
     private fun key(trust: VfsTrust): String =
-        trust.issuer + "|" + trust.scope.map { it.wire }.sorted().joinToString(",")
+        trust.server + "|" + trust.scope.map { it.wire }.sorted().joinToString(",")
 
     private fun savePersistent() {
         runCatching { persistence.save(persistent.values.toList()) }

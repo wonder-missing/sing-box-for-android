@@ -2,7 +2,7 @@ package io.nekohasekai.sfa.vfs
 
 data class VfsConsentRequest(
     val serverName: String,
-    val issuer: String,
+    val server: String,
     val scope: Set<VfsScope>,
 )
 
