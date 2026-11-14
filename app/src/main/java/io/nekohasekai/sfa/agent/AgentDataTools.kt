@@ -29,7 +29,9 @@ class AgentDataTools(
                     name = "file_list",
                     description =
                         "List files and directories under the app working directory. " +
-                            "Paths are relative to that directory; an empty path lists its root.",
+                            "Paths are relative to that directory; an empty path lists its root. " +
+                            "This is the local app directory, not the VFS /vfs root; use the " +
+                            "vfs_connect result's visibleRoots for what a container can see.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
                         listOf(

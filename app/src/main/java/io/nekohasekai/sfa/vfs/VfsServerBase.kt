@@ -4,11 +4,13 @@ import java.net.URI
 import java.util.Locale
 
 /**
- * Canonical issuer matching. A Link issuer is the server base URL, never the
- * MCP grant path. The app stores an optional issuerBase; when it is absent, the
- * base is derived from the configured MCP URL by removing the known grant path.
+ * Canonical server-base matching. A Link server is the MCP server base URL,
+ * never the grant path. The app stores an optional serverBase; when it is
+ * absent, the base is derived from the configured MCP URL by removing the
+ * known grant path.
  */
-object VfsIssuer {
+object VfsServerBase {
+    // TODO(.72): remove this fallback once portal-knock always supplies serverBase.
     private val GRANT_PATH = Regex("/knocks/mcp/hk_[A-Za-z0-9]+/?$")
 
     fun normalize(raw: String): String? {
@@ -17,14 +19,14 @@ object VfsIssuer {
     }
 
     /**
-     * Prefer an explicitly configured issuerBase. Otherwise treat the MCP URL
+     * Prefer an explicitly configured serverBase. Otherwise treat the MCP URL
      * as a grant URL and strip `/knocks/mcp/{hk_...}` before canonicalizing.
      */
     fun resolve(
-        configuredIssuerBase: String?,
+        configuredServerBase: String?,
         mcpUrl: String,
     ): String? {
-        val explicit = configuredIssuerBase?.trim().orEmpty()
+        val explicit = configuredServerBase?.trim().orEmpty()
         if (explicit.isNotEmpty()) return normalize(explicit)
         val uri = parse(mcpUrl) ?: return null
         val basePath = uri.rawPath.orEmpty().replace(GRANT_PATH, "")
@@ -32,18 +34,18 @@ object VfsIssuer {
     }
 
     fun matches(
-        linkIssuer: String,
-        configuredIssuerBase: String?,
+        linkServer: String,
+        configuredServerBase: String?,
         mcpUrl: String,
     ): Boolean {
-        val expected = resolve(configuredIssuerBase, mcpUrl) ?: return false
-        val actual = normalize(linkIssuer) ?: return false
+        val expected = resolve(configuredServerBase, mcpUrl) ?: return false
+        val actual = normalize(linkServer) ?: return false
         return actual == expected
     }
 
     /** The fixed provider endpoint under the matched server base. */
-    fun providerUrl(issuerBase: String): String? {
-        val base = normalize(issuerBase) ?: return null
+    fun providerUrl(serverBase: String): String? {
+        val base = normalize(serverBase) ?: return null
         val wsBase =
             when {
                 base.startsWith("https://") -> "wss://" + base.removePrefix("https://")

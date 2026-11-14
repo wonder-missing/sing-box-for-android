@@ -74,22 +74,22 @@ object VfsRuntime {
         }
     }
 
-    fun revoke(issuer: String) {
-        trustStoreOrNull()?.revoke(issuer)
-        closeIfActive(issuer)
+    fun revoke(server: String) {
+        trustStoreOrNull()?.revoke(server)
+        closeIfActive(server)
     }
 
     fun revoke(
-        issuer: String,
+        server: String,
         scope: Set<VfsScope>,
     ) {
-        trustStoreOrNull()?.revoke(issuer, scope)
-        closeIfActive(issuer)
+        trustStoreOrNull()?.revoke(server, scope)
+        closeIfActive(server)
     }
 
-    private fun closeIfActive(issuer: String) {
-        val activeIssuer = (_state.value as? VfsConnectionState.Connected)?.issuer
-        if (activeIssuer == issuer) {
+    private fun closeIfActive(server: String) {
+        val activeServer = (_state.value as? VfsConnectionState.Connected)?.server
+        if (activeServer == server) {
             scope.launch { manager?.disconnect(VfsCloseCodes.REVOKED, "revoked") }
         }
     }

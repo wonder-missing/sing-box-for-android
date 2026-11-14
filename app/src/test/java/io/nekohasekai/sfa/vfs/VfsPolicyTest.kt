@@ -56,10 +56,10 @@ class VfsPolicyTest {
     fun trustCoversSubsetsButNotWiderScopes() {
         var now = 1_000L
         val store = VfsTrustStore(now = { now }, inactivityMs = 100L)
-        val issuer = "https://example.com"
+        val server = "https://example.com"
         store.grant(
             VfsTrust(
-                issuer = issuer,
+                server = server,
                 scope = setOf(VfsScope.CONDUCTOR, VfsScope.TRACE),
                 lastUsedAt = now,
                 expiresAt = now + 100L,
@@ -67,23 +67,23 @@ class VfsPolicyTest {
             ),
         )
 
-        assertNotNull(store.find(issuer, setOf(VfsScope.CONDUCTOR)))
-        assertNotNull(store.find(issuer, setOf(VfsScope.CONDUCTOR, VfsScope.TRACE)))
-        assertNull(store.find(issuer, setOf(VfsScope.CONVERSATION)))
-        assertNull(store.find(issuer, setOf(VfsScope.CONDUCTOR, VfsScope.CONVERSATION)))
+        assertNotNull(store.find(server, setOf(VfsScope.CONDUCTOR)))
+        assertNotNull(store.find(server, setOf(VfsScope.CONDUCTOR, VfsScope.TRACE)))
+        assertNull(store.find(server, setOf(VfsScope.CONVERSATION)))
+        assertNull(store.find(server, setOf(VfsScope.CONDUCTOR, VfsScope.CONVERSATION)))
 
         now += 101L
-        assertNull(store.find(issuer, setOf(VfsScope.CONDUCTOR)))
+        assertNull(store.find(server, setOf(VfsScope.CONDUCTOR)))
     }
 
     @Test
     fun processTrustDiesWithoutAffectingPersistentTrust() {
         val now = 1_000L
         val store = VfsTrustStore(now = { now })
-        val issuer = "https://example.com"
+        val server = "https://example.com"
         store.grant(
             VfsTrust(
-                issuer = issuer,
+                server = server,
                 scope = setOf(VfsScope.CONDUCTOR),
                 lastUsedAt = now,
                 expiresAt = now,
@@ -92,7 +92,7 @@ class VfsPolicyTest {
         )
         store.grant(
             VfsTrust(
-                issuer = issuer,
+                server = server,
                 scope = setOf(VfsScope.CONVERSATION),
                 lastUsedAt = now,
                 expiresAt = 0L,
@@ -100,20 +100,20 @@ class VfsPolicyTest {
             ),
         )
 
-        assertNotNull(store.find(issuer, setOf(VfsScope.CONVERSATION)))
+        assertNotNull(store.find(server, setOf(VfsScope.CONVERSATION)))
         store.clearProcessScope()
-        assertNull(store.find(issuer, setOf(VfsScope.CONVERSATION)))
-        assertNotNull(store.find(issuer, setOf(VfsScope.CONDUCTOR)))
+        assertNull(store.find(server, setOf(VfsScope.CONVERSATION)))
+        assertNotNull(store.find(server, setOf(VfsScope.CONDUCTOR)))
     }
 
     @Test
     fun touchingATrustExtendsItsExpiry() {
         var now = 1_000L
         val store = VfsTrustStore(now = { now }, inactivityMs = 100L)
-        val issuer = "https://example.com"
+        val server = "https://example.com"
         store.grant(
             VfsTrust(
-                issuer = issuer,
+                server = server,
                 scope = setOf(VfsScope.CONDUCTOR),
                 lastUsedAt = now,
                 expiresAt = now + 100L,
@@ -122,9 +122,9 @@ class VfsPolicyTest {
         )
 
         now = 1_050L
-        store.touch(issuer, setOf(VfsScope.CONDUCTOR))
+        store.touch(server, setOf(VfsScope.CONDUCTOR))
         now = 1_140L
-        assertNotNull(store.find(issuer, setOf(VfsScope.CONDUCTOR)))
+        assertNotNull(store.find(server, setOf(VfsScope.CONDUCTOR)))
     }
 
     @Test
@@ -141,7 +141,7 @@ class VfsPolicyTest {
         state =
             VfsConnectionStateMachine.reduce(
                 state,
-                VfsConnectionEvent.Open(link.issuer, link.scope, 10L),
+                VfsConnectionEvent.Open(link.server, link.scope, 10L),
             )
         assertTrue(state is VfsConnectionState.Connected)
 

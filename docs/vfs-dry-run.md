@@ -3,6 +3,7 @@
 状态：等 vfsd 生产部署脚本和 `alive` 消费提交，以及 Portal 正式联调卡后执行。本文只是执行清单，不代表已经验收。
 设计以 `~/notes/agent-oriented-vfs.md` 为准，Portal 契约见 `~/workspace/clawdy-portal/VFS.md`。
 已知缺口：P6e「进程被杀后恢复最后一条 Link」未实现，本轮只记录，不计入通过。
+历史基线：wonder.70 全量工作目录案例（Link v1）见 [`vfs-cases/2026-11-15-wonder70-whole-workspace/`](vfs-cases/2026-11-15-wonder70-whole-workspace/)。Link v2 后另建新案例，不直接拿它判 v2。
 
 ## 0. 前置
 

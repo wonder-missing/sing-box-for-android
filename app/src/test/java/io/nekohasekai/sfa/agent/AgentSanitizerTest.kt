@@ -89,6 +89,45 @@ class AgentSanitizerTest {
     }
 
     @Test
+    fun vfsV2LinkKeepsServerLinkIdAndScope() {
+        val output =
+            buildJsonObject {
+                put(
+                    "link",
+                    buildJsonObject {
+                        put("type", "vfs-link")
+                        put("version", 2)
+                        put("server", "https://clawdy-mini.tailf665f5.ts.net")
+                        put("linkId", "l_cbb79c6a9e92830cf0d22f577f059c88")
+                        putJsonArray("scope") { add("conductor") }
+                    },
+                )
+            }
+
+        val sanitized = AgentSanitizer.sanitizeElement(output) as JsonObject
+        val link = sanitized["link"] as JsonObject
+
+        assertEquals(
+            "https://clawdy-mini.tailf665f5.ts.net",
+            (link["server"] as JsonPrimitive).content,
+        )
+    }
+
+    @Test
+    fun vfsConnectV2OutputKeepsServerWithoutALinkId() {
+        val output =
+            buildJsonObject {
+                put("connected", true)
+                put("server", "https://clawdy-mini.tailf665f5.ts.net")
+                putJsonArray("scope") { add("conductor") }
+            }
+
+        val sanitized = AgentSanitizer.sanitizeElement(output).toString()
+
+        assertTrue(sanitized.contains("https://clawdy-mini.tailf665f5.ts.net"))
+    }
+
+    @Test
     fun vfsConnectOutputKeepsTheIssuerWithoutALinkId() {
         val output =
             buildJsonObject {

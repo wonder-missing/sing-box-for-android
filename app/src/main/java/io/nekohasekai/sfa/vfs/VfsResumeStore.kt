@@ -8,18 +8,18 @@ import java.io.File
 
 interface VfsResumeTokenStore {
     fun get(
-        issuer: String,
+        server: String,
         linkId: String,
     ): String?
 
     fun put(
-        issuer: String,
+        server: String,
         linkId: String,
         token: String,
     )
 
     fun remove(
-        issuer: String,
+        server: String,
         linkId: String,
     )
 }
@@ -28,29 +28,29 @@ class InMemoryVfsResumeTokenStore : VfsResumeTokenStore {
     private val tokens = LinkedHashMap<String, String>()
 
     override fun get(
-        issuer: String,
+        server: String,
         linkId: String,
-    ): String? = tokens[key(issuer, linkId)]
+    ): String? = tokens[key(server, linkId)]
 
     override fun put(
-        issuer: String,
+        server: String,
         linkId: String,
         token: String,
     ) {
-        tokens[key(issuer, linkId)] = token
+        tokens[key(server, linkId)] = token
     }
 
     override fun remove(
-        issuer: String,
+        server: String,
         linkId: String,
     ) {
-        tokens.remove(key(issuer, linkId))
+        tokens.remove(key(server, linkId))
     }
 
     private fun key(
-        issuer: String,
+        server: String,
         linkId: String,
-    ): String = "$issuer|$linkId"
+    ): String = "$server|$linkId"
 }
 
 /**
@@ -65,31 +65,31 @@ class FileVfsResumeTokenStore(
 
     @Synchronized
     override fun get(
-        issuer: String,
+        server: String,
         linkId: String,
     ): String? {
-        val blob = load()[key(issuer, linkId)] ?: return null
-        return cipher.decrypt(key(issuer, linkId), blob)
+        val blob = load()[key(server, linkId)] ?: return null
+        return cipher.decrypt(key(server, linkId), blob)
     }
 
     @Synchronized
     override fun put(
-        issuer: String,
+        server: String,
         linkId: String,
         token: String,
     ) {
         val next = load().toMutableMap()
-        next[key(issuer, linkId)] = cipher.encrypt(key(issuer, linkId), token)
+        next[key(server, linkId)] = cipher.encrypt(key(server, linkId), token)
         save(next)
     }
 
     @Synchronized
     override fun remove(
-        issuer: String,
+        server: String,
         linkId: String,
     ) {
         val next = load().toMutableMap()
-        if (next.remove(key(issuer, linkId)) != null) save(next)
+        if (next.remove(key(server, linkId)) != null) save(next)
     }
 
     private fun load(): Map<String, String> {
@@ -128,9 +128,9 @@ class FileVfsResumeTokenStore(
     }
 
     private fun key(
-        issuer: String,
+        server: String,
         linkId: String,
-    ): String = "$issuer|$linkId"
+    ): String = "$server|$linkId"
 }
 
 @Serializable

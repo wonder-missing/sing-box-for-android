@@ -60,10 +60,12 @@ class VfsScopedSourceTest {
     @Test
     fun conversationIsExposedOnlyWhenRequested() =
         runBlocking {
-            val without = VfsScopedSource(source, VfsScope.DEFAULT_SCOPE)
+            val defaultScope =
+                setOf(VfsScope.CONDUCTOR, VfsScope.TRACE, VfsScope.SYSTEM_PROMPT)
+            val without = VfsScopedSource(source, defaultScope)
             assertEquals("not_found", failure { without.stat(".runtime/conversation.md") }.code)
 
-            val with = VfsScopedSource(source, VfsScope.DEFAULT_SCOPE + VfsScope.CONVERSATION)
+            val with = VfsScopedSource(source, defaultScope + VfsScope.CONVERSATION)
             assertEquals(".runtime/conversation.md", with.stat(".runtime/conversation.md").path)
         }
 

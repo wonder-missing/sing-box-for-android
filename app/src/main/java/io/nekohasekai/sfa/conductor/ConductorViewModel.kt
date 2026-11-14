@@ -87,7 +87,7 @@ import io.nekohasekai.sfa.vfs.VfsConsentPort
 import io.nekohasekai.sfa.vfs.VfsConsentRequest
 import io.nekohasekai.sfa.vfs.VfsCooldownStore
 import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
-import io.nekohasekai.sfa.vfs.VfsIssuer
+import io.nekohasekai.sfa.vfs.VfsServerBase
 import io.nekohasekai.sfa.vfs.VfsPrivateFiles
 import io.nekohasekai.sfa.vfs.VfsResumeTokenStore
 import io.nekohasekai.sfa.vfs.VfsRuntime
@@ -135,7 +135,7 @@ data class FileRequestUi(
 data class VfsConsentUi(
     val id: String,
     val serverName: String,
-    val issuer: String,
+    val server: String,
     val scope: List<VfsScope>,
 )
 
@@ -545,7 +545,7 @@ class ConductorViewModel(
                     VfsConsentUi(
                         id = pending.id,
                         serverName = request.serverName,
-                        issuer = request.issuer,
+                        server = request.server,
                         scope = request.scope.sortedBy { it.ordinal },
                     )
                 return try {
@@ -560,9 +560,9 @@ class ConductorViewModel(
             }
         }
 
-    private suspend fun resolveVfsServer(issuer: String): VfsServerTarget? {
-        val config = McpRuntimes.get(getApplication()).resolveServerForVfs(issuer) ?: return null
-        val providerUrl = VfsIssuer.providerUrl(issuer) ?: return null
+    private suspend fun resolveVfsServer(server: String): VfsServerTarget? {
+        val config = McpRuntimes.get(getApplication()).resolveServerForVfs(server) ?: return null
+        val providerUrl = VfsServerBase.providerUrl(server) ?: return null
         return VfsServerTarget(
             name = config.name,
             providerUrl = providerUrl,

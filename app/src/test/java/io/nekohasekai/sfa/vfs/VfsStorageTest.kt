@@ -37,16 +37,16 @@ class VfsStorageTest {
     fun resumeTokensRoundTripThroughTheFileStore() {
         val file = File(temp.root, "resume.json")
         val store = FileVfsResumeTokenStore(file, PlaintextMcpTokenCipher)
-        val issuer = "https://example.com"
+        val server = "https://example.com"
 
-        assertNull(store.get(issuer, "link_1"))
-        store.put(issuer, "link_1", "token-a")
-        assertEquals("token-a", store.get(issuer, "link_1"))
+        assertNull(store.get(server, "link_1"))
+        store.put(server, "link_1", "token-a")
+        assertEquals("token-a", store.get(server, "link_1"))
 
         val reopened = FileVfsResumeTokenStore(file, PlaintextMcpTokenCipher)
-        assertEquals("token-a", reopened.get(issuer, "link_1"))
-        reopened.remove(issuer, "link_1")
-        assertNull(reopened.get(issuer, "link_1"))
+        assertEquals("token-a", reopened.get(server, "link_1"))
+        reopened.remove(server, "link_1")
+        assertNull(reopened.get(server, "link_1"))
     }
 
     @Test
@@ -64,7 +64,7 @@ class VfsStorageTest {
     fun trustPersistsAcrossStoreInstances() {
         val file = VfsPrivateFiles.trustFile(temp.root)
         val now = 1_000L
-        val issuer = "https://example.com"
+        val server = "https://example.com"
         val first =
             VfsTrustStore(
                 now = { now },
@@ -73,7 +73,7 @@ class VfsStorageTest {
             )
         first.grant(
             VfsTrust(
-                issuer = issuer,
+                server = server,
                 scope = setOf(VfsScope.CONDUCTOR),
                 lastUsedAt = now,
                 expiresAt = now + 1_000L,
@@ -88,14 +88,14 @@ class VfsStorageTest {
                 persistence = FileVfsTrustPersistence(file),
             )
 
-        assertNotNull(second.find(issuer, setOf(VfsScope.CONDUCTOR)))
+        assertNotNull(second.find(server, setOf(VfsScope.CONDUCTOR)))
     }
 
     @Test
     fun processTrustIsNotPersisted() {
         val file = VfsPrivateFiles.trustFile(temp.root)
         val now = 1_000L
-        val issuer = "https://example.com"
+        val server = "https://example.com"
         val first =
             VfsTrustStore(
                 now = { now },
@@ -104,7 +104,7 @@ class VfsStorageTest {
             )
         first.grant(
             VfsTrust(
-                issuer = issuer,
+                server = server,
                 scope = setOf(VfsScope.CONVERSATION),
                 lastUsedAt = now,
                 expiresAt = 0L,
@@ -119,14 +119,14 @@ class VfsStorageTest {
                 persistence = FileVfsTrustPersistence(file),
             )
 
-        assertNull(second.find(issuer, setOf(VfsScope.CONVERSATION)))
+        assertNull(second.find(server, setOf(VfsScope.CONVERSATION)))
     }
 
     @Test
     fun revokePersists() {
         val file = VfsPrivateFiles.trustFile(temp.root)
         val now = 1_000L
-        val issuer = "https://example.com"
+        val server = "https://example.com"
         val first =
             VfsTrustStore(
                 now = { now },
@@ -135,14 +135,14 @@ class VfsStorageTest {
             )
         first.grant(
             VfsTrust(
-                issuer = issuer,
+                server = server,
                 scope = setOf(VfsScope.CONDUCTOR),
                 lastUsedAt = now,
                 expiresAt = now + 1_000L,
                 processScoped = false,
             ),
         )
-        first.revoke(issuer)
+        first.revoke(server)
 
         val second =
             VfsTrustStore(
@@ -151,7 +151,7 @@ class VfsStorageTest {
                 persistence = FileVfsTrustPersistence(file),
             )
 
-        assertNull(second.find(issuer, setOf(VfsScope.CONDUCTOR)))
+        assertNull(second.find(server, setOf(VfsScope.CONDUCTOR)))
     }
 
     @Test

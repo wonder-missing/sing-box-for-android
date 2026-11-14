@@ -31,7 +31,7 @@ class VfsConnectToolTest {
                     object : VfsConnectPort {
                         override suspend fun connect(link: VfsLink) =
                             VfsConnectResult(
-                                issuer = link.issuer,
+                                server = link.server,
                                 scope = link.scope,
                                 expiresAt = 5_000L,
                             )
@@ -42,7 +42,7 @@ class VfsConnectToolTest {
 
             assertTrue(execution.ok)
             assertEquals(true, execution.output?.get("connected")?.jsonPrimitive?.booleanOrNull)
-            assertEquals("https://example.com", execution.output?.get("issuer")?.jsonPrimitive?.content)
+            assertEquals("https://example.com", execution.output?.get("server")?.jsonPrimitive?.content)
             assertEquals(5_000L, execution.output?.get("expiresAt")?.jsonPrimitive?.longOrNull)
             assertEquals(
                 listOf(".runtime/trace.md", "conductor/**"),
@@ -95,7 +95,7 @@ class VfsConnectToolTest {
                     object : VfsConnectPort {
                         override suspend fun connect(link: VfsLink): VfsConnectResult {
                             called = true
-                            return VfsConnectResult(link.issuer, link.scope, null)
+                            return VfsConnectResult(link.server, link.scope, null)
                         }
                     },
                 )
@@ -110,8 +110,8 @@ class VfsConnectToolTest {
     private fun validLink() =
         buildJsonObject {
             put("type", "vfs-link")
-            put("version", 1)
-            put("issuer", "https://example.com")
+            put("version", 2)
+            put("server", "https://example.com")
             put("linkId", "link_1")
             put(
                 "scope",
