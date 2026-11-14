@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 
 /**
@@ -52,8 +53,9 @@ internal object AgentSanitizer {
      */
     private fun isVfsLinkObject(obj: JsonObject): Boolean {
         val type = (obj["type"] as? JsonPrimitive)?.contentOrNull
-        return type == "vfs-link" ||
-            (obj.containsKey("issuer") && obj.containsKey("scope"))
+        if (type == "vfs-link") return true
+        val connected = (obj["connected"] as? JsonPrimitive)?.booleanOrNull == true
+        return connected && obj.containsKey("issuer") && obj.containsKey("scope")
     }
 
     fun sanitizeText(

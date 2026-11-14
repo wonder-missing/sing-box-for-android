@@ -15,6 +15,32 @@ class VfsIntentTest {
     }
 
     @Test
+    fun naturalWholeWorkspaceVariantsMatch() {
+        listOf(
+            "把工作目录挂上",
+            "整个 APP 的工作目录",
+            "工作目录全部挂上",
+            "whole working directory",
+            "挂到 Portal 上",
+            "connect the VFS",
+        ).forEach { text ->
+            assertTrue(text, isWholeWorkspaceRequest(text))
+        }
+    }
+
+    @Test
+    fun namedSubsetsStayNarrow() {
+        listOf(
+            "把 trace 挂上",
+            "只挂 conductor",
+            "只要对话",
+            "mount only the system prompt",
+        ).forEach { text ->
+            assertFalse(text, isWholeWorkspaceRequest(text))
+        }
+    }
+
+    @Test
     fun aNamedSubsetStaysNarrow() {
         assertFalse(isWholeWorkspaceRequest("把 Conductor 目录挂到 Portal 上"))
         assertFalse(isWholeWorkspaceRequest("把 API trace 挂到 Portal 上"))

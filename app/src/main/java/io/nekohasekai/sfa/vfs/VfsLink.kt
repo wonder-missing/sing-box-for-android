@@ -9,11 +9,12 @@ import kotlinx.serialization.json.intOrNull
 enum class VfsScope(
     val wire: String,
     val path: String,
+    val label: String,
 ) {
-    CONDUCTOR("conductor", "conductor/**"),
-    TRACE("trace", ".runtime/trace.md"),
-    SYSTEM_PROMPT("system_prompt", ".runtime/system_prompt.md"),
-    CONVERSATION("conversation", ".runtime/conversation.md"),
+    CONDUCTOR("conductor", "conductor/**", "Conductor files"),
+    TRACE("trace", ".runtime/trace.md", "API trace"),
+    SYSTEM_PROMPT("system_prompt", ".runtime/system_prompt.md", "System prompt"),
+    CONVERSATION("conversation", ".runtime/conversation.md", "Full conversation"),
     ;
 
     companion object {

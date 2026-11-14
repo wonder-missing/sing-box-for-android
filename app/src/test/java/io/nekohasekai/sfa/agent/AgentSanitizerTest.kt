@@ -104,6 +104,20 @@ class AgentSanitizerTest {
     }
 
     @Test
+    fun aPlainIssuerAndScopeObjectIsStillRedacted() {
+        val output =
+            buildJsonObject {
+                put("issuer", "https://example.com/secret")
+                putJsonArray("scope") { add("x") }
+            }
+
+        val sanitized = AgentSanitizer.sanitizeElement(output).toString()
+
+        assertTrue(sanitized.contains("[redacted-url]"))
+        assertFalse(sanitized.contains("example.com"))
+    }
+
+    @Test
     fun aVfsLinkStillRedactsOtherUrls() {
         val output =
             buildJsonObject {

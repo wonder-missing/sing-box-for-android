@@ -116,6 +116,7 @@ class VfsConnectTool(
 
     private fun incompleteScope(granted: Set<VfsScope>): ToolExecution {
         val missing = VfsScope.entries.filter { it !in granted }
+        val missingLabels = missing.map { it.label }
         return ToolExecution(
             output =
                 buildJsonObject {
@@ -127,13 +128,21 @@ class VfsConnectTool(
                         },
                     )
                     put(
+                        "missingScopeLabels",
+                        buildJsonArray {
+                            missingLabels.forEach { add(it) }
+                        },
+                    )
+                    put(
                         "hint",
                         "The user asked for the whole workspace. Request a new vfs_link_request with " +
                             "all scopes, then vfs_connect again. Never ask the user to name scopes.",
                     )
                 },
             errorCode = "VFS_SCOPE_INCOMPLETE",
-            errorMessage = "The Link does not cover the whole workspace.",
+            errorMessage =
+                "The Link does not cover the whole workspace. Missing: " +
+                    missingLabels.joinToString(", ") + ".",
         )
     }
 
