@@ -52,32 +52,6 @@ class VfsConnectToolTest {
                 listOf("conversation", "system_prompt"),
                 execution.output?.get("missingScopes")?.jsonArray?.map { it.jsonPrimitive.content },
             )
-            assertTrue(
-                execution.output?.get("hint")?.jsonPrimitive?.content.orEmpty()
-                    .contains("Never ask the user to name scopes"),
-            )
-        }
-
-    @Test
-    fun aWholeWorkspaceTurnRejectsAConductorOnlyLink() =
-        runBlocking {
-            val tool =
-                VfsConnectTool(
-                    object : VfsConnectPort {
-                        override suspend fun connect(link: VfsLink) =
-                            VfsConnectResult(link.issuer, link.scope, null)
-                    },
-                    fullWorkspaceIntent = { true },
-                )
-
-            val execution = tool.execute(args(validLink()), noCancel)
-
-            assertFalse(execution.ok)
-            assertEquals("VFS_SCOPE_INCOMPLETE", execution.errorCode)
-            assertEquals(
-                listOf("conversation", "system_prompt"),
-                execution.output?.get("missingScopes")?.jsonArray?.map { it.jsonPrimitive.content },
-            )
             assertEquals(
                 listOf("Full conversation", "System prompt"),
                 execution.output?.get("missingScopeLabels")?.jsonArray?.map { it.jsonPrimitive.content },

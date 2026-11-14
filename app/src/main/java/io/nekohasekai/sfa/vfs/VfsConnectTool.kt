@@ -19,7 +19,6 @@ import kotlinx.serialization.json.putJsonObject
  */
 class VfsConnectTool(
     private val manager: VfsConnectPort,
-    private val fullWorkspaceIntent: () -> Boolean = { false },
 ) : AgentTool {
     override val definition =
         AgentToolDefinition(
@@ -69,11 +68,8 @@ class VfsConnectTool(
             )
         return try {
             val link = VfsLinkParser.parse(linkObject)
-            if (fullWorkspaceIntent() && !link.scope.containsAll(VfsScope.entries)) {
-                return incompleteScope(link.scope)
-            }
             val result = manager.connect(link)
-            val missing = VfsScope.entries.filter { it !in result.scope }
+            val missing = VfsScope.entries.filter { it !in result.scope }.sortedBy { it.wire }
             ToolExecution(
                 output =
                     buildJsonObject {
@@ -95,7 +91,13 @@ class VfsConnectTool(
                             put(
                                 "missingScopes",
                                 buildJsonArray {
-                                    missing.map { it.wire }.sorted().forEach { add(it) }
+                                    missing.forEach { add(it.wire) }
+                                },
+                            )
+                            put(
+                                "missingScopeLabels",
+                                buildJsonArray {
+                                    missing.forEach { add(it.label) }
                                 },
                             )
                             put(
@@ -112,38 +114,6 @@ class VfsConnectTool(
         } catch (error: Exception) {
             failure("VFS_CONNECT_FAILED", error.message ?: "Could not connect to the VFS provider.")
         }
-    }
-
-    private fun incompleteScope(granted: Set<VfsScope>): ToolExecution {
-        val missing = VfsScope.entries.filter { it !in granted }.sortedBy { it.wire }
-        val missingLabels = missing.map { it.label }
-        return ToolExecution(
-            output =
-                buildJsonObject {
-                    put("error", "VFS_SCOPE_INCOMPLETE")
-                    put(
-                        "missingScopes",
-                        buildJsonArray {
-                            missing.map { it.wire }.sorted().forEach { add(it) }
-                        },
-                    )
-                    put(
-                        "missingScopeLabels",
-                        buildJsonArray {
-                            missingLabels.forEach { add(it) }
-                        },
-                    )
-                    put(
-                        "hint",
-                        "The user asked for the whole workspace. Request a new vfs_link_request with " +
-                            "all scopes, then vfs_connect again. Never ask the user to name scopes.",
-                    )
-                },
-            errorCode = "VFS_SCOPE_INCOMPLETE",
-            errorMessage =
-                "The Link does not cover the whole workspace. Missing: " +
-                    missingLabels.joinToString(", ") + ".",
-        )
     }
 
     private fun failure(
