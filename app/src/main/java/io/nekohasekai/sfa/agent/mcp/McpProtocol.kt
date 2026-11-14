@@ -23,6 +23,8 @@ internal const val MCP_MAX_TOOLS = 64
 internal const val VFS_LINK_REQUEST_TOOL = "vfs_link_request"
 internal const val VFS_LINK_REVOKE_TOOL = "vfs_link_revoke"
 internal const val VFS_DEVICE_HEADER = "X-WonderSing-Device"
+internal const val DOCKER_RUN_TOOL = "docker_run"
+internal const val MCP_DOCKER_RUN_READ_TIMEOUT_MS: Int = 3_700_000
 private const val MCP_MAX_PAGES = 8
 
 class McpException(
@@ -43,6 +45,7 @@ interface McpTransport {
         sessionId: String?,
         cancellation: ToolCancellation?,
         extraHeaders: Map<String, String> = emptyMap(),
+        readTimeoutMs: Int? = null,
     ): McpExchange
 }
 
@@ -274,6 +277,12 @@ class McpSession(
                     cancellation,
                     allowRetry = false,
                     extraHeaders = extraHeaders,
+                    readTimeoutMs =
+                        if (name == DOCKER_RUN_TOOL) {
+                            MCP_DOCKER_RUN_READ_TIMEOUT_MS
+                        } else {
+                            null
+                        },
                 ) as? JsonObject
                     ?: throw McpException("MCP tools/call returned no result.")
             McpMessages.callText(result)
@@ -285,15 +294,23 @@ class McpSession(
         cancellation: ToolCancellation?,
         allowRetry: Boolean = true,
         extraHeaders: Map<String, String> = emptyMap(),
+        readTimeoutMs: Int? = null,
     ): JsonElement? {
         if (!initialized) ensureInitialized(cancellation)
         val id = nextId++
-        val exchange = post(encode(method, params, id), sessionId, cancellation, extraHeaders)
+        val exchange = post(encode(method, params, id), sessionId, cancellation, extraHeaders, readTimeoutMs)
         if (!exchange.sessionId.isNullOrBlank()) sessionId = exchange.sessionId
         if (exchange.status == 404 && allowRetry) {
             initialized = false
             sessionId = null
-            return request(method, params, cancellation, allowRetry = false, extraHeaders = extraHeaders)
+            return request(
+                method,
+                params,
+                cancellation,
+                allowRetry = false,
+                extraHeaders = extraHeaders,
+                readTimeoutMs = readTimeoutMs,
+            )
         }
         return McpMessages.rpcResult(exchange, id, token)
     }
@@ -329,10 +346,11 @@ class McpSession(
         sessionId: String?,
         cancellation: ToolCancellation?,
         extraHeaders: Map<String, String> = emptyMap(),
+        readTimeoutMs: Int? = null,
     ): McpExchange {
         if (cancellation?.isCancelled() == true) throw CancellationException("cancelled")
         return try {
-            transport.exchange(body, sessionId, cancellation, extraHeaders)
+            transport.exchange(body, sessionId, cancellation, extraHeaders, readTimeoutMs)
         } catch (e: CancellationException) {
             throw e
         } catch (e: McpException) {

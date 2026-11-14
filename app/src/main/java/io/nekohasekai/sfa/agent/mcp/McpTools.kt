@@ -21,6 +21,7 @@ private val reservedToolNames = setOf("route_call", "search_tools")
  * user can still Stop the turn, which cancels the active call.
  */
 internal const val MCP_TOOL_TIMEOUT_MS: Long = 10L * 60L * 1000L
+internal const val MCP_DOCKER_RUN_TIMEOUT_MS: Long = 3_700_000L
 
 fun mcpAgentTools(
     serverName: String,
@@ -45,7 +46,12 @@ fun mcpAgentTools(
                     confirmationReason = "This sends the arguments to the MCP server \"$serverName\".",
                     parametersSchemaOverride = tool.inputSchema,
                     passthroughArguments = true,
-                    timeoutMs = MCP_TOOL_TIMEOUT_MS,
+                    timeoutMs =
+                        if (tool.name == DOCKER_RUN_TOOL) {
+                            MCP_DOCKER_RUN_TIMEOUT_MS
+                        } else {
+                            MCP_TOOL_TIMEOUT_MS
+                        },
                 ),
             remoteName = tool.name,
             session = session,

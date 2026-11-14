@@ -19,6 +19,7 @@ class McpToolsTest {
                     sessionId: String?,
                     cancellation: ToolCancellation?,
                     extraHeaders: Map<String, String>,
+                    readTimeoutMs: Int?,
                 ): McpExchange = error("not used")
             },
         )
@@ -35,7 +36,37 @@ class McpToolsTest {
 
         val definition = mcpAgentTools("Demo", "demo", listOf(tool), unusedSession()).single().definition
 
-        assertEquals(MCP_TOOL_TIMEOUT_MS, definition.timeoutMs)
+        assertEquals(MCP_DOCKER_RUN_TIMEOUT_MS, definition.timeoutMs)
+    }
+
+    @Test
+    fun onlyDockerRunGetsTheExtendedBudget() {
+        val docker =
+            McpRemoteTool(
+                name = "docker_run",
+                description = "Run a container",
+                inputSchema = buildJsonObject { put("type", "object") },
+                readOnly = false,
+            )
+        val other =
+            McpRemoteTool(
+                name = "orb_status",
+                description = "Orb status",
+                inputSchema = buildJsonObject { put("type", "object") },
+                readOnly = true,
+            )
+
+        val definitions = mcpAgentTools("Demo", "demo", listOf(docker, other), unusedSession())
+            .map { it.definition }
+
+        assertEquals(
+            MCP_DOCKER_RUN_TIMEOUT_MS,
+            definitions.first { it.name.endsWith("docker_run") }.timeoutMs,
+        )
+        assertEquals(
+            MCP_TOOL_TIMEOUT_MS,
+            definitions.first { it.name.endsWith("orb_status") }.timeoutMs,
+        )
     }
 
     @Test
