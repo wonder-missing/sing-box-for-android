@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import android.net.Uri
 import android.app.Application
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -709,6 +710,8 @@ fun ConductorScreen(
             onSend = { send() },
             onStop = viewModel::stopAgent,
             isRunning = uiState.isRunning,
+            statusText = uiState.turnStatus,
+            statusSince = uiState.turnStatusSince,
             contextPercent = uiState.contextPercent,
             contextUsedTokens = uiState.contextUsedTokens,
             contextLimitTokens = uiState.contextLimitTokens,
@@ -1506,6 +1509,40 @@ private fun formatTokenCount(tokens: Int): String =
     }
 
 @Composable
+private fun TurnStatus(
+    text: String,
+    since: Long,
+    modifier: Modifier = Modifier,
+) {
+    var elapsed by remember { mutableStateOf(0L) }
+    LaunchedEffect(text, since) {
+        elapsed = 0L
+        while (true) {
+            delay(1_000)
+            elapsed = ((SystemClock.uptimeMillis() - since).coerceAtLeast(0L)) / 1_000L
+        }
+    }
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(10.dp),
+            strokeWidth = 1.5.dp,
+        )
+        Text(
+            text = if (elapsed > 0L) "$text · ${elapsed}s" else text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 6.dp, end = 4.dp),
+        )
+    }
+}
+
+@Composable
 private fun ConductorInputBar(
     modifier: Modifier = Modifier,
     height: Dp,
@@ -1517,6 +1554,8 @@ private fun ConductorInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     isRunning: Boolean,
+    statusText: String?,
+    statusSince: Long,
     contextPercent: Int,
     contextUsedTokens: Int,
     contextLimitTokens: Int,
@@ -1623,35 +1662,43 @@ private fun ConductorInputBar(
                     label = stringResource(R.string.conductor_mention),
                     onClick = onAt,
                 )
-                Spacer(modifier = Modifier.weight(1f))
-                if (contextLimitTokens > 0) {
-                    val contextDescription =
-                        stringResource(
-                            R.string.conductor_context_usage_description,
-                            contextPercent,
-                            contextUsedTokens,
-                            contextLimitTokens,
-                        )
-                    Text(
-                        text =
+                if (statusText == null) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (contextLimitTokens > 0) {
+                        val contextDescription =
                             stringResource(
-                                R.string.conductor_context_usage,
+                                R.string.conductor_context_usage_description,
                                 contextPercent,
-                                formatTokenCount(contextUsedTokens),
-                                formatTokenCount(contextLimitTokens),
-                            ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color =
-                            if (contextPercent >= ContextWarningPercent) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        maxLines = 1,
-                        modifier =
-                        Modifier
-                            .padding(end = 4.dp)
-                            .semantics { contentDescription = contextDescription },
+                                contextUsedTokens,
+                                contextLimitTokens,
+                            )
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.conductor_context_usage,
+                                    contextPercent,
+                                    formatTokenCount(contextUsedTokens),
+                                    formatTokenCount(contextLimitTokens),
+                                ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color =
+                                if (contextPercent >= ContextWarningPercent) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            maxLines = 1,
+                            modifier =
+                            Modifier
+                                .padding(end = 4.dp)
+                                .semantics { contentDescription = contextDescription },
+                        )
+                    }
+                } else {
+                    TurnStatus(
+                        text = statusText,
+                        since = statusSince,
+                        modifier = Modifier.weight(1f),
                     )
                 }
                 if (isRunning) {

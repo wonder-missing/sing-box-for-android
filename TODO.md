@@ -103,6 +103,7 @@
 
 ## 最近完成
 
+- wonder.68（2026-11-14）：输入栏加 turn 状态行。`isRunning` 时在底部显示当前阶段（Preparing tools / Waiting for the provider / Running <tool> / Waiting for your approval / Provider request failed; retrying / Receiving response）加 spinner 和秒数计时，替代静默的 “Thinking” 等待；turn 结束/停止/清空时清除。状态只在 UI，不写 transcript。
 - wonder.67（2026-11-14）：修 `vfs_link_request` 的 Link 在工具结果里被 URL 脱敏成 `[redacted-url]`，导致 `vfs_connect` 报 `VFS_LINK_INVALID`。`AgentSanitizer.sanitizeElement` 现在识别 `type=vfs-link`（或含 `issuer`/`linkId`/`scope` 的对象），原样保留这三个字段；其它 URL、凭证照旧脱敏。加 `AgentSanitizerTest` 三例：Link 保留、Link 内其它 URL 仍脱敏、普通工具 URL 仍脱敏。
 - wonder.66（2026-11-14）：Stop 不再等重试退避。停止时重试等待按 100ms 检查取消标记；重试中收到取消改成 `Cancelled` 而不是把 provider 异常当失败；3 秒内 turn 还没确认取消就强制结束，把运行中的工具标成 cancelled 并发 “Stopped by user.”，输入栏回到 Send。加单测 `aStopDuringRetryBackoffEndsTheTurnWithoutWaitingForTheDelay`。
 - wonder.65（2026-11-14）：API trace 导出顶部加 `## System Prompt`（首次保留请求的 system message 全文、appVersion、model、trace 时间；主 prompt 变化标 request N，压缩 helper 的 prompt 不算）；能力自述提示词和 `search_tools` 描述改成「快照不是全集，先搜再答」，roster 标题同步；`docs/conductor-eval.md` 加「你能做什么？」回归，要求 trace 里真的出现空 query 的 `search_tools`；输入栏 `padding` 从 24dp 恢复到 6dp（视觉边距 12dp），Stopped by user 的确认根因是过期取消标记，不是边缘手势。

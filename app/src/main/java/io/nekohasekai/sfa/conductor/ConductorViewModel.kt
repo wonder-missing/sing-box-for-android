@@ -152,6 +152,9 @@ class ConductorViewModel(
         val contextUsedTokens: Int = 0,
         val contextLimitTokens: Int = 0,
         val contextPercent: Int = 0,
+        /** Transient status shown next to the composer while a turn is active. */
+        val turnStatus: String? = null,
+        val turnStatusSince: Long = 0L,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -919,7 +922,14 @@ class ConductorViewModel(
                         item
                     }
                 }
-            updateUi { copy(items = stoppedItems, isRunning = false) }
+            updateUi {
+                copy(
+                    items = stoppedItems,
+                    isRunning = false,
+                    turnStatus = null,
+                    turnStatusSince = 0L,
+                )
+            }
             append(ConductorItem.Notice("conductor", "Stopped by user."))
             stopRequested = false
             runtime.resetCancel()
@@ -1155,6 +1165,8 @@ class ConductorViewModel(
                 contextUsedTokens = 0,
                 contextLimitTokens = 0,
                 contextPercent = 0,
+                turnStatus = null,
+                turnStatusSince = 0L,
             )
         }
         sessionStore.clear()
@@ -1183,14 +1195,27 @@ class ConductorViewModel(
         stopRequested = false
         runtime.resetCancel()
         autoApproveAgentToolName = null
-        updateUi { copy(isRunning = true, canRetryLastTurn = false) }
+        updateUi {
+            copy(
+                isRunning = true,
+                canRetryLastTurn = false,
+                turnStatus = "Preparing tools",
+                turnStatusSince = SystemClock.uptimeMillis(),
+            )
+        }
         val initialEvent = pendingTurnEvent
         agentJob =
             viewModelScope.launch {
                 refreshMcpTools()
                 if (stopRequested) {
                     withContext(Dispatchers.Main) {
-                        updateUi { copy(isRunning = false) }
+                        updateUi {
+                            copy(
+                                isRunning = false,
+                                turnStatus = null,
+                                turnStatusSince = 0L,
+                            )
+                        }
                         append(ConductorItem.Notice("conductor", "Stopped by user."))
                         persistSession()
                     }
@@ -1235,7 +1260,14 @@ class ConductorViewModel(
                     AppLog.info(
                         "conductor turn=${outcome::class.simpleName} messages=${result.messages.size} retry=$canRetry",
                     )
-                    updateUi { copy(isRunning = false, canRetryLastTurn = canRetry) }
+                    updateUi {
+                        copy(
+                            isRunning = false,
+                            canRetryLastTurn = canRetry,
+                            turnStatus = null,
+                            turnStatusSince = 0L,
+                        )
+                    }
                     pendingAgentConfirmation = null
                     stopRequested = false
                     autoApproveAgentToolName = null
@@ -1355,9 +1387,14 @@ class ConductorViewModel(
             is AgentEvent.AssistantMessage -> {
                 finishReasoning()
                 appendAssistantMessage(event.text)
+                clearTurnStatus()
             }
 
-            is AgentEvent.AssistantDelta -> appendAssistantDelta(event.text)
+            is AgentEvent.AssistantDelta -> {
+                appendAssistantDelta(event.text)
+                if (event.text.isNotBlank()) setTurnStatus("Receiving response")
+            }
+
             is AgentEvent.ReasoningDelta -> appendReasoningDelta(event.text)
             is AgentEvent.StreamReset -> {
                 updateUi { copy(items = items.dropStreamingOutput()) }
@@ -1368,6 +1405,7 @@ class ConductorViewModel(
                 toolStartedAt[event.call.id] = SystemClock.uptimeMillis()
                 AppLog.info("conductor tool=${event.call.name} started")
                 append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
+                setTurnStatus("Running ${event.call.name}")
             }
 
             is AgentEvent.ToolFinished -> {
@@ -1398,6 +1436,7 @@ class ConductorViewModel(
                     finishStreamingAssistant()
                     pendingAgentConfirmation = CompletableDeferred()
                     append(ConductorItem.Confirmation(event.request))
+                    setTurnStatus("Waiting for your approval")
                 }
             }
 
@@ -1405,6 +1444,9 @@ class ConductorViewModel(
                 finishReasoning()
                 finishStreamingAssistant()
                 append(ConductorItem.Notice("conductor", event.text))
+                if (event.text.startsWith("The provider request failed; retrying")) {
+                    setTurnStatus("Provider request failed; retrying")
+                }
             }
 
             is AgentEvent.ContextUsage ->
@@ -1417,8 +1459,15 @@ class ConductorViewModel(
                 }
 
             is AgentEvent.StateChanged ->
-                if (event.state is TurnState.CallingModel) {
-                    appendReasoningPlaceholder()
+                when (val state = event.state) {
+                    is TurnState.CallingModel -> {
+                        appendReasoningPlaceholder()
+                        setTurnStatus("Waiting for the provider")
+                    }
+
+                    is TurnState.RunningTool -> setTurnStatus("Running ${state.call.name}")
+                    is TurnState.AwaitingConfirmation -> setTurnStatus("Waiting for your approval")
+                    TurnState.Idle, is TurnState.Cancelling -> Unit
                 }
 
             is AgentEvent.TurnStarted -> Unit
@@ -1426,7 +1475,24 @@ class ConductorViewModel(
                 finishReasoning()
                 finishStreamingAssistant()
                 toolStartedAt.clear()
+                clearTurnStatus()
             }
+        }
+    }
+
+    private fun setTurnStatus(text: String) {
+        updateUi {
+            if (turnStatus == text && turnStatusSince != 0L) {
+                this
+            } else {
+                copy(turnStatus = text, turnStatusSince = SystemClock.uptimeMillis())
+            }
+        }
+    }
+
+    private fun clearTurnStatus() {
+        updateUi {
+            if (turnStatus == null) this else copy(turnStatus = null, turnStatusSince = 0L)
         }
     }
 
