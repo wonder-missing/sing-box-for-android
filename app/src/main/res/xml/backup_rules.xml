@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
 
-    <exclude
-        domain="file"
-        path="vfs" />
+    <!-- Whitelist only: vfs is under noBackupFilesDir and intentionally absent. -->
 
     <include
         domain="database"
