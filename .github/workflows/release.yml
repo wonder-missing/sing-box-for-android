@@ -10,6 +10,10 @@ on:
         description: Only verify the signing secrets
         type: boolean
         default: false
+      publish:
+        description: Publish a prerelease (leave off for a test APK)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -372,6 +376,7 @@ jobs:
     needs:
       - version
       - apk
+    if: github.event_name != 'workflow_dispatch' || inputs.publish == true
     permissions:
       contents: write
     steps:
