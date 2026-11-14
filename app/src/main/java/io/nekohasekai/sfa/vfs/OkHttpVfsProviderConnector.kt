@@ -48,18 +48,16 @@ class OkHttpVfsProviderConnector(
                 },
             )
 
-        val httpRequest =
+        val requestBuilder =
             Request.Builder()
                 .url(request.url)
                 .header("Authorization", "Bearer ${request.token}")
                 .header("X-WonderSing-Link", request.linkId)
                 .header("X-WonderSing-Device", request.deviceId)
-                .apply {
-                    request.resumeToken?.takeIf { it.isNotBlank() }?.let {
-                        header("X-WonderSing-Resume", it)
-                    }
-                }
-                .build()
+        request.resumeToken?.takeIf { it.isNotBlank() }?.let {
+            requestBuilder.header("X-WonderSing-Resume", it)
+        }
+        val httpRequest = requestBuilder.build()
 
         val webSocket =
             client.newWebSocket(

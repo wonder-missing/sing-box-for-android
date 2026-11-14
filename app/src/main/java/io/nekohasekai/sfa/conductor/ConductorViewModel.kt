@@ -565,7 +565,7 @@ class ConductorViewModel(
     private val vfsConnector =
         OkHttpVfsProviderConnector(
             sourceFactory = { scopes ->
-                VfsScopedSource(AndroidVirtualDirectorySource(getApplication()), scopes)
+                VfsScopedSource(AndroidVirtualDirectorySource(getApplication<Application>()), scopes)
             },
         )
 
