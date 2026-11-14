@@ -115,7 +115,7 @@ class VfsConnectTool(
     }
 
     private fun incompleteScope(granted: Set<VfsScope>): ToolExecution {
-        val missing = VfsScope.entries.filter { it !in granted }
+        val missing = VfsScope.entries.filter { it !in granted }.sortedBy { it.wire }
         val missingLabels = missing.map { it.label }
         return ToolExecution(
             output =
