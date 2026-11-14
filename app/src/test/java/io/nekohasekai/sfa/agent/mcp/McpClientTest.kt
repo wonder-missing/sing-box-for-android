@@ -189,7 +189,8 @@ class McpClientTest {
         val withMcp = AgentToolCatalog(listOf(builtin, passthroughTool { }.definition)).promptSection()
         assertEquals(without, withMcp)
         assertFalse(withMcp.contains("mcp_demo_echo"))
-        assertFalse(withMcp.contains("MCP"))
+        // A static "not exhaustive" note is allowed; tool names still are not.
+        assertTrue(withMcp.contains("not exhaustive"))
         assertTrue(withMcp.contains("network_snapshot()"))
     }
 
