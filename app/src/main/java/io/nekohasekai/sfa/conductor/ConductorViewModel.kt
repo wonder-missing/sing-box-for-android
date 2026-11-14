@@ -502,11 +502,11 @@ class ConductorViewModel(
 
     private val vfsDeviceIdStore =
         VfsDeviceIdStore(
-            VfsPrivateFiles.deviceIdFile(getApplication<Application>().filesDir),
+            VfsPrivateFiles.deviceIdFile(getApplication<Application>().noBackupFilesDir),
         )
     private val vfsResumeTokenStore =
         FileVfsResumeTokenStore(
-            VfsPrivateFiles.resumeFile(getApplication<Application>().filesDir),
+            VfsPrivateFiles.resumeFile(getApplication<Application>().noBackupFilesDir),
             McpTokenCipherFactory.create(),
         )
     private val vfsTrustStore = VfsRuntime.trustStore(getApplication())

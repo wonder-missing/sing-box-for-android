@@ -415,7 +415,7 @@ object McpRuntimes {
             val file = File(context.applicationContext.filesDir, "conductor/mcp-servers.json")
             val deviceIdStore =
                 VfsDeviceIdStore(
-                    VfsPrivateFiles.deviceIdFile(context.applicationContext.filesDir),
+                    VfsPrivateFiles.deviceIdFile(context.applicationContext.noBackupFilesDir),
                 )
             return McpRuntime(
                 repository = FileMcpServerRepository(file, McpTokenCipherFactory.create()),

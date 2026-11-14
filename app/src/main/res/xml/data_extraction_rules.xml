@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
+        <exclude
+            domain="file"
+            path="vfs" />
         <include
             domain="database"
             path="profiles.db" />
@@ -12,6 +15,9 @@
             path="configs" />
     </cloud-backup>
     <device-transfer>
+        <exclude
+            domain="file"
+            path="vfs" />
         <include
             domain="database"
             path="profiles.db" />

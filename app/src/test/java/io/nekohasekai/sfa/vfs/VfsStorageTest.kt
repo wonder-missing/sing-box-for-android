@@ -170,6 +170,22 @@ class VfsStorageTest {
     }
 
     @Test
+    fun privateFilesLiveUnderTheVfsDirectory() {
+        assertEquals(
+            "vfs/trust.json",
+            VfsPrivateFiles.trustFile(temp.root).relativeTo(temp.root).invariantSeparatorsPath,
+        )
+        assertEquals(
+            "vfs/resume.json",
+            VfsPrivateFiles.resumeFile(temp.root).relativeTo(temp.root).invariantSeparatorsPath,
+        )
+        assertEquals(
+            "vfs/device-id",
+            VfsPrivateFiles.deviceIdFile(temp.root).relativeTo(temp.root).invariantSeparatorsPath,
+        )
+    }
+
+    @Test
     fun privateFilesAreOutsideEveryVfsScope() {
         val files =
             listOf(
