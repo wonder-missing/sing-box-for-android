@@ -1,10 +1,13 @@
 package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -199,6 +202,38 @@ class AgentRuntimeTest {
                 .contains("cancelled"),
         )
         assertEquals(TurnEvent("turn_interrupted", "user_stop"), result.pendingEvent)
+    }
+
+    @Test
+    fun aStopDuringRetryBackoffEndsTheTurnWithoutWaitingForTheDelay() {
+        val model =
+            object : AgentModelClient {
+                override suspend fun complete(
+                    request: AgentModelRequest,
+                    apiKey: String,
+                ): AgentModelResponse =
+                    throw AgentModelException(
+                        AgentTurnErrorCode.NETWORK_TIMEOUT,
+                        "timeout",
+                        retryable = true,
+                        retryAfterMs = 60_000,
+                    )
+            }
+        val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+        val runtime = runtime(model, executor, key = "sk-test")
+
+        val result =
+            runBlocking {
+                val turn =
+                    async(Dispatchers.Default) {
+                        runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true })
+                    }
+                delay(200)
+                runtime.cancel()
+                withTimeout(2_000) { turn.await() }
+            }
+
+        assertTrue(result.outcome is TurnOutcome.Cancelled)
     }
 
     @Test

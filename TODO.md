@@ -103,6 +103,8 @@
 
 ## 最近完成
 
+- wonder.66（2026-11-14）：Stop 不再等重试退避。停止时重试等待按 100ms 检查取消标记；重试中收到取消改成 `Cancelled` 而不是把 provider 异常当失败；3 秒内 turn 还没确认取消就强制结束，把运行中的工具标成 cancelled 并发 “Stopped by user.”，输入栏回到 Send。加单测 `aStopDuringRetryBackoffEndsTheTurnWithoutWaitingForTheDelay`。
+- wonder.65（2026-11-14）：API trace 导出顶部加 `## System Prompt`（首次保留请求的 system message 全文、appVersion、model、trace 时间；主 prompt 变化标 request N，压缩 helper 的 prompt 不算）；能力自述提示词和 `search_tools` 描述改成「快照不是全集，先搜再答」，roster 标题同步；`docs/conductor-eval.md` 加「你能做什么？」回归，要求 trace 里真的出现空 query 的 `search_tools`；输入栏 `padding` 从 24dp 恢复到 6dp（视觉边距 12dp），Stopped by user 的确认根因是过期取消标记，不是边缘手势。
 - wonder.64（2026-11-14）：修 `/clear` 后的第一轮被误判为 `Stopped by user.`。`clearConversation()` 先 `runtime.cancel()` 再取消 job，`finish()` 没机会清掉 `cancelRequested`；下一条消息的 `runTurn` 一进来就看到过期的取消标记。现在清理会话后和每次提交前都 `resetCancel()`，并加单测。
 - wonder.59（2026-11-13）：去掉固定 4096 输出 / 64k 输入预算，按 `ModelLimits` 使用 DeepSeek 1M 窗口 / 384K 输出；输入栏显示 `ctx X% · 已用/上限`，usage 行带 `ctx=`；上下文到 80% 时用模型摘要 Compact（保留当前轮，连续失败 3 次回退裁剪，摘要超时 60s）；截断工具调用改用 `OUTPUT_TRUNCATED`，写明上限和「未执行任何工具」。tag `v1.15.0-alpha.13-wonder.59`，commit `895f57c`。
 - wonder.58（2026-11-13）：工具元数据改英文单轨（规则进 `AGENTS.md`，回归语料进 `docs/conductor-eval.md`）；文件工具补 `file_read(offset/limit)`、`file_tail`、`file_grep`、`diagnostics_export(kind=trace, tail=N)`；新增 `request_files` 系统选文件与 `file_read_selected` / `taildrop_send_selected`（临时 URI、不复制、不持久化授权）。tag `v1.15.0-alpha.13-wonder.58`，commit `0aa2271`。
