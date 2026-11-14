@@ -104,7 +104,7 @@
 
 ## 最近完成
 
-- wonder.69（2026-11-14）：VFS 意图层。用户在整轮里说「整个工作目录 / whole workspace」时，App 把 `vfs_link_request` 的 `scope` 自动扩成四个；`vfs_connect` 遇到旧的小 Link 直接回 `VFS_SCOPE_INCOMPLETE` 并列出 `missingScopes`，模型必须重新申请，不追问用户。确认框改人类可读标签；`vfs_connect` 结果带 `visibleRoots` / `missingScopes`。工具描述和 schema 都写明「whole workspace → 全部 scope，不要让用户记 scope」。加 `VfsIntentTest`、`VfsConnectToolTest`、`expandVfsScopeArguments` 单测。
+- wonder.69（2026-11-14）：VFS 意图层。用户在整轮里说「整个工作目录 / whole workspace」时，App 把 `vfs_link_request` 的 `scope` 自动扩成四个；`vfs_connect` 遇到旧的小 Link 直接回 `VFS_SCOPE_INCOMPLETE` 并列出 `missingScopes`，模型必须重新申请，不追问用户。确认框改人类可读标签；`vfs_connect` 结果带 `visibleRoots` / `missingScopes`，其 `issuer` 不再被 URL 脱敏。工具描述和 schema 都写明「whole workspace → 全部 scope，不要让用户记 scope」。`search_tools` 首次超预算时改回完整 catalog，避免模型卡在搜索上限。加 `VfsIntentTest`、`VfsConnectToolTest`、`expandVfsScopeArguments`、sanitizer 单测。
 - wonder.68（2026-11-14）：输入栏加 turn 状态行。`isRunning` 时在底部显示当前阶段（Preparing tools / Waiting for the provider / Running <tool> / Waiting for your approval / Provider request failed; retrying / Receiving response）加 spinner 和秒数计时，替代静默的 “Thinking” 等待；turn 结束/停止/清空时清除。状态只在 UI，不写 transcript。
 - wonder.67（2026-11-14）：修 `vfs_link_request` 的 Link 在工具结果里被 URL 脱敏成 `[redacted-url]`，导致 `vfs_connect` 报 `VFS_LINK_INVALID`。`AgentSanitizer.sanitizeElement` 现在识别 `type=vfs-link`（或含 `issuer`/`linkId`/`scope` 的对象），原样保留这三个字段；其它 URL、凭证照旧脱敏。加 `AgentSanitizerTest` 三例：Link 保留、Link 内其它 URL 仍脱敏、普通工具 URL 仍脱敏。
 - wonder.66（2026-11-14）：Stop 不再等重试退避。停止时重试等待按 100ms 检查取消标记；重试中收到取消改成 `Cancelled` 而不是把 provider 异常当失败；3 秒内 turn 还没确认取消就强制结束，把运行中的工具标成 cancelled 并发 “Stopped by user.”，输入栏回到 Send。加单测 `aStopDuringRetryBackoffEndsTheTurnWithoutWaitingForTheDelay`。

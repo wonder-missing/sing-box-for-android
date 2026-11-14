@@ -460,12 +460,32 @@ class AgentRuntime(
                     onEvent(AgentEvent.StateChanged(TurnState.RunningTool(step, view)))
                     val observation =
                         if (searchesThisRound > config.maxSearchesPerRound) {
-                            ToolObservation(
-                                ok = false,
-                                tool = AgentMetaTools.SEARCH_TOOLS,
-                                errorCode = "search_budget_exceeded",
-                                message = "Only ${config.maxSearchesPerRound} tool searches are allowed per round.",
-                            )
+                            if (searchesThisRound == config.maxSearchesPerRound + 1) {
+                                // Return the catalog with the budget notice: a
+                                // model that ran out of searches should still
+                                // have enough metadata to finish the turn.
+                                ToolObservation(
+                                    ok = true,
+                                    tool = AgentMetaTools.SEARCH_TOOLS,
+                                    output =
+                                        buildJsonObject {
+                                            put("search_budget_exceeded", true)
+                                            put(
+                                                "hint",
+                                                "The per-round search budget is used up; this is the full catalog. " +
+                                                    "Use it instead of searching again.",
+                                            )
+                                            put("catalog", catalog.catalogOutput(config.maxObservationChars))
+                                        },
+                                )
+                            } else {
+                                ToolObservation(
+                                    ok = false,
+                                    tool = AgentMetaTools.SEARCH_TOOLS,
+                                    errorCode = "search_budget_exceeded",
+                                    message = "Only ${config.maxSearchesPerRound} tool searches are allowed per round.",
+                                )
+                            }
                         } else {
                             ToolObservation(
                                 ok = true,
