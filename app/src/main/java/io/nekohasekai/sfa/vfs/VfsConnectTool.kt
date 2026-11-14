@@ -27,8 +27,10 @@ class VfsConnectTool(
                 "Connect to a VFS Link returned by vfs_link_request. The app shows its own consent dialog; " +
                     "this call waits for the user's decision and then connects. Use it only with a link " +
                     "issued by a configured MCP server. The result lists visibleRoots, which is the complete " +
-                    "list of VFS-visible paths; the local app working directory is not the VFS root. If a " +
-                    "path is missing, request a new Link with the needed scope and never ask the user to name scopes.",
+                    "list of VFS-visible paths; the local app working directory is not the VFS root. " +
+                    "expiresInSeconds is the remaining Link lifetime; do not estimate days from expiresAt. " +
+                    "VFS container reads may be cached for up to 30 seconds; a stale read is not a Link snapshot. " +
+                    "If a path is missing, request a new Link with the needed scope and never ask the user to name scopes.",
             permission = AgentPermission.READ_FILES,
             parameters = emptyList(),
             confirmationPolicy = ConfirmationPolicy.NEVER,
@@ -107,7 +109,13 @@ class VfsConnectTool(
                                     "Never ask the user to name scopes.",
                             )
                         }
-                        result.expiresAt?.let { put("expiresAt", it) }
+                        result.expiresAt?.let {
+                            put("expiresAt", it)
+                            put(
+                                "expiresInSeconds",
+                                ((it - System.currentTimeMillis()).coerceAtLeast(0L)) / 1000L,
+                            )
+                        }
                     },
             )
         } catch (error: VfsConnectException) {

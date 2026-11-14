@@ -44,6 +44,7 @@ class VfsConnectToolTest {
             assertEquals(true, execution.output?.get("connected")?.jsonPrimitive?.booleanOrNull)
             assertEquals("https://example.com", execution.output?.get("server")?.jsonPrimitive?.content)
             assertEquals(5_000L, execution.output?.get("expiresAt")?.jsonPrimitive?.longOrNull)
+            assertEquals(0L, execution.output?.get("expiresInSeconds")?.jsonPrimitive?.longOrNull)
             assertEquals(
                 listOf(".runtime/trace.md", "conductor/**"),
                 execution.output?.get("visibleRoots")?.jsonArray?.map { it.jsonPrimitive.content },

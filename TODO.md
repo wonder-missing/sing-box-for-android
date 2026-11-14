@@ -29,6 +29,7 @@
 ### P2
 
 - [ ] **VFS 后台保持分享**：App 退后台会 4000 断 provider；Portal Agent 在用户切走后读不到，P7 实测从 00:27:04 等到 00:29:47 才恢复。要做真正的后台 provider 模式（前台服务/常驻通知或短时保活），权衡电池与暴露面；P7 先保持前台。
+- [ ] **vfsd 30 秒 ProviderCache**：容器读最多缓存 30 秒；旧读不是 Link 快照。canonical 跟踪放 vfs 项目；App/Portal 只在描述里临时注明。
 - [ ] **VFS P7 真机摩擦（2026-11-14）**：`diagnostics_export(kind=trace)` 产出 Markdown 但允许 `.json` 扩展名，按 kind 自动纠正或名称不符时提示；App 退后台 4000 断 provider，读取中会 EIO 并让 `docker_run(vfs=true)` 回 `VFS_UNAVAILABLE`，前台重连后重试成功。P7 期间保持前台，清单见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md) P7-4c。
 - [ ] **服务重启缺口（2026-11-13 12:39）**：CFG 遥测显示 09:11 和 12:39 两次 `service_start`，中间没有 `service_stop`；如果不是手动重启，下轮用 Conductor 的 file tools 读工作目录里的 crash/OOM reports，或对比当时的 `tailscale_status`。排障入口见 [`docs/agent-runtime.md`](docs/agent-runtime.md) 的「服务状态排障」。
 - [ ] **会话编解码移出主线程**：`ConductorSessionStore` 的 JSON encode/decode 和 `AppLog` 同步写文件仍在调用线程；wonder.51 在 submit 时又加了一次 `persistSession()`，长会话可能造成主线程卡顿。先让 `ui_jank` 取证，再把 encode/save 放 IO、load 放后台。
@@ -105,7 +106,7 @@
 
 ## 最近完成
 
-- wonder.72（2026-11-15）：App 不再知道 Portal 的 `/knocks/mcp/hk_` 形状；`VfsServerBase.matches` 改为「Link server 是配置 MCP URL 的前缀」或显式 `serverBase` 精确匹配，删除 `GRANT_PATH`/`resolve`。未出包，随下一个 APK。
+- wonder.72（2026-11-15）：App 不再知道 Portal 的 `/knocks/mcp/hk_` 形状；`VfsServerBase.matches` 改为「Link server 是配置 MCP URL 的前缀」或显式 `serverBase` 精确匹配，删除 `GRANT_PATH`/`resolve`。`vfs_connect` 结果加 `expiresInSeconds`，描述说明不要从 `expiresAt` 估天数；VFS 容器读最多 30 秒缓存，旧读不是 Link 快照。未出包，随下一个 APK。
 - 2026-11-15：收 wonder.70 全量工作目录实验为冻结基线（Link v1，模型驱动四项 scope 一次到位，含可见范围误报），见 [`docs/vfs-cases/2026-11-15-wonder70-whole-workspace/`](docs/vfs-cases/2026-11-15-wonder70-whole-workspace/)。Link v2 后另建新案例，不直接拿它判 v2。
 - wonder.71（2026-11-15）：Link v2 双读。`VfsLink.server`，v1 读 `issuer`、v2 读 `server`；`VfsIssuer` → `VfsServerBase`；连接状态、consent、`vfs_connect` 输出统一 `server`。信任文件 `VfsTrustEntry` 用 `@SerialName("issuer")` 保持旧数据；`McpServerConfig.serverBase` 保留 `issuerBase` JSON 键。Portal 默认仍 v1，`.71` 装好后再由 Portal 切 v2；`.72` 停读 v1、删 `GRANT_PATH` fallback。同时补 VFS 可见范围规则：本地工作目录不等于 `/vfs`，最终陈述以 `vfs_connect.visibleRoots` 或 `docker_run(vfs=true)` 的 `/vfs` 实测为准，`file_list` 描述同步。
 - wonder.70（2026-11-14）：撤掉 VFS 意图正则、turn flag 和 `VFS_SCOPE_INCOMPLETE` 守卫；scope 完全由模型按工具描述决定，App 不再改写 `vfs_link_request` 参数。`scope` 缺省不补全，空数组也不等于全部。保留 `vfs_link_request` 描述/schema 的四项 scope 说明、`vfs_connect` 的 `visibleRoots` / `missingScopes` / 人类标签、确认框标签。单 token 全量（如 `all` / `workspace`）若要，按 OAuth2 的 provider-specific bundle scope 做法由 App 定义并展开，Portal 只签发展开后的集合。
