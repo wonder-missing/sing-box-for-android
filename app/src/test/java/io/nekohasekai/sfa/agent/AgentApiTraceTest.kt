@@ -1,5 +1,9 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -98,6 +102,44 @@ class AgentApiTraceTest {
         assertTrue(markdown.contains("- model: deepseek-chat"))
         assertTrue(markdown.contains("- app version: test-version"))
         assertTrue(markdown.contains("system prompt changed at request 2"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
+    fun compactionSystemPromptIsNotReportedAsAMainPromptChange() {
+        AgentApiTrace.clear()
+        fun entry(
+            timestamp: Long,
+            prompt: String,
+        ) = ApiTraceEntry(
+            timestamp = timestamp,
+            method = "POST",
+            url = "https://api.deepseek.com/chat/completions",
+            requestHeaders = emptyMap(),
+            requestBody =
+                buildJsonObject {
+                    put("model", "deepseek-chat")
+                    putJsonArray("messages") {
+                        add(
+                            buildJsonObject {
+                                put("role", "system")
+                                put("content", prompt)
+                            },
+                        )
+                    }
+                }.toString(),
+            status = 200,
+            responseHeaders = emptyMap(),
+            responseBody = "{}",
+            error = null,
+        )
+        AgentApiTrace.record(entry(1_700_000_000_000L, "main prompt"))
+        AgentApiTrace.record(entry(1_700_000_001_000L, COMPACT_SYSTEM_PROMPT))
+
+        val markdown = AgentApiTrace.asMarkdown()
+
+        assertTrue(markdown.contains("main prompt"))
+        assertFalse(markdown.contains("system prompt changed"))
         AgentApiTrace.clear()
     }
 

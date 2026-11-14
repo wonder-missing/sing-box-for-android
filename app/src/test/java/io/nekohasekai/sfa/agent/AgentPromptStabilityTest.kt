@@ -28,7 +28,8 @@ class AgentPromptStabilityTest {
 
         assertEquals(first, second)
         assertTrue(first.contains("route_call"))
-        assertTrue(first.contains("Registered capabilities"))
+        assertTrue(first.contains("Registered capability snapshot"))
+        assertTrue(first.contains("not exhaustive"))
         assertTrue(first.contains("network_snapshot"))
         assertTrue(first.contains("locale=zh"))
         assertTrue(first.contains("If you know a capability's exact name and arguments"))

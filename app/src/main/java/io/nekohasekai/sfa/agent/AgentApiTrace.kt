@@ -288,7 +288,10 @@ object AgentApiTrace {
         appendLine("## System Prompt")
         appendLine()
         val facts = snapshot.map(::requestFacts)
-        val firstPrompt = facts.firstNotNullOfOrNull { it.systemPrompt }
+        val firstPrompt =
+            facts.firstNotNullOfOrNull { fact ->
+                fact.systemPrompt?.takeIf { it != COMPACT_SYSTEM_PROMPT }
+            } ?: systemPrompt?.takeIf { it.isNotBlank() }
         val model = facts.firstNotNullOfOrNull { it.model }
         val firstTime =
             snapshot.firstOrNull()?.let { it.startedAt ?: it.timestamp }
@@ -310,7 +313,12 @@ object AgentApiTrace {
         appendLine("~~~")
         appendLine()
         facts.forEachIndexed { index, fact ->
-            if (index > 0 && fact.systemPrompt != null && fact.systemPrompt != firstPrompt) {
+            if (
+                index > 0 &&
+                fact.systemPrompt != null &&
+                fact.systemPrompt != COMPACT_SYSTEM_PROMPT &&
+                fact.systemPrompt != firstPrompt
+            ) {
                 appendLine("- system prompt changed at request ${index + 1}")
             }
         }

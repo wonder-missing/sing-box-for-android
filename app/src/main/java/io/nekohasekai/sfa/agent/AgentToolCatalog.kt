@@ -171,7 +171,7 @@ class AgentToolCatalog(
 
     fun promptSection(): String =
         buildString {
-            appendLine("Registered capabilities for this app version:")
+            appendLine("Registered capability snapshot for this app version (not exhaustive; MCP tools may load at runtime):")
             definitions
                 .filter { it.category != "mcp" }
                 .groupBy { it.category }
