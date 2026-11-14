@@ -23,7 +23,7 @@
 ### P1
 
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，只能临时全局切换。`probe_many` 已按顺序批量实现；真正并发需要 daemon/新 API。实验里五次 probe 串行 6 到 15 秒。
-- [ ] **[审查] Conductor 生命周期（剩余）**：wonder.53 改为 activity 作用域；wonder.61 再改为进程级 ViewModel，结束 Activity 也不再取消进行中的 turn，发送/停止按钮移出系统返回手势区。提交时已先持久化 user。进程死亡仍会丢 turn 中途的 tool 卡片和未完成 assistant。
+- [ ] **[审查] Conductor 生命周期（剩余）**：wonder.53 改为 activity 作用域；wonder.61 再改为进程级 ViewModel，结束 Activity 也不再取消进行中的 turn，发送/停止按钮移出系统返回手势区；wonder.62 在恢复时把运行中的工具标为 interrupted 并补一条进程中断提示，Activity 结束时取消待处理的文件选择器。提交时已先持久化 user。进程死亡仍会丢 turn 中途的 tool 卡片和未完成 assistant。
 - [ ] **[审查] `TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时、Tailscale 取消已落地；仍没有在 Stop 后 1 秒内把未确认取消转成 turn error。
 
 ### P2
@@ -35,10 +35,10 @@
 - [ ] **批量确认：预览与分级**：整批预检并合成一张含全部工具参数的卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS` / MCP 写工具逐次确认。
 - [ ] **确认与事务语义可见性**：模型看不到确认事件；多步调用没有框架级事务。先记着，等 2B 流式和 Phase 3 再评估。
 - [ ] **[评估] 工具编排计划（tool_plan / DAG）**：把有依赖的多步工具调用压成一次提交，支持字段绑定、`when`/`retry`/`fallback`，由 AgentRuntime 执行，保留每个工具原有的确认、超时、审计。先只读工具，跑通后再加写和 `DATA_EGRESS`。目标：减少模型往返和 token，让小工具集可组合。实验证据：2026-11-14 的 URL 审阅轮 17 次工具调用对应 7 次模型请求。
-- [ ] **能力发现：先试再断言缺失**：系统提示加规则；`search_tools` 返回 `weak` 或没有直接命中时，先空 query 列完整目录，或对最接近的间接工具做一次最便宜的试探，再报告缺失。用“读一个 URL”做回归，观察是否还会直接说没有工具。
-- [ ] **MCP 长任务超时与结果保留**：`docker_run` 这类长任务只留下一个 `timeout`，模型无法区分容器命令超时、网络阻断和客户端放弃。需要单独的超时/进度协议，并保留 MCP Server 的结构化结果（`exit` / `output` / `truncated` / `error`），不要折叠成一个词。另外 MCP 错误目前同时设置 `output.text` 和 `errorMessage`，transcript 会把同一段错误渲染两遍；错误只留 message，成功才带 output。
-- [ ] **进程级 ViewModel 回归**：wonder.61 把 Conductor 改成进程级后，Activity finish 不再走 `onCleared`。需要确认待处理的文件选择器不会留下过期卡片、停止原因文案能区分用户停止和进程中断，并真机复测返回、离开、边缘手势和进程死亡四种路径。
-- [ ] **[评估] `search_tools` weak 结果压缩**：weak 匹配现在返回完整 schema 和长描述；只回名称加一行描述，按名称再取 schema，可以少占上下文。
+- [x] **能力发现：先试再断言缺失**（wonder.62）：系统提示要求先列完整目录或试最接近的间接工具，再断言缺失；`search_tools` 的 weak/无命中提示也改成“不要下结论”。`AgentPromptStabilityTest` 和 `AgentToolCatalogTest` 已锁住。仍需用「读一个 URL」做真机回归。
+- [x] **MCP 长任务超时与结果保留**（wonder.62）：MCP 工具单独给 10 分钟预算；JSON 结果保持结构化，不再包在 `{"text":...}` 里；错误只保留一份 payload，不再同时写 `output.text` 和 `errorMessage`。进度协议仍未做，需要 Portal 配合。
+- [x] **进程级 ViewModel 回归**（wonder.62）：恢复时运行中的工具标为 interrupted 并补一条进程中断提示；Activity finish 时取消待处理的文件选择器；live stop 文案改成 “Stopped by user.” 以区分用户停止和进程中断。`ConductorRestoreTest` 已覆盖纯逻辑；仍需真机复测返回、离开、边缘手势和进程死亡。
+- [x] **[评估] `search_tools` weak 结果压缩**（wonder.62）：weak 匹配只回名称、类别、描述和确认标记，不再带 parameters；精确名称和类别查询仍返回 schema。`AgentToolCatalogTest` 已覆盖。
 - [ ] **[评估] 网络诊断能力**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`、脱敏 `core_logs`、`node_detail`；先做前两个。实验里模型只能从 probe 结果推测 DNS 故障。
 - [ ] **[评估] `probe_via_node` 的 HEAD 歧义**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；`speed_test` 后续。
 - [ ] **对话级 LLM 摘要**：wonder.36 只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要还没做。
