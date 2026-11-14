@@ -23,6 +23,7 @@ class VfsIntentTest {
             "whole working directory",
             "挂到 Portal 上",
             "connect the VFS",
+            "整个工作目录里的 trace 也挂上",
         ).forEach { text ->
             assertTrue(text, isWholeWorkspaceRequest(text))
         }
@@ -35,6 +36,10 @@ class VfsIntentTest {
             "只挂 conductor",
             "只要对话",
             "mount only the system prompt",
+            "把工作目录里的 trace 挂上",
+            "所有 trace 都挂上",
+            "全部 trace 都挂上",
+            "这个 link 有问题",
         ).forEach { text ->
             assertFalse(text, isWholeWorkspaceRequest(text))
         }
