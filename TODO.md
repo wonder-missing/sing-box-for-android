@@ -9,7 +9,7 @@
 
 ### 平台能力（计划）
 
-- [ ] **VFS / 只读虚拟目录（新设计）**：设计以 `~/notes/agent-oriented-vfs.md` 为准，Portal 侧契约在 `~/workspace/clawdy-portal/VFS.md`。App 侧 P6 mock 阶段已完成并在 `5ffe6b9`（Test CI `43586726757`）通过：Link 解析、App 级确认框、拒绝冷却、issuerBase 匹配、scope 过滤、deviceId、加密 resume、应用层 ping/pong、`/vfs/provider` OkHttp connector、close code、trust 持久化、Settings > Security 的 VFS 访问页、常驻状态条、前后台自动愈合与 1-60 秒退避。待做 P6e：进程被杀后恢复最后一条 Link（只存 issuer/linkId/scope 公开字段，放 `noBackupFilesDir/vfs`，仅 15 天信任自动愈合，“仅本次”重启后由 Conductor 重新发起）。真数据面已用真 vfsd 容器 + FUSE + Docker + 真 Portal + fake App 跑通（16MiB sha256、只读、`/work` 写入、refs 释放，`scripts/e2e-vfs-vm.mjs`，commit `755bf9f`）。vfsd watchdog `5fd2c1a` 已完成；生产部署脚本和 `alive` 消费（Portal `e225e32`）未交，等这两项后发真机联调卡。P7 dry-run 清单见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)。旧 Tools > Virtual Directory 入口已删除，旧配置不迁移。
+- [ ] **VFS / 只读虚拟目录（新设计）**：设计以 `~/workspace/clawdy-portal/docs/agent-oriented-vfs.md` 为准，Portal 侧契约在 `~/workspace/clawdy-portal/VFS.md`。App 侧 P6 mock 阶段已完成并在 `5ffe6b9`（Test CI `43586726757`）通过：Link 解析、App 级确认框、拒绝冷却、serverBase 匹配、scope 过滤、deviceId、加密 resume、应用层 ping/pong、`/vfs/provider` OkHttp connector、close code、trust 持久化、Settings > Security 的 VFS 访问页、常驻状态条、前后台自动愈合与 1-60 秒退避。待做 P6e：进程被杀后恢复最后一条 Link（只存 server/linkId/scope 公开字段，放 `noBackupFilesDir/vfs`，仅 15 天信任自动愈合，“仅本次”重启后由 Conductor 重新发起）。真数据面已用真 vfsd 容器 + FUSE + Docker + 真 Portal + fake App 跑通（16MiB sha256、只读、`/work` 写入、refs 释放，`scripts/e2e-vfs-vm.mjs`，commit `755bf9f`）。vfsd watchdog `5fd2c1a` 已完成；生产部署脚本和 `alive` 消费（Portal `e225e32`）未交，等这两项后发真机联调卡。P7 dry-run 清单见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)。旧 Tools > Virtual Directory 入口已删除，旧配置不迁移。
 
 ### 数据面（长期定位：数据搬运 / Taildrop / 通讯）
 
@@ -86,7 +86,7 @@
   - 输入栏底部应显示 `ctx X% · 已用/上限`（DeepSeek V4 Flash 是 `.../1M`）；每轮 usage 行应带 `ctx=X%`。
   - 让 Conductor 连续写大文件或多个文件：不应再因为应用固定的 4096 输出预算被截断；真撞到模型输出上限时，错误应写明上限、未执行任何工具，并建议拆步或降低 reasoning。
   - 长对话接近窗口 80% 时：应出现「compacting earlier conversation」和「Context compacted from X% to Y%」，当前轮的 user/assistant/tool 不应丢；摘要失败时应回退到裁剪并提示。
-- Portal 的 `readOnlyHint`/annotations 建议已连同工具层建议写入 `~/notes/clawdy-portal-mcp-tool-suggestions-2026-11-13.md`，待主人转发。
+- Portal 的 `readOnlyHint`/annotations 建议已连同工具层建议已收进本仓库 [`docs/clawdy-portal-mcp-tool-suggestions-2026-11-13.md`](docs/clawdy-portal-mcp-tool-suggestions-2026-11-13.md)。
 - wonder.45 在 wonder.44 的 MCP 客户端上加了 `/mcp`。拨号遥测仍在这一版里（`9c3ef15`，说明见 [`docs/telemetry-dial.md`](docs/telemetry-dial.md)）。CFG ingest `e9053fa` 已部署。MCP 说明见 [`docs/mcp.md`](docs/mcp.md)。
 - 手机上看 wonder.46：
   - 设置根页 App 行：标题下方直接是裸版本号，没有「应用版本」字样。右侧是刷新图标，不是「更新」按钮。点图标仍会检查更新；已有新版本时下面多一行提示。
