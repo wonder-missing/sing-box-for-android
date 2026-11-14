@@ -9,7 +9,7 @@
 
 ### 平台能力（计划）
 
-- [ ] **只读虚拟目录（App provider 已实现，待 CI/真机验证）**：`~/workspace/vfs` 的 `vfsd` 已实现 provider 协议 v1、只读 WebDAV、缓存、macOS 挂载和 `/.vfsd/status`；本地 provider 与真实反向 provider 的 mount + Docker 读取均已验证。App 侧已加 Tools > Virtual Directory（开关、端点、加密令牌、只读 `conductor/` 与 `.runtime/{trace,conversation,system_prompt}.md`、连接状态与最近请求），JVM 单测覆盖协议、会话、路径约束、源文件、重连与退避。待做：真机验证、Portal `docker_run` 的 `mount=virtual-directory`（挂到 `/vfs:ro`）与每次运行自动分配的 `/work` 输出目录、grant/审计/多设备。设计见 `~/notes/virtual-directory-plan-2026-11-14.md`。
+- [ ] **VFS / 只读虚拟目录（新设计）**：设计以 `~/notes/agent-oriented-vfs.md` 为准，Portal 侧契约在 `~/workspace/clawdy-portal/VFS.md`。App 侧 P6 mock 阶段已完成并在 `5ffe6b9`（Test CI `43586726757`）通过：Link 解析、App 级确认框、拒绝冷却、issuerBase 匹配、scope 过滤、deviceId、加密 resume、应用层 ping/pong、`/vfs/provider` OkHttp connector、close code、trust 持久化、Settings > Security 的 VFS 访问页、常驻状态条、前后台自动愈合与 1-60 秒退避。待做 P6e：进程被杀后恢复最后一条 Link（只存 issuer/linkId/scope 公开字段，放 `noBackupFilesDir/vfs`，仅 15 天信任自动愈合，“仅本次”重启后由 Conductor 重新发起）。真链路等 vfsd P4 的 runtime/status 与 Portal P3b 联调，之后才做真机 dry run 和发版。旧 Tools > Virtual Directory 入口已删除，旧配置不迁移。
 
 ### 数据面（长期定位：数据搬运 / Taildrop / 通讯）
 
