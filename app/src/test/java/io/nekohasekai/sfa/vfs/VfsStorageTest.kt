@@ -157,6 +157,7 @@ class VfsStorageTest {
     @Test
     fun corruptTrustFileMeansNoTrustInsteadOfACrash() {
         val file = VfsPrivateFiles.trustFile(temp.root)
+        file.parentFile?.mkdirs()
         file.writeText("{not json", Charsets.UTF_8)
 
         val store =
