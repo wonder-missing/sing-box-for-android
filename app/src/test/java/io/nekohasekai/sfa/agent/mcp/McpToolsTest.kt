@@ -95,8 +95,8 @@ class McpToolsTest {
 
         assertTrue(definition.description.contains("Whole workspace"))
         assertTrue(definition.description.contains("conversation"))
-        val scope =
-            ((definition.parametersSchemaOverride["properties"] as JsonObject)["scope"] as JsonObject)
+        val schema = definition.parametersSchemaOverride as JsonObject
+        val scope = (schema["properties"] as JsonObject)["scope"] as JsonObject
         val hint = (scope["description"] as JsonPrimitive).content
         assertTrue(hint.contains("conductor, trace, system_prompt, conversation"))
         assertTrue(hint.contains("Never ask the user to name scopes"))
