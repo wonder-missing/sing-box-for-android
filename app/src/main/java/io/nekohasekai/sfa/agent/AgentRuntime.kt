@@ -703,13 +703,25 @@ class AgentRuntime(
     ): AgentModelResponse {
         var attempt = 0
         while (true) {
+            if (cancelRequested) throw CancellationException("cancelled")
             try {
                 return model.complete(request, apiKey)
             } catch (e: AgentModelException) {
-                if (!e.retryable || attempt >= config.maxRetries || cancelRequested) throw e
+                if (cancelRequested) throw CancellationException("cancelled")
+                if (!e.retryable || attempt >= config.maxRetries) throw e
                 attempt += 1
-                delay(e.retryAfterMs ?: (500L * (1 shl (attempt - 1))).coerceAtMost(8_000))
+                retryDelay(e.retryAfterMs ?: (500L * (1 shl (attempt - 1))).coerceAtMost(8_000))
             }
+        }
+    }
+
+    /** Keeps Stop responsive during a retry backoff. */
+    private suspend fun retryDelay(ms: Long) {
+        var remaining = ms
+        while (remaining > 0 && !cancelRequested) {
+            val step = minOf(remaining, 100L)
+            delay(step)
+            remaining -= step
         }
     }
 
@@ -726,13 +738,14 @@ class AgentRuntime(
             try {
                 return collectStream(request, apiKey, onEvent, partialContent)
             } catch (e: AgentModelException) {
-                if (!e.retryable || attempt >= config.maxRetries || cancelRequested) throw e
+                if (cancelRequested) throw CancellationException("cancelled")
+                if (!e.retryable || attempt >= config.maxRetries) throw e
                 if (attempt == 0) {
                     onEvent(AgentEvent.Notice("The provider request failed; retrying. ${e.message}"))
                 }
                 onEvent(AgentEvent.StreamReset)
                 attempt += 1
-                delay(e.retryAfterMs ?: (500L * (1 shl (attempt - 1))).coerceAtMost(8_000))
+                retryDelay(e.retryAfterMs ?: (500L * (1 shl (attempt - 1))).coerceAtMost(8_000))
             }
         }
     }

@@ -885,14 +885,47 @@ class ConductorViewModel(
         McpRuntimes.get(getApplication()).cancelActive()
         viewModelScope.launch {
             delay(1_000)
-            if (_uiState.value.isRunning) {
-                append(
-                    ConductorItem.Notice(
-                        "conductor",
-                        "Stopping… the current tool has not confirmed cancellation yet.",
-                    ),
-                )
-            }
+            if (!_uiState.value.isRunning) return@launch
+            append(
+                ConductorItem.Notice(
+                    "conductor",
+                    "Stopping… the current tool has not confirmed cancellation yet.",
+                ),
+            )
+            delay(2_000)
+            if (!_uiState.value.isRunning) return@launch
+            // A blocked provider or tool call may never observe the flag.
+            // Give the turn a bounded grace period, then return the composer
+            // to its idle state instead of leaving Stop on screen forever.
+            agentJob?.cancel()
+            agentJob = null
+            val stoppedItems =
+                _uiState.value.items.map { item ->
+                    if (item is ConductorItem.Tool && item.status == ToolStatus.RUNNING) {
+                        item.copy(
+                            status = ToolStatus.CANCELLED,
+                            result =
+                                ToolResultView(
+                                    callId = item.call.id,
+                                    name = item.call.name,
+                                    ok = false,
+                                    output = null,
+                                    errorCode = "cancelled",
+                                    message = "Stopped by user.",
+                                    truncated = false,
+                                ),
+                        )
+                    } else {
+                        item
+                    }
+                }
+            updateUi { copy(items = stoppedItems, isRunning = false) }
+            append(ConductorItem.Notice("conductor", "Stopped by user."))
+            stopRequested = false
+            runtime.resetCancel()
+            toolStartedAt.clear()
+            ModelProviderSettings.unpin()
+            persistSession()
         }
     }
 
