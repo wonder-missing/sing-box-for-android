@@ -125,6 +125,28 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun weakMatchesAreCompactAndTellTheModelToTryAnIndirectTool() {
+        val output = catalog.searchOutput("Description", limit = 5)
+        assertEquals("true", (output["weak"] as JsonPrimitive).content)
+        val matches = output["matches"] as JsonArray
+        assertTrue(matches.isNotEmpty())
+        assertTrue(
+            matches.none { (it as JsonObject).containsKey("parameters") },
+        )
+        val hint = (output["hint"] as JsonPrimitive).content
+        assertTrue(hint.contains("Do not conclude"))
+        assertTrue(hint.contains("closest indirect tool"))
+    }
+
+    @Test
+    fun exactNameStillReturnsTheSchema() {
+        val output = catalog.searchOutput("probe_via_node", limit = 5)
+        val match = (output["matches"] as JsonArray).first() as JsonObject
+        assertEquals("false", (output["weak"] as JsonPrimitive).content)
+        assertTrue(match.containsKey("parameters"))
+    }
+
+    @Test
     fun searchOutputDropsMatchesToStayInsideBudget() {
         val big =
             definition("big_tool", "network", listOf("big"))

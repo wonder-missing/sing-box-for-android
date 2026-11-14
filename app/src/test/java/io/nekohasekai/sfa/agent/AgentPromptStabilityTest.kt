@@ -33,6 +33,7 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("locale=zh"))
         assertTrue(first.contains("If you know a capability's exact name and arguments"))
         assertTrue(first.contains("Translate the user's intent into English keywords"))
+        assertTrue(first.contains("test the closest indirect tool once"))
         assertTrue(first.contains("[conductor:event"))
     }
 

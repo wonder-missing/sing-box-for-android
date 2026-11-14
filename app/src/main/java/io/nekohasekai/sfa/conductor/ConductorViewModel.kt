@@ -806,6 +806,11 @@ class ConductorViewModel(
     }
 
     /** The user dismissed the in-app card without opening the picker. */
+    /** The host activity is finishing; a picker result can no longer arrive. */
+    fun onHostFinishing() {
+        cancelPendingFileRequest("The app was closed while waiting for file selection.")
+    }
+
     fun cancelFileRequest(requestId: String) {
         val request =
             synchronized(selectedFilesLock) {
@@ -993,7 +998,7 @@ class ConductorViewModel(
                 if (stopRequested) {
                     withContext(Dispatchers.Main) {
                         updateUi { copy(isRunning = false) }
-                        append(ConductorItem.Notice("conductor", "Stopped."))
+                        append(ConductorItem.Notice("conductor", "Stopped by user."))
                         persistSession()
                     }
                     return@launch
@@ -1053,7 +1058,7 @@ class ConductorViewModel(
                             )
 
                         is TurnOutcome.Cancelled ->
-                            append(ConductorItem.Notice("conductor", "Stopped."))
+                            append(ConductorItem.Notice("conductor", "Stopped by user."))
 
                         is TurnOutcome.Completed -> Unit
                     }
@@ -1722,38 +1727,8 @@ class ConductorViewModel(
         transcript = repaired.takeIf { validateTranscriptPairing(it) } ?: loadedTranscript
         pendingTurnEvent = session.pendingEvent
         AgentApiTrace.restoreSummaries(session.trace)
-        val restoredItems =
-            session.items.mapNotNull { item ->
-                when (item) {
-                    is ConductorItem.Confirmation -> null
-                    is ConductorItem.Assistant ->
-                        if (item.streaming) item.copy(streaming = false) else item
-
-                    is ConductorItem.Reasoning ->
-                        if (item.streaming) item.copy(streaming = false) else item
-
-                    is ConductorItem.Tool ->
-                        if (item.status == ToolStatus.RUNNING) {
-                            item.copy(
-                                status = ToolStatus.CANCELLED,
-                                result =
-                                    ToolResultView(
-                                        callId = item.call.id,
-                                        name = item.call.name,
-                                        ok = false,
-                                        output = null,
-                                        errorCode = "interrupted",
-                                        message = "Session resumed after the page was left.",
-                                        truncated = false,
-                                    ),
-                            )
-                        } else {
-                            item
-                        }
-
-                    else -> item
-                }
-            }
+        val restored = restoreConductorItems(session.items)
+        val restoredItems = restored.items
         val lastError = restoredItems.lastOrNull() as? ConductorItem.Error
         val canRetry =
             transcript.lastOrNull() is AgentMessage.User &&
@@ -1779,8 +1754,10 @@ class ConductorViewModel(
             } else {
                 restoredItems
             }
-        if (displayItems.isNotEmpty()) {
-            _uiState.update { it.copy(items = displayItems, canRetryLastTurn = canRetry) }
+        val finalItems =
+            if (restored.interrupted) displayItems + interruptedConductorNotice() else displayItems
+        if (finalItems.isNotEmpty()) {
+            _uiState.update { it.copy(items = finalItems, canRetryLastTurn = canRetry) }
         }
     }
 

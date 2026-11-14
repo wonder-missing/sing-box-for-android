@@ -87,13 +87,17 @@ class AgentToolCatalog(
     ): JsonObject {
         val matches = search(query, limit)
         val normalized = query.trim().lowercase(Locale.US)
+        val categoryMatch = definitions.any { it.category.equals(normalized, ignoreCase = true) }
         val weak =
-            matches.isEmpty() ||
-                matches.none { tool ->
-                    tool.name.equals(normalized, ignoreCase = true) ||
-                        tool.aliases.any { it.equals(normalized, ignoreCase = true) } ||
-                        score(tool, normalized) >= WEAK_MATCH_SCORE
-                }
+            !categoryMatch &&
+                (
+                    matches.isEmpty() ||
+                        matches.none { tool ->
+                            tool.name.equals(normalized, ignoreCase = true) ||
+                                tool.aliases.any { it.equals(normalized, ignoreCase = true) } ||
+                                score(tool, normalized) >= WEAK_MATCH_SCORE
+                        }
+                )
         val objects =
             matches
                 .map { tool ->
@@ -101,7 +105,10 @@ class AgentToolCatalog(
                         put("name", tool.name)
                         put("category", tool.category)
                         put("description", tool.description)
-                        put("parameters", tool.parametersSchema)
+                        // Weak matches are a discovery hint, not a schema
+                        // lookup. Keep them compact; the model can search by
+                        // exact name when it decides to try one.
+                        if (!weak) put("parameters", tool.parametersSchema)
                         put("requiresConfirmation", tool.confirmationPolicy != ConfirmationPolicy.NEVER)
                     }
                 }.toMutableList()
@@ -159,7 +166,7 @@ class AgentToolCatalog(
                     tools.forEach { add(it) }
                 },
             )
-            put("hint", "Search by tool name to get its parameter schema, or with capability keywords to find a tool.")
+            put("hint", "Search by tool name to get its parameter schema, or with capability keywords to find a tool. If a capability seems missing, test the closest indirect tool before concluding it is unavailable.")
         }
 
     fun promptSection(): String =
@@ -221,9 +228,9 @@ class AgentToolCatalog(
                 },
             )
             if (matches.isEmpty()) {
-                put("hint", "No matching tools. Categories above show where capabilities live; search by category or capability name.")
+                put("hint", "No matching tools. Categories above show where capabilities live; search by category or capability name, list the full catalog with an empty query, and test the closest indirect tool before saying a capability is missing.")
             } else if (weak) {
-                put("hint", "These are weak matches, not confirmed capabilities. Check categories and search again before inventing a tool.")
+                put("hint", "These are weak matches, not confirmed capabilities. Do not conclude the capability is missing: search by exact name for its schema, try a different capability keyword, or test the closest indirect tool.")
             }
         }
 

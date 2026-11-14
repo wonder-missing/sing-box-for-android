@@ -34,6 +34,11 @@
 - [ ] **[评估] trace 长 body 截断**：usage/finish/错误码/请求 ID 已结构化，内存有总量上限，摘要在会话里持久化；单条 body 超过 200k 字符仍会截断，跨重启只有摘要没有完整 body。
 - [ ] **批量确认：预览与分级**：整批预检并合成一张含全部工具参数的卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS` / MCP 写工具逐次确认。
 - [ ] **确认与事务语义可见性**：模型看不到确认事件；多步调用没有框架级事务。先记着，等 2B 流式和 Phase 3 再评估。
+- [ ] **[评估] 工具编排计划（tool_plan / DAG）**：把有依赖的多步工具调用压成一次提交，支持字段绑定、`when`/`retry`/`fallback`，由 AgentRuntime 执行，保留每个工具原有的确认、超时、审计。先只读工具，跑通后再加写和 `DATA_EGRESS`。目标：减少模型往返和 token，让小工具集可组合。实验证据：2026-11-14 的 URL 审阅轮 17 次工具调用对应 7 次模型请求。
+- [ ] **能力发现：先试再断言缺失**：系统提示加规则；`search_tools` 返回 `weak` 或没有直接命中时，先空 query 列完整目录，或对最接近的间接工具做一次最便宜的试探，再报告缺失。用“读一个 URL”做回归，观察是否还会直接说没有工具。
+- [ ] **MCP 长任务超时与结果保留**：`docker_run` 这类长任务只留下一个 `timeout`，模型无法区分容器命令超时、网络阻断和客户端放弃。需要单独的超时/进度协议，并保留 MCP Server 的结构化结果（`exit` / `output` / `truncated` / `error`），不要折叠成一个词。另外 MCP 错误目前同时设置 `output.text` 和 `errorMessage`，transcript 会把同一段错误渲染两遍；错误只留 message，成功才带 output。
+- [ ] **进程级 ViewModel 回归**：wonder.61 把 Conductor 改成进程级后，Activity finish 不再走 `onCleared`。需要确认待处理的文件选择器不会留下过期卡片、停止原因文案能区分用户停止和进程中断，并真机复测返回、离开、边缘手势和进程死亡四种路径。
+- [ ] **[评估] `search_tools` weak 结果压缩**：weak 匹配现在返回完整 schema 和长描述；只回名称加一行描述，按名称再取 schema，可以少占上下文。
 - [ ] **[评估] 网络诊断能力**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`、脱敏 `core_logs`、`node_detail`；先做前两个。实验里模型只能从 probe 结果推测 DNS 故障。
 - [ ] **[评估] `probe_via_node` 的 HEAD 歧义**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；`speed_test` 后续。
 - [ ] **对话级 LLM 摘要**：wonder.36 只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要还没做。

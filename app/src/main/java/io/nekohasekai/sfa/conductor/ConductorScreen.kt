@@ -3,7 +3,9 @@ package io.nekohasekai.sfa.conductor
 import android.net.Uri
 import android.app.Application
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
@@ -171,6 +173,17 @@ fun ConductorScreen(
     val fileRequest by viewModel.fileRequest.collectAsState()
     val remoteServer by RemoteControlManager.remoteServer.collectAsState()
     val remoteConnected by RemoteControlManager.isConnected.collectAsState()
+    val hostActivity = LocalActivity.current as? ComponentActivity
+
+    // A file picker cannot return to a finishing activity. The process-scoped
+    // ViewModel keeps the turn alive, so cancel only this UI-bound request.
+    DisposableEffect(hostActivity) {
+        onDispose {
+            if (hostActivity?.isFinishing == true) {
+                viewModel.onHostFinishing()
+            }
+        }
+    }
 
     var pendingFilePickId by rememberSaveable { mutableStateOf<String?>(null) }
     fun deliverPickedFiles(uris: List<Uri>) {
