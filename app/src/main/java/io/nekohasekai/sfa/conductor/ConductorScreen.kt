@@ -818,7 +818,7 @@ private fun VfsConsentDialog(
                 )
                 request.scope.forEach { scope ->
                     Text(
-                        text = "• ${scope.path}",
+                        text = "• ${vfsScopeLabel(scope)}",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -853,6 +853,17 @@ private fun VfsConsentDialog(
         },
     )
 }
+
+@Composable
+private fun vfsScopeLabel(scope: VfsScope): String =
+    stringResource(
+        when (scope) {
+            VfsScope.CONDUCTOR -> R.string.vfs_scope_conductor
+            VfsScope.TRACE -> R.string.vfs_scope_trace
+            VfsScope.SYSTEM_PROMPT -> R.string.vfs_scope_system_prompt
+            VfsScope.CONVERSATION -> R.string.vfs_scope_conversation
+        },
+    )
 
 @Composable
 private fun ConversationActions(

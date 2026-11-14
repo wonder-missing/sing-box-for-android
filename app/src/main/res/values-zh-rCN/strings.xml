@@ -73,6 +73,10 @@
     <string name="vfs_consent_title">允许「%1$s」读取文件？</string>
     <string name="vfs_consent_server">服务端：%1$s</string>
     <string name="vfs_consent_scope">它可以读取：</string>
+    <string name="vfs_scope_conductor">Conductor 文件（conductor/）</string>
+    <string name="vfs_scope_trace">API trace（.runtime/trace.md）</string>
+    <string name="vfs_scope_system_prompt">系统提示词（.runtime/system_prompt.md）</string>
+    <string name="vfs_scope_conversation">完整对话（.runtime/conversation.md）</string>
     <string name="vfs_consent_conversation">conversation 范围包含完整对话和其他 MCP 工具输出。</string>
     <string name="vfs_consent_detail">它可以把这些文件交给由它启动的容器。你可以在「设置 &gt; 安全」里撤销访问。</string>
     <string name="vfs_consent_deny">拒绝</string>

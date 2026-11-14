@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.agent.mcp
 
 import io.nekohasekai.sfa.agent.ToolCancellation
+import io.nekohasekai.sfa.vfs.VfsScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -213,11 +214,23 @@ private data class RpcError(
     val message: String,
 ) : RpcPayload
 
+/**
+ * A whole-workspace turn asks for every visible root, but the model may still
+ * pass a narrower scope. Expand it before the request leaves the app.
+ */
+internal fun expandVfsScopeArguments(arguments: JsonObject): JsonObject {
+    val current = arguments["scope"]
+    if (current != null && current !is JsonArray) return arguments
+    val all = JsonArray(VfsScope.entries.map { JsonPrimitive(it.wire) })
+    return JsonObject(arguments + ("scope" to all))
+}
+
 class McpSession(
     private val transport: McpTransport,
     private val token: String = "",
     private val clientVersion: String = "wondersing",
     private val deviceId: () -> String = { "" },
+    private val vfsWorkspaceIntent: () -> Boolean = { false },
 ) {
     private val mutex = Mutex()
     private var sessionId: String? = null
@@ -257,10 +270,16 @@ class McpSession(
         cancellation: ToolCancellation? = null,
     ): McpCallResult =
         mutex.withLock {
+            val effectiveArguments =
+                if (name == VFS_LINK_REQUEST_TOOL && vfsWorkspaceIntent()) {
+                    expandVfsScopeArguments(arguments)
+                } else {
+                    arguments
+                }
             val params =
                 buildJsonObject {
                     put("name", name)
-                    put("arguments", arguments)
+                    put("arguments", effectiveArguments)
                 }
             val extraHeaders =
                 if (name == VFS_LINK_REQUEST_TOOL || name == VFS_LINK_REVOKE_TOOL) {
