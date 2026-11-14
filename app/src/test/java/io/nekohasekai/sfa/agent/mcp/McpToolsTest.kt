@@ -18,6 +18,7 @@ class McpToolsTest {
                     body: String,
                     sessionId: String?,
                     cancellation: ToolCancellation?,
+                    extraHeaders: Map<String, String>,
                 ): McpExchange = error("not used")
             },
         )

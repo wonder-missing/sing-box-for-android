@@ -20,6 +20,9 @@ import java.security.MessageDigest
 
 internal const val MCP_PROTOCOL = "2025-06-18"
 internal const val MCP_MAX_TOOLS = 64
+internal const val VFS_LINK_REQUEST_TOOL = "vfs_link_request"
+internal const val VFS_LINK_REVOKE_TOOL = "vfs_link_revoke"
+internal const val VFS_DEVICE_HEADER = "X-WonderSing-Device"
 private const val MCP_MAX_PAGES = 8
 
 class McpException(
@@ -39,6 +42,7 @@ interface McpTransport {
         body: String,
         sessionId: String?,
         cancellation: ToolCancellation?,
+        extraHeaders: Map<String, String> = emptyMap(),
     ): McpExchange
 }
 
@@ -210,6 +214,7 @@ class McpSession(
     private val transport: McpTransport,
     private val token: String = "",
     private val clientVersion: String = "wondersing",
+    private val deviceId: () -> String = { "" },
 ) {
     private val mutex = Mutex()
     private var sessionId: String? = null
@@ -254,8 +259,22 @@ class McpSession(
                     put("name", name)
                     put("arguments", arguments)
                 }
+            val extraHeaders =
+                if (name == VFS_LINK_REQUEST_TOOL || name == VFS_LINK_REVOKE_TOOL) {
+                    deviceId().takeIf { it.isNotBlank() }?.let {
+                        mapOf(VFS_DEVICE_HEADER to it)
+                    }.orEmpty()
+                } else {
+                    emptyMap()
+                }
             val result =
-                request("tools/call", params, cancellation, allowRetry = false) as? JsonObject
+                request(
+                    "tools/call",
+                    params,
+                    cancellation,
+                    allowRetry = false,
+                    extraHeaders = extraHeaders,
+                ) as? JsonObject
                     ?: throw McpException("MCP tools/call returned no result.")
             McpMessages.callText(result)
         }
@@ -265,15 +284,16 @@ class McpSession(
         params: JsonObject,
         cancellation: ToolCancellation?,
         allowRetry: Boolean = true,
+        extraHeaders: Map<String, String> = emptyMap(),
     ): JsonElement? {
         if (!initialized) ensureInitialized(cancellation)
         val id = nextId++
-        val exchange = post(encode(method, params, id), sessionId, cancellation)
+        val exchange = post(encode(method, params, id), sessionId, cancellation, extraHeaders)
         if (!exchange.sessionId.isNullOrBlank()) sessionId = exchange.sessionId
         if (exchange.status == 404 && allowRetry) {
             initialized = false
             sessionId = null
-            return request(method, params, cancellation, allowRetry = false)
+            return request(method, params, cancellation, allowRetry = false, extraHeaders = extraHeaders)
         }
         return McpMessages.rpcResult(exchange, id, token)
     }
@@ -308,10 +328,11 @@ class McpSession(
         body: String,
         sessionId: String?,
         cancellation: ToolCancellation?,
+        extraHeaders: Map<String, String> = emptyMap(),
     ): McpExchange {
         if (cancellation?.isCancelled() == true) throw CancellationException("cancelled")
         return try {
-            transport.exchange(body, sessionId, cancellation)
+            transport.exchange(body, sessionId, cancellation, extraHeaders)
         } catch (e: CancellationException) {
             throw e
         } catch (e: McpException) {

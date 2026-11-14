@@ -24,6 +24,7 @@ class McpHttpTransport(
         body: String,
         sessionId: String?,
         cancellation: ToolCancellation?,
+        extraHeaders: Map<String, String>,
     ): McpExchange =
         withContext(Dispatchers.IO) {
             if (cancellation?.isCancelled() == true) throw CancellationException("cancelled")
@@ -43,6 +44,9 @@ class McpHttpTransport(
                 }
                 if (token.isNotBlank()) {
                     connection.setRequestProperty("Authorization", "Bearer $token")
+                }
+                extraHeaders.forEach { (name, value) ->
+                    connection.setRequestProperty(name, value)
                 }
                 val bytes = body.toByteArray(Charsets.UTF_8)
                 connection.setFixedLengthStreamingMode(bytes.size)

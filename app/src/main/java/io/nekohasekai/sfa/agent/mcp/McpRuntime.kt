@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.agent.mcp
 import android.content.Context
 import io.nekohasekai.sfa.agent.AgentTool
 import io.nekohasekai.sfa.agent.ToolCancellation
+import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
 import io.nekohasekai.sfa.vfs.VfsIssuer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -62,6 +63,7 @@ class McpRuntime(
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val staleAfterMs: Long = 60_000,
     private val clientVersion: String = "wondersing",
+    private val deviceId: () -> String = { "" },
 ) {
     private val gate = Mutex()
     private var servers: List<McpServerConfig> = emptyList()
@@ -267,6 +269,7 @@ class McpRuntime(
                 transport = transportFactory(config),
                 token = config.token,
                 clientVersion = clientVersion,
+                deviceId = deviceId,
             )
         val cancel = McpCancel()
         cancels.add(cancel)
@@ -409,9 +412,12 @@ object McpRuntimes {
         synchronized(lock) {
             instance?.let { return it }
             val file = File(context.applicationContext.filesDir, "conductor/mcp-servers.json")
+            val deviceIdStore =
+                VfsDeviceIdStore(File(context.applicationContext.filesDir, "conductor/vfs-device-id"))
             return McpRuntime(
                 repository = FileMcpServerRepository(file, McpTokenCipherFactory.create()),
                 transportFactory = { config -> McpHttpTransport(config.url, config.token) },
+                deviceId = { deviceIdStore.getOrCreate() },
             ).also { instance = it }
         }
     }

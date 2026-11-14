@@ -108,6 +108,36 @@ class McpClientTest {
         }
 
     @Test
+    fun vfsLinkRequestSendsTheCurrentDeviceHeader() =
+        runBlocking {
+            val transport = ScriptTransport()
+            var next = 0
+            val session =
+                McpSession(
+                    transport,
+                    token = "secret-token",
+                    deviceId = { "device-${next++}" },
+                )
+
+            session.call(VFS_LINK_REQUEST_TOOL, buildJsonObject {})
+            assertEquals("device-0", transport.headers.last()[VFS_DEVICE_HEADER])
+
+            session.call(VFS_LINK_REQUEST_TOOL, buildJsonObject {})
+            assertEquals("device-1", transport.headers.last()[VFS_DEVICE_HEADER])
+        }
+
+    @Test
+    fun nonVfsToolsDoNotSendADeviceHeader() =
+        runBlocking {
+            val transport = ScriptTransport()
+            val session = McpSession(transport, token = "secret-token", deviceId = { "device-0" })
+
+            session.call("orb_status", buildJsonObject {})
+
+            assertFalse(transport.headers.last().containsKey(VFS_DEVICE_HEADER))
+        }
+
+    @Test
     fun passthroughAcceptsANumberAndStillRequiresKeys() =
         runBlocking {
             var seen: JsonObject? = null
@@ -540,6 +570,7 @@ private class MemoryRepository : McpServerRepository {
 private class ScriptTransport : McpTransport {
     val bodies = mutableListOf<String>()
     val sessions = mutableListOf<String?>()
+    val headers = mutableListOf<Map<String, String>>()
     var failInitialize = false
     private var lists = 0
 
@@ -547,9 +578,11 @@ private class ScriptTransport : McpTransport {
         body: String,
         sessionId: String?,
         cancellation: ToolCancellation?,
+        extraHeaders: Map<String, String>,
     ): McpExchange {
         bodies += body
         sessions += sessionId
+        headers += extraHeaders
         val parsed = Json.parseToJsonElement(body).jsonObject
         val method = parsed["method"]!!.jsonPrimitive.content
         val id = (parsed["id"] as? JsonPrimitive)?.contentOrNull
@@ -574,6 +607,14 @@ private class ScriptTransport : McpTransport {
                 200,
                 "application/json",
                 """{"jsonrpc":"2.0","id":$id,"result":{"tools":[{"name":"echo","description":"Echo text","inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"annotations":{"readOnlyHint":true}}]}}""",
+                "sess",
+            )
+        }
+        if (method == "tools/call") {
+            return McpExchange(
+                200,
+                "application/json",
+                """{"jsonrpc":"2.0","id":$id,"result":{"content":[{"type":"text","text":"{}"}]}}""",
                 "sess",
             )
         }
