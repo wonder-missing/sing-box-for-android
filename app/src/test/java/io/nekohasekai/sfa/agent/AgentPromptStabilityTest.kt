@@ -28,12 +28,15 @@ class AgentPromptStabilityTest {
 
         assertEquals(first, second)
         assertTrue(first.contains("route_call"))
-        assertTrue(first.contains("Registered capabilities"))
+        assertTrue(first.contains("Registered capability snapshot"))
+        assertTrue(first.contains("not exhaustive"))
         assertTrue(first.contains("network_snapshot"))
         assertTrue(first.contains("locale=zh"))
         assertTrue(first.contains("If you know a capability's exact name and arguments"))
         assertTrue(first.contains("Translate the user's intent into English keywords"))
         assertTrue(first.contains("test the closest indirect tool once"))
+        assertTrue(first.contains("snapshot, not the full set"))
+        assertTrue(first.contains("Do not answer a capability question from the snapshot alone"))
         assertTrue(first.contains("[conductor:event"))
     }
 
@@ -51,7 +54,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("a450a259ff84f8cf1f99120731e8ecb875edffa86ef1c49161a6afdd03aaa4db", digest)
+        assertEquals("228450cb04d8cc200434e322a4c9806c0961f5ff8eab0234bb7274732040441f", digest)
     }
 
     @Test

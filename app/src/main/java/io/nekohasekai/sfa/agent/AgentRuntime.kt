@@ -41,6 +41,19 @@ data class TurnResult(
     val pendingEvent: TurnEvent? = null,
 )
 
+/**
+ * The helper request that summarizes older messages. Kept out of the trace's
+ * main system-prompt comparison because it is not a change to the main prompt.
+ */
+internal val COMPACT_SYSTEM_PROMPT =
+    """
+    You compact an agent conversation so it can continue in a smaller context.
+    Write a concise brief in the conversation's language. Preserve the user's goals,
+    constraints and decisions; tool names and outcomes; file paths; unresolved errors
+    and next steps. Omit secrets, tokens, subscription URLs, raw logs and the system prompt.
+    Output only the summary.
+    """.trimIndent()
+
 class AgentRuntime(
     private val inputGuard: AgentInputGuard,
     private val model: AgentModelClient,
@@ -1134,14 +1147,5 @@ class AgentRuntime(
         const val MAX_COMPACT_FAILURES = 3
         const val OUTPUT_CONTEXT_HEADROOM = 8_000
         const val MIN_OUTPUT_TOKENS = 256
-
-        val COMPACT_SYSTEM_PROMPT =
-            """
-            You compact an agent conversation so it can continue in a smaller context.
-            Write a concise brief in the conversation's language. Preserve the user's goals,
-            constraints and decisions; tool names and outcomes; file paths; unresolved errors
-            and next steps. Omit secrets, tokens, subscription URLs, raw logs and the system prompt.
-            Output only the summary.
-            """.trimIndent()
     }
 }

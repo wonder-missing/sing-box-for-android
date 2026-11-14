@@ -2,9 +2,11 @@ package io.nekohasekai.sfa.agent
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
@@ -190,6 +192,7 @@ object AgentApiTrace {
                     appendLine("- showing last $limit requests")
                     appendLine()
                 }
+                appendSystemPromptSection(snapshot, history)
                 if (history.isNotEmpty()) {
                     appendLine("## Request history (persisted)")
                     appendLine()
@@ -251,6 +254,75 @@ object AgentApiTrace {
         } else {
             text
         }
+    }
+
+    private data class RequestFacts(
+        val systemPrompt: String?,
+        val model: String?,
+    )
+
+    private fun requestFacts(entry: ApiTraceEntry): RequestFacts {
+        val root =
+            runCatching {
+                Json.parseToJsonElement(entry.requestBody) as? JsonObject
+            }.getOrNull() ?: return RequestFacts(null, null)
+        val system =
+            (root["messages"] as? JsonArray)
+                ?.mapNotNull { it as? JsonObject }
+                ?.firstOrNull { (it["role"] as? JsonPrimitive)?.contentOrNull == "system" }
+        val prompt = (system?.get("content") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        val model = (root["model"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        return RequestFacts(prompt, model)
+    }
+
+    /**
+     * Puts the main system prompt at the top of the export. The prompt is read
+     * from the first retained request, not from the mutable trace field, so a
+     * changed prompt shows up as a change at a concrete request number.
+     */
+    private fun StringBuilder.appendSystemPromptSection(
+        snapshot: List<ApiTraceEntry>,
+        history: List<ApiTraceSummary>,
+    ) {
+        if (snapshot.isEmpty() && history.isEmpty()) return
+        appendLine("## System Prompt")
+        appendLine()
+        val facts = snapshot.map(::requestFacts)
+        val firstPrompt =
+            facts.firstNotNullOfOrNull { fact ->
+                fact.systemPrompt?.takeIf { it != COMPACT_SYSTEM_PROMPT }
+            } ?: systemPrompt?.takeIf { it.isNotBlank() }
+        val model = facts.firstNotNullOfOrNull { it.model }
+        val firstTime =
+            snapshot.firstOrNull()?.let { it.startedAt ?: it.timestamp }
+                ?: history.first().timestamp
+        val lastTime =
+            snapshot.lastOrNull()?.let { it.startedAt ?: it.timestamp }
+                ?: history.last().timestamp
+        appendLine("- app version: ${appVersion.ifBlank { "unknown" }}")
+        appendLine("- model: ${model ?: "unknown"}")
+        appendLine("- trace time: ${formatTime(firstTime)} – ${formatTime(lastTime)}")
+        appendLine()
+        if (firstPrompt == null) {
+            appendLine("The full system prompt is unavailable because request bodies were cleared when the app restarted.")
+            appendLine()
+            return
+        }
+        appendLine("~~~text")
+        appendLine(firstPrompt)
+        appendLine("~~~")
+        appendLine()
+        facts.forEachIndexed { index, fact ->
+            if (
+                index > 0 &&
+                fact.systemPrompt != null &&
+                fact.systemPrompt != COMPACT_SYSTEM_PROMPT &&
+                fact.systemPrompt != firstPrompt
+            ) {
+                appendLine("- system prompt changed at request ${index + 1}")
+            }
+        }
+        appendLine()
     }
 
     fun sanitizeHeaders(headers: Map<String, List<String>>?): Map<String, String> =

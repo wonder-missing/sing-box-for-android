@@ -19,6 +19,12 @@ class AgentMetaToolsTest {
         val searchText = schemas.first { it.name == AgentMetaTools.SEARCH_TOOLS }.parameters.toString()
         assertTrue(searchText.contains("\"query\""))
         assertTrue(searchText.contains("\"required\":[\"query\"]"))
+        assertTrue(
+            schemas
+                .first { it.name == AgentMetaTools.SEARCH_TOOLS }
+                .description
+                .contains("When the user asks what you can do"),
+        )
     }
 
     @Test

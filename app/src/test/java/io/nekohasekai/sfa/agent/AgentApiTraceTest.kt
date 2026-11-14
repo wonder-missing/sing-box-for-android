@@ -1,5 +1,9 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -65,6 +69,77 @@ class AgentApiTraceTest {
         assertTrue(markdown.contains("## 1. POST"))
         assertFalse(markdown.contains("## 2. POST"))
         assertTrue(markdown.contains("\"index\": 1"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
+    fun markdownStartsWithTheFirstSystemPromptAndMarksChanges() {
+        AgentApiTrace.clear()
+        AgentApiTrace.setAppVersion("test-version")
+        fun entry(
+            timestamp: Long,
+            prompt: String,
+        ) = ApiTraceEntry(
+            timestamp = timestamp,
+            method = "POST",
+            url = "https://api.deepseek.com/chat/completions",
+            requestHeaders = emptyMap(),
+            requestBody =
+                """{"model":"deepseek-chat","messages":[{"role":"system","content":"$prompt"},{"role":"user","content":"hi"}]}""",
+            status = 200,
+            responseHeaders = emptyMap(),
+            responseBody = "{}",
+            error = null,
+        )
+        AgentApiTrace.record(entry(1_700_000_000_000L, "first prompt"))
+        AgentApiTrace.record(entry(1_700_000_001_000L, "second prompt"))
+
+        val markdown = AgentApiTrace.asMarkdown()
+
+        assertTrue(markdown.contains("## System Prompt"))
+        assertTrue(markdown.indexOf("## System Prompt") < markdown.indexOf("## 1. POST"))
+        assertTrue(markdown.contains("first prompt"))
+        assertTrue(markdown.contains("- model: deepseek-chat"))
+        assertTrue(markdown.contains("- app version: test-version"))
+        assertTrue(markdown.contains("system prompt changed at request 2"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
+    fun compactionSystemPromptIsNotReportedAsAMainPromptChange() {
+        AgentApiTrace.clear()
+        fun entry(
+            timestamp: Long,
+            prompt: String,
+        ) = ApiTraceEntry(
+            timestamp = timestamp,
+            method = "POST",
+            url = "https://api.deepseek.com/chat/completions",
+            requestHeaders = emptyMap(),
+            requestBody =
+                buildJsonObject {
+                    put("model", "deepseek-chat")
+                    putJsonArray("messages") {
+                        add(
+                            buildJsonObject {
+                                put("role", "system")
+                                put("content", prompt)
+                            },
+                        )
+                    }
+                }.toString(),
+            status = 200,
+            responseHeaders = emptyMap(),
+            responseBody = "{}",
+            error = null,
+        )
+        AgentApiTrace.record(entry(1_700_000_000_000L, "main prompt"))
+        AgentApiTrace.record(entry(1_700_000_001_000L, COMPACT_SYSTEM_PROMPT))
+
+        val markdown = AgentApiTrace.asMarkdown()
+
+        assertTrue(markdown.contains("main prompt"))
+        assertFalse(markdown.contains("system prompt changed"))
         AgentApiTrace.clear()
     }
 

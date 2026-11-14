@@ -54,7 +54,9 @@ object AgentMetaTools {
             description =
                 "Search the registered capability catalog. Returns matching tools with their " +
                     "parameter schemas. Call with an empty query to list the catalog by name, " +
-                    "category and description without schemas. Results are appended to the " +
+                    "category and description without schemas. When the user asks what you can do, " +
+                    "call this with an empty query first and answer from the returned catalog; the " +
+                    "system prompt's capability list is not exhaustive. Results are appended to the " +
                     "conversation as tool output; they do not change the system prompt or the tools list.",
             parameters =
                 buildJsonObject {
