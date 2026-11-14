@@ -110,7 +110,7 @@ class VfsConnectToolTest {
     private fun validLink() =
         buildJsonObject {
             put("type", "vfs-link")
-            put("version", 1)
+            put("version", 2)
             put("server", "https://example.com")
             put("linkId", "link_1")
             put(
