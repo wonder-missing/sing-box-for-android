@@ -100,9 +100,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.AndroidViewModelFactory
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -158,7 +158,7 @@ private fun conductorViewModel(): ConductorViewModel {
     val application = LocalContext.current.applicationContext as Application
     return viewModel(
         viewModelStoreOwner = ConductorViewModelOwner,
-        factory = AndroidViewModelFactory.getInstance(application),
+        factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application),
     )
 }
 
