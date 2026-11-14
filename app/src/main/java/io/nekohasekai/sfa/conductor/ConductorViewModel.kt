@@ -88,6 +88,7 @@ import io.nekohasekai.sfa.vfs.VfsConsentRequest
 import io.nekohasekai.sfa.vfs.VfsCooldownStore
 import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
 import io.nekohasekai.sfa.vfs.VfsIssuer
+import io.nekohasekai.sfa.vfs.VfsPrivateFiles
 import io.nekohasekai.sfa.vfs.VfsResumeTokenStore
 import io.nekohasekai.sfa.vfs.VfsRuntime
 import io.nekohasekai.sfa.vfs.VfsScopedSource
@@ -500,10 +501,12 @@ class ConductorViewModel(
     private val agentConfig = AgentConfig()
 
     private val vfsDeviceIdStore =
-        VfsDeviceIdStore(File(getApplication<Application>().filesDir, "conductor/vfs-device-id"))
+        VfsDeviceIdStore(
+            VfsPrivateFiles.deviceIdFile(getApplication<Application>().filesDir),
+        )
     private val vfsResumeTokenStore =
         FileVfsResumeTokenStore(
-            File(getApplication<Application>().filesDir, "conductor/vfs-resume.json"),
+            VfsPrivateFiles.resumeFile(getApplication<Application>().filesDir),
             McpTokenCipherFactory.create(),
         )
     private val vfsTrustStore = VfsRuntime.trustStore(getApplication())

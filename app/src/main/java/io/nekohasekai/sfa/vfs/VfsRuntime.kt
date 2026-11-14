@@ -38,7 +38,7 @@ object VfsRuntime {
                 ?: VfsTrustStore(
                     persistence =
                         FileVfsTrustPersistence(
-                            File(context.applicationContext.filesDir, "conductor/vfs-trust.json"),
+                            VfsPrivateFiles.trustFile(context.applicationContext.filesDir),
                         ),
                 ).also { trust = it }
         }

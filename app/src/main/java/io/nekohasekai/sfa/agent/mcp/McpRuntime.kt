@@ -5,6 +5,7 @@ import io.nekohasekai.sfa.agent.AgentTool
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
 import io.nekohasekai.sfa.vfs.VfsIssuer
+import io.nekohasekai.sfa.vfs.VfsPrivateFiles
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -413,7 +414,9 @@ object McpRuntimes {
             instance?.let { return it }
             val file = File(context.applicationContext.filesDir, "conductor/mcp-servers.json")
             val deviceIdStore =
-                VfsDeviceIdStore(File(context.applicationContext.filesDir, "conductor/vfs-device-id"))
+                VfsDeviceIdStore(
+                    VfsPrivateFiles.deviceIdFile(context.applicationContext.filesDir),
+                )
             return McpRuntime(
                 repository = FileMcpServerRepository(file, McpTokenCipherFactory.create()),
                 transportFactory = { config -> McpHttpTransport(config.url, config.token) },

@@ -1,7 +1,9 @@
 package io.nekohasekai.sfa.vfs
 
 import io.nekohasekai.sfa.agent.mcp.PlaintextMcpTokenCipher
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -60,7 +62,7 @@ class VfsStorageTest {
 
     @Test
     fun trustPersistsAcrossStoreInstances() {
-        val file = File(temp.root, "trust.json")
+        val file = VfsPrivateFiles.trustFile(temp.root)
         val now = 1_000L
         val issuer = "https://example.com"
         val first =
@@ -91,7 +93,7 @@ class VfsStorageTest {
 
     @Test
     fun processTrustIsNotPersisted() {
-        val file = File(temp.root, "trust.json")
+        val file = VfsPrivateFiles.trustFile(temp.root)
         val now = 1_000L
         val issuer = "https://example.com"
         val first =
@@ -122,7 +124,7 @@ class VfsStorageTest {
 
     @Test
     fun revokePersists() {
-        val file = File(temp.root, "trust.json")
+        val file = VfsPrivateFiles.trustFile(temp.root)
         val now = 1_000L
         val issuer = "https://example.com"
         val first =
@@ -154,7 +156,7 @@ class VfsStorageTest {
 
     @Test
     fun corruptTrustFileMeansNoTrustInsteadOfACrash() {
-        val file = File(temp.root, "trust.json")
+        val file = VfsPrivateFiles.trustFile(temp.root)
         file.writeText("{not json", Charsets.UTF_8)
 
         val store =
@@ -165,5 +167,56 @@ class VfsStorageTest {
             )
 
         assertNull(store.find("https://example.com", setOf(VfsScope.CONDUCTOR)))
+    }
+
+    @Test
+    fun privateFilesAreOutsideEveryVfsScope() {
+        val files =
+            listOf(
+                VfsPrivateFiles.trustFile(temp.root),
+                VfsPrivateFiles.resumeFile(temp.root),
+                VfsPrivateFiles.deviceIdFile(temp.root),
+            )
+
+        files.forEach { file ->
+            assertFalse(
+                "$file must not be under a VFS scope root",
+                VfsPrivateFiles.isInsideVfsScope(file, temp.root),
+            )
+        }
+        assertTrue(
+            VfsPrivateFiles.isInsideVfsScope(
+                File(temp.root, "conductor/note.md"),
+                temp.root,
+            ),
+        )
+    }
+
+    @Test
+    fun scopedSourceCannotReachPrivateMetadata() =
+        runBlocking {
+            val permissive =
+                object : VirtualDirectorySource {
+                    override suspend fun stat(path: String): VfsEntry =
+                        VfsEntry(path, path.substringAfterLast('/'), false, 1L, 1L)
+
+                    override suspend fun list(path: String): List<VfsEntry> = emptyList()
+
+                    override suspend fun read(
+                        path: String,
+                        offset: Long,
+                        length: Int,
+                    ): VfsRead = VfsRead(ByteArray(1), true)
+                }
+            val scoped = VfsScopedSource(permissive, VfsScope.entries.toSet())
+
+            assertEquals("not_found", failure { scoped.stat("vfs/trust.json") }.code)
+            assertEquals("not_found", failure { scoped.read("vfs/trust.json", 0, 1) }.code)
+        }
+
+    private suspend fun failure(block: suspend () -> Unit): VfsException {
+        val error = runCatching { block() }.exceptionOrNull()
+        assertTrue("expected VfsException, got $error", error is VfsException)
+        return error as VfsException
     }
 }
