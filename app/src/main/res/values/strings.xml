@@ -71,6 +71,14 @@
     <string name="conductor_file_request_title">Conductor needs files</string>
     <string name="conductor_file_request_choose">Choose files</string>
     <string name="conductor_file_request_choose_one">Choose a file</string>
+    <string name="vfs_consent_title">Share files with %1$s?</string>
+    <string name="vfs_consent_server">Server: %1$s</string>
+    <string name="vfs_consent_scope">This server can read:</string>
+    <string name="vfs_consent_conversation">The conversation scope includes the full chat and other MCP tool output.</string>
+    <string name="vfs_consent_detail">It can pass these files to containers it starts. You can revoke access in Settings &gt; Security.</string>
+    <string name="vfs_consent_deny">Deny</string>
+    <string name="vfs_consent_once">This time</string>
+    <string name="vfs_consent_trust">Trust 15 days</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Conductor</string>

@@ -51,8 +51,8 @@ class VfsTrustStore(
 
     fun revoke(issuer: String) {
         val normalized = VfsIssuer.normalize(issuer) ?: return
-        persistent.values.removeIf { it.issuer == normalized }
-        process.values.removeIf { it.issuer == normalized }
+        persistent.keys.filter { persistent[it]?.issuer == normalized }.forEach { persistent.remove(it) }
+        process.keys.filter { process[it]?.issuer == normalized }.forEach { process.remove(it) }
     }
 
     fun list(): List<VfsTrust> =

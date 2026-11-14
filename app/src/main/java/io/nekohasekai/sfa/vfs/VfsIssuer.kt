@@ -41,6 +41,18 @@ object VfsIssuer {
         return actual == expected
     }
 
+    /** The fixed provider endpoint under the matched server base. */
+    fun providerUrl(issuerBase: String): String? {
+        val base = normalize(issuerBase) ?: return null
+        val wsBase =
+            when {
+                base.startsWith("https://") -> "wss://" + base.removePrefix("https://")
+                base.startsWith("http://") -> "ws://" + base.removePrefix("http://")
+                else -> return null
+            }
+        return "$wsBase/vfs/provider"
+    }
+
     private fun parse(raw: String): URI? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return null

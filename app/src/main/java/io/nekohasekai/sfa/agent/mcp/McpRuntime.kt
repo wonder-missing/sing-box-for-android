@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.agent.mcp
 import android.content.Context
 import io.nekohasekai.sfa.agent.AgentTool
 import io.nekohasekai.sfa.agent.ToolCancellation
+import io.nekohasekai.sfa.vfs.VfsIssuer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -88,6 +89,20 @@ class McpRuntime(
     fun tools(): List<AgentTool> = toolSnapshot
 
     suspend fun listedTools(): List<McpListedTool> = gate.withLock { listLocked() }
+
+    /** Resolve exactly one enabled server whose issuer base matches a Link. */
+    suspend fun resolveServerForVfs(issuer: String): McpServerConfig? =
+        gate.withLock {
+            servers
+                .filter { config ->
+                    config.enabled &&
+                        VfsIssuer.matches(
+                            issuer,
+                            config.issuerBase.takeIf { it.isNotBlank() },
+                            config.url,
+                        )
+                }.singleOrNull()
+        }
 
     fun cancelActive() {
         cancels.forEach { it.cancel() }

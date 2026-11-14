@@ -70,6 +70,14 @@
     <string name="conductor_file_request_title">Conductor 需要文件</string>
     <string name="conductor_file_request_choose">选择文件</string>
     <string name="conductor_file_request_choose_one">选择一个文件</string>
+    <string name="vfs_consent_title">允许「%1$s」读取文件？</string>
+    <string name="vfs_consent_server">服务端：%1$s</string>
+    <string name="vfs_consent_scope">它可以读取：</string>
+    <string name="vfs_consent_conversation">conversation 范围包含完整对话和其他 MCP 工具输出。</string>
+    <string name="vfs_consent_detail">它可以把这些文件交给由它启动的容器。你可以在「设置 &gt; 安全」里撤销访问。</string>
+    <string name="vfs_consent_deny">拒绝</string>
+    <string name="vfs_consent_once">仅本次</string>
+    <string name="vfs_consent_trust">信任 15 天</string>
     <string name="conductor_commands">命令</string>
     <string name="conductor_mention">提及</string>
     <string name="conductor_empty_title">命令面板</string>

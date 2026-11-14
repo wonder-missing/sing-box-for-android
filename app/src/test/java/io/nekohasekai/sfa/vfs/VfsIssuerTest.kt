@@ -53,6 +53,19 @@ class VfsIssuerTest {
     }
 
     @Test
+    fun providerUrlUsesTheFixedPath() {
+        assertEquals(
+            "wss://example.com/vfs/provider",
+            VfsIssuer.providerUrl("https://example.com/"),
+        )
+        assertEquals(
+            "ws://example.com:8080/base/vfs/provider",
+            VfsIssuer.providerUrl("http://example.com:8080/base/"),
+        )
+        assertNull(VfsIssuer.providerUrl("ftp://example.com"))
+    }
+
+    @Test
     fun matchesOnlyCanonicalBaseUrls() {
         assertTrue(
             VfsIssuer.matches(

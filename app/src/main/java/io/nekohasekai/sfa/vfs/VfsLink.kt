@@ -8,11 +8,12 @@ import kotlinx.serialization.json.intOrNull
 /** The fixed scope vocabulary the app can export. */
 enum class VfsScope(
     val wire: String,
+    val path: String,
 ) {
-    CONDUCTOR("conductor"),
-    TRACE("trace"),
-    SYSTEM_PROMPT("system_prompt"),
-    CONVERSATION("conversation"),
+    CONDUCTOR("conductor", "conductor/**"),
+    TRACE("trace", ".runtime/trace.md"),
+    SYSTEM_PROMPT("system_prompt", ".runtime/system_prompt.md"),
+    CONVERSATION("conversation", ".runtime/conversation.md"),
     ;
 
     companion object {
@@ -42,6 +43,8 @@ data class VfsLink(
 class VfsConnectException(
     val code: String,
     message: String,
+    val retryAfterMs: Long? = null,
+    val cooldownUntil: Long? = null,
 ) : Exception(message)
 
 object VfsLinkParser {
