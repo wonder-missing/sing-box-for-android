@@ -137,6 +137,31 @@ class OpenAiCompatibleModelClientTest {
     }
 
     @Test
+    fun analyzeImageUsesTheDeepSeekChatCompletionsImagePart() {
+        responseBody =
+            """
+            {"choices": [{"message": {"content": "a cat"}, "finish_reason": "stop"}]}
+            """.trimIndent()
+
+        val client = clientFor("http://127.0.0.1:${server.localPort}", "deepseek-flash")
+        val answer =
+            runBlocking {
+                client.analyzeImage(
+                    image = byteArrayOf(1, 2, 3),
+                    mimeType = "image/jpeg",
+                    question = "what is shown?",
+                    apiKey = "sk-test",
+                )
+            }
+
+        assertEquals("a cat", answer)
+        assertTrue(requestBody.contains("\"model\":\"deepseek-flash\""))
+        assertTrue(requestBody.contains("\"type\":\"image_url\""))
+        assertTrue(requestBody.contains("\"detail\":\"auto\""))
+        assertTrue(requestBody.contains("data:image/jpeg;base64,AQID"))
+    }
+
+    @Test
     fun omitsMaxTokensWhenTheProviderDefaultApplies() {
         responseBody =
             """
