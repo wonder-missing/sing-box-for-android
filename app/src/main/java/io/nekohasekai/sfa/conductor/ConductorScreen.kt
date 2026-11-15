@@ -3,7 +3,6 @@ package io.nekohasekai.sfa.conductor
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.app.Application
-import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -118,6 +117,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
@@ -135,6 +135,9 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentImageRef
+import io.nekohasekai.sfa.log.AppLog
+import io.nekohasekai.sfa.telemetry.TelemetryEventLog
+import io.nekohasekai.sfa.telemetry.TelemetryEvents
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.compat.CodeEditorSyntax
 import io.nekohasekai.sfa.compat.ProfileCodeEditor
@@ -330,13 +333,42 @@ fun ConductorScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var importingImage by remember { mutableStateOf(false) }
+    fun reportImagePicker(
+        stage: String,
+        error: Throwable? = null,
+        hasUri: Boolean? = null,
+    ) {
+        TelemetryEventLog.recordAsync(
+            context,
+            "conductor_image",
+            buildMap {
+                put("stage", stage)
+                hasUri?.let { put("has_uri", it) }
+                error?.let {
+                    put("error", it.javaClass.simpleName)
+                    put("detail", TelemetryEvents.scrub(it.message.orEmpty(), 160))
+                }
+            },
+        )
+        error?.let {
+            AppLog.error(
+                "conductor image picker $stage ${it.javaClass.simpleName}: " +
+                    TelemetryEvents.scrub(it.message.orEmpty(), 160),
+            )
+        }
+    }
     val imagePicker =
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+            reportImagePicker("result", hasUri = uri != null)
             if (uri != null) {
                 coroutineScope.launch {
                     importingImage = true
                     try {
                         viewModel.importImage(uri)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        reportImagePicker("import", e)
                     } finally {
                         importingImage = false
                     }
@@ -630,7 +662,7 @@ fun ConductorScreen(
                                 textViewer =
                                     ConductorViewer(
                                         title = context.getString(R.string.conductor_plain_transcript),
-                                        fileName = ConductorExportNames.conversation(),
+                                        fileName = ConductorExportNames.transcript(),
                                         text = viewModel.conversationTranscript(),
                                         kind = ConductorExport.Conversation,
                                     )
@@ -807,14 +839,16 @@ fun ConductorScreen(
             pendingImage = uiState.pendingImage,
             importingImage = importingImage,
             onAddImage = {
-                imagePicker.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                )
+                reportImagePicker("launch")
+                runCatching {
+                    imagePicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                }.onFailure { reportImagePicker("launch_failed", it) }
             },
             onRemoveImage = viewModel::clearPendingImage,
             imageFile = viewModel::imageFile,
             statusText = uiState.turnStatus,
-            statusSince = uiState.turnStatusSince,
             contextPercent = uiState.contextPercent,
             contextUsedTokens = uiState.contextUsedTokens,
             contextLimitTokens = uiState.contextLimitTokens,
@@ -827,10 +861,6 @@ fun ConductorScreen(
                     press.edit?.let(::applyEdit)
                     focusInput()
                 }
-            },
-            onAt = {
-                applyEdit(ConductorInputEdits.mention(input, MaxInputChars))
-                focusInput()
             },
             focusRequester = focusRequester,
         )
@@ -2075,17 +2105,8 @@ private fun formatTokenCount(tokens: Int): String =
 @Composable
 private fun TurnStatus(
     text: String,
-    since: Long,
     modifier: Modifier = Modifier,
 ) {
-    var elapsed by remember { mutableStateOf(0L) }
-    LaunchedEffect(text, since) {
-        elapsed = 0L
-        while (true) {
-            delay(1_000)
-            elapsed = ((SystemClock.uptimeMillis() - since).coerceAtLeast(0L)) / 1_000L
-        }
-    }
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.End,
@@ -2096,12 +2117,13 @@ private fun TurnStatus(
             strokeWidth = 1.5.dp,
         )
         Text(
-            text = if (elapsed > 0L) "$text · ${elapsed}s" else text,
+            text = text,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 6.dp, end = 4.dp),
+            textAlign = TextAlign.End,
+            modifier = Modifier.padding(start = 6.dp),
         )
     }
 }
@@ -2124,12 +2146,10 @@ private fun ConductorInputBar(
     onRemoveImage: () -> Unit,
     imageFile: (String) -> File?,
     statusText: String?,
-    statusSince: Long,
     contextPercent: Int,
     contextUsedTokens: Int,
     contextLimitTokens: Int,
     onSlash: () -> Unit,
-    onAt: () -> Unit,
     focusRequester: FocusRequester,
 ) {
     val sendLabel = stringResource(R.string.conductor_send)
@@ -2226,58 +2246,6 @@ private fun ConductorInputBar(
                     label = stringResource(R.string.conductor_commands),
                     onClick = onSlash,
                 )
-                InputGlyphButton(
-                    icon = R.drawable.ic_conductor_at,
-                    label = stringResource(R.string.conductor_mention),
-                    onClick = onAt,
-                )
-                pendingImage?.let { ref ->
-                    PendingImageChip(
-                        ref = ref,
-                        imageFile = imageFile,
-                        onRemove = onRemoveImage,
-                    )
-                }
-                if (statusText == null) {
-                    Spacer(modifier = Modifier.weight(1f))
-                    if (contextLimitTokens > 0 && pendingImage == null) {
-                        val contextDescription =
-                            stringResource(
-                                R.string.conductor_context_usage_description,
-                                contextPercent,
-                                contextUsedTokens,
-                                contextLimitTokens,
-                            )
-                        Text(
-                            text =
-                                stringResource(
-                                    R.string.conductor_context_usage,
-                                    contextPercent,
-                                    formatTokenCount(contextUsedTokens),
-                                    formatTokenCount(contextLimitTokens),
-                                ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color =
-                                if (contextPercent >= ContextWarningPercent) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier =
-                            Modifier
-                                .padding(end = 4.dp)
-                                .semantics { contentDescription = contextDescription },
-                        )
-                    }
-                } else {
-                    TurnStatus(
-                        text = statusText,
-                        since = statusSince,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
                 if (importingImage) {
                     Box(
                         modifier = Modifier.size(48.dp),
@@ -2294,6 +2262,68 @@ private fun ConductorInputBar(
                         label = stringResource(R.string.conductor_image_add),
                         onClick = onAddImage,
                     )
+                }
+                pendingImage?.let { ref ->
+                    PendingImageChip(
+                        ref = ref,
+                        imageFile = imageFile,
+                        onRemove = onRemoveImage,
+                    )
+                }
+                Box(
+                    modifier =
+                    Modifier
+                        .weight(1f)
+                        .padding(start = 8.dp, end = 10.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    if (statusText == null) {
+                        if (contextLimitTokens > 0) {
+                            val usedText = formatTokenCount(contextUsedTokens)
+                            val limitText = formatTokenCount(contextLimitTokens)
+                            val contextDescription =
+                                stringResource(
+                                    R.string.conductor_context_usage_description,
+                                    usedText,
+                                    limitText,
+                                )
+                            Text(
+                                text =
+                                    stringResource(
+                                        R.string.conductor_context_usage,
+                                        usedText,
+                                        limitText,
+                                    ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color =
+                                    if (contextPercent >= ContextWarningPercent) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.End,
+                                modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .semantics { contentDescription = contextDescription },
+                            )
+                        }
+                    } else {
+                        val statusLabel =
+                            stringResource(
+                                when {
+                                    statusText == "Receiving response" -> R.string.conductor_status_thinking
+                                    statusText.startsWith("Running ") -> R.string.conductor_status_running
+                                    else -> R.string.conductor_status_waiting
+                                },
+                            )
+                        TurnStatus(
+                            text = statusLabel,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
                 if (isRunning) {
                     Box(

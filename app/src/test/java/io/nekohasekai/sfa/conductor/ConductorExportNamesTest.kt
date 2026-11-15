@@ -11,7 +11,7 @@ class ConductorExportNamesTest {
         val at = Date(0)
         val utc = TimeZone.getTimeZone("UTC")
 
-        assertEquals("conductor-conversation-19700101-000000.md", ConductorExportNames.conversation(at, utc))
+        assertEquals("conductor-transcript-19700101-000000.md", ConductorExportNames.transcript(at, utc))
         assertEquals("conductor-api-trace-19700101-000000.md", ConductorExportNames.apiTrace(at, utc))
     }
 }

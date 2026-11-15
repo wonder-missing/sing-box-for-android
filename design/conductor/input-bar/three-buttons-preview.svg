@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WonderSing Conductor composer — three-button layout proposal
+  Design draft only. Not a spec, not implementation.
+  Logical unit: 1 px = 1 dp. Render at 3x for review.
+
+  Artboard: 816 × 272
+  Each phone crop: 360 × 176 (56 empty chat + 120 composer), composer flush bottom
+  Composer: 360 × 120
+
+    12  top padding
+    40  text region (14 / 20, room for two lines)
+    16  gap above the footer
+    48  footer / toolbar
+     4  bottom padding
+
+  Buttons: visual 36, hit 48, same x in both states
+    /    center (30,  92)  hit [6, 54] × [68, 116]    side margin 6
+    +    center (78,  92)  hit [54, 102] × [68, 116]
+    send/stop center (330, 92)  hit [306, 354] × [68, 116]  side margin 6
+    Hits abut, they do not overlap.
+
+  Status slot (fixed, both states): right-aligned to x = 296
+    16 gap to send visual left (312). Slot sits between + (visual right 96 / hit 102)
+    and 296. 14sp type. Idle: "17.4k/1M". Waiting: spinner + "Waiting…".
+    Context usage is hidden while waiting.
+
+  App UI is English only. Outer labels may be Chinese.
+  No @ in the UI. Left prepares input, right executes.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="816" height="272" viewBox="0 0 816 272"
+     role="img"
+     aria-label="WonderSing Conductor three-button composer layout, idle and waiting side by side">
+
+  <title>WonderSing Conductor composer · three-button layout proposal</title>
+
+  <defs>
+    <symbol id="ic-slash" viewBox="0 0 24 24">
+      <path d="M15 4.5 9 19.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="ic-plus" viewBox="0 0 24 24">
+      <path d="M12 6v12M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="ic-send" viewBox="0 0 24 24">
+      <path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="ic-expand" viewBox="0 0 24 24">
+      <path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="ic-stop" viewBox="0 0 24 24">
+      <rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor"/>
+    </symbol>
+    <symbol id="ic-spinner" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="5.75" fill="none" stroke="currentColor"
+              stroke-width="1.9" stroke-linecap="round"
+              stroke-dasharray="26.5 9.6" transform="rotate(-80 8 8)"/>
+    </symbol>
+
+    <clipPath id="crop-clip">
+      <path d="M0 16 A16 16 0 0 1 16 0 H344 A16 16 0 0 1 360 16 V176 H0 Z"/>
+    </clipPath>
+
+    <filter id="crop-shadow" x="-12%" y="-10%" width="124%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#101115" flood-opacity="0.22"/>
+    </filter>
+
+    <path id="crop-shape" d="M0 16 A16 16 0 0 1 16 0 H344 A16 16 0 0 1 360 16 V176 H0 Z"/>
+  </defs>
+
+  <style>
+    .board { fill: #E8EAED; }
+    .label {
+      font-family: "Noto Sans CJK SC", "Noto Sans CJK", "Noto Sans", sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      fill: #3C4043;
+      text-anchor: middle;
+    }
+    .screen { fill: #101115; }
+    .panel { fill: #27282C; }
+    .btn { fill: #303136; }
+    .icon-light { color: #F2F2F7; }
+    .icon-muted { color: #8E8E93; }
+    .icon-on-red { color: #F2F2F7; }
+    .placeholder {
+      font-family: "Noto Sans CJK SC", "Noto Sans CJK", "Noto Sans", sans-serif;
+      font-size: 14px;
+      font-weight: 400;
+      fill: #8E8E93;
+    }
+    .status-idle {
+      font-family: "Noto Sans CJK SC", "Noto Sans CJK", "Noto Sans", sans-serif;
+      font-size: 14px;
+      font-weight: 400;
+      fill: #6E7178;
+      text-anchor: end;
+    }
+    .status-wait {
+      font-family: "Noto Sans CJK SC", "Noto Sans CJK", "Noto Sans", sans-serif;
+      font-size: 14px;
+      font-weight: 400;
+      fill: #A0A3AA;
+      text-anchor: end;
+    }
+    .spin { color: #A0A3AA; }
+  </style>
+
+  <rect class="board" width="816" height="272"/>
+
+  <!-- ===== Idle ===== -->
+  <text class="label" x="212" y="48">回复结束</text>
+  <use href="#crop-shape" xlink:href="#crop-shape" transform="translate(32,64)" filter="url(#crop-shadow)" fill="#101115"/>
+  <g id="crop-idle" transform="translate(32,64)" clip-path="url(#crop-clip)">
+    <rect class="screen" width="360" height="176"/>
+    <g id="composer-idle" transform="translate(0,56)">
+      <path class="panel" d="M0 16 A16 16 0 0 1 16 0 H344 A16 16 0 0 1 360 16 V120 H0 Z"/>
+
+      <g class="icon-muted" transform="translate(320,10)">
+        <use href="#ic-expand" xlink:href="#ic-expand" width="20" height="20"/>
+      </g>
+
+      <text class="placeholder" x="16" y="26">Ask anything, or type / for commands</text>
+
+      <g id="toolbar-idle" transform="translate(0,92)">
+        <g class="icon-light">
+          <circle class="btn" cx="30" cy="0" r="18"/>
+          <use href="#ic-slash" xlink:href="#ic-slash" x="20" y="-10" width="20" height="20"/>
+        </g>
+        <g class="icon-light">
+          <circle class="btn" cx="78" cy="0" r="18"/>
+          <use href="#ic-plus" xlink:href="#ic-plus" x="68" y="-10" width="20" height="20"/>
+        </g>
+        <!-- Status: muted usage, right-aligned to 296 -->
+        <text class="status-idle" x="296" y="5.5">17.4k/1M</text>
+        <g class="icon-muted">
+          <circle class="btn" cx="330" cy="0" r="18"/>
+          <use href="#ic-send" xlink:href="#ic-send" x="320" y="-9" width="20" height="20"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- ===== Waiting ===== -->
+  <text class="label" x="604" y="48">等待响应</text>
+  <use href="#crop-shape" xlink:href="#crop-shape" transform="translate(424,64)" filter="url(#crop-shadow)" fill="#101115"/>
+  <g id="crop-waiting" transform="translate(424,64)" clip-path="url(#crop-clip)">
+    <rect class="screen" width="360" height="176"/>
+    <g id="composer-waiting" transform="translate(0,56)">
+      <path class="panel" d="M0 16 A16 16 0 0 1 16 0 H344 A16 16 0 0 1 360 16 V120 H0 Z"/>
+
+      <g class="icon-muted" transform="translate(320,10)">
+        <use href="#ic-expand" xlink:href="#ic-expand" width="20" height="20"/>
+      </g>
+
+      <text class="placeholder" x="16" y="26">Ask anything, or type / for commands</text>
+
+      <g id="toolbar-waiting" transform="translate(0,92)">
+        <g class="icon-light">
+          <circle class="btn" cx="30" cy="0" r="18"/>
+          <use href="#ic-slash" xlink:href="#ic-slash" x="20" y="-10" width="20" height="20"/>
+        </g>
+        <g class="icon-light">
+          <circle class="btn" cx="78" cy="0" r="18"/>
+          <use href="#ic-plus" xlink:href="#ic-plus" x="68" y="-10" width="20" height="20"/>
+        </g>
+        <!-- Same slot: spinner + Waiting…, right-aligned to 296. Usage hidden. -->
+        <!-- Waiting… is ≈64.2 wide in Noto Sans CJK SC 14; spinner 13 + gap 6. -->
+        <g class="spin" transform="translate(212.8,-6.5)">
+          <use href="#ic-spinner" xlink:href="#ic-spinner" width="13" height="13"/>
+        </g>
+        <text class="status-wait" x="296" y="5.5">Waiting…</text>
+        <g class="icon-on-red">
+          <circle cx="330" cy="0" r="18" fill="#A51F1C"/>
+          <use href="#ic-stop" xlink:href="#ic-stop" x="320" y="-10" width="20" height="20"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

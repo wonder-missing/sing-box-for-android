@@ -10,10 +10,10 @@ import java.util.TimeZone
  * local time, so two uploads of the same conversation do not share a name.
  */
 object ConductorExportNames {
-    fun conversation(
+    fun transcript(
         at: Date = Date(),
         zone: TimeZone = TimeZone.getDefault(),
-    ): String = named("conductor-conversation", at, zone)
+    ): String = named("conductor-transcript", at, zone)
 
     fun apiTrace(
         at: Date = Date(),

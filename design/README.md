@@ -53,10 +53,11 @@ Lyra 维护的设计稿与规格。每个组件一个目录，里面放：
 - 圆钮视觉 36dp / 触控 48dp，图标 20dp；发送可用性按 `input.trim()` 是否为空判断。
 - 输入栏行为补充（2026-11-09）：默认态从 120dp 起随文本换行自动长高，最多 5 行；删除文本自动回缩到 120dp。展开态仍为 85%。键盘 inset 变化时以及变化结束后 300ms 内，面板高度一律 `snap`；IME 稳定后，展开/收起与文本增减才走 200ms 高度动画。面板高度取整到物理像素，避免亚像素抖动。placeholder 作为输入框的兄弟节点绘制，不放进 `BasicTextField` 的 decoration，避免面板缩放时跟着文本框内部重排而发虚。
 - 图标直接使用本目录 `icons/` 里的 VectorDrawable 副本；RTL 下整行镜像，图标几何不镜像。
+- 输入栏 v1.3（2026-11-16）：去掉 `@`；左组 `/` + `+`，右侧发送/停止固定；中间状态槽空闲显示 `used/limit`，进行中显示 spinner + `Waiting…` / `Thinking…` / `Running…`，不显示秒数或工具名；面板 120dp 下限、展开 85%、IME snap 和 200ms 动画沿用 v1.2。
 
 ## 索引
 
 | 目录 | 内容 | 状态 |
 |---|---|---|
-| `conductor/input-bar/` | Conductor 底部输入框：`/` 命令、`@` 提及、发送三颗圆钮 | v1.2 已实现，真机验收中 |
+| `conductor/input-bar/` | Conductor 底部输入框。已实现基线见 [`SPEC.md`](conductor/input-bar/SPEC.md)（v1.2），**当前实现以 [`SPEC-v1.3.md`](conductor/input-bar/SPEC-v1.3.md) 为准**：去掉 `@`，`/` 与附件 `+` 左分组，发送/停止右侧固定，状态回到同一底栏。`three-buttons-preview.png` 仅为布局归档示意，与文稿冲突时以 SPEC-v1.3 为准 | v1.3 已实现，待真机验收 |
 | `app-icon/` | WonderSing 启动图标 SVG 原稿（A11 定稿） | 已导出，待真机看 |

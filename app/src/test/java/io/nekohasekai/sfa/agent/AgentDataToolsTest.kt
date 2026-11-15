@@ -266,7 +266,7 @@ class AgentDataToolsTest {
         val conversation = registry.exec("diagnostics_export", """{"kind":"conversation"}""")
         assertTrue(conversation.errorMessage ?: "", conversation.ok)
         val path = conversation.output!!.string("path")
-        assertTrue(path.startsWith("conductor/conversation-"))
+        assertTrue(path.startsWith("conductor/transcript-"))
         val text = store.readText(path).text
         assertFalse(text.contains("wonder@example.com"))
         assertFalse(text.contains("100.106.21.44"))

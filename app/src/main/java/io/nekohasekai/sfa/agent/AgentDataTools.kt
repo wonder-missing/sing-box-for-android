@@ -550,7 +550,8 @@ class AgentDataTools(
                         if (requested.isNotEmpty()) {
                             markdownName(sanitizeName(requested))
                         } else {
-                            uniqueName("$kind-", "md")
+                            val stem = if (kind == "conversation") "transcript" else kind
+                            uniqueName("$stem-", "md")
                         }
                     val path = "conductor/$name"
                     val entry = fileStore.writeText(path, AgentSanitizer.scrubForModelRead(text), overwrite = overwrite)

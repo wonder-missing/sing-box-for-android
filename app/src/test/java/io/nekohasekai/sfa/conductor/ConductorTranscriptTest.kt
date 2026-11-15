@@ -46,9 +46,10 @@ class ConductorTranscriptTest {
                 ),
             )
 
-        val markdown = conductorConversationMarkdown(items, "1.2.3", "1.2.0")
+        val markdown =
+            conductorConversationMarkdown(items, "1.2.3", "1.2.0", includeReasoning = true)
 
-        assertTrue(markdown.startsWith("# Conductor conversation"))
+        assertTrue(markdown.startsWith("# Conductor transcript"))
         assertTrue(markdown.contains("- app version: 1.2.3"))
         assertTrue(markdown.contains("- session started on: 1.2.0"))
         assertTrue(markdown.contains("## User\n\nhello"))
@@ -67,6 +68,21 @@ class ConductorTranscriptTest {
         assertTrue(markdown.contains("## Question: Continue?"))
         assertTrue(markdown.contains("- options: Yes | No"))
         assertTrue(markdown.contains("- answered: Yes"))
+    }
+
+    @Test
+    fun omitsReasoningByDefault() {
+        val items =
+            listOf(
+                ConductorItem.User("hello"),
+                ConductorItem.Reasoning("thinking"),
+                ConductorItem.Assistant("hi"),
+            )
+
+        val markdown = conductorConversationMarkdown(items, "1.0")
+
+        assertFalse(markdown.contains("## Thinking"))
+        assertFalse(markdown.contains("thinking"))
     }
 
     @Test
@@ -140,7 +156,7 @@ class ConductorTranscriptTest {
     fun emptyConversationsKeepTheHeader() {
         val markdown = conductorConversationMarkdown(emptyList(), "1.0")
 
-        assertTrue(markdown.startsWith("# Conductor conversation"))
+        assertTrue(markdown.startsWith("# Conductor transcript"))
         assertTrue(markdown.contains("- app version: 1.0"))
         assertFalse(markdown.endsWith("\n"))
     }

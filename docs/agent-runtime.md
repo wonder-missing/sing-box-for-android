@@ -1345,8 +1345,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `taildrop_send` / `taildrop_send_selected` 成功时输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和 `note`，明确文件已到对端的 Taildrop inbox，但未保存到对端磁盘；描述同步说明「success means peer inbox received, not saved/opened」。接收方仍需 `tailscale file get` 或 Taildrop UI 落盘。离线 peer 直接报错，不做 sender-side 排队。
 - 本地 463 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。GitHub release 正文和 arm64 APK 已确认。图片选择、缩略图、全屏查看和直接图片请求仍需真机确认。
 
-### wonder.83（待发）：端侧错误遥测
+### wonder.83：输入栏 v1.3、transcript 口径与端侧遥测（2026-11-16）
 
+- 按 Lyra [`design/conductor/input-bar/SPEC-v1.3.md`](../design/conductor/input-bar/SPEC-v1.3.md) 实现输入栏：去掉 `@`，`/` 和附件 `+` 放左侧，发送/停止固定在右侧；状态槽空闲显示 `used/limit`（不再有 `ctx` 或百分号），进行中显示 10dp spinner + `Waiting…` / `Thinking…` / `Running…`，不显示 provider 长句、工具名或秒数。面板 120dp 下限、展开 85%、IME snap/200ms 动画沿用 v1.2。
+- Copy/Save/Plain Transcript 统一使用 **transcript**：`Copy transcript`、`Save transcript to file`、`# Conductor transcript`、`conductor-transcript-<time>.md`；`diagnostics_export(kind=conversation)` 的 kind 保留兼容，但默认文件名用 `transcript-`，文件头也用 transcript。
+- 三处 plain transcript 默认都不包含 `## Thinking`；API trace 保留 reasoning。VFS `.runtime/conversation.md` 也走同一默认口径。以后若要显示 thinking，必须做全局开关，不能让 Copy 和 Plain Transcript 各带各的。
+- 图片选择器：`launch`、`result`（只记 `has_uri`）、`import`、`launch_failed` 都写 `conductor_image` 遥测和 AppLog；导入/回调异常会被捕获，不再直接崩。系统选择器导致的未捕获 JVM 崩溃仍由 crash report 捕获。
 - 新增 `conductor_viewer`：Rich 查看器 `stage=open` / `stage=ready`，带 viewer 名称和字符数，用来判断「点了 Rich 但没打开」停在哪一步。
 - 新增 `conductor_viewer_error`：Markwon parse / adapter bind / 单块 render 失败，带 viewer、stage、异常类名、脱敏后的 160 字摘要和字符数；单块失败会显示 fallback 文本而不是让整个页面崩。
 - `conductor_tool` 失败追加脱敏后的 `detail`（160 字）；新增 `conductor_turn` 的 `result=failed` + 错误码 + 脱敏摘要；图片导入失败记 `conductor_image`（stage/error/detail）。

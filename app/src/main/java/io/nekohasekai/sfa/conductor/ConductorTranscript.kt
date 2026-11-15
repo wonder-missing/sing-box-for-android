@@ -3,14 +3,19 @@ package io.nekohasekai.sfa.conductor
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentSanitizer
 
-/** Renders the conversation the same way for the clipboard export and `.runtime/conversation.md`. */
+/**
+ * Renders the plain transcript for the clipboard export, Plain Transcript
+ * viewer and `.runtime/conversation.md`. Reasoning is model scratchpad and is
+ * omitted by default; the API trace keeps it for diagnostics.
+ */
 internal fun conductorConversationMarkdown(
     items: List<ConductorItem>,
     appVersion: String,
     sessionStartVersion: String = "",
+    includeReasoning: Boolean = false,
 ): String =
     buildString {
-        appendLine("# Conductor conversation")
+        appendLine("# Conductor transcript")
         appendLine()
         appendLine("- app version: $appVersion")
         if (sessionStartVersion.isNotBlank() && sessionStartVersion != appVersion) {
@@ -34,10 +39,12 @@ internal fun conductorConversationMarkdown(
                 }
 
                 is ConductorItem.Reasoning -> {
-                    appendLine("## Thinking")
-                    appendLine()
-                    appendLine(item.text)
-                    appendLine()
+                    if (includeReasoning) {
+                        appendLine("## Thinking")
+                        appendLine()
+                        appendLine(item.text)
+                        appendLine()
+                    }
                 }
 
                 is ConductorItem.Tool -> {
