@@ -1334,6 +1334,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.79：消息流工具条与 trace 范围（2026-11-15）
+
+- 答题卡选项不再用 Material `RadioButton`/`Checkbox` 的 48dp 盒，改成 20dp 自定义圆圈/方框；控制左边缘与题目文字对齐，控制与选项文字留 10dp。选项行不再有胶囊背景。
+- 消息流底部工具条的上边距改为 12dp（叠加列表 12dp 间距，共 24dp）；三点图标放在 48dp 点击区的左端，与消息左边缘对齐。菜单只保留 Plain Transcript 和 API Trace，分别打开只读文本查看器；查看器用 `ProfileCodeEditor` 的 `PLAIN` 语法（无 Markdown 渲染，保留行号/选择），底部 Copy text / Save to file。Save 复用现有 `CreateDocument` 导出链路。
+- `diagnostics_export(kind=trace)` 增加 `since_minutes`（1–1440）。返回值增加 `entries`、`rangeStart`、`rangeEnd`、`availableFrom`、`missingBefore`；请求范围早于保留窗口时明确说明，而不是静默从更晚开始。`tail` 仍限制 1–20。
+- `AgentApiTrace` 把完整 entries/summaries/systemPrompt 落到 `filesDir/conductor/api-trace.json`，2.5M 字符封顶，启动时加载；`clear()` 删除该文件。private 目录不在 Conductor 工作区和 VFS 内。更新/重启后完整 body 不再丢。
+- 本地全量 450 个用例绿。
+
 ### wonder.78：MCP 工具来源元数据（2026-11-15）
 
 - `AgentToolDefinition` 增加 `serverName` 和 `namespace`。MCP 工具填充这两个字段，description 以 `MCP server: <显示名>.` 开头；`search_tools` 的 matches 和空 query 的 catalog 都返回 `server`/`namespace`。

@@ -63,6 +63,7 @@ import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
+import io.nekohasekai.sfa.agent.TraceExport
 import io.nekohasekai.sfa.agent.TurnEvent
 import io.nekohasekai.sfa.agent.TurnOutcome
 import io.nekohasekai.sfa.agent.TurnResult
@@ -234,7 +235,10 @@ class ConductorViewModel(
         object : DiagnosticsSource {
             override fun conversationMarkdown(): String = conversationTranscript()
 
-            override fun traceMarkdown(lastEntries: Int?): String = apiTraceMarkdown(lastEntries)
+            override fun traceMarkdown(
+                lastEntries: Int?,
+                since: Long?,
+            ): TraceExport = AgentApiTrace.export(lastEntries, since)
         }
 
     private val taildropPort =
@@ -835,6 +839,9 @@ class ConductorViewModel(
     val fileRequest: StateFlow<FileRequestUi?> = _fileRequest.asStateFlow()
 
     init {
+        AgentApiTrace.attachPersistence(
+            File(getApplication<Application>().filesDir, "conductor/api-trace.json"),
+        )
         AgentApiTrace.setAppVersion(BuildConfig.VERSION_NAME)
         runCatching { fileStore.ensureWorkspace() }
         restoreSession()

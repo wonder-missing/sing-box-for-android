@@ -14,6 +14,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -34,6 +35,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -51,17 +54,18 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -87,6 +91,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -96,7 +101,6 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -109,6 +113,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -119,6 +126,9 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
+import io.nekohasekai.sfa.compat.CodeEditorSyntax
+import io.nekohasekai.sfa.compat.ProfileCodeEditor
+import io.nekohasekai.sfa.compat.ProfileEditorColors
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -158,6 +168,13 @@ private val InputFieldSaver =
     )
 
 private enum class ConductorExport { Conversation, ApiTrace }
+
+private data class ConductorViewer(
+    val title: String,
+    val fileName: String,
+    val text: String,
+    val kind: ConductorExport,
+)
 
 /**
  * The Conductor session is process-scoped. An in-flight turn survives leaving
@@ -200,6 +217,7 @@ fun ConductorScreen(
     }
 
     var pendingFilePickId by rememberSaveable { mutableStateOf<String?>(null) }
+    var textViewer by remember { mutableStateOf<ConductorViewer?>(null) }
     fun deliverPickedFiles(uris: List<Uri>) {
         val requestId = pendingFilePickId
         pendingFilePickId = null
@@ -372,20 +390,6 @@ fun ConductorScreen(
         focusManager.clearFocus()
     }
 
-    fun copyConversation() {
-        clipboard.setText(AnnotatedString(viewModel.conversationTranscript()))
-        Toast.makeText(context, context.getString(R.string.conductor_conversation_copied), Toast.LENGTH_SHORT).show()
-    }
-
-    fun copyApiTrace() {
-        if (!viewModel.hasApiTrace()) {
-            Toast.makeText(context, context.getString(R.string.conductor_api_trace_empty), Toast.LENGTH_LONG).show()
-            return
-        }
-        clipboard.setText(AnnotatedString(viewModel.apiTraceMarkdown()))
-        Toast.makeText(context, context.getString(R.string.conductor_api_trace_copied), Toast.LENGTH_SHORT).show()
-    }
-
     val exportLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("text/plain"),
@@ -468,22 +472,6 @@ fun ConductorScreen(
                     Toast.LENGTH_LONG,
                 ).show()
             }
-    }
-
-    fun exportConversation() {
-        if (uiState.items.isEmpty()) {
-            Toast.makeText(context, context.getString(R.string.conductor_conversation_empty), Toast.LENGTH_LONG).show()
-            return
-        }
-        export(ConductorExport.Conversation, ConductorExportNames.conversation())
-    }
-
-    fun exportApiTrace() {
-        if (!viewModel.hasApiTrace()) {
-            Toast.makeText(context, context.getString(R.string.conductor_api_trace_empty), Toast.LENGTH_LONG).show()
-            return
-        }
-        export(ConductorExport.ApiTrace, ConductorExportNames.apiTrace())
     }
 
     BackHandler(enabled = inputExpanded) {
@@ -592,10 +580,24 @@ fun ConductorScreen(
                     }
                     item(key = "conversation-actions") {
                         ConversationActions(
-                            onCopyConversation = ::copyConversation,
-                            onExportConversation = ::exportConversation,
-                            onCopyApiTrace = ::copyApiTrace,
-                            onExportApiTrace = ::exportApiTrace,
+                            onPlainTranscript = {
+                                textViewer =
+                                    ConductorViewer(
+                                        title = context.getString(R.string.conductor_plain_transcript),
+                                        fileName = ConductorExportNames.conversation(),
+                                        text = viewModel.conversationTranscript(),
+                                        kind = ConductorExport.Conversation,
+                                    )
+                            },
+                            onApiTrace = {
+                                textViewer =
+                                    ConductorViewer(
+                                        title = context.getString(R.string.conductor_api_trace),
+                                        fileName = ConductorExportNames.apiTrace(),
+                                        text = viewModel.apiTraceMarkdown(),
+                                        kind = ConductorExport.ApiTrace,
+                                    )
+                            },
                         )
                     }
                 }
@@ -718,6 +720,14 @@ fun ConductorScreen(
                 request = request,
                 onDecision = viewModel::resolveVfsConsent,
                 onDismiss = { viewModel.resolveVfsConsent(VfsConsentDecision.DENY) },
+            )
+        }
+
+        textViewer?.let { viewer ->
+            ConductorTextViewerDialog(
+                viewer = viewer,
+                onDismiss = { textViewer = null },
+                onSave = { export(viewer.kind, viewer.fileName) },
             )
         }
 
@@ -905,52 +915,151 @@ private fun vfsScopeLabel(scope: VfsScope): String =
 
 @Composable
 private fun ConversationActions(
-    onCopyConversation: () -> Unit,
-    onExportConversation: () -> Unit,
-    onCopyApiTrace: () -> Unit,
-    onExportApiTrace: () -> Unit,
+    onPlainTranscript: () -> Unit,
+    onApiTrace: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                imageVector = Icons.Default.MoreHoriz,
-                contentDescription = stringResource(R.string.conductor_conversation_actions),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+    ) {
+        Box(modifier = Modifier.size(48.dp)) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                        .clickable { expanded = true },
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreHoriz,
+                    contentDescription = stringResource(R.string.conductor_conversation_actions),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.conductor_plain_transcript)) },
+                    onClick = {
+                        expanded = false
+                        onPlainTranscript()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.conductor_api_trace)) },
+                    onClick = {
+                        expanded = false
+                        onApiTrace()
+                    },
+                )
+            }
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
+    }
+}
+
+@Composable
+private fun ConductorTextViewerDialog(
+    viewer: ConductorViewer,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surface,
         ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.conductor_copy_conversation)) },
-                onClick = {
-                    expanded = false
-                    onCopyConversation()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.conductor_export_conversation)) },
-                onClick = {
-                    expanded = false
-                    onExportConversation()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.conductor_copy_api_trace)) },
-                onClick = {
-                    expanded = false
-                    onCopyApiTrace()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.conductor_export_api_trace)) },
-                onClick = {
-                    expanded = false
-                    onExportApiTrace()
-                },
-            )
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(start = 16.dp, end = 8.dp, top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = viewer.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.close),
+                        )
+                    }
+                }
+
+                val colorScheme = MaterialTheme.colorScheme
+                val editorColors =
+                    remember(colorScheme) {
+                        ProfileEditorColors(
+                            background = colorScheme.background.toArgb(),
+                            foreground = colorScheme.onSurface.toArgb(),
+                            lineNumber = colorScheme.onSurfaceVariant.toArgb(),
+                            lineNumberBackground = colorScheme.background.toArgb(),
+                            selectionBackground = colorScheme.primary.copy(alpha = 0.35f).toArgb(),
+                            currentLineBackground = colorScheme.surfaceContainer.toArgb(),
+                            cursor = colorScheme.primary.toArgb(),
+                            matchedTextBackground = colorScheme.tertiary.copy(alpha = 0.35f).toArgb(),
+                            comment = colorScheme.onSurfaceVariant.toArgb(),
+                            key = colorScheme.primary.toArgb(),
+                            string = colorScheme.tertiary.toArgb(),
+                            number = colorScheme.secondary.toArgb(),
+                            literal = colorScheme.primary.toArgb(),
+                        )
+                    }
+
+                AndroidView(
+                    factory = { ctx ->
+                        ProfileCodeEditor(ctx, CodeEditorSyntax.PLAIN).apply {
+                            setReadOnly(true)
+                            setText(viewer.text)
+                            applyColors(editorColors)
+                        }.view
+                    },
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(horizontal = 12.dp),
+                )
+
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(viewer.text))
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.conductor_text_copied),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                    ) {
+                        Text(stringResource(R.string.conductor_copy_text))
+                    }
+                    Button(onClick = onSave) {
+                        Text(stringResource(R.string.conductor_save_to_file))
+                    }
+                }
+            }
         }
     }
 }
@@ -1247,6 +1356,55 @@ private fun ConductorItemView(
 }
 
 @Composable
+private fun OptionIndicator(
+    checked: Boolean,
+    multiple: Boolean,
+    enabled: Boolean,
+) {
+    val active = MaterialTheme.colorScheme.primary
+    val inactive =
+        if (enabled) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        }
+    val borderColor = if (checked) active else inactive
+    val shape = if (multiple) RoundedCornerShape(5.dp) else CircleShape
+    Box(
+        modifier =
+            Modifier
+                .size(20.dp)
+                .border(2.dp, borderColor, shape)
+                .then(
+                    if (multiple && checked) {
+                        Modifier.background(active, shape)
+                    } else {
+                        Modifier
+                    },
+                ),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            multiple && checked ->
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(14.dp),
+                )
+
+            !multiple && checked ->
+                Box(
+                    modifier =
+                        Modifier
+                            .size(10.dp)
+                            .background(active, CircleShape),
+                )
+        }
+    }
+}
+
+@Composable
 private fun QuestionCard(
     item: ConductorItem.Question,
     onAnswer: (List<String>) -> Unit,
@@ -1297,26 +1455,15 @@ private fun QuestionCard(
                                         }
                                 },
                             )
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                            .padding(vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        val controlModifier = Modifier.clearAndSetSemantics {}
-                        if (item.multiple) {
-                            Checkbox(
-                                checked = checked,
-                                onCheckedChange = null,
-                                enabled = !settled,
-                                modifier = controlModifier,
-                            )
-                        } else {
-                            RadioButton(
-                                selected = checked,
-                                onClick = null,
-                                enabled = !settled,
-                                modifier = controlModifier,
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
+                        OptionIndicator(
+                            checked = checked,
+                            multiple = item.multiple,
+                            enabled = !settled,
+                        )
+                        Spacer(Modifier.width(10.dp))
                         Text(
                             text = option,
                             style = MaterialTheme.typography.bodyMedium,

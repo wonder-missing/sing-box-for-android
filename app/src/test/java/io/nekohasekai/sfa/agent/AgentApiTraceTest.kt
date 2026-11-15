@@ -4,9 +4,12 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.nio.file.Files
 
 class AgentApiTraceTest {
     @Test
@@ -171,6 +174,76 @@ class AgentApiTraceTest {
         assertTrue(markdown.contains("vtest-version"))
         assertTrue(markdown.contains("prompt=100 completion=20"))
         AgentApiTrace.clear()
+    }
+
+    @Test
+    fun exportFiltersByTimeRangeAndReportsMissingCoverage() {
+        AgentApiTrace.clear()
+        val base = 1_700_000_000_000L
+        repeat(3) { index ->
+            AgentApiTrace.record(
+                ApiTraceEntry(
+                    timestamp = base + index * 1_000L,
+                    method = "POST",
+                    url = "https://api.deepseek.com/chat/completions",
+                    requestHeaders = emptyMap(),
+                    requestBody = """{"index":$index}""",
+                    status = 200,
+                    responseHeaders = emptyMap(),
+                    responseBody = "{}",
+                    error = null,
+                ),
+            )
+        }
+
+        val all = AgentApiTrace.export(since = base - 1_000L)
+        assertEquals(3, all.count)
+        assertTrue(all.missingBefore)
+
+        val recent = AgentApiTrace.export(since = base + 1_500L)
+        assertEquals(1, recent.count)
+        assertFalse(recent.missingBefore)
+        assertTrue(recent.text.contains("\"index\": 2"))
+
+        val empty = AgentApiTrace.export(since = base + 5_000L)
+        assertEquals(0, empty.count)
+        assertFalse(empty.missingBefore)
+        assertTrue(empty.text.contains("No API calls"))
+
+        AgentApiTrace.clear()
+    }
+
+    @Test
+    fun fullEntriesSurviveAProcessRestartThroughThePrivateFile() {
+        val dir = Files.createTempDirectory("conductor-trace").toFile()
+        val file = File(dir, "api-trace.json")
+        AgentApiTrace.clear()
+        AgentApiTrace.attachPersistence(file)
+        AgentApiTrace.setAppVersion("test-version")
+        AgentApiTrace.record(
+            ApiTraceEntry(
+                timestamp = 1_700_000_000_000L,
+                method = "POST",
+                url = "https://api.deepseek.com/chat/completions",
+                requestHeaders = emptyMap(),
+                requestBody = """{"hello":"persisted"}""",
+                status = 200,
+                responseHeaders = emptyMap(),
+                responseBody = "{}",
+                error = null,
+            ),
+        )
+        assertTrue(file.isFile)
+
+        AgentApiTrace.resetInMemoryForTest()
+        AgentApiTrace.attachPersistence(file)
+
+        val export = AgentApiTrace.export()
+        assertEquals(1, export.count)
+        assertTrue(export.text.contains("persisted"))
+        assertTrue(export.text.contains("vtest-version"))
+        AgentApiTrace.clear()
+        dir.deleteRecursively()
     }
 
     @Test

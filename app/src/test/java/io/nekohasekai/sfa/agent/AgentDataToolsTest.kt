@@ -45,10 +45,22 @@ class AgentDataToolsTest {
             override fun conversationMarkdown() = "# Conversation\nwonder@example.com 100.106.21.44"
 
             var lastTail: Int? = null
+            var lastSince: Long? = null
 
-            override fun traceMarkdown(lastEntries: Int?): String {
+            override fun traceMarkdown(
+                lastEntries: Int?,
+                since: Long?,
+            ): TraceExport {
                 lastTail = lastEntries
-                return "# Trace\nhttps://api.example.com/v1?token=secret"
+                lastSince = since
+                return TraceExport(
+                    text = "# Trace\nhttps://api.example.com/v1?token=secret",
+                    count = 1,
+                    firstTimestamp = 1_700_000_000_000L,
+                    lastTimestamp = 1_700_000_001_000L,
+                    availableFrom = 1_700_000_000_000L,
+                    missingBefore = false,
+                )
             }
         }
     private val tools = AgentDataTools(store, diagnostics, taildrop)
@@ -113,6 +125,20 @@ class AgentDataToolsTest {
         assertEquals("1.0-wonder.77", result.output!!.string("version"))
         assertEquals("v1.0-wonder.77", result.output!!.string("tag"))
         assertEquals("- Added release notes\n- Fixed a thing", result.output!!.string("notes"))
+    }
+
+    @Test
+    fun diagnosticsTraceCarriesTheTimeRangeAndCoverage() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val result = registry.exec("diagnostics_export", """{"kind":"trace","since_minutes":15}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertNotNull(diagnostics.lastSince)
+        assertEquals("1", result.output!!.string("entries"))
+        assertEquals("false", result.output!!.string("missingBefore"))
+        assertTrue(result.output!!.containsKey("rangeStart"))
+        assertTrue(result.output!!.containsKey("rangeEnd"))
     }
 
     @Test

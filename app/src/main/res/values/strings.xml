@@ -851,6 +851,11 @@
     <string name="conductor_api_trace_empty">No API calls recorded in this session. The trace is kept in memory and is cleared when the app restarts.</string>
     <string name="conductor_input_too_long">Message is too long; limited to %1$d characters.</string>
     <string name="conductor_conversation_copied">Conversation copied</string>
+    <string name="conductor_plain_transcript">Plain Transcript</string>
+    <string name="conductor_api_trace">API Trace</string>
+    <string name="conductor_copy_text">Copy text</string>
+    <string name="conductor_save_to_file">Save to file</string>
+    <string name="conductor_text_copied">Copied</string>
     <string name="conductor_tool_details">Details</string>
     <string name="conductor_tool_hide_details">Hide details</string>
     <string name="conductor_tool_details_hint">Tap Details to view the tool output.</string>

@@ -471,7 +471,8 @@ class AgentDataTools(
                         "Write a diagnostics artifact to the Conductor workspace. " +
                             "Supported kinds: conversation (the current chat transcript) and trace (the API request trace). " +
                             "Artifacts are Markdown; the file name is normalized to .md. " +
-                            "For trace, tail keeps only the last N requests. Returns the file path, size and sha256.",
+                            "For trace, tail keeps only the last N requests; since_minutes keeps only entries from the last N minutes. " +
+                            "Returns the file path, size, sha256, entry count and the covered time range.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
                         listOf(
@@ -494,6 +495,14 @@ class AgentDataTools(
                                 required = false,
                                 description = "For kind=trace, keep only the last N requests (1-20).",
                             ),
+                            AgentParameterSpec(
+                                name = "since_minutes",
+                                type = AgentParameterType.INTEGER,
+                                required = false,
+                                description =
+                                    "For kind=trace, keep only entries from the last N minutes (1-1440). " +
+                                        "The result reports missingBefore when older bodies were already dropped.",
+                            ),
                         ),
                     confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
                     category = "diagnostics",
@@ -509,16 +518,24 @@ class AgentDataTools(
                 val kind = AgentJson.string(args, "kind")?.trim()?.lowercase(Locale.US)
                     ?: return invalid("kind is required")
                 val tail = AgentJson.int(args, "tail")
-                val text =
-                    when (kind) {
-                        "conversation" -> {
-                            if (tail != null) return invalid("tail is only supported for trace")
-                            source.conversationMarkdown()
-                        }
-
-                        "trace" -> source.traceMarkdown(tail)
-                        else -> return invalid("kind must be conversation or trace")
+                val sinceMinutes = AgentJson.int(args, "since_minutes")
+                if (tail != null && tail !in 1..20) return invalid("tail must be between 1 and 20")
+                if (sinceMinutes != null && sinceMinutes !in 1..1440) {
+                    return invalid("since_minutes must be between 1 and 1440")
+                }
+                if (kind != "trace" && (tail != null || sinceMinutes != null)) {
+                    return invalid("tail and since_minutes are only supported for trace")
+                }
+                val traceExport =
+                    if (kind == "trace") {
+                        source.traceMarkdown(
+                            tail,
+                            sinceMinutes?.let { System.currentTimeMillis() - it * 60_000L },
+                        )
+                    } else {
+                        null
                     }
+                val text = traceExport?.text ?: source.conversationMarkdown()
                 val requested = AgentJson.string(args, "name")?.trim().orEmpty()
                 return runCatching {
                     val name =
@@ -535,6 +552,25 @@ class AgentDataTools(
                                 put("path", entry.path)
                                 put("size", entry.size)
                                 put("sha256", fileStore.sha256(fileStore.resolveRead(entry.path)))
+                                traceExport?.let { export ->
+                                    put("entries", export.count)
+                                    export.firstTimestamp?.let { put("rangeStart", formatTraceTime(it)) }
+                                    export.lastTimestamp?.let { put("rangeEnd", formatTraceTime(it)) }
+                                    export.availableFrom?.let { put("availableFrom", formatTraceTime(it)) }
+                                    put("missingBefore", export.missingBefore)
+                                    if (export.missingBefore) {
+                                        put(
+                                            "message",
+                                            if (export.availableFrom != null) {
+                                                "Full request bodies start at ${formatTraceTime(export.availableFrom)}; " +
+                                                    "earlier entries exist only as request-history summaries."
+                                            } else {
+                                                "Full request/response bodies are not retained; " +
+                                                    "earlier entries exist only as request-history summaries."
+                                            },
+                                        )
+                                    }
+                                }
                             },
                     )
                 }.getOrElse { failure(it) }
@@ -983,6 +1019,9 @@ class AgentDataTools(
         if (name.substring(dot + 1).equals("md", ignoreCase = true)) return name
         return name.substring(0, dot) + ".md"
     }
+
+    private fun formatTraceTime(epochMs: Long): String =
+        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(epochMs))
 
     private fun missingPath(): ToolExecution = invalid("path is required")
 

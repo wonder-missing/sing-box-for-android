@@ -133,10 +133,22 @@ interface TelemetryUploadPort {
 }
 
 /** Current conversation and API trace, rendered as Markdown for diagnostics. */
+data class TraceExport(
+    val text: String,
+    val count: Int,
+    val firstTimestamp: Long?,
+    val lastTimestamp: Long?,
+    val availableFrom: Long?,
+    val missingBefore: Boolean,
+)
+
 interface DiagnosticsSource {
     fun conversationMarkdown(): String
 
-    fun traceMarkdown(lastEntries: Int? = null): String
+    fun traceMarkdown(
+        lastEntries: Int? = null,
+        since: Long? = null,
+    ): TraceExport
 }
 
 data class TaildropPeerInfo(

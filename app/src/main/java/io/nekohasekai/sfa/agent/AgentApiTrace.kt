@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.agent
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -8,11 +10,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 
+@Serializable
 data class ApiTraceEntry(
     val timestamp: Long,
     val method: String,
@@ -48,10 +52,19 @@ data class ApiTraceSummary(
     val cacheMissTokens: Int? = null,
 )
 
+@Serializable
+private data class PersistedApiTrace(
+    val version: Int = 1,
+    val appVersion: String = "",
+    val systemPrompt: String? = null,
+    val entries: List<ApiTraceEntry> = emptyList(),
+    val summaries: List<ApiTraceSummary> = emptyList(),
+)
+
 /**
- * In-memory debug trace for the current Conductor session. Request/response
- * bodies are kept for analysis, but credential headers are redacted before
- * they enter this buffer and before anything is copied to the clipboard.
+ * Debug trace for Conductor. Full request/response bodies stay in a bounded
+ * private file so an app update does not erase the last requests; credential
+ * headers are redacted before they enter the buffer or the file.
  */
 object AgentApiTrace {
     private const val MAX_ENTRIES = 20
@@ -60,11 +73,19 @@ object AgentApiTrace {
     private const val MAX_TOTAL_BODY_CHARS = 1_000_000
     private const val MAX_OLD_BODY_CHARS = 20_000
     private const val MAX_MARKDOWN_CHARS = 2_000_000
+    private const val MAX_PERSIST_CHARS = 2_500_000
 
     private val lock = Any()
     private val entries = ArrayDeque<ApiTraceEntry>()
     private val summaryEntries = ArrayDeque<ApiTraceSummary>()
     private val prettyJson = Json { prettyPrint = true }
+    private val persistJson = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    @Volatile
+    private var persistenceFile: File? = null
 
     @Volatile
     private var appVersion: String = ""
@@ -82,6 +103,36 @@ object AgentApiTrace {
     }
 
     fun lastSystemPrompt(): String? = systemPrompt
+
+    /**
+     * Loads the bounded trace file written by a previous process. The file is
+     * private to the app and is never exposed through the VFS or file tools.
+     */
+    fun attachPersistence(file: File) {
+        synchronized(lock) {
+            persistenceFile = file
+            val raw = if (file.isFile) runCatching { file.readText() }.getOrNull() else null
+            val persisted =
+                raw?.let {
+                    runCatching { persistJson.decodeFromString<PersistedApiTrace>(it) }.getOrNull()
+                } ?: return
+            entries.clear()
+            entries.addAll(persisted.entries.takeLast(MAX_ENTRIES))
+            summaryEntries.clear()
+            summaryEntries.addAll(persisted.summaries.takeLast(MAX_SUMMARIES))
+            systemPrompt = persisted.systemPrompt
+            if (persisted.appVersion.isNotBlank()) appVersion = persisted.appVersion
+        }
+    }
+
+    /** Test helper: drop in-memory state without deleting the persistence file. */
+    internal fun resetInMemoryForTest() {
+        synchronized(lock) {
+            entries.clear()
+            summaryEntries.clear()
+            systemPrompt = null
+        }
+    }
 
     fun record(entry: ApiTraceEntry) {
         synchronized(lock) {
@@ -107,6 +158,7 @@ object AgentApiTrace {
             while (summaryEntries.size > MAX_SUMMARIES) {
                 summaryEntries.removeFirst()
             }
+            persistLocked()
         }
     }
 
@@ -115,6 +167,30 @@ object AgentApiTrace {
             entries.clear()
             summaryEntries.clear()
             systemPrompt = null
+        }
+        runCatching { persistenceFile?.delete() }
+    }
+
+    private fun persistLocked() {
+        val file = persistenceFile ?: return
+        runCatching {
+            var selected = entries.toList()
+            fun payload(): String =
+                persistJson.encodeToString(
+                    PersistedApiTrace(
+                        appVersion = appVersion,
+                        systemPrompt = systemPrompt,
+                        entries = selected,
+                        summaries = summaryEntries.toList(),
+                    ),
+                )
+            var text = payload()
+            while (text.length > MAX_PERSIST_CHARS && selected.size > 1) {
+                selected = selected.drop(1)
+                text = payload()
+            }
+            file.parentFile?.mkdirs()
+            file.writeText(text)
         }
     }
 
@@ -177,20 +253,75 @@ object AgentApiTrace {
 
     fun lastUsage(): TokenUsage? = synchronized(lock) { entries.peekLast()?.usage }
 
-    fun asMarkdown(lastEntries: Int? = null): String {
+    fun asMarkdown(lastEntries: Int? = null): String = export(lastEntries).text
+
+    fun export(
+        lastEntries: Int? = null,
+        since: Long? = null,
+        until: Long? = null,
+    ): TraceExport {
         val allEntries = synchronized(lock) { entries.toList() }
         val allHistory = synchronized(lock) { summaryEntries.toList() }
+        val earliest = allEntries.minOfOrNull { it.startedAt ?: it.timestamp }
+        val filteredEntries = allEntries.filter { inRange(it.startedAt ?: it.timestamp, since, until) }
+        val filteredHistory = allHistory.filter { inRange(it.timestamp, since, until) }
         val limit = lastEntries?.coerceIn(1, MAX_ENTRIES)
-        val snapshot = if (limit != null) allEntries.takeLast(limit) else allEntries
-        val history = if (limit != null) allHistory.takeLast(limit) else allHistory
-        if (snapshot.isEmpty() && history.isEmpty()) return "No API calls recorded in this session."
+        val snapshot = if (limit != null) filteredEntries.takeLast(limit) else filteredEntries
+        val history = if (limit != null) filteredHistory.takeLast(limit) else filteredHistory
+        val missingBefore =
+            since != null &&
+                (
+                    (earliest != null && earliest > since) ||
+                        (earliest == null && allHistory.any { it.timestamp < since })
+                )
+        val text = render(snapshot, history, limit, since, until, earliest, missingBefore)
+        return TraceExport(
+            text = text,
+            count = snapshot.size,
+            firstTimestamp = snapshot.firstOrNull()?.let { it.startedAt ?: it.timestamp },
+            lastTimestamp = snapshot.lastOrNull()?.let { it.startedAt ?: it.timestamp },
+            availableFrom = earliest,
+            missingBefore = missingBefore,
+        )
+    }
+
+    private fun inRange(
+        time: Long,
+        since: Long?,
+        until: Long?,
+    ): Boolean = (since == null || time >= since) && (until == null || time <= until)
+
+    private fun render(
+        snapshot: List<ApiTraceEntry>,
+        history: List<ApiTraceSummary>,
+        limit: Int?,
+        since: Long?,
+        until: Long?,
+        availableFrom: Long?,
+        missingBefore: Boolean,
+    ): String {
         val text =
             buildString {
                 appendLine("# Conductor API trace")
                 appendLine()
-                if (limit != null) {
-                    appendLine("- showing last $limit requests")
-                    appendLine()
+                if (since != null || until != null) {
+                    appendLine(
+                        "- requested range: ${since?.let(::formatTime) ?: "start"} – ${until?.let(::formatTime) ?: "now"}",
+                    )
+                }
+                if (missingBefore) {
+                    if (availableFrom != null) {
+                        appendLine("- full request bodies start at: ${formatTime(availableFrom)}")
+                        appendLine("- earlier entries exist only as request-history summaries")
+                    } else {
+                        appendLine("- full request/response bodies are not retained")
+                    }
+                }
+                if (limit != null) appendLine("- showing last $limit requests")
+                appendLine()
+                if (snapshot.isEmpty() && history.isEmpty()) {
+                    appendLine("No API calls in the requested range.")
+                    return@buildString
                 }
                 appendSystemPromptSection(snapshot, history)
                 if (history.isNotEmpty()) {
@@ -200,7 +331,7 @@ object AgentApiTrace {
                     appendLine()
                 }
                 if (snapshot.isEmpty()) {
-                    appendLine("Full request/response bodies were cleared when the app restarted; only the history above survived.")
+                    appendLine("Full request/response bodies in the requested range are not retained; the history above is the available evidence.")
                     return@buildString
                 }
                 snapshot.forEachIndexed { index, entry ->

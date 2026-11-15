@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.Serializable
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -61,6 +62,7 @@ internal class CancelGeneration {
     fun isCancelled(at: Long): Boolean = cancelled.get() || generation.get() != at
 }
 
+@Serializable
 enum class FinishReason {
     STOP,
     TOOL_CALLS,
@@ -69,6 +71,7 @@ enum class FinishReason {
     UNKNOWN,
 }
 
+@Serializable
 data class TokenUsage(
     val inputTokens: Int?,
     val outputTokens: Int?,
