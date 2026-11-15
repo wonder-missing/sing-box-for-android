@@ -1340,6 +1340,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 命名空间只是唯一性前缀，不承载语义；用户可以继续用 `cpk` 这样的短词。模型判断来源不再靠前缀，而是读元数据和 description。参考前沿实现：Claude Code 把服务器编进 `mcp__<server>__<tool>`，OpenAI Agents SDK 用可选的 server prefix；这里保留短本地名，把来源放进元数据。
 - 发布正文：`release.yml` 先尝试 `git tag --format`，但 CI 的 checkout 没把 tag 对象解析成注解，78 实际读到的是 commit message；已改为通过 GitHub API 读取 annotated tag（79 起生效）。`scripts/release.sh` 继续把上一版以来的 commit 列表写进 tag。77 的旧正文和 78 的 commit-message 正文都保持原样。
 - 本地全量 447 个用例绿。
+- 真机 78：5 个 `cpk_*` 工具都带 `server`/`namespace`，description 以 `MCP server: Clawdy Portal Knocks.` 开头；`release_notes` 返回真实改动（正文是 commit message；79 的 workflow 修复才换成 tag 消息）。77→78 更新后 19:08 的 trace body 丢失，只剩摘要，`diagnostics_export` 的 `tail` 也不能按时间取。
 
 ### wonder.77：Conductor 日常体验与 MCP 命名（2026-11-15）
 

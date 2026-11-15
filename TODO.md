@@ -24,7 +24,8 @@
 - [ ] **批量确认：预览与分级**：整批预检合成一张卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS`/MCP 写工具逐次确认。
 - [ ] **工具编排计划（tool_plan / DAG）**：把有依赖的多步调用压成一次提交，支持字段绑定、`when`/`retry`/`fallback`；先只读工具。目标是减少往返和 token。
 - [ ] **对话级 LLM 摘要**：现有只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要未做。
-- [ ] **trace 长 body 与 release 驻留**：单条 body 超 200k 截断，跨重启只有摘要；`AgentApiTrace` 在 release 默认驻留完整请求/响应。先评估按需开启。
+- [ ] **trace 长 body 与 release 驻留**：单条 body 超 200k 截断，跨重启只有摘要；`AgentApiTrace` 在 release 默认驻留完整请求/响应。78 验收时用户要 19:07 之后的 trace，但 77→78 更新后 19:08 的完整 body 已丢，只剩持久化摘要。下一步把最近 N 条完整 body 落到应用私有文件（按字节和条数封顶，例如 4 MB / 50 条），启动时加载，仍按现有 sanitizer 输出。
+- [ ] **trace 时间范围导出**：`diagnostics_export(kind=trace)` 增加 `since`/`until`（ISO-8601 或 epoch），返回 `rangeStart`/`rangeEnd`/`count`/`missingBefore`；请求范围早于保留窗口时明确写「之前的 body 不可用」，不要静默从更晚开始。时间范围查询允许超过 20 条（受 observation budget 限制），不再被 `tail` 卡死。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持。
 - [ ] **消息内富 Markdown 与本地文件查看**：业界约定就是标准 Markdown，不用自定义标记：链接用 `[label](url)`，文件名/路径/命令用行内代码。App 侧把 `markdownAnnotated` 升级为可点击：链接交给浏览器，行内代码点按复制；本地文件链接点按弹出只读查看器（标题、路径、内容、复制），不执行。system prompt 只加一行「用户很可能复制的值用行内代码，链接用 Markdown 链接」。需要真机确认点按/长按手感。
 - [ ] **多模态图片输入**：输入栏加相册选图和预览；`AgentMessage.User` 支持 OpenAI content parts（text + `image_url` data URL），provider capability 加 vision 标记，文本-only 回退保留。先用 DeepSeek V4.1 Flash 和一张相册图片跑通「分析这张图」，再决定是否支持多图。涉及消息序列化、会话持久化和模型客户端，单独一版做。
@@ -54,6 +55,7 @@
 
 ## 最近完成
 
+- wonder.78 真机验收（2026-11-15）：5 个 `cpk_*` MCP 工具的 `search_tools` 结果都带 `server=Clawdy Portal Knocks` 和 `namespace=cpk`，description 以 `MCP server: Clawdy Portal Knocks.` 开头；非 MCP 工具不受影响。`release_notes` 已返回真实改动（78 的正文实际是 commit message，不是 tag 注解；79 的 workflow 修复会换成 tag 消息）。77→78 更新后，19:08 的完整 trace body 已丢，只剩持久化摘要；`tail` 也不能按时间取，19:10 之后的 10 条足够完成 78 验收。
 - wonder.78（2026-11-15）：MCP 工具来源元数据。`AgentToolDefinition` 增加 `serverName`/`namespace`，description 以 `MCP server: <名字>.` 开头，`search_tools` 的 matches 和 catalog 都带 `server`/`namespace`；短 namespace `cpk` 不再让模型分不清来源。本地 447 个用例绿。发布正文改用 tag 注解的 CI 修复排到 79。
 - wonder.77 真机验收（2026-11-15）：`ask_user` 单选/多选/取消三条通过；`release_notes` 能被调用，但正文是 release workflow 写死的两行，需要改发布正文；MCP 改名后 `clawdy_portal_kn_orb_status` 调用成功，但旧前缀仍长；`diagnostics_export` 与 Taildrop 正常；76 更新到 77 后 `network_snapshot` 仍 `vpnActive=true`、core 在跑，更新后服务恢复验证通过。详细数据和结论见本次会话。
 - wonder.77（2026-11-15）：Conductor/MCP 日常体验。新增 `release_notes` 工具读当前版本发布说明；Connections 搜索框常开；用户气泡去掉点按涟漪；答题卡选项去胶囊背景并加 8dp 间距；MCP 工具名改为 `<namespace>_<tool>`（去掉 `mcp_`），添加/编辑服务器支持 Name 和 Namespace，改名不影响工具前缀；MCP 配置从 Provider 卡片独立出来；Tool routing 改为 `/routing on|off`。
