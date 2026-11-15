@@ -429,14 +429,15 @@ class OpenAiCompatibleModelClient(
                                     put(
                                         "content",
                                         buildJsonArray {
-                                            if (message.content.isNotBlank()) {
-                                                add(
-                                                    buildJsonObject {
-                                                        put("type", "text")
-                                                        put("text", message.content)
-                                                    },
-                                                )
-                                            }
+                                            add(
+                                                buildJsonObject {
+                                                    put("type", "text")
+                                                    put(
+                                                        "text",
+                                                        message.content.ifBlank { "What is in this image?" },
+                                                    )
+                                                },
+                                            )
                                             message.images.forEach { ref ->
                                                 val data = images[ref.id]
                                                 if (data == null) {
