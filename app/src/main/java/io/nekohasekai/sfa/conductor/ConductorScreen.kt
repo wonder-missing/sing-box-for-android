@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -127,7 +128,6 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
-import dev.jeziellago.compose.markdowntext.MarkdownText
 import io.nekohasekai.sfa.compat.CodeEditorSyntax
 import io.nekohasekai.sfa.compat.ProfileCodeEditor
 import io.nekohasekai.sfa.compat.ProfileEditorColors
@@ -985,6 +985,9 @@ private fun ConductorTextViewerDialog(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var rich by remember(viewer.title) { mutableStateOf(false) }
+    var autoWrap by remember(viewer.title) { mutableStateOf(false) }
+    var optionsOpen by remember { mutableStateOf(false) }
+    val editorRef = remember { mutableStateOf<ProfileCodeEditor?>(null) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -1002,11 +1005,39 @@ private fun ConductorTextViewerDialog(
                             .padding(start = 16.dp, end = 8.dp, top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Box {
+                        IconButton(onClick = { optionsOpen = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = stringResource(R.string.conductor_viewer_options),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = optionsOpen,
+                            onDismissRequest = { optionsOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.conductor_viewer_auto_wrap)) },
+                                onClick = {
+                                    autoWrap = !autoWrap
+                                    optionsOpen = false
+                                },
+                                trailingIcon = {
+                                    if (autoWrap) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                    }
                     Text(
                         text = viewer.title,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).padding(start = 4.dp),
                     )
                     IconButton(onClick = onDismiss) {
                         Icon(
@@ -1037,22 +1068,10 @@ private fun ConductorTextViewerDialog(
                     }
 
                 if (rich) {
-                    Column(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                    ) {
-                        MarkdownText(
-                            markdown = viewer.text,
-                            style =
-                                MaterialTheme.typography.bodyMedium.copy(
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                ),
-                        )
-                    }
+                    ConductorMarkdownViewer(
+                        text = viewer.text,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                    )
                 } else {
                     AndroidView(
                         factory = { ctx ->
@@ -1060,8 +1079,10 @@ private fun ConductorTextViewerDialog(
                                 setReadOnly(true)
                                 setText(viewer.text)
                                 applyColors(editorColors)
-                            }.view
+                                setWordWrap(autoWrap)
+                            }.also { editorRef.value = it }.view
                         },
+                        update = { editorRef.value?.setWordWrap(autoWrap) },
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -1076,10 +1097,14 @@ private fun ConductorTextViewerDialog(
                             .fillMaxWidth()
                             .navigationBarsPadding()
                             .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedButton(onClick = { rich = !rich }) {
+                    val compactButtonPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    OutlinedButton(
+                        onClick = { rich = !rich },
+                        contentPadding = compactButtonPadding,
+                    ) {
                         Text(
                             stringResource(
                                 if (rich) R.string.conductor_viewer_raw else R.string.conductor_viewer_rich,
@@ -1096,10 +1121,14 @@ private fun ConductorTextViewerDialog(
                                 Toast.LENGTH_SHORT,
                             ).show()
                         },
+                        contentPadding = compactButtonPadding,
                     ) {
                         Text(stringResource(R.string.conductor_copy_text))
                     }
-                    Button(onClick = onSave) {
+                    Button(
+                        onClick = onSave,
+                        contentPadding = compactButtonPadding,
+                    ) {
                         Text(stringResource(R.string.conductor_save_to_file))
                     }
                 }

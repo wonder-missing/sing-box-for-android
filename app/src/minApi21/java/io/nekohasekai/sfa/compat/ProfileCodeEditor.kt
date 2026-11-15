@@ -108,6 +108,10 @@ class ProfileCodeEditor(context: Context, syntax: CodeEditorSyntax = CodeEditorS
         }
     }
 
+    fun setWordWrap(enabled: Boolean) {
+        editor.setHorizontallyScrolling(!enabled)
+    }
+
     fun search(query: String) {
         searchQuery = query
         if (query.isEmpty()) {

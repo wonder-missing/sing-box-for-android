@@ -45,7 +45,7 @@ object ModelProviders {
                 id = DEEPSEEK,
                 label = "DeepSeek",
                 baseUrl = "https://api.deepseek.com",
-                defaultModel = "deepseek-v4-flash",
+                defaultModel = "deepseek-flash",
                 keyHint = "sk-...",
             ),
             ModelProviderPreset(
@@ -109,14 +109,31 @@ object ModelProviderSettings {
             else -> ModelLimits.FALLBACK
         }
 
+    /**
+     * DeepSeek routes the old V4 Flash names to V4.1 Flash for compatibility.
+     * Reading the new name keeps settings, traces and limits on one identifier.
+     */
+    internal fun normalizeModel(
+        providerId: String,
+        model: String,
+    ): String =
+        if (providerId == ModelProviders.DEEPSEEK &&
+            model in setOf("deepseek-v4-flash", "deepseek-v4-flash-vision-exp")
+        ) {
+            "deepseek-flash"
+        } else {
+            model
+        }
+
     fun endpointFor(preset: ModelProviderPreset): ModelEndpoint {
         val baseUrl = if (preset.customBaseUrl) Settings.conductorGenericBaseUrl else preset.baseUrl
-        val model =
+        val stored =
             when (preset.id) {
                 ModelProviders.XAI -> Settings.conductorXaiModel
                 ModelProviders.GENERIC -> Settings.conductorGenericModel
                 else -> Settings.conductorModel
-            }.ifBlank { preset.defaultModel }
+            }
+        val model = normalizeModel(preset.id, stored).ifBlank { preset.defaultModel }
         return ModelEndpoint(
             providerId = preset.id,
             providerLabel = preset.label,

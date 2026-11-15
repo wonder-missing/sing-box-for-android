@@ -126,6 +126,10 @@ class ProfileCodeEditor(context: Context, private val syntax: CodeEditorSyntax =
         editor.isEditable = !readOnly
     }
 
+    fun setWordWrap(enabled: Boolean) {
+        editor.isWordwrap = enabled
+    }
+
     fun search(query: String) {
         if (query.isEmpty()) {
             editor.searcher.stopSearch()

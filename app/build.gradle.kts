@@ -374,6 +374,9 @@ dependencies {
     // Common Compose-related libraries
     implementation("sh.calvin.reorderable:reorderable:3.1.0")
     implementation("com.github.jeziellago:compose-markdown:0.7.2")
+    // Block-based renderer for the large Conductor transcript/trace viewers.
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:recycler:4.6.2")
     implementation("org.kodein.emoji:emoji-kt:2.5.0")
 
     // Terminal emulator

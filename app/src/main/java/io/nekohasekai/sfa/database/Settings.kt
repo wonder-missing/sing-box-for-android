@@ -109,7 +109,7 @@ object Settings {
 
     // Conductor
     var conductorProvider by dataStore.string(SettingsKey.CONDUCTOR_PROVIDER) { "deepseek" }
-    var conductorModel by dataStore.string(SettingsKey.CONDUCTOR_MODEL) { "deepseek-v4-flash" }
+    var conductorModel by dataStore.string(SettingsKey.CONDUCTOR_MODEL) { "deepseek-flash" }
     var conductorXaiModel by dataStore.string(SettingsKey.CONDUCTOR_XAI_MODEL) { "grok-4" }
     var conductorGenericModel by dataStore.string(SettingsKey.CONDUCTOR_GENERIC_MODEL) { "" }
     var conductorGenericBaseUrl by dataStore.string(SettingsKey.CONDUCTOR_GENERIC_BASE_URL) { "" }

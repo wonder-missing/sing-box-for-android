@@ -1334,6 +1334,23 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.81：查看器性能、折行开关与 DeepSeek 模型名（2026-11-15）
+
+- Raw 查看器默认不折行，标题栏左侧三点菜单里的 `Auto wrap` 可以随时切换；关闭时横向滚动，打开时按宽度折行。
+- Rich 查看器不再用 `compose-markdown` 一次性生成整篇 `AnnotatedString`，改用 Markwon Recycler：`Markwon.parse` 在 `Dispatchers.Default` 执行，`MarkwonAdapter` 按顶层 block 放进 `RecyclerView`，只渲染可见 block。解析期间显示进度圈；单块过长时仍可能有一次 setText 开销，但不再阻塞整篇首帧。
+- 行内代码和代码块使用 `surfaceContainerHigh` / `surfaceContainerHighest` 背景与 `onSurface` 前景，暗色主题下不再出现浅底浅字；链接、引用、列表标记也跟随主题色。
+- 查看器底部按钮改为 12dp 横向内容内边距、8dp 间距，ZFlip 的窄屏下 Raw/Rich、Copy text、Save to file 不再挤在一起。
+- DeepSeek 默认模型名改为 `deepseek-flash`；旧的 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp` 在读取时归一化到新名，设置页、trace 和请求使用同一个标识。
+- 本地全量 454 个用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。
+
+### 直接多模态输入评估（2026-11-15）
+
+- 现状：`analyze_image` 是工具调用，主模型拿到的是文本分析而不是图片；每次多一次模型请求和一次 egress 确认，后续轮次也看不到那张图。
+- DeepSeek V4.1 Flash（`deepseek-flash`）的 Chat Completions 原生支持图片输入，OpenAI 兼容端点用 `content` 数组里的 `text` + `image_url` data URL。
+- 结论：主模型支持视觉时，直接进主线更好：图片留在对话上下文里，可以追问细节，少一次调用和确认，也更接近用户「把图发给你」的直觉。工具只在主模型不支持视觉、或需要独立 OCR/分析模型时有价值；当前 App 只有一个 provider/model，`analyze_image` 不应是长期主路径。
+- 直接输入的代价：`AgentMessage.User` 改成 content parts；会话持久化不能存 base64，图片要落到 `filesDir` 私有文件并用引用恢复；API trace 必须把 `image_url` 换成尺寸/大小占位；需要相册选图、预览、压缩和 EXIF 旋转；provider capability 要有 vision 标记和文本-only 回退；图片 token 成本和隐私提示也要处理。
+- 下一步：单独一版实现单图 direct input，`analyze_image` 先保留作 fallback，稳定后再删除或隐藏。
+
 ### wonder.80：查看器、滚动位置与图片分析（2026-11-15）
 
 - release 正文不再追加 `WonderSing release. Signed with the repository signing key.`，`release.yml` 直接使用 annotated tag 消息。
