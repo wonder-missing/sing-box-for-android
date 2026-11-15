@@ -1110,6 +1110,7 @@ private fun ConductorTextViewerDialog(
                 if (rich) {
                     ConductorMarkdownViewer(
                         text = viewer.text,
+                        viewerName = viewer.title,
                         modifier = Modifier.fillMaxWidth().weight(1f),
                     )
                 } else {

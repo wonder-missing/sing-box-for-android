@@ -1148,7 +1148,7 @@ Phase 2a 复用 `AppLog`，只记结构化摘要：
 - usage 记录 `inputTokens` / `outputTokens` / `cacheHitTokens` / `cacheMissTokens`。
 - 不记录完整模型请求/响应、完整工具输出、原始参数、key。
 - Agent 日志用 `sanitizeForLog`，URL 全部打码。
-- 不把 Agent 内容写进 telemetry；telemetry 只保留原有的匿名事件。
+- 不把对话正文、工具输出、图片字节写进 telemetry；只允许工具名/阶段/错误类/错误码/长度和脱敏后不超过 160 字的错误摘要。API trace 仍是完整诊断载体。
 - 后续要独立审计页时，再把 `AppLog` 里的 agent 事件抽成 `AgentAuditLog`，不提前拆。
 
 ## 15. 文件落点
@@ -1344,6 +1344,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 工具注册表的 `missing_parameter` / `unknown_parameter` 错误追加 `Accepted parameters: name (type, required)`；MCP 透传工具用 schema 的 `properties` / `required`。这样模型在 `handle`/`id`、`pattern`/`query` 这类错误上可以同轮改对，不用再 `search_tools`。
 - `taildrop_send` / `taildrop_send_selected` 成功时输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和 `note`，明确文件已到对端的 Taildrop inbox，但未保存到对端磁盘；描述同步说明「success means peer inbox received, not saved/opened」。接收方仍需 `tailscale file get` 或 Taildrop UI 落盘。离线 peer 直接报错，不做 sender-side 排队。
 - 本地 463 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。GitHub release 正文和 arm64 APK 已确认。图片选择、缩略图、全屏查看和直接图片请求仍需真机确认。
+
+### wonder.83（待发）：端侧错误遥测
+
+- 新增 `conductor_viewer`：Rich 查看器 `stage=open` / `stage=ready`，带 viewer 名称和字符数，用来判断「点了 Rich 但没打开」停在哪一步。
+- 新增 `conductor_viewer_error`：Markwon parse / adapter bind / 单块 render 失败，带 viewer、stage、异常类名、脱敏后的 160 字摘要和字符数；单块失败会显示 fallback 文本而不是让整个页面崩。
+- `conductor_tool` 失败追加脱敏后的 `detail`（160 字）；新增 `conductor_turn` 的 `result=failed` + 错误码 + 脱敏摘要；图片导入失败记 `conductor_image`（stage/error/detail）。
+- 未捕获 JVM 崩溃仍由 `CrashReportManager` 写 `jvm.log` + `metadata.json`，下次启动归档后由 `CrashReportTelemetry` 以 `crash_report` 上传异常类名、reason 和前 2500 字 JVM 日志。前提是遥测已启用并配置了 endpoint/token；未启用时只留在本机。
+- 仍不覆盖：没有 JVM handler 的原生崩溃/系统强杀、写日志前就 OOM 的极端情况。Rich 查看器如果走 JVM 崩溃或 parse/bind 失败，下一次遥测能看到 `crash_report` 或 `conductor_viewer*`。
 
 ### wonder.82 真机 trace 复盘（2026-11-16）
 

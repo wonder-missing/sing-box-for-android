@@ -30,6 +30,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.telemetry.TelemetryEventLog
+import io.nekohasekai.sfa.telemetry.TelemetryEvents
 import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.MarkwonTheme
@@ -50,23 +52,78 @@ import org.commonmark.node.Node
 @Composable
 internal fun ConductorMarkdownViewer(
     text: String,
+    viewerName: String,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     val markwon = remember(context, colorScheme) { buildMarkwon(context, colorScheme) }
-    val markdownAdapter = remember(colorScheme) { buildAdapter(colorScheme) }
+    val markdownAdapter = remember(colorScheme, viewerName) { buildAdapter(colorScheme, viewerName) }
     val parseState by produceState<ParseState>(ParseState.Loading, text, markwon) {
         value =
             withContext(Dispatchers.Default) {
                 runCatching { markwon.parse(text) }
-                    .fold({ ParseState.Ready(it) }, { ParseState.Failed })
+                    .fold({ ParseState.Ready(it) }, { ParseState.Failed(it) })
             }
+    }
+
+    LaunchedEffect(Unit) {
+        TelemetryEventLog.recordAsync(
+            context,
+            "conductor_viewer",
+            mapOf(
+                "viewer" to viewerName.take(40),
+                "stage" to "open",
+                "chars" to text.length,
+            ),
+        )
+    }
+    LaunchedEffect(parseState) {
+        when (val state = parseState) {
+            is ParseState.Ready ->
+                TelemetryEventLog.recordAsync(
+                    context,
+                    "conductor_viewer",
+                    mapOf(
+                        "viewer" to viewerName.take(40),
+                        "stage" to "ready",
+                        "chars" to text.length,
+                    ),
+                )
+
+            is ParseState.Failed ->
+                TelemetryEventLog.recordAsync(
+                    context,
+                    "conductor_viewer_error",
+                    mapOf(
+                        "viewer" to viewerName.take(40),
+                        "stage" to "parse",
+                        "error" to state.error.javaClass.simpleName,
+                        "detail" to TelemetryEvents.scrub(state.error.message.orEmpty(), 160),
+                        "chars" to text.length,
+                    ),
+                )
+
+            ParseState.Loading -> Unit
+        }
     }
 
     val ready = parseState as? ParseState.Ready
     LaunchedEffect(ready) {
-        ready?.let { markdownAdapter.setParsedMarkdown(markwon, it.node) }
+        if (ready == null) return@LaunchedEffect
+        runCatching { markdownAdapter.setParsedMarkdown(markwon, ready.node) }
+            .onFailure { error ->
+                TelemetryEventLog.recordAsync(
+                    context,
+                    "conductor_viewer_error",
+                    mapOf(
+                        "viewer" to viewerName.take(40),
+                        "stage" to "bind",
+                        "error" to error.javaClass.simpleName,
+                        "detail" to TelemetryEvents.scrub(error.message.orEmpty(), 160),
+                    ),
+                )
+            }
     }
 
     when (val state = parseState) {
@@ -75,7 +132,7 @@ internal fun ConductorMarkdownViewer(
                 CircularProgressIndicator()
             }
 
-        ParseState.Failed ->
+        is ParseState.Failed ->
             Box(modifier.padding(16.dp), contentAlignment = Alignment.Center) {
                 Text(
                     text = stringResource(R.string.conductor_viewer_render_failed),
@@ -112,10 +169,12 @@ internal fun ConductorMarkdownViewer(
 private sealed interface ParseState {
     data object Loading : ParseState
 
-    data object Failed : ParseState
-
     class Ready(
         val node: Node,
+    ) : ParseState
+
+    class Failed(
+        val error: Throwable,
     ) : ParseState
 }
 
@@ -144,7 +203,10 @@ private fun buildMarkwon(
         )
         .build()
 
-private fun buildAdapter(colorScheme: ColorScheme): MarkwonAdapter {
+private fun buildAdapter(
+    colorScheme: ColorScheme,
+    viewerName: String,
+): MarkwonAdapter {
     val textColor = colorScheme.onSurface.toArgb()
     val defaultEntry =
         ThemedEntry(
@@ -153,6 +215,7 @@ private fun buildAdapter(colorScheme: ColorScheme): MarkwonAdapter {
             textColor = textColor,
             textSizeSp = 14f,
             monospace = false,
+            viewerName = viewerName,
         )
     val codeEntry =
         ThemedEntry(
@@ -161,6 +224,7 @@ private fun buildAdapter(colorScheme: ColorScheme): MarkwonAdapter {
             textColor = textColor,
             textSizeSp = 13f,
             monospace = true,
+            viewerName = viewerName,
         )
     return MarkwonAdapter.builder(defaultEntry)
         .include(FencedCodeBlock::class.java, codeEntry)
@@ -174,6 +238,7 @@ private class ThemedEntry(
     private val textColor: Int,
     private val textSizeSp: Float,
     private val monospace: Boolean,
+    private val viewerName: String,
 ) : MarkwonAdapter.Entry<Node, ThemedEntry.Holder>() {
     private val cache = HashMap<Node, Spanned>()
 
@@ -187,11 +252,25 @@ private class ThemedEntry(
         holder: Holder,
         node: Node,
     ) {
-        val rendered = cache.getOrPut(node) { markwon.render(node) }
-        holder.text.setTextColor(textColor)
-        holder.text.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
-        if (monospace) holder.text.typeface = Typeface.MONOSPACE
-        markwon.setParsedMarkdown(holder.text, rendered)
+        try {
+            val rendered = cache.getOrPut(node) { markwon.render(node) }
+            holder.text.setTextColor(textColor)
+            holder.text.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
+            if (monospace) holder.text.typeface = Typeface.MONOSPACE
+            markwon.setParsedMarkdown(holder.text, rendered)
+        } catch (error: Throwable) {
+            TelemetryEventLog.recordAsync(
+                holder.text.context,
+                "conductor_viewer_error",
+                mapOf(
+                    "viewer" to viewerName.take(40),
+                    "stage" to "render",
+                    "error" to error.javaClass.simpleName,
+                    "detail" to TelemetryEvents.scrub(error.message.orEmpty(), 160),
+                ),
+            )
+            holder.text.text = "Could not render this block. Switch to Raw."
+        }
     }
 
     override fun clear() {

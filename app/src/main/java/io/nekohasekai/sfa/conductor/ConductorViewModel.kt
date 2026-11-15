@@ -81,6 +81,7 @@ import io.nekohasekai.sfa.compose.screen.tools.TaildropSendFile
 import io.nekohasekai.sfa.compose.screen.tools.TaildropSendManager
 import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.telemetry.TelemetryEventLog
+import io.nekohasekai.sfa.telemetry.TelemetryEvents
 import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
@@ -965,6 +966,15 @@ class ConductorViewModel(
             updateUi { copy(pendingImage = ref) }
             ref
         } catch (e: Exception) {
+            TelemetryEventLog.recordAsync(
+                getApplication(),
+                "conductor_image",
+                mapOf(
+                    "stage" to "import",
+                    "error" to e.javaClass.simpleName,
+                    "detail" to TelemetryEvents.scrub(e.message.orEmpty(), 160),
+                ),
+            )
             append(
                 ConductorItem.Notice(
                     "image",
@@ -1584,6 +1594,17 @@ class ConductorViewModel(
                     stopRequested = false
                     autoApproveAgentToolName = null
                     ModelProviderSettings.unpin()
+                    if (outcome is TurnOutcome.Failed) {
+                        TelemetryEventLog.recordAsync(
+                            getApplication(),
+                            "conductor_turn",
+                            mapOf(
+                                "result" to "failed",
+                                "code" to outcome.error.code.name.lowercase(Locale.US),
+                                "detail" to TelemetryEvents.scrub(outcome.error.message, 160),
+                            ),
+                        )
+                    }
                     when (outcome) {
                         is TurnOutcome.Failed ->
                             append(
@@ -1728,12 +1749,18 @@ class ConductorViewModel(
                     TelemetryEventLog.recordAsync(
                         getApplication<Application>(),
                         "conductor_tool",
-                        mapOf(
-                            "tool" to telemetryToolName(event.result.name),
-                            "ms" to SystemClock.uptimeMillis() - startedAt,
-                            "ok" to event.result.ok,
-                            "code" to (event.result.errorCode ?: "-"),
-                        ),
+                        buildMap {
+                            put("tool", telemetryToolName(event.result.name))
+                            put("ms", SystemClock.uptimeMillis() - startedAt)
+                            put("ok", event.result.ok)
+                            put("code", event.result.errorCode ?: "-")
+                            if (!event.result.ok) {
+                                put(
+                                    "detail",
+                                    TelemetryEvents.scrub(event.result.message.orEmpty(), 160),
+                                )
+                            }
+                        },
                     )
                 }
                 updateToolResult(event.result)
