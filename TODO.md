@@ -21,6 +21,7 @@
 - [ ] **Provider capability 剩余**：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权；DeepSeek `none`/`max`、xAI `xhigh` 等不能三家共用的档位。现有矩阵见 `ModelLimits`。
 - [ ] **网络诊断**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`；libbox 没有 DNS/route API，先做能落地的部分。实验里模型只能从 probe 结果猜 DNS 故障。
 - [ ] **`probe_via_node` 的 HEAD 歧义**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；`speed_test` 后续。
+- [ ] **工具参数错误带 schema 提示**：wonder.79 trace 里 `file_read_selected` 先用 `handle` 报 `missing_parameter 'id'`，模型又花一次 `search_tools` 才拿到参数名。`missing_parameter` / `unknown_parameter` 的错误消息应附上该工具的参数名和必填标记（MCP 透传工具用 properties/required），让模型同轮改对。80 只改了 `request_files.reason` 可选和 `file_read_selected` 文案，注册表提示未做。
 - [ ] **批量确认：预览与分级**：整批预检合成一张卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS`/MCP 写工具逐次确认。
 - [ ] **工具编排计划（tool_plan / DAG）**：把有依赖的多步调用压成一次提交，支持字段绑定、`when`/`retry`/`fallback`；先只读工具。目标是减少往返和 token。
 - [ ] **对话级 LLM 摘要**：现有只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要未做。

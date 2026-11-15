@@ -1344,6 +1344,15 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `request_files` 的 `reason` 改为可选，缺省用通用说明，避免模型漏参数后重试一次；`file_read_selected` 的描述和错误消息都明确 handle 放在 `id` 参数、二进制文件不能按文本读、图片改用 `analyze_image`。`taildrop_peers` / `taildrop_send` 设为 core，补 deliver / send to peer / send to device alias。`diagnostics_export` 增加 `overwrite`。
 - 本地全量 453 个用例绿。GitHub release 正文已验证只有 tag 消息，没有旧 footer；arm64 APK 和 Feishu 通知正常。
 
+### wonder.79 真机图片测试 trace 复盘（2026-11-15）
+
+- 用户要求「测试识别图片能力」。模型先 `search_tools("image vision photo read picture")`，返回 5 条弱匹配，其中 `cpk_docker_run` 因容器镜像描述命中；目录里没有视觉工具。
+- 模型同一轮发 `route_call(request_files, {})`，缺 `reason` 失败；随后搜索 schema，再带 `reason` 重试，选图成功。选中的是 607KB 的 JPEG。
+- 模型用 `handle` 调 `file_read_selected`，缺 `id` 失败；改 `id` 后返回 `The selected file is binary.`。79 的描述只说 handle 来自 `request_files`，没有说明字段名和二进制限制。
+- 结论：先补 `analyze_image` 和工具文案（80）；注册表参数错误附带参数名的改进留在 TODO。
+- 投递 trace 时，`search_tools("Clawdy Mini")` 只返回 Portal MCP 工具，模型没发现 Taildrop，改用 `cpk_file_put`。80 把 `taildrop_peers` / `taildrop_send` 提升为 core 并加 deliver alias。
+- `diagnostics_export` 重名后模型尝试 `overwrite=true`，但 79 的 schema 没有该参数，返回 `unknown_parameter`；80 已补。
+
 ### wonder.79：消息流工具条与 trace 范围（2026-11-15）
 
 - 答题卡选项不再用 Material `RadioButton`/`Checkbox` 的 48dp 盒，改成 20dp 自定义圆圈/方框；控制左边缘与题目文字对齐，控制与选项文字留 10dp。选项行不再有胶囊背景。
