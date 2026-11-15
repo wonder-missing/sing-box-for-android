@@ -45,7 +45,7 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.73`（tag `v1.15.0-alpha.13-wonder.73`）。下一次从 74 开始；tag 用 annotated tag，能说清就写 `Agent-Time`/`Agent-Loops`，说不清留空。
+- 当前已发布 `wonder.73`（tag `v1.15.0-alpha.13-wonder.73`，commit `1308be9`）。下一次从 74 开始；tag 用 annotated tag，能说清就写 `Agent-Time`/`Agent-Loops`，说不清留空。
 - 顺序建议：先做 P1 的进程死亡恢复、1 秒取消、敏感导出；再推 P2 的 Taildrop 收件和自省证据。VFS 只在出现“远端 Agent 持续读手机数据”的具体用例时再碰，不扩 background provider/bundle。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；发布流程见 `AGENTS.md`。旧的 49–59 手机检查清单已过期，不再保留。
 
