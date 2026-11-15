@@ -212,6 +212,10 @@ class OpenAiCompatibleModelClient(
             content?.trim()?.takeIf { it.isNotBlank() }?.let { return@withContext it }
             val finish = (choice?.get("finish_reason") as? JsonPrimitive)?.contentOrNull
             val reasoning = (message?.get("reasoning_content") as? JsonPrimitive)?.contentOrNull?.trim()
+            // Some multimodal models put the whole answer in reasoning_content
+            // and leave content empty. Returning that text is more useful than
+            // reporting an empty answer.
+            reasoning?.takeIf { it.isNotBlank() }?.let { return@withContext it }
             val providerError = ((root["error"] as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
             val detail =
                 listOfNotNull(

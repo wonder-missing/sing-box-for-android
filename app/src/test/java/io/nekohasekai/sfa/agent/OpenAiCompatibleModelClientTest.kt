@@ -162,6 +162,27 @@ class OpenAiCompatibleModelClientTest {
     }
 
     @Test
+    fun analyzeImageFallsBackToReasoningContent() {
+        responseBody =
+            """
+            {"choices": [{"message": {"content": "", "reasoning_content": "a cat"}, "finish_reason": "stop"}]}
+            """.trimIndent()
+
+        val client = clientFor("http://127.0.0.1:${server.localPort}", "deepseek-flash")
+        val answer =
+            runBlocking {
+                client.analyzeImage(
+                    image = byteArrayOf(1, 2, 3),
+                    mimeType = "image/jpeg",
+                    question = "what is shown?",
+                    apiKey = "sk-test",
+                )
+            }
+
+        assertEquals("a cat", answer)
+    }
+
+    @Test
     fun omitsMaxTokensWhenTheProviderDefaultApplies() {
         responseBody =
             """
