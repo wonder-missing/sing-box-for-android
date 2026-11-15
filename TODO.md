@@ -39,6 +39,7 @@
 - [ ] **增量更新（低）**：整包 bsdiff，约 3–4 个工作日；见 [`docs/incremental-update.md`](docs/incremental-update.md)。
 - [ ] **路由 A/B 真机执行**：语料见 [`docs/conductor-eval.md`](docs/conductor-eval.md)；native/routing 对比未跑。
 - [ ] **确认与事务语义**：模型看不到确认事件；多步调用没有框架级事务；等 2B 流式和 Phase 3 再评估。
+- [ ] **更新后服务恢复真机验证**：76 启动 VPN，用应用内 Update 安装 77，确认 `MY_PACKAGE_REPLACED` 后服务自动恢复。75 → 76 不会恢复，因为 75 还没有写 restore 标记；机制见 [`docs/update-install.md`](docs/update-install.md)。
 - [ ] **最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：已关 Compose 1.11 的新 context menu/smart selection；待真机确认 Copy 回来，再按上游修复移除开关。
 
 ## 下个会话接手
@@ -49,6 +50,7 @@
 
 ## 最近完成
 
+- wonder.76（2026-11-15）：更新安装链路和更新后状态恢复。应用内更新走 `FileProvider` + `ACTION_VIEW`，不经过浏览器下载链路，扫描提示由系统/Play Protect 决定；文档见 [`docs/update-install.md`](docs/update-install.md)。安装前记住服务是否在跑，`MY_PACKAGE_REPLACED` 后由 `BootReceiver` 自动拉起；`ServiceRestorePolicyTest` 覆盖判定。
 - wonder.75（2026-11-15）：`diagnostics_export` 生成的文件名统一成 `.md`（请求 `api-trace.json` 会写成 `api-trace.md`）；对话复制和导出现在会遮掉邮箱和 Tailscale 地址，旧会话里的 `tailscale_status` 原文不再随分享泄露。发布流程收进 `scripts/release.sh`。
 - 本地 JVM 单测环境（2026-11-15）：Mini 装好 JDK 17、Android SDK 37.1/36 和 CI 的 `libbox.aar`，用 `scripts/local-test.sh` 跑全量 433 个用例。依赖、重装步骤和磁盘预算见 [`docs/local-testing.md`](docs/local-testing.md)；签名、发布、通知和 libbox 编译仍在 CI。
 - wonder.74（2026-11-15）：MCP 工具 description 不再截断。远程给的描述原样进入 `search_tools`；需要控制输出体积时只整条丢弃工具并标 `truncated`，不在句子中间加省略号。截断掉的是 `docker_run` 的 `output at /work`，正是决定是否调用工具的关键约束。

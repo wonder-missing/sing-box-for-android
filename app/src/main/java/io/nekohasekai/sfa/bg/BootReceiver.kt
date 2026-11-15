@@ -10,6 +10,13 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal object ServiceRestorePolicy {
+    fun shouldStart(
+        startedByUser: Boolean,
+        restoreAfterUpdate: Boolean,
+    ): Boolean = startedByUser || restoreAfterUpdate
+}
+
 class BootReceiver : BroadcastReceiver() {
     @OptIn(DelicateCoroutinesApi::class)
     override fun onReceive(context: Context, intent: Intent) {
@@ -22,7 +29,8 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                if (Settings.startedByUser) {
+                if (ServiceRestorePolicy.shouldStart(Settings.startedByUser, Settings.restoreServiceAfterUpdate)) {
+                    Settings.restoreServiceAfterUpdate = false
                     CrashReportManager.refresh()
                     if (CrashReportManager.unreadCount.value > 0) {
                         Settings.startedByUser = false

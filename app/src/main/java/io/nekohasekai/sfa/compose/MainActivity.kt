@@ -393,6 +393,7 @@ class MainActivity :
                 ContextCompat.startForegroundService(this@MainActivity, intent)
             }
             Settings.startedByUser = true
+            Settings.restoreServiceAfterUpdate = false
         }
     }
 

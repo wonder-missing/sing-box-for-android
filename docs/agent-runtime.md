@@ -1334,6 +1334,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.76：更新后恢复服务（2026-11-15）
+
+- `ApkInstaller.stopServiceIfRunning()` 在停服务前写 `restore_service_after_update` 并 flush。停止路径会把 `started_by_user` 清掉，原来的 `MY_PACKAGE_REPLACED` 分支因此不会重启。
+- `BootReceiver` 改为 `started_by_user || restore_service_after_update` 时启动服务，启动前清标记；未读 crash report 仍然阻止自动启动。`MainActivity` 手动启动时也清标记。
+- 应用内更新链路的扫描提示分析写在 [`docs/update-install.md`](update-install.md)：提示由系统/Play Protect 和安装来源决定，应用内 FileProvider 安装不经过浏览器下载链路；不能把提示消失当成安全保证。
+
 ### wonder.75：诊断文件名与分享脱敏（2026-11-15）
 
 - `diagnostics_export` 的产物是 Markdown，文件名统一按 `.md` 纠正：`api-trace.json` 写成 `api-trace.md`，无扩展名追加 `.md`。工具描述说明这一点，返回值里的 `path` 是实际路径。

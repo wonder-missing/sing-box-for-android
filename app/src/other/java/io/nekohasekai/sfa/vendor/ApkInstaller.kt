@@ -23,6 +23,10 @@ object ApkInstaller {
         if (!commandSocket.exists()) {
             return
         }
+        // The stop path clears startedByUser. Remember that the service was up
+        // so BootReceiver can start it again after MY_PACKAGE_REPLACED.
+        Settings.restoreServiceAfterUpdate = true
+        Settings.dataStore.flush()
         BoxService.stop()
         repeat(20) {
             delay(100)

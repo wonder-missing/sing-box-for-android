@@ -9,6 +9,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 - Workspace: `~/workspace` on clawdy-mini. CFG repo: `~/workspace/CFG`.
 - CFG is a neighboring project. Use its CLI tools as needed (`python3 ~/workspace/CFG/cli/bin/cfg ...`, e.g. `clientlog report --hours N` for WonderSing app telemetry); do not modify CFG code from this repo.
 - Local JVM unit tests and compile checks run on the Mini; setup, versions and disk cleanup are in [`docs/local-testing.md`](docs/local-testing.md). CI remains the release gate. There is no emulator; UI changes need a device check.
+- Update install path, the system scan prompt, and post-update service restore: [`docs/update-install.md`](docs/update-install.md).
 - `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
 - **The user's "Groups page" is the Dashboard Groups bottom sheet** (`showGroupsSheet`, `GroupsCard(asSheet = true)`); its title/actions row is the `listHeaderContent` in `MainActivity`. `Screen.Groups` is a wide-screen `NavigationRail` destination with no phone entry; do not treat it as the Groups page in UI discussions.
 
