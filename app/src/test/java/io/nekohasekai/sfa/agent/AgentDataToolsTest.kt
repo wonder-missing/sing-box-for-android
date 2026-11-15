@@ -255,6 +255,7 @@ class AgentDataToolsTest {
 
         val confirmed = runBlocking { registry.confirmUserCommand("taildrop_send_selected", args) }
         assertTrue(confirmed.errorMessage ?: "", confirmed.ok)
+        assertEquals("queued", confirmed.output!!.string("delivery"))
         assertEquals(listOf("peer-a" to listOf("one", "two")), sentSelected)
     }
 
@@ -287,6 +288,8 @@ class AgentDataToolsTest {
 
         assertTrue(result.errorMessage ?: "", result.ok)
         assertEquals("peer-a", result.output!!.string("peer"))
+        assertEquals("queued", result.output!!.string("delivery"))
+        assertTrue(result.output!!.string("note").contains("receiver must accept"))
         assertEquals(1, sent.size)
         assertEquals("peer-a", sent[0].first)
         assertEquals("report.md", sent[0].second.single().name)
@@ -316,6 +319,22 @@ class AgentDataToolsTest {
         assertTrue(names.contains("file_stat"))
         assertTrue(names.contains("file_write"))
         assertTrue(names.contains("file_delete"))
+    }
+
+    @Test
+    fun parameterErrorsNameTheAcceptedFields() {
+        store.writeText("conductor/x.txt", "x")
+        val registry = AgentToolRegistry(AgentDataTools(store, diagnostics, taildrop, FakeSelection(emptyList())).all)
+
+        val wrongField = registry.exec("file_read_selected", """{"handle":"abc123"}""")
+        assertFalse(wrongField.ok)
+        assertEquals("missing_parameter", wrongField.errorCode)
+        assertTrue(wrongField.errorMessage!!.contains("id (string, required)"))
+
+        val missing = registry.exec("file_grep", """{"path":"conductor/x.txt","pattern":"x"}""")
+        assertFalse(missing.ok)
+        assertEquals("missing_parameter", missing.errorCode)
+        assertTrue(missing.errorMessage!!.contains("query (string, required)"))
     }
 
     @Test

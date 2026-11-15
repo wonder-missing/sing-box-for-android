@@ -637,8 +637,9 @@ class AgentDataTools(
                 AgentToolDefinition(
                     name = "taildrop_send",
                     description =
-                        "Deliver files from the working directory to a Tailscale peer using Taildrop. " +
-                            "Use taildrop_peers for the peer name; the peer must be online. Requires confirmation.",
+                        "Send files from the working directory to a Tailscale peer's Taildrop inbox. The receiver " +
+                            "must accept them before they appear on the peer's disk. Use taildrop_peers for the peer " +
+                            "name; the peer must be online. Requires confirmation.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -691,18 +692,7 @@ class AgentDataTools(
                 }
                 return try {
                     val result = port.send(peer, resolved, cancellation)
-                    val output =
-                        buildJsonObject {
-                            put("peer", peer)
-                            put(
-                                "files",
-                                buildJsonArray {
-                                    resolved.forEach { add(it.name) }
-                                },
-                            )
-                            put("ok", result.ok)
-                            result.message?.let { put("message", it) }
-                        }
+                    val output = taildropOutput(peer, resolved.map { it.name }, result)
                     if (result.ok) {
                         ToolExecution(output = output)
                     } else {
@@ -864,8 +854,9 @@ class AgentDataTools(
                 AgentToolDefinition(
                     name = "taildrop_send_selected",
                     description =
-                        "Send files the user selected in this session to a Tailscale peer using Taildrop. " +
-                            "The peer must be online. Requires confirmation.",
+                        "Send files the user selected in this session to a Tailscale peer's Taildrop inbox. The " +
+                            "receiver must accept them before they appear on the peer's disk. The peer must be " +
+                            "online. Requires confirmation.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -902,16 +893,7 @@ class AgentDataTools(
                 if (ids.isEmpty()) return invalid("ids must contain at least one handle")
                 return try {
                     val result = port.sendSelected(peer, ids, cancellation)
-                    val output =
-                        buildJsonObject {
-                            put("peer", peer)
-                            put(
-                                "files",
-                                buildJsonArray { result.files.forEach { add(it) } },
-                            )
-                            put("ok", result.ok)
-                            result.message?.let { put("message", it) }
-                        }
+                    val output = taildropOutput(peer, result.files, result)
                     if (result.ok) {
                         ToolExecution(output = output)
                     } else {
@@ -1094,6 +1076,29 @@ class AgentDataTools(
         }
         return candidate
     }
+
+    private fun taildropOutput(
+        peer: String,
+        files: List<String>,
+        result: TaildropSendResult,
+    ): JsonObject =
+        buildJsonObject {
+            put("peer", peer)
+            put(
+                "files",
+                buildJsonArray { files.forEach { add(it) } },
+            )
+            put("ok", result.ok)
+            if (result.ok) {
+                put("delivery", "queued")
+                put(
+                    "note",
+                    "Queued in the peer's Taildrop inbox. The receiver must accept the file " +
+                        "before it appears on the peer's disk.",
+                )
+            }
+            result.message?.let { put("message", it) }
+        }
 
     private fun sanitizeName(raw: String): String {
         val name = File(raw).name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(120)

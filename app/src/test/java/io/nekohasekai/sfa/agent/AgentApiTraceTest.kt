@@ -324,6 +324,18 @@ class AgentApiTraceTest {
     }
 
     @Test
+    fun redactsInlineImageDataUrlsBeforeTheTrace() {
+        val base64 = "A".repeat(5_000)
+        val body =
+            """{"messages":[{"content":[{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,$base64"}}]}]}"""
+
+        val redacted = AgentApiTrace.truncateBody(body)!!
+
+        assertFalse(redacted.contains(base64))
+        assertTrue(redacted.contains("data:image/jpeg;base64,[redacted"))
+    }
+
+    @Test
     fun printsTokenUsageAndCacheHits() {
         AgentApiTrace.clear()
         AgentApiTrace.record(

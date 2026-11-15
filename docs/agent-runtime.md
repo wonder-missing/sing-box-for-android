@@ -1334,6 +1334,13 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.82（待发）：vision trace、参数提示与 Taildrop 语义
+
+- `analyzeImage` 改为记录脱敏后的 trace：请求体里的 `data:image/...;base64,...` 换成 `[redacted N chars]`，保留模型名、问题、状态、finish_reason 和 provider 响应；空答案错误会带 `finish_reason`、provider `error` 和截断的 `reasoning_content`，不再只有一句 empty answer。
+- 工具注册表的 `missing_parameter` / `unknown_parameter` 错误追加 `Accepted parameters: name (type, required)`；MCP 透传工具用 schema 的 `properties` / `required`。这样模型在 `handle`/`id`、`pattern`/`query` 这类错误上可以同轮改对，不用再 `search_tools`。
+- `taildrop_send` / `taildrop_send_selected` 成功时输出 `delivery=queued` 和 `note`，明确文件只进了对端的 Taildrop inbox，接收方 accept 后才落盘；描述同步改成「receiver must accept」。
+- 本地 456 用例绿。Mini 侧自动 drain 仍待 home 会话处理，见 [`TODO.md`](../TODO.md)「下个会话接手」。
+
 ### wonder.81：查看器性能、折行开关与 DeepSeek 模型名（2026-11-15）
 
 - Raw 查看器默认不折行，标题栏左侧三点菜单里的 `Auto wrap` 可以随时切换；关闭时横向滚动，打开时按宽度折行。

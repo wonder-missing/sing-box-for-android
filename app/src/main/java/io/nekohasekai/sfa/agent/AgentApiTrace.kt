@@ -470,12 +470,26 @@ object AgentApiTrace {
                 headerName to value
             }.toMap()
 
-    fun truncateBody(body: String?): String? =
-        if (body != null && body.length > MAX_BODY_CHARS) {
-            body.take(MAX_BODY_CHARS) + "\n[body truncated]"
-        } else {
-            body
+    private val imageDataUrl = Regex("""data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=_\-\s]+""")
+
+    /**
+     * Image data URLs are large and not useful as raw base64 in the trace. Keep
+     * the media type and a size marker so a vision request is still auditable.
+     */
+    internal fun redactImageDataUrls(body: String?): String? =
+        body?.replace(imageDataUrl) { match ->
+            val media = match.value.substringBefore(";base64,")
+            "$media;base64,[redacted ${match.value.length} chars]"
         }
+
+    fun truncateBody(body: String?): String? {
+        val redacted = redactImageDataUrls(body)
+        return if (redacted != null && redacted.length > MAX_BODY_CHARS) {
+            redacted.take(MAX_BODY_CHARS) + "\n[body truncated]"
+        } else {
+            redacted
+        }
+    }
 
     private fun StringBuilder.appendSummary(summary: ApiTraceSummary) {
         append("- ${formatTime(summary.timestamp)}")

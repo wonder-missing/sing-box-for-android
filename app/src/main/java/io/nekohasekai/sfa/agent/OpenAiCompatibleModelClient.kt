@@ -22,7 +22,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
-import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -119,8 +119,9 @@ class OpenAiCompatibleModelClient(
         }
 
     /**
-     * One-shot vision request. The image data URL is deliberately kept out of
-     * AgentApiTrace; it is large and not useful in the text trace.
+     * One-shot vision request. The image data URL is redacted before the
+     * request enters AgentApiTrace, so the trace keeps the question, status and
+     * provider response without storing megabytes of base64.
      */
     suspend fun analyzeImage(
         image: ByteArray,
@@ -139,7 +140,7 @@ class OpenAiCompatibleModelClient(
             }
             val dataUrl =
                 "data:${mimeType.ifBlank { "image/jpeg" }};base64," +
-                    ByteString.of(*image).base64()
+                    image.toByteString().base64()
             val payload =
                 buildJsonObject {
                     put("model", endpoint.model)
@@ -184,7 +185,7 @@ class OpenAiCompatibleModelClient(
                     apiKey = apiKey,
                     timeoutMs = timeoutMs,
                     providerLabel = endpoint.providerLabel,
-                    recordTrace = false,
+                    recordTrace = true,
                 )
             if (status !in 200..299) throw httpError(status, body, endpoint.providerLabel)
             val root =
@@ -194,19 +195,33 @@ class OpenAiCompatibleModelClient(
                         "${endpoint.providerLabel} returned a non-JSON vision response.",
                         retryable = true,
                     )
+            val choice = (root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject
+            val message = choice?.get("message") as? JsonObject
             val content =
-                (((root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject)
-                    ?.get("message") as? JsonObject)
-                    ?.get("content") as? JsonPrimitive
-            content
-                ?.contentOrNull
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-                ?: throw AgentModelException(
-                    AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
-                    "${endpoint.providerLabel} returned an empty vision answer.",
-                    retryable = true,
-                )
+                when (val raw = message?.get("content")) {
+                    is JsonPrimitive -> raw.contentOrNull
+                    is JsonArray ->
+                        raw.joinToString("") { part ->
+                            ((part as? JsonObject)?.get("text") as? JsonPrimitive)?.contentOrNull.orEmpty()
+                        }
+                    else -> null
+                }
+            content?.trim()?.takeIf { it.isNotBlank() }?.let { return@withContext it }
+            val finish = (choice?.get("finish_reason") as? JsonPrimitive)?.contentOrNull
+            val reasoning = (message?.get("reasoning_content") as? JsonPrimitive)?.contentOrNull?.trim()
+            val providerError = ((root["error"] as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
+            val detail =
+                listOfNotNull(
+                    finish?.let { "finish_reason=$it" },
+                    providerError?.let { "error=${it.take(300)}" },
+                    reasoning?.takeIf { it.isNotEmpty() }?.let { "reasoning=${it.take(300)}" },
+                ).joinToString("; ")
+            throw AgentModelException(
+                AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
+                "${endpoint.providerLabel} returned an empty vision answer" +
+                    if (detail.isEmpty()) "." else " ($detail).",
+                retryable = true,
+            )
         }
 
     override fun stream(

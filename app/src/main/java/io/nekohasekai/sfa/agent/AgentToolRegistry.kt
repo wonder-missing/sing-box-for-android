@@ -75,14 +75,22 @@ class AgentToolRegistry(
         if (definition.passthroughArguments) {
             val missing = missingPassthrough(definition.parametersSchema, args)
             if (missing != null) {
-                return failure(name, "missing_parameter", "Missing required parameter '$missing'.")
+                return failure(
+                    name,
+                    "missing_parameter",
+                    "Missing required parameter '$missing'.${parameterHint(definition)}",
+                )
             }
         } else {
             for (spec in definition.parameters) {
                 val element = args[spec.name]
                 if (element == null || element is JsonNull) {
                     if (spec.required) {
-                        return failure(name, "missing_parameter", "Missing required parameter '${spec.name}'.")
+                        return failure(
+                            name,
+                            "missing_parameter",
+                            "Missing required parameter '${spec.name}'.${parameterHint(definition)}",
+                        )
                     }
                     continue
                 }
@@ -135,7 +143,11 @@ class AgentToolRegistry(
             val knownNames = definition.parameters.map { it.name }.toSet()
             val unknown = args.keys.firstOrNull { it !in knownNames }
             if (unknown != null) {
-                return failure(name, "unknown_parameter", "Unknown parameter '$unknown'.")
+                return failure(
+                    name,
+                    "unknown_parameter",
+                    "Unknown parameter '$unknown'.${parameterHint(definition)}",
+                )
             }
         }
 
@@ -233,6 +245,26 @@ class AgentToolRegistry(
         } finally {
             activeCancellations.remove(cancellation)
         }
+    }
+
+    private fun parameterHint(definition: AgentToolDefinition): String {
+        if (definition.passthroughArguments) {
+            val properties = definition.parametersSchema["properties"] as? JsonObject ?: return ""
+            val required =
+                (definition.parametersSchema["required"] as? JsonArray)
+                    ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                    ?.toSet()
+                    .orEmpty()
+            if (properties.isEmpty()) return ""
+            val names = properties.keys.map { key -> if (key in required) "$key (required)" else key }
+            return " Accepted parameters: ${names.joinToString()}."
+        }
+        if (definition.parameters.isEmpty()) return ""
+        val names =
+            definition.parameters.map { spec ->
+                "${spec.name} (${spec.type.schemaType}${if (spec.required) ", required" else ""})"
+            }
+        return " Accepted parameters: ${names.joinToString()}."
     }
 
     private fun missingPassthrough(
