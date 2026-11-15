@@ -1334,15 +1334,16 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
-### wonder.82：直接图片输入、analyze_image 与 trace 修正（2026-11-15）
+### wonder.82：直接图片输入、analyze_image 与 trace 修正（2026-11-16）
 
 - 输入栏发送按钮左侧新增加号，打开系统图片选择器；选中的图片先以 36dp 缩略图停在输入栏，不单独发请求。下一条消息发送时，文本和图片作为同一个 user message 的 content parts 进入主 Chat。图片可以不带文字单独发送，但不会在选择后自动发送。
 - 图片在导入时做 EXIF 旋转、长边压到 1600px、JPEG 88，输出超过 3MB 时继续降质量；源文件上限 25MB。图片字节存到 `filesDir/conductor/images/`，会话 JSON 只存 `AgentImageRef`（id/name/mime/尺寸/大小），不存 base64。图片目录上限 80 个文件/80MB，`/clear` 会清空。
 - 主 Chat 请求把 `AgentMessage.User.images` 转成 OpenAI Chat Completions 的 `text` + `image_url` content parts，带 `detail=auto`；图片按 DeepSeek 每张 1024 token 计入上下文预算。请求体里的 data URL 在进入 API trace 前被替换成 `[redacted N chars]`。消息气泡显示缩略图，点按可全屏查看。
-- `analyze_image` 保留为工具，按 DeepSeek Chat Completions 文档使用 `deepseek-flash`、`image_url` content part 和 `detail=auto`；空答案错误带 `finish_reason`、provider `error` 和截断的 reasoning。视觉请求也进脱敏 trace，便于下次定位。
+- `analyze_image` 保留为工具，按 DeepSeek Chat Completions 文档使用 `deepseek-flash`、`image_url` content part 和 `detail=auto`；`content` 为空时回退 `reasoning_content`，两者都空才报错，错误带 `finish_reason`、provider `error` 和截断的 reasoning。视觉请求也进脱敏 trace，便于下次定位。
+- 无文字的直接图片消息补一个 `What is in this image?` 文本 part，避免部分 provider 拒绝纯图片 content。
 - 工具注册表的 `missing_parameter` / `unknown_parameter` 错误追加 `Accepted parameters: name (type, required)`；MCP 透传工具用 schema 的 `properties` / `required`。这样模型在 `handle`/`id`、`pattern`/`query` 这类错误上可以同轮改对，不用再 `search_tools`。
 - `taildrop_send` / `taildrop_send_selected` 成功时输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和 `note`，明确文件已到对端的 Taildrop inbox，但未保存到对端磁盘；描述同步说明「success means peer inbox received, not saved/opened」。接收方仍需 `tailscale file get` 或 Taildrop UI 落盘。离线 peer 直接报错，不做 sender-side 排队。
-- 本地 460 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。图片选择、缩略图、全屏查看和直接图片请求仍需真机确认。
+- 本地 462 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。图片选择、缩略图、全屏查看和直接图片请求仍需真机确认。
 
 ### wonder.81：查看器性能、折行开关与 DeepSeek 模型名（2026-11-15）
 
