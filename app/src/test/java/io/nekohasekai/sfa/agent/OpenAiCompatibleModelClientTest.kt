@@ -183,6 +183,32 @@ class OpenAiCompatibleModelClientTest {
     }
 
     @Test
+    fun imageOnlyUserMessageGetsADefaultPrompt() {
+        responseBody =
+            """
+            {"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]}
+            """.trimIndent()
+
+        val ref = AgentImageRef("img1", "shot.jpg", "image/jpeg", 10, 20, 3)
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
+        runBlocking {
+            client.complete(
+                AgentModelRequest(
+                    messages = listOf(AgentMessage.User("", listOf(ref))),
+                    tools = emptyList(),
+                    maxOutputTokens = 16,
+                    timeoutMs = 5_000,
+                    images = mapOf("img1" to AgentImageData(byteArrayOf(1, 2, 3), "image/jpeg")),
+                ),
+                apiKey = "sk-test",
+            )
+        }
+
+        assertTrue(requestBody.contains("\"text\":\"What is in this image?\""))
+        assertTrue(requestBody.contains("\"type\":\"image_url\""))
+    }
+
+    @Test
     fun omitsMaxTokensWhenTheProviderDefaultApplies() {
         responseBody =
             """
