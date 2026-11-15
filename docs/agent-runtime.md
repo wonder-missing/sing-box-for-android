@@ -1341,6 +1341,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - MCP 工具名改为 `<namespace>_<tool>`，去掉 `mcp_`。`McpServerConfig.namespace` 持久化，旧配置回退到 id；添加/编辑对话框支持 Name 与 Namespace，改名只改展示，改前缀才改工具名；`rename` 用缓存里的 remote 列表重建工具，不重新连接。
 - MCP 配置独立成卡片，不再放在 Provider 卡片里；Tool routing 从设置页移出，改为 `/routing on|off`，设置页只留一行命令提示。
 - 本地全量 446 个用例绿（增量 5 秒）。
+- 真机 77 验收：`ask_user` 单选、多选、取消三条通过（多选 4 项按顺序回传，取消返回 `cancelled=true`）；`release_notes` 可调用，但 release body 只有发布脚本写死的两行；MCP `clawdy_portal_kn_orb_status` 可调用，旧前缀 `clawdy_portal_kn` 仍长；`diagnostics_export`/Taildrop 正常；76→77 更新后 `vpnActive=true`、core 在跑，服务恢复通过。77 之前的 76 会话 trace 有两次 120 秒 `network_timeout`。
 
 ### wonder.76：更新后恢复服务（2026-11-15）
 

@@ -28,7 +28,10 @@
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持。
 - [ ] **消息内富 Markdown 与本地文件查看**：业界约定就是标准 Markdown，不用自定义标记：链接用 `[label](url)`，文件名/路径/命令用行内代码。App 侧把 `markdownAnnotated` 升级为可点击：链接交给浏览器，行内代码点按复制；本地文件链接点按弹出只读查看器（标题、路径、内容、复制），不执行。system prompt 只加一行「用户很可能复制的值用行内代码，链接用 Markdown 链接」。需要真机确认点按/长按手感。
 - [ ] **多模态图片输入**：输入栏加相册选图和预览；`AgentMessage.User` 支持 OpenAI content parts（text + `image_url` data URL），provider capability 加 vision 标记，文本-only 回退保留。先用 DeepSeek V4.1 Flash 和一张相册图片跑通「分析这张图」，再决定是否支持多图。涉及消息序列化、会话持久化和模型客户端，单独一版做。
-- [ ] **Reasoning 前置阶段**：流式请求用 OkHttp `EventListener` 区分 DNS、TCP、TLS、请求已发出、收到响应头；首字前 turn 状态行显示细分阶段，首字后回到「Receiving response」。新增 `AgentModelChunk.Stage` 和 VM 状态映射；保留 `Waiting for the provider` 作为兜底。
+- [ ] **Reasoning 前置阶段**：流式请求用 OkHttp `EventListener` 区分 DNS、TCP、TLS、请求已发出、收到响应头；首字前 turn 状态行显示细分阶段，首字后回到「Receiving response」。新增 `AgentModelChunk.Stage` 和 VM 状态映射；保留 `Waiting for the provider` 作为兜底。77 验收 trace 里有两次 120 秒 `network_timeout`（17:00:53、17:02:54），正好是这条需求的证据。
+- [ ] **Release Notes 正文**：`release.yml` 的 `publish` 步骤写死两行 generic notes，annotated tag 的说明没有进入 release body；`release_notes` 工具实测只能读到「Wonder fork… Signed with…」。改为把 tag 消息（以及上一版以来的 commit 列表）写进 release body，并更新 77 已发布的正文。
+- [ ] **MCP 旧服务器前缀**：旧配置没有 namespace 时回退到 id 并截到 16，实测 `clawdy_portal_kn_orb_status` 仍然很长。给旧配置加一次性提示或在卡片上标出过长前缀，用户可在 Edit 里改成 `portal`。
+- [ ] **ask_user 取消原因结构化**：工具输出增加 `reason`（`dismissed` / `timeout` / `stopped`），当前只有 `message`；实测模型无法稳定区分超时和主动取消。
 
 ### P3 低优先 / 可选 / 阻塞
 
@@ -41,7 +44,6 @@
 - [ ] **增量更新（低）**：整包 bsdiff，约 3–4 个工作日；见 [`docs/incremental-update.md`](docs/incremental-update.md)。
 - [ ] **路由 A/B 真机执行**：语料见 [`docs/conductor-eval.md`](docs/conductor-eval.md)；native/routing 对比未跑。
 - [ ] **确认与事务语义**：模型看不到确认事件；多步调用没有框架级事务；等 2B 流式和 Phase 3 再评估。
-- [ ] **更新后服务恢复真机验证**：76 启动 VPN，用应用内 Update 安装 77，确认 `MY_PACKAGE_REPLACED` 后服务自动恢复。75 → 76 不会恢复，因为 75 还没有写 restore 标记；机制见 [`docs/update-install.md`](docs/update-install.md)。
 - [ ] **最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：已关 Compose 1.11 的新 context menu/smart selection；待真机确认 Copy 回来，再按上游修复移除开关。
 
 ## 下个会话接手
@@ -52,6 +54,7 @@
 
 ## 最近完成
 
+- wonder.77 真机验收（2026-11-15）：`ask_user` 单选/多选/取消三条通过；`release_notes` 能被调用，但正文是 release workflow 写死的两行，需要改发布正文；MCP 改名后 `clawdy_portal_kn_orb_status` 调用成功，但旧前缀仍长；`diagnostics_export` 与 Taildrop 正常；76 更新到 77 后 `network_snapshot` 仍 `vpnActive=true`、core 在跑，更新后服务恢复验证通过。详细数据和结论见本次会话。
 - wonder.77（2026-11-15）：Conductor/MCP 日常体验。新增 `release_notes` 工具读当前版本发布说明；Connections 搜索框常开；用户气泡去掉点按涟漪；答题卡选项去胶囊背景并加 8dp 间距；MCP 工具名改为 `<namespace>_<tool>`（去掉 `mcp_`），添加/编辑服务器支持 Name 和 Namespace，改名不影响工具前缀；MCP 配置从 Provider 卡片独立出来；Tool routing 改为 `/routing on|off`。
 - wonder.76（2026-11-15）：更新安装链路和更新后状态恢复。应用内更新走 `FileProvider` + `ACTION_VIEW`，不经过浏览器下载链路，扫描提示由系统/Play Protect 决定；文档见 [`docs/update-install.md`](docs/update-install.md)。安装前记住服务是否在跑，`MY_PACKAGE_REPLACED` 后由 `BootReceiver` 自动拉起；`ServiceRestorePolicyTest` 覆盖判定。
 - wonder.75（2026-11-15）：`diagnostics_export` 生成的文件名统一成 `.md`（请求 `api-trace.json` 会写成 `api-trace.md`）；对话复制和导出现在会遮掉邮箱和 Tailscale 地址，旧会话里的 `tailscale_status` 原文不再随分享泄露。发布流程收进 `scripts/release.sh`。

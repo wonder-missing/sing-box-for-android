@@ -56,4 +56,5 @@
 ## 验证
 
 - 单元测试：`ServiceRestorePolicyTest` 覆盖 `started_by_user` 与 restore 标记的组合。
-- 真机：从 76 启动 VPN，走应用内 Update 安装 77，等待 `MY_PACKAGE_REPLACED` 后确认服务自动恢复。首次 75 到 76 的更新不会恢复，因为 75 还没有写标记。
+- 真机（2026-11-15，76→77）：76 会话里 `network_snapshot` 显示 `vpnActive=true`、`serviceMode=vpn`、core 在跑；走应用内 Update 安装 77 后，同一会话再次 `network_snapshot` 仍为 `vpnActive=true`、core 在跑，期间没有手动启动服务。恢复逻辑通过。
+- 首次 75 到 76 的更新不会恢复，因为 75 还没有写标记；以后从 76 起的更新都适用。
