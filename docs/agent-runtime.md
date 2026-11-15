@@ -1338,7 +1338,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 
 - `AgentToolDefinition` 增加 `serverName` 和 `namespace`。MCP 工具填充这两个字段，description 以 `MCP server: <显示名>.` 开头；`search_tools` 的 matches 和空 query 的 catalog 都返回 `server`/`namespace`。
 - 命名空间只是唯一性前缀，不承载语义；用户可以继续用 `cpk` 这样的短词。模型判断来源不再靠前缀，而是读元数据和 description。参考前沿实现：Claude Code 把服务器编进 `mcp__<server>__<tool>`，OpenAI Agents SDK 用可选的 server prefix；这里保留短本地名，把来源放进元数据。
-- 发布正文从 78 起使用 annotated tag 消息：`release.yml` 的 publish checkout 取全量 tag，`scripts/release.sh` 自动附上上一版以来的 commit 列表。77 的旧正文未改。
+- 发布正文：`release.yml` 先尝试 `git tag --format`，但 CI 的 checkout 没把 tag 对象解析成注解，78 实际读到的是 commit message；已改为通过 GitHub API 读取 annotated tag（79 起生效）。`scripts/release.sh` 继续把上一版以来的 commit 列表写进 tag。77 的旧正文和 78 的 commit-message 正文都保持原样。
 - 本地全量 447 个用例绿。
 
 ### wonder.77：Conductor 日常体验与 MCP 命名（2026-11-15）

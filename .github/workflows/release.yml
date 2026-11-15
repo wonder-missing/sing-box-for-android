@@ -405,7 +405,18 @@ jobs:
             exit 1
           fi
           TITLE="${TAG}"
-          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
+          TAG_MESSAGE=""
+          tag_ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" \
+            --jq '[.object.type, .object.sha] | join(" ")' 2>/dev/null || true)
+          tag_type=${tag_ref%% *}
+          tag_sha=${tag_ref#* }
+          if [ "$tag_type" = "tag" ] && [ -n "$tag_sha" ] && [ "$tag_sha" != "$tag_type" ]; then
+            TAG_MESSAGE=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" \
+              --jq '.message // empty' 2>/dev/null || true)
+          fi
+          if [ -z "$TAG_MESSAGE" ]; then
+            TAG_MESSAGE=$(git log -1 --pretty=%B 2>/dev/null || true)
+          fi
           if [ -z "$TAG_MESSAGE" ]; then
             TAG_MESSAGE="Release $TAG"
           fi
