@@ -70,6 +70,37 @@ class ConductorTranscriptTest {
     }
 
     @Test
+    fun sharedTranscriptMasksPersonalData() {
+        val items =
+            listOf(
+                ConductorItem.Tool(
+                    call = ToolCallView("call-3", "tailscale_status", "{}"),
+                    status = ToolStatus.SUCCEEDED,
+                    result =
+                        ToolResultView(
+                            callId = "call-3",
+                            name = "tailscale_status",
+                            ok = true,
+                            output =
+                                buildJsonObject {
+                                    put("text", "self wonder@example.com 100.106.21.44")
+                                },
+                            errorCode = null,
+                            message = null,
+                            truncated = false,
+                        ),
+                ),
+            )
+
+        val markdown = conductorConversationMarkdown(items, "1.0")
+
+        assertFalse(markdown.contains("wonder@example.com"))
+        assertFalse(markdown.contains("100.106.21.44"))
+        assertTrue(markdown.contains("[redacted-email]"))
+        assertTrue(markdown.contains("[redacted-ip]"))
+    }
+
+    @Test
     fun omitsTheSessionVersionWhenItMatches() {
         val markdown = conductorConversationMarkdown(listOf(ConductorItem.User("hello")), "1.2.3", "1.2.3")
 

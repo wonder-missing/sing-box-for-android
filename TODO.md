@@ -11,7 +11,6 @@
 
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
 - [ ] **`TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时和 Tailscale 取消已落地；Stop 后 1 秒内未确认取消应转成 turn error，而不是等 3 秒强制结束。
-- [ ] **旧会话 UI 与导出的敏感原文**：transcript 已清洗；会话 items 和对话导出仍保留旧的 `tailscale_status` 原文，分享导出前需清对话或逐条清洗。
 - [ ] **服务重启缺口**：CFG 遥测显示两次 `service_start` 中间没有 `service_stop`；用 Conductor 的文件工具读 crash/OOM reports，或对比当时的 `tailscale_status`。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - [ ] **会话编解码移出主线程**：`ConductorSessionStore` 的 JSON encode/decode 和 `AppLog` 同步写文件仍在调用线程；先用 `ui_jank` 取证，再把 encode/save 放 IO、load 放后台。
 
@@ -33,7 +32,6 @@
 
 - [ ] **数据面 Phase D（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍只走 typed 工具 + 确认。
 - [ ] **VFS 后续（可选）**：P6e 进程被杀恢复最后一条 Link；后台 provider 模式（前台服务/常驻通知），否则 Portal Agent 只能在 App 前台时读。结论见「最近完成」；其余 vfsd async/refs/30 秒 cache 归 vfs 项目。
-- [ ] **`diagnostics_export(kind=trace)` 扩展名**：当前 `.json` 名会写 Markdown；按 kind 纠正或名称不符时提示。
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，`probe_many` 仍顺序执行。
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康，不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **跨版本旧 tool schema 归一**：wonder.51 已加版本 Notice/`app_updated`/导出 header；旧 tool observation 的 `ok` 等字段仍按旧语义留在 transcript。
@@ -45,12 +43,13 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.74`（tag `v1.15.0-alpha.13-wonder.74`）。下一次从 75 开始；tag 用 annotated tag，能说清就写 `Agent-Time`/`Agent-Loops`，说不清留空。
+- 当前已发布 `wonder.75`（tag `v1.15.0-alpha.13-wonder.75`）。下一次从 76 开始；tag 用 annotated tag，能说清就写 `Agent-Time`/`Agent-Loops`，说不清留空。发布用 `scripts/release.sh`。
 - 顺序建议：先做 P1 的进程死亡恢复、1 秒取消、敏感导出；再推 P2 的 Taildrop 收件和自省证据。VFS 只在出现“远端 Agent 持续读手机数据”的具体用例时再碰，不扩 background provider/bundle。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；发布流程见 `AGENTS.md`。旧的 49–59 手机检查清单已过期，不再保留。
 
 ## 最近完成
 
+- wonder.75（2026-11-15）：`diagnostics_export` 生成的文件名统一成 `.md`（请求 `api-trace.json` 会写成 `api-trace.md`）；对话复制和导出现在会遮掉邮箱和 Tailscale 地址，旧会话里的 `tailscale_status` 原文不再随分享泄露。发布流程收进 `scripts/release.sh`。
 - 本地 JVM 单测环境（2026-11-15）：Mini 装好 JDK 17、Android SDK 37.1/36 和 CI 的 `libbox.aar`，用 `scripts/local-test.sh` 跑全量 433 个用例。依赖、重装步骤和磁盘预算见 [`docs/local-testing.md`](docs/local-testing.md)；签名、发布、通知和 libbox 编译仍在 CI。
 - wonder.74（2026-11-15）：MCP 工具 description 不再截断。远程给的描述原样进入 `search_tools`；需要控制输出体积时只整条丢弃工具并标 `truncated`，不在句子中间加省略号。截断掉的是 `docker_run` 的 `output at /work`，正是决定是否调用工具的关键约束。
 - wonder.73（2026-11-15）：Conductor 交互批量。`/brief [on|off]` 用 prompt 约束回答长度（温度不是控制啰嗦的杠杆）；用户气泡点按显示发送时间；迷你 Reasoning 折叠换行、点按展开，Show/Hide 保留；工具 Details 固定在表头；新增 `ask_user` 答题卡（单选/多选，随会话保存，超时/停止/清空按取消收口）。`ask_user` 是普通工具调用，不弹确认卡。

@@ -94,6 +94,20 @@ class AgentDataToolsTest {
     }
 
     @Test
+    fun diagnosticsExportCorrectsTheExtensionToMarkdown() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val trace = registry.exec("diagnostics_export", """{"kind":"trace","name":"api-trace.json"}""")
+        assertTrue(trace.errorMessage ?: "", trace.ok)
+        assertEquals("conductor/api-trace.md", trace.output!!.string("path"))
+        assertTrue(File(workingDir, "conductor/api-trace.md").readText().startsWith("# Trace"))
+
+        val conversation = registry.exec("diagnostics_export", """{"kind":"conversation","name":"notes"}""")
+        assertTrue(conversation.errorMessage ?: "", conversation.ok)
+        assertEquals("conductor/notes.md", conversation.output!!.string("path"))
+    }
+
+    @Test
     fun requestFilesReturnsHandlesAndKeepsTheRequestCapabilities() {
         val selection =
             FakeSelection(listOf(SelectedFileInfo("abc123", "picked.txt", 5, "text/plain")))

@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentJson
+import io.nekohasekai.sfa.agent.AgentSanitizer
 
 /** Renders the conversation the same way for the clipboard export and `.runtime/conversation.md`. */
 internal fun conductorConversationMarkdown(
@@ -120,4 +121,4 @@ internal fun conductorConversationMarkdown(
                 }
             }
         }
-    }.trim()
+    }.trim().let { AgentSanitizer.scrubPersonalData(it) }

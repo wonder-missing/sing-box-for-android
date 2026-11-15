@@ -469,6 +469,7 @@ class AgentDataTools(
                     description =
                         "Write a diagnostics artifact to the Conductor workspace. " +
                             "Supported kinds: conversation (the current chat transcript) and trace (the API request trace). " +
+                            "Artifacts are Markdown; the file name is normalized to .md. " +
                             "For trace, tail keeps only the last N requests. Returns the file path, size and sha256.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
@@ -521,7 +522,7 @@ class AgentDataTools(
                 return runCatching {
                     val name =
                         if (requested.isNotEmpty()) {
-                            sanitizeName(requested)
+                            markdownName(sanitizeName(requested))
                         } else {
                             uniqueName("$kind-", "md")
                         }
@@ -931,6 +932,14 @@ class AgentDataTools(
         val name = File(raw).name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(120)
         if (name.isBlank() || name == "." || name == "..") throw IllegalArgumentException("Invalid file name.")
         return name
+    }
+
+    /** Diagnostics artifacts are Markdown, so the requested extension is corrected rather than trusted. */
+    private fun markdownName(name: String): String {
+        val dot = name.lastIndexOf('.')
+        if (dot <= 0) return "$name.md"
+        if (name.substring(dot + 1).equals("md", ignoreCase = true)) return name
+        return name.substring(0, dot) + ".md"
     }
 
     private fun missingPath(): ToolExecution = invalid("path is required")

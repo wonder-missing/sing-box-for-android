@@ -1334,6 +1334,12 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.75：诊断文件名与分享脱敏（2026-11-15）
+
+- `diagnostics_export` 的产物是 Markdown，文件名统一按 `.md` 纠正：`api-trace.json` 写成 `api-trace.md`，无扩展名追加 `.md`。工具描述说明这一点，返回值里的 `path` 是实际路径。
+- 对话复制和导出统一经过 `AgentSanitizer.scrubPersonalData`，遮掉邮箱和 Tailscale 地址。旧会话 UI 里的 `tailscale_status` 原文可以继续留在本机，分享出去时不再带个人标识。
+- 发布流程的可重复步骤收进 `scripts/release.sh`：校验 tag 不存在、推 dev、等 Test 绿、打 annotated tag、等 Release、核对 arm64 APK 和飞书通知；不 force-push，不移动或删除 tag。
+
 ### wonder.74：MCP 描述不截断（2026-11-15）
 
 - 删除 `McpTools.describe` 的 240/400 字符上限。工具描述是模型决定是否调用的依据，句子中间截断会藏掉关键约束（实际截掉了 Portal `docker_run` 的 `output at /work`）。
