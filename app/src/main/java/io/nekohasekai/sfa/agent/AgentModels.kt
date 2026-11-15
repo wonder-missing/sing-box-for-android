@@ -205,6 +205,13 @@ data class FileSelectionResult(
     val message: String? = null,
 )
 
+data class SelectedImage(
+    val id: String,
+    val name: String,
+    val mimeType: String,
+    val bytes: ByteArray,
+)
+
 interface FileSelectionPort {
     suspend fun request(
         reason: String,
@@ -217,6 +224,21 @@ interface FileSelectionPort {
         id: String,
         maxBytes: Int,
     ): SelectedFileRead
+
+    /** Binary read for image analysis; only the vision tool should use it. */
+    suspend fun readBytes(
+        id: String,
+        maxBytes: Int,
+    ): SelectedImage = throw UnsupportedOperationException("Binary selection is not supported.")
+}
+
+/** Sends one selected image to the configured model provider and returns text. */
+interface VisionPort {
+    suspend fun analyze(
+        image: ByteArray,
+        mimeType: String,
+        question: String,
+    ): String
 }
 
 /**

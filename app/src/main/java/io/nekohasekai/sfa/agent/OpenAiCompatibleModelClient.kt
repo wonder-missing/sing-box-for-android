@@ -22,6 +22,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
+import okio.ByteString
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -115,6 +116,97 @@ class OpenAiCompatibleModelClient(
                 throw httpError(status, body, endpoint.providerLabel)
             }
             parseResponse(body, endpoint.providerLabel)
+        }
+
+    /**
+     * One-shot vision request. The image data URL is deliberately kept out of
+     * AgentApiTrace; it is large and not useful in the text trace.
+     */
+    suspend fun analyzeImage(
+        image: ByteArray,
+        mimeType: String,
+        question: String,
+        apiKey: String,
+        timeoutMs: Long = 60_000,
+    ): String =
+        withContext(Dispatchers.IO) {
+            val endpoint = currentEndpoint()
+            if (apiKey.isBlank()) {
+                throw AgentModelException(
+                    AgentTurnErrorCode.NO_API_KEY,
+                    "${endpoint.providerLabel} API key is not configured.",
+                )
+            }
+            val dataUrl =
+                "data:${mimeType.ifBlank { "image/jpeg" }};base64," +
+                    ByteString.of(*image).base64()
+            val payload =
+                buildJsonObject {
+                    put("model", endpoint.model)
+                    put(
+                        "messages",
+                        buildJsonArray {
+                            add(
+                                buildJsonObject {
+                                    put("role", "user")
+                                    put(
+                                        "content",
+                                        buildJsonArray {
+                                            add(
+                                                buildJsonObject {
+                                                    put("type", "text")
+                                                    put("text", question)
+                                                },
+                                            )
+                                            add(
+                                                buildJsonObject {
+                                                    put("type", "image_url")
+                                                    put(
+                                                        "image_url",
+                                                        buildJsonObject { put("url", dataUrl) },
+                                                    )
+                                                },
+                                            )
+                                        },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                    put("max_tokens", 1024)
+                    put("temperature", 0.2)
+                    put("stream", false)
+                }.toString()
+            val (status, body) =
+                post(
+                    url = chatCompletionsUrl(endpoint.baseUrl),
+                    body = payload,
+                    apiKey = apiKey,
+                    timeoutMs = timeoutMs,
+                    providerLabel = endpoint.providerLabel,
+                    recordTrace = false,
+                )
+            if (status !in 200..299) throw httpError(status, body, endpoint.providerLabel)
+            val root =
+                runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull()
+                    ?: throw AgentModelException(
+                        AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
+                        "${endpoint.providerLabel} returned a non-JSON vision response.",
+                        retryable = true,
+                    )
+            val content =
+                (((root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject)
+                    ?.get("message") as? JsonObject)
+                    ?.get("content") as? JsonPrimitive
+            content
+                ?.contentOrNull
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: throw AgentModelException(
+                    AgentTurnErrorCode.INVALID_MODEL_RESPONSE,
+                    "${endpoint.providerLabel} returned an empty vision answer.",
+                    retryable = true,
+                )
         }
 
     override fun stream(
@@ -493,6 +585,7 @@ class OpenAiCompatibleModelClient(
         apiKey: String,
         timeoutMs: Long,
         providerLabel: String,
+        recordTrace: Boolean = true,
     ): Pair<Int, String> {
         val connection =
             (URL(url).openConnection() as HttpURLConnection).apply {
@@ -561,24 +654,26 @@ class OpenAiCompatibleModelClient(
             error = e.message ?: e.toString()
             throw e
         } finally {
-            AgentApiTrace.record(
-                ApiTraceEntry(
-                    timestamp = System.currentTimeMillis(),
-                    method = "POST",
-                    url = connection.url.toString(),
-                    requestHeaders = requestHeaders,
-                    requestBody = AgentApiTrace.truncateBody(body) ?: body,
-                    status = status,
-                    responseHeaders = responseHeaders,
-                    responseBody = responseBody,
-                    error = error,
-                    errorCode = errorCode,
-                    startedAt = startedAt,
-                    durationMs = System.currentTimeMillis() - startedAt,
-                    usage = usage,
-                    finishReason = finish,
-                ),
-            )
+            if (recordTrace) {
+                AgentApiTrace.record(
+                    ApiTraceEntry(
+                        timestamp = System.currentTimeMillis(),
+                        method = "POST",
+                        url = connection.url.toString(),
+                        requestHeaders = requestHeaders,
+                        requestBody = AgentApiTrace.truncateBody(body) ?: body,
+                        status = status,
+                        responseHeaders = responseHeaders,
+                        responseBody = responseBody,
+                        error = error,
+                        errorCode = errorCode,
+                        startedAt = startedAt,
+                        durationMs = System.currentTimeMillis() - startedAt,
+                        usage = usage,
+                        finishReason = finish,
+                    ),
+                )
+            }
             connection.disconnect()
         }
     }

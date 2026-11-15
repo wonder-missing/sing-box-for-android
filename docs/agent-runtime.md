@@ -1334,6 +1334,16 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.80：查看器、滚动位置与图片分析（2026-11-15）
+
+- release 正文不再追加 `WonderSing release. Signed with the repository signing key.`，`release.yml` 直接使用 annotated tag 消息。
+- 消息流底部三点图标：48dp 点击区与圆形涟漪左移 12dp，图标在圆圈内居中，左边缘仍与消息内容对齐。答题卡选项行垂直内边距从 14dp 回到 6dp。
+- Plain Transcript / API Trace 查看器：Raw 模式改用 `CodeEditorSyntax.MARKDOWN`，新增 `MarkdownLanguage` 做行级高亮（标题、围栏代码、行内代码、粗体、引用、列表）；底部左侧新增 Raw/Rich 开关，默认 Raw，按钮显示目标模式，Rich 用 `MarkdownText` 渲染。发现性能问题再改为默认关闭并加设置开关。
+- 重新进入 Conductor 页面时，`ConductorViewModel` 记住 `transcriptScrollIndex` / `transcriptScrollOffset` / `transcriptStickToBottom`，列表用保存的位置初始化，不再从顶部滚到底部。
+- 新增 `analyze_image(question)`：拉起系统图片选择器，读取选中图片（5MB 上限），以 OpenAI `image_url` data URL 发到当前配置的模型，返回文本分析（12k 字符上限）；工具级超时 5 分钟。该调用 `recordTrace=false`，避免 base64 撑大 trace。`DATA_EGRESS` 走 `AGENT_ONLY`，模型调用前需要用户确认。图片分析依赖 provider 侧模型本身支持图片输入；当前设置需填视觉模型 ID（79 trace 里是 `deepseek-v4-flash`）。
+- `request_files` 的 `reason` 改为可选，缺省用通用说明，避免模型漏参数后重试一次；`file_read_selected` 的描述和错误消息都明确 handle 放在 `id` 参数、二进制文件不能按文本读、图片改用 `analyze_image`。`taildrop_peers` / `taildrop_send` 设为 core，补 deliver / send to peer / send to device alias。`diagnostics_export` 增加 `overwrite`。
+- 本地全量 453 个用例绿。
+
 ### wonder.79：消息流工具条与 trace 范围（2026-11-15）
 
 - 答题卡选项不再用 Material `RadioButton`/`Checkbox` 的 48dp 盒，改成 20dp 自定义圆圈/方框；控制左边缘与题目文字对齐，控制与选项文字留 10dp。选项行不再有胶囊背景。

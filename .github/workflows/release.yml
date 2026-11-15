@@ -420,7 +420,7 @@ jobs:
           if [ -z "$TAG_MESSAGE" ]; then
             TAG_MESSAGE="Release $TAG"
           fi
-          NOTES=$(printf '%s\n\n%s\n' "$TAG_MESSAGE" "WonderSing release. Signed with the repository signing key.")
+          NOTES="$TAG_MESSAGE"
           PRERELEASE=()
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
             PRERELEASE=(--prerelease)

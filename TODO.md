@@ -27,7 +27,7 @@
 - [ ] **trace 长 body 与 release 驻留**：单条 body 超 200k 截断，旧 body 超 20k 先缩短；`AgentApiTrace` 在 release 默认驻留完整请求/响应，持久化文件按 2.5M 字符封顶。跨重启的完整 body 已解决，剩余的是单条上限和隐私/驻留策略。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持。
 - [ ] **消息内富 Markdown 与本地文件查看**：业界约定就是标准 Markdown，不用自定义标记：链接用 `[label](url)`，文件名/路径/命令用行内代码。App 侧把 `markdownAnnotated` 升级为可点击：链接交给浏览器，行内代码点按复制；本地文件链接点按弹出只读查看器（标题、路径、内容、复制），不执行。system prompt 只加一行「用户很可能复制的值用行内代码，链接用 Markdown 链接」。需要真机确认点按/长按手感。
-- [ ] **多模态图片输入**：输入栏加相册选图和预览；`AgentMessage.User` 支持 OpenAI content parts（text + `image_url` data URL），provider capability 加 vision 标记，文本-only 回退保留。先用 DeepSeek V4.1 Flash 和一张相册图片跑通「分析这张图」，再决定是否支持多图。涉及消息序列化、会话持久化和模型客户端，单独一版做。
+- [ ] **多模态图片输入（剩余）**：wonder.80 的 `analyze_image` 已能从对话中拉起相册、把单张图发给当前模型并返回文本分析；剩下的是输入栏直接选图和预览、`AgentMessage.User` 的 OpenAI content parts（text + `image_url` data URL）、provider capability 的 vision 标记和文本-only 回退，让图片成为对话上下文的一部分而不是一次工具调用。先用视觉模型 ID（例如 DeepSeek V4.1 Flash）和一张相册图片跑通，再决定是否支持多图。涉及消息序列化、会话持久化和模型客户端，单独一版做。
 - [ ] **Reasoning 前置阶段**：流式请求用 OkHttp `EventListener` 区分 DNS、TCP、TLS、请求已发出、收到响应头；首字前 turn 状态行显示细分阶段，首字后回到「Receiving response」。新增 `AgentModelChunk.Stage` 和 VM 状态映射；保留 `Waiting for the provider` 作为兜底。77 验收 trace 里有两次 120 秒 `network_timeout`（17:00:53、17:02:54），正好是这条需求的证据。
 - [ ] **77/78 旧 release 正文**：77 是模板，78 是 commit message；79 起已按 tag 注解生成并验证。需要单独编辑旧版本时再动，不影响新版本。
 - [ ] **MCP 旧服务器前缀**：旧配置没有 namespace 时回退到 id 并截到 16，实测 `clawdy_portal_kn_orb_status` 仍然很长。给旧配置加一次性提示或在卡片上标出过长前缀，用户可在 Edit 里改成 `portal`。

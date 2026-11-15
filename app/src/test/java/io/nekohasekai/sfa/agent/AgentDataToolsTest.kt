@@ -128,6 +128,39 @@ class AgentDataToolsTest {
     }
 
     @Test
+    fun analyzeImageSendsTheSelectedImageToTheVisionPort() {
+        val selection = FakeSelection(listOf(SelectedFileInfo("img1", "shot.png", 4, "image/png")))
+        var seenMime: String? = null
+        var seenQuestion: String? = null
+        var seenBytes: Int? = null
+        val vision =
+            object : VisionPort {
+                override suspend fun analyze(
+                    image: ByteArray,
+                    mimeType: String,
+                    question: String,
+                ): String {
+                    seenMime = mimeType
+                    seenQuestion = question
+                    seenBytes = image.size
+                    return "A settings screen."
+                }
+            }
+        val registry =
+            AgentToolRegistry(
+                AgentDataTools(store, diagnostics, taildrop, selection, vision = vision).all,
+            )
+
+        val result = registry.exec("analyze_image", """{"question":"What is shown?"}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("A settings screen.", result.output!!.string("analysis"))
+        assertEquals("image/png", seenMime)
+        assertEquals("What is shown?", seenQuestion)
+        assertEquals(4, seenBytes)
+    }
+
+    @Test
     fun diagnosticsTraceCarriesTheTimeRangeAndCoverage() {
         val registry = AgentToolRegistry(tools.all)
 
@@ -139,6 +172,18 @@ class AgentDataToolsTest {
         assertEquals("false", result.output!!.string("missingBefore"))
         assertTrue(result.output!!.containsKey("rangeStart"))
         assertTrue(result.output!!.containsKey("rangeEnd"))
+    }
+
+    @Test
+    fun diagnosticsExportCanOverwriteWhenAsked() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val first = registry.exec("diagnostics_export", """{"kind":"trace","name":"same.md"}""")
+        assertTrue(first.errorMessage ?: "", first.ok)
+        val second = registry.exec("diagnostics_export", """{"kind":"trace","name":"same.md","overwrite":true}""")
+
+        assertTrue(second.errorMessage ?: "", second.ok)
+        assertEquals("conductor/same.md", second.output!!.string("path"))
     }
 
     @Test
@@ -173,6 +218,17 @@ class AgentDataToolsTest {
         assertEquals("Attach the log", selection.reason)
         assertEquals(false, selection.multiple)
         assertEquals(listOf("text/*"), selection.mimeTypes)
+    }
+
+    @Test
+    fun requestFilesUsesAGenericReasonWhenOmitted() {
+        val selection = FakeSelection(emptyList())
+        val registry = AgentToolRegistry(AgentDataTools(store, diagnostics, taildrop, selection).all)
+
+        val result = registry.exec("request_files", "{}")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("The assistant needs a file from this device.", selection.reason)
     }
 
     @Test
@@ -322,6 +378,12 @@ class AgentDataToolsTest {
             readIds += id
             return SelectedFileRead(id, "picked.txt", 5, "hello", truncated = false)
         }
+
+        override suspend fun readBytes(
+            id: String,
+            maxBytes: Int,
+        ): SelectedImage =
+            SelectedImage(id, "picked.png", "image/png", byteArrayOf(1, 2, 3, 4))
     }
 
     private fun AgentToolRegistry.exec(

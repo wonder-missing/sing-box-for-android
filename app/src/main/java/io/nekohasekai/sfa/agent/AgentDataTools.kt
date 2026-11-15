@@ -22,6 +22,7 @@ class AgentDataTools(
     private val taildrop: TaildropPort? = null,
     private val fileSelection: FileSelectionPort? = null,
     private val releaseNotes: ReleaseNotesSource? = null,
+    private val vision: VisionPort? = null,
 ) {
     private val fileList =
         object : AgentTool {
@@ -490,6 +491,12 @@ class AgentDataTools(
                                 allowBlank = true,
                             ),
                             AgentParameterSpec(
+                                name = "overwrite",
+                                type = AgentParameterType.BOOLEAN,
+                                required = false,
+                                description = "Overwrite an existing workspace file. Defaults to false.",
+                            ),
+                            AgentParameterSpec(
                                 name = "tail",
                                 type = AgentParameterType.INTEGER,
                                 required = false,
@@ -537,6 +544,7 @@ class AgentDataTools(
                     }
                 val text = traceExport?.text ?: source.conversationMarkdown()
                 val requested = AgentJson.string(args, "name")?.trim().orEmpty()
+                val overwrite = AgentJson.boolean(args, "overwrite") ?: false
                 return runCatching {
                     val name =
                         if (requested.isNotEmpty()) {
@@ -545,7 +553,7 @@ class AgentDataTools(
                             uniqueName("$kind-", "md")
                         }
                     val path = "conductor/$name"
-                    val entry = fileStore.writeText(path, AgentSanitizer.scrubForModelRead(text), overwrite = false)
+                    val entry = fileStore.writeText(path, AgentSanitizer.scrubForModelRead(text), overwrite = overwrite)
                     ToolExecution(
                         output =
                             buildJsonObject {
@@ -583,12 +591,14 @@ class AgentDataTools(
                 AgentToolDefinition(
                     name = "taildrop_peers",
                     description =
-                        "List Tailscale peers that can receive files, with online state and last seen.",
+                        "List Tailscale peers that can receive files, with online state and last seen. " +
+                            "Use this before taildrop_send to find the peer name.",
                     permission = AgentPermission.FILE_TRANSFER,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "transfer",
-                    aliases = listOf("peers", "devices", "taildrop"),
+                    core = true,
+                    aliases = listOf("peers", "devices", "taildrop", "deliver"),
                 )
 
             override suspend fun execute(
@@ -627,8 +637,8 @@ class AgentDataTools(
                 AgentToolDefinition(
                     name = "taildrop_send",
                     description =
-                        "Send files from the working directory to a Tailscale peer using Taildrop. " +
-                            "The peer must be online. Requires confirmation.",
+                        "Deliver files from the working directory to a Tailscale peer using Taildrop. " +
+                            "Use taildrop_peers for the peer name; the peer must be online. Requires confirmation.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -647,7 +657,8 @@ class AgentDataTools(
                         ),
                     confirmationPolicy = ConfirmationPolicy.ALWAYS,
                     category = "transfer",
-                    aliases = listOf("send files", "taildrop", "transfer"),
+                    core = true,
+                    aliases = listOf("send files", "taildrop", "transfer", "deliver", "send to peer", "send to device"),
                     confirmationReason = "This sends the selected files from this device to a Tailscale peer.",
                 )
 
@@ -715,15 +726,16 @@ class AgentDataTools(
                     description =
                         "Ask the user to choose files with the system file picker. " +
                             "Returns file names, sizes and opaque temporary handles; it does not read, copy or modify " +
-                            "the files. Handles work only while the app session lasts.",
+                            "the files. Handles work only while the app session lasts. " +
+                            "Images and other binary files can be selected, but file_read_selected only reads UTF-8 text.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
                         listOf(
                             AgentParameterSpec(
                                 name = "reason",
                                 type = AgentParameterType.STRING,
-                                required = true,
-                                description = "Short explanation shown to the user.",
+                                required = false,
+                                description = "Short explanation shown to the user. A generic reason is used when omitted.",
                             ),
                             AgentParameterSpec(
                                 name = "multiple",
@@ -749,7 +761,11 @@ class AgentDataTools(
                 cancellation: ToolCancellation,
             ): ToolExecution {
                 val port = fileSelection ?: return unavailable()
-                val reason = AgentJson.string(args, "reason") ?: return invalid("reason is required")
+                val reason =
+                    AgentJson.string(args, "reason")
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: "The assistant needs a file from this device."
                 val multiple = AgentJson.boolean(args, "multiple") ?: true
                 val mimeTypes =
                     AgentJson.stringList(args, "mime_types")
@@ -796,7 +812,8 @@ class AgentDataTools(
                     name = "file_read_selected",
                     description =
                         "Read a UTF-8 text file the user selected in this session. " +
-                            "The handle comes from request_files.",
+                            "The handle comes from request_files and goes in the `id` parameter. Images, PDFs and " +
+                            "other binary files are rejected; use analyze_image for images.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
                         listOf(
@@ -912,6 +929,77 @@ class AgentDataTools(
             }
         }
 
+    private val analyzeImageTool =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "analyze_image",
+                    description =
+                        "Ask the user to pick one image from the gallery, send it to the configured vision-capable " +
+                            "model, and return the text analysis. Use this for screenshots or photos. The image leaves " +
+                            "the device for the provider; file_read_selected cannot read images.",
+                    permission = AgentPermission.DATA_EGRESS,
+                    parameters =
+                        listOf(
+                            AgentParameterSpec(
+                                name = "question",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "What to ask about the image. Be specific.",
+                            ),
+                        ),
+                    confirmationPolicy = ConfirmationPolicy.NEVER,
+                    category = "vision",
+                    core = true,
+                    aliases = listOf("image", "photo", "screenshot", "vision", "ocr", "read image"),
+                    confirmationReason = "The selected image will be sent to the configured model provider for analysis.",
+                    timeoutMs = IMAGE_ANALYSIS_TIMEOUT_MS,
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val picker = fileSelection ?: return unavailable()
+                val analyzer = vision ?: return unavailable()
+                val question = AgentJson.string(args, "question")?.trim()
+                if (question.isNullOrEmpty()) return invalid("question is required")
+                return try {
+                    val selection =
+                        picker.request(
+                            reason = "Pick one image to analyze. It will be sent to the configured model provider.",
+                            multiple = false,
+                            mimeTypes = listOf("image/*"),
+                            cancellation = cancellation,
+                        )
+                    if (selection.cancelled || selection.files.isEmpty()) {
+                        return ToolExecution(
+                            output =
+                                buildJsonObject {
+                                    put("cancelled", true)
+                                    selection.message?.let { put("message", it) }
+                                },
+                        )
+                    }
+                    val file = selection.files.first()
+                    val image = picker.readBytes(file.id, MAX_IMAGE_BYTES)
+                    val analysis = analyzer.analyze(image.bytes, image.mimeType, question)
+                    ToolExecution(
+                        output =
+                            buildJsonObject {
+                                put("file", file.name)
+                                put("mime", image.mimeType)
+                                put("analysis", analysis.take(12_000))
+                            },
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failure(e)
+                }
+            }
+        }
+
     private val releaseNotesTool =
         object : AgentTool {
             override val definition =
@@ -973,6 +1061,7 @@ class AgentDataTools(
                     add(requestFiles)
                     add(fileReadSelected)
                     if (taildrop != null) add(taildropSendSelected)
+                    if (vision != null) add(analyzeImageTool)
                 }
             }
 
@@ -1038,6 +1127,8 @@ class AgentDataTools(
 
     companion object {
         private const val MAX_SEND_BYTES = 8L * 1024 * 1024
+        private const val MAX_IMAGE_BYTES = 5 * 1024 * 1024
         private const val FILE_PICK_TIMEOUT_MS = 10L * 60L * 1000L
+        private const val IMAGE_ANALYSIS_TIMEOUT_MS = 5L * 60L * 1000L
     }
 }

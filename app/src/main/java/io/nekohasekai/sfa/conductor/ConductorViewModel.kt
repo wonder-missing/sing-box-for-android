@@ -54,6 +54,7 @@ import io.nekohasekai.sfa.agent.ReasoningEffort
 import io.nekohasekai.sfa.agent.ReleaseNotesSource
 import io.nekohasekai.sfa.agent.SelectedFileInfo
 import io.nekohasekai.sfa.agent.SelectedFileRead
+import io.nekohasekai.sfa.agent.SelectedImage
 import io.nekohasekai.sfa.agent.TaildropPeerInfo
 import io.nekohasekai.sfa.agent.TaildropPort
 import io.nekohasekai.sfa.agent.TaildropSendResult
@@ -68,6 +69,7 @@ import io.nekohasekai.sfa.agent.TurnEvent
 import io.nekohasekai.sfa.agent.TurnOutcome
 import io.nekohasekai.sfa.agent.TurnResult
 import io.nekohasekai.sfa.agent.TurnState
+import io.nekohasekai.sfa.agent.VisionPort
 import io.nekohasekai.sfa.agent.buildCommandNodeState
 import io.nekohasekai.sfa.agent.validateTranscriptPairing
 import io.nekohasekai.sfa.BuildConfig
@@ -478,7 +480,9 @@ class ConductorViewModel(
             ): SelectedFileRead {
                 val file =
                     synchronized(selectedFilesLock) { selectedFiles[id] }
-                        ?: throw IllegalArgumentException("Unknown file handle '$id'. Call request_files again.")
+                        ?: throw IllegalArgumentException(
+                            "Unknown file handle '$id'. Use the `id` from request_files, or call request_files again.",
+                        )
                 return withContext(Dispatchers.IO) {
                     val cap = maxBytes.coerceIn(1, ConductorFileStore.MAX_READ_BYTES)
                     val resolver = getApplication<Application>().contentResolver
@@ -497,7 +501,9 @@ class ConductorViewModel(
                         }
                         val bytes = collected.toByteArray()
                         if (bytes.any { byte -> byte.toInt() == 0 }) {
-                            throw IllegalArgumentException("The selected file is binary.")
+                            throw IllegalArgumentException(
+                                "The selected file is binary. Use analyze_image for images; file_read_selected only reads text.",
+                            )
                         }
                         SelectedFileRead(
                             id = id,
@@ -505,6 +511,46 @@ class ConductorViewModel(
                             size = file.info.size,
                             text = bytes.copyOf(minOf(bytes.size, cap)).decodeToString(),
                             truncated = bytes.size > cap || file.info.size > cap,
+                        )
+                    }
+                }
+            }
+
+            override suspend fun readBytes(
+                id: String,
+                maxBytes: Int,
+            ): SelectedImage {
+                val file =
+                    synchronized(selectedFilesLock) { selectedFiles[id] }
+                        ?: throw IllegalArgumentException(
+                            "Unknown file handle '$id'. Use the `id` from request_files, or call request_files again.",
+                        )
+                return withContext(Dispatchers.IO) {
+                    val cap = maxBytes.coerceIn(1, MAX_IMAGE_READ_BYTES)
+                    val resolver = getApplication<Application>().contentResolver
+                    val stream =
+                        resolver.openInputStream(file.uri)
+                            ?: throw IllegalStateException("The selected file is no longer available.")
+                    stream.use {
+                        val buffer = ByteArray(8 * 1024)
+                        val collected = java.io.ByteArrayOutputStream()
+                        var total = 0
+                        while (true) {
+                            val read = it.read(buffer)
+                            if (read <= 0) break
+                            total += read
+                            if (total > cap) {
+                                throw IllegalArgumentException(
+                                    "The selected image is larger than ${cap / (1024 * 1024)} MB.",
+                                )
+                            }
+                            collected.write(buffer, 0, read)
+                        }
+                        SelectedImage(
+                            id = id,
+                            name = file.info.name,
+                            mimeType = file.info.mimeType ?: resolver.getType(file.uri) ?: "image/jpeg",
+                            bytes = collected.toByteArray(),
                         )
                     }
                 }
@@ -768,6 +814,21 @@ class ConductorViewModel(
         _vfsConsent.update { current -> if (current?.id == id) null else current }
     }
 
+    private val visionPort: VisionPort by lazy {
+        object : VisionPort {
+            override suspend fun analyze(
+                image: ByteArray,
+                mimeType: String,
+                question: String,
+            ): String {
+                val key =
+                    apiKeyProvider.apiKey()
+                        ?: throw IllegalStateException("API key is not configured for the selected provider.")
+                return modelClient.analyzeImage(image, mimeType, question, key)
+            }
+        }
+    }
+
     private val toolExecutor =
         DynamicToolExecutor(
             AgentTools(
@@ -784,6 +845,7 @@ class ConductorViewModel(
                     taildrop = taildropPort,
                     fileSelection = fileSelectionPort,
                     releaseNotes = releaseNotesSource,
+                    vision = visionPort,
                 ).all +
                 listOf(VfsConnectTool(vfsConnectionManager), AskUserTool(askUserPort)),
             toolTimeoutMs = agentConfig.toolTimeoutMs,
@@ -809,6 +871,9 @@ class ConductorViewModel(
     private var pendingTurnEvent: TurnEvent? = null
     private val toolStartedAt = mutableMapOf<String, Long>()
     private var sessionStartVersion: String = BuildConfig.VERSION_NAME
+    var transcriptScrollIndex: Int = 0
+    var transcriptScrollOffset: Int = 0
+    var transcriptStickToBottom: Boolean = true
     private var agentJob: Job? = null
     private var stopRequested = false
 
@@ -2324,5 +2389,6 @@ class ConductorViewModel(
         private const val MAX_RETAINED_SELECTED_FILES = 30
         private const val MAX_FILE_NAME_CHARS = 200
         private const val MAX_FILE_REQUEST_REASON_CHARS = 240
+        private const val MAX_IMAGE_READ_BYTES = 5 * 1024 * 1024
     }
 }

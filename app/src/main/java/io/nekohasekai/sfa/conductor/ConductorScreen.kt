@@ -36,6 +36,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
@@ -126,6 +127,7 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import io.nekohasekai.sfa.compat.CodeEditorSyntax
 import io.nekohasekai.sfa.compat.ProfileCodeEditor
 import io.nekohasekai.sfa.compat.ProfileEditorColors
@@ -288,8 +290,21 @@ fun ConductorScreen(
     var inputTooLongWarned by remember { mutableStateOf(false) }
     var pendingExport by remember { mutableStateOf<ConductorExport?>(null) }
     val focusRequester = remember { FocusRequester() }
-    val listState = rememberLazyListState()
-    var stickToBottom by remember { mutableStateOf(true) }
+    val listState =
+        rememberLazyListState(
+            initialFirstVisibleItemIndex = viewModel.transcriptScrollIndex,
+            initialFirstVisibleItemScrollOffset = viewModel.transcriptScrollOffset,
+        )
+    var stickToBottom by remember { mutableStateOf(viewModel.transcriptStickToBottom) }
+    LaunchedEffect(stickToBottom) {
+        viewModel.transcriptStickToBottom = stickToBottom
+    }
+    DisposableEffect(listState) {
+        onDispose {
+            viewModel.transcriptScrollIndex = listState.firstVisibleItemIndex
+            viewModel.transcriptScrollOffset = listState.firstVisibleItemScrollOffset
+        }
+    }
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
     val atBottom by remember {
         derivedStateOf {
@@ -927,9 +942,10 @@ private fun ConversationActions(
                 modifier =
                     Modifier
                         .fillMaxSize()
+                        .offset(x = (-12).dp)
                         .clip(CircleShape)
                         .clickable { expanded = true },
-                contentAlignment = Alignment.CenterStart,
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Default.MoreHoriz,
@@ -968,6 +984,7 @@ private fun ConductorTextViewerDialog(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    var rich by remember(viewer.title) { mutableStateOf(false) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -1019,20 +1036,39 @@ private fun ConductorTextViewerDialog(
                         )
                     }
 
-                AndroidView(
-                    factory = { ctx ->
-                        ProfileCodeEditor(ctx, CodeEditorSyntax.PLAIN).apply {
-                            setReadOnly(true)
-                            setText(viewer.text)
-                            applyColors(editorColors)
-                        }.view
-                    },
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(horizontal = 12.dp),
-                )
+                if (rich) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        MarkdownText(
+                            markdown = viewer.text,
+                            style =
+                                MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                ),
+                        )
+                    }
+                } else {
+                    AndroidView(
+                        factory = { ctx ->
+                            ProfileCodeEditor(ctx, CodeEditorSyntax.MARKDOWN).apply {
+                                setReadOnly(true)
+                                setText(viewer.text)
+                                applyColors(editorColors)
+                            }.view
+                        },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .padding(horizontal = 12.dp),
+                    )
+                }
 
                 Row(
                     modifier =
@@ -1040,9 +1076,17 @@ private fun ConductorTextViewerDialog(
                             .fillMaxWidth()
                             .navigationBarsPadding()
                             .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    OutlinedButton(onClick = { rich = !rich }) {
+                        Text(
+                            stringResource(
+                                if (rich) R.string.conductor_viewer_raw else R.string.conductor_viewer_rich,
+                            ),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
                     OutlinedButton(
                         onClick = {
                             clipboard.setText(AnnotatedString(viewer.text))
@@ -1455,7 +1499,7 @@ private fun QuestionCard(
                                         }
                                 },
                             )
-                            .padding(vertical = 14.dp),
+                            .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         OptionIndicator(
