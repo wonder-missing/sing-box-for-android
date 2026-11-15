@@ -29,7 +29,7 @@
 - [ ] **消息内富 Markdown 与本地文件查看**：业界约定就是标准 Markdown，不用自定义标记：链接用 `[label](url)`，文件名/路径/命令用行内代码。App 侧把 `markdownAnnotated` 升级为可点击：链接交给浏览器，行内代码点按复制；本地文件链接点按弹出只读查看器（标题、路径、内容、复制），不执行。system prompt 只加一行「用户很可能复制的值用行内代码，链接用 Markdown 链接」。需要真机确认点按/长按手感。
 - [ ] **多模态图片输入**：输入栏加相册选图和预览；`AgentMessage.User` 支持 OpenAI content parts（text + `image_url` data URL），provider capability 加 vision 标记，文本-only 回退保留。先用 DeepSeek V4.1 Flash 和一张相册图片跑通「分析这张图」，再决定是否支持多图。涉及消息序列化、会话持久化和模型客户端，单独一版做。
 - [ ] **Reasoning 前置阶段**：流式请求用 OkHttp `EventListener` 区分 DNS、TCP、TLS、请求已发出、收到响应头；首字前 turn 状态行显示细分阶段，首字后回到「Receiving response」。新增 `AgentModelChunk.Stage` 和 VM 状态映射；保留 `Waiting for the provider` 作为兜底。77 验收 trace 里有两次 120 秒 `network_timeout`（17:00:53、17:02:54），正好是这条需求的证据。
-- [ ] **已发布 Release Notes 正文**：77 是旧模板；78 读到的是 commit message（CI checkout 没解析 tag 对象）。`release.yml` 已改为通过 GitHub API 读取 annotated tag，79 起生效；77/78 的旧正文保持原样。
+- [ ] **77/78 旧 release 正文**：77 是模板，78 是 commit message；79 起已按 tag 注解生成并验证。需要单独编辑旧版本时再动，不影响新版本。
 - [ ] **MCP 旧服务器前缀**：旧配置没有 namespace 时回退到 id 并截到 16，实测 `clawdy_portal_kn_orb_status` 仍然很长。给旧配置加一次性提示或在卡片上标出过长前缀，用户可在 Edit 里改成 `portal`。
 - [ ] **ask_user 取消原因结构化**：工具输出增加 `reason`（`dismissed` / `timeout` / `stopped`），当前只有 `message`；实测模型无法稳定区分超时和主动取消。
 
@@ -48,7 +48,7 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.78`（tag `v1.15.0-alpha.13-wonder.78`，commit `563ffa1`）。下一次从 79 开始；tag 用 annotated tag，能说清就写 `Agent-Time`/`Agent-Loops`，说不清留空。发布用 `scripts/release.sh`。
+- 当前已发布 `wonder.79`（tag `v1.15.0-alpha.13-wonder.79`，commit `2eac81d`）。下一次从 80 开始；tag 用 annotated tag，能说清就写 `Agent-Time`/`Agent-Loops`，说不清留空。发布用 `scripts/release.sh`。
 - 顺序建议：先做 P1 的进程死亡恢复、1 秒取消、敏感导出；再推 P2 的 Taildrop 收件和自省证据。VFS 只在出现“远端 Agent 持续读手机数据”的具体用例时再碰，不扩 background provider/bundle。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；发布流程见 `AGENTS.md`。旧的 49–59 手机检查清单已过期，不再保留。
 
