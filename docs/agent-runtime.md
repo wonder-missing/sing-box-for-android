@@ -1345,6 +1345,18 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `taildrop_send` / `taildrop_send_selected` 成功时输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和 `note`，明确文件已到对端的 Taildrop inbox，但未保存到对端磁盘；描述同步说明「success means peer inbox received, not saved/opened」。接收方仍需 `tailscale file get` 或 Taildrop UI 落盘。离线 peer 直接报错，不做 sender-side 排队。
 - 本地 463 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。GitHub release 正文和 arm64 APK 已确认。图片选择、缩略图、全屏查看和直接图片请求仍需真机确认。
 
+### wonder.82 真机 trace 复盘（2026-11-16）
+
+- 直接图片输入成功：用户消息以 `text` + `image_url` content part 发出，模型直接描述了 Portal 首页的五个卡片和 Orb 容器状态，不需要 `analyze_image`。trace 里图片 data URL 被替换成 `[redacted 73399 chars]`。
+- `analyze_image` 不再空答案，但第一次视觉调用 `finish=length`、completion=1024、reasoning_tokens=1024，content 为空；82 的 reasoning 回退把整段草稿当成了分析结果。请求体确认 `model=deepseek-flash`、`detail=auto`、`max_tokens=1024`。83 应提高 max_tokens 并优先返回 content，`finish=length` 时不要静默返回 reasoning。
+- 视觉脱敏 trace 生效：请求可见 `image_url`/`detail`，base64 被替换成 `[redacted 803171 chars]`，没有原图数据进入 trace。
+- 参数提示生效：`file_tail` 传 `bogus_field`、`file_grep` 缺 `path` 时都返回 `Accepted parameters: ...`。
+- Taildrop 措辞生效：`taildrop_send` 输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和接收方需 `tailscale file get` 的 note；probe 文件已到达 Mini。
+- `file_grep` 仍有使用问题：默认 literal，query 里的 `|` 不开 `regex` 时零匹配，模型因此误判 trace 没有 vision 请求；匹配到超长 JSON 行时输出体积过大。无匹配提示和行截断见 TODO。
+- 对话导出含 `## Thinking`：`ConductorTranscript` 有意包含推理段落，Copy/Save conversation 和 Plain Transcript 都会带出；需要决定默认排除还是保留。
+- 82 Rich 查看器打不开（真机），Raw 正常；已记 P1 TODO，等 logcat/stack。
+- 模型有一次把 `route_call` 写成带 `<｜｜DSML｜｜>` 的畸形串，运行时按 `file_grep` 缺参返回，模型随后恢复；先记录，复现再查流式 tool-call 解析。
+
 ### wonder.81：查看器性能、折行开关与 DeepSeek 模型名（2026-11-15）
 
 - Raw 查看器默认不折行，标题栏左侧三点菜单里的 `Auto wrap` 可以随时切换；关闭时横向滚动，打开时按宽度折行。
