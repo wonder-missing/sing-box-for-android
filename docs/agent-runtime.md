@@ -1343,6 +1343,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - DeepSeek 默认模型名改为 `deepseek-flash`；旧的 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp` 在读取时归一化到新名，设置页、trace 和请求使用同一个标识。
 - 本地全量 454 个用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。
 
+### wonder.80 真机 trace 复盘（2026-11-15）
+
+- `analyze_image` 两次调用都返回 `DeepSeek returned an empty vision answer.`；trace 的模型名是 `deepseek-v4-flash`。81 把默认模型改为 `deepseek-flash` 并在读取时归一化旧名，需在 81 上复测。视觉请求本身因为 `recordTrace=false` 没有进 trace，下一步要记录脱敏后的视觉请求/响应。
+- 模型把 `file_grep` 的 `query` 写成 `pattern`，报 `missing_parameter` 后又花一轮 `search_tools`；参数错误消息应带参数名，见 TODO。
+- `taildrop_send` 返回 `ok=true` 后，Mini 的 `~/Downloads` 里看不到文件；文件实际在 Tailscale 的 inbox 里，headless Mini 需要 `tailscale file get` 才会搬出来。工具输出应说成 queued，Mini 侧应加自动 drain。
+- `diagnostics_export` 前半段 trace 里没有 `overwrite`，是因为那几条来自 v79 会话；80 的代码和 APK 都包含该参数，不是回归。
+- 答题卡单选/多选、滚动位置以外的界面项仍需主人目测；Conductor 只能确认流程和回传值。
+
 ### 直接多模态输入评估（2026-11-15）
 
 - 现状：`analyze_image` 是工具调用，主模型拿到的是文本分析而不是图片；每次多一次模型请求和一次 egress 确认，后续轮次也看不到那张图。
