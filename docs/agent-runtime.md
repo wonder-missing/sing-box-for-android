@@ -1356,6 +1356,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - `conductor_tool` 失败追加脱敏后的 `detail`（160 字）；新增 `conductor_turn` 的 `result=failed` + 错误码 + 脱敏摘要；图片导入失败记 `conductor_image`（stage/error/detail）。
 - 未捕获 JVM 崩溃仍由 `CrashReportManager` 写 `jvm.log` + `metadata.json`，下次启动归档后由 `CrashReportTelemetry` 以 `crash_report` 上传异常类名、reason 和前 2500 字 JVM 日志。前提是遥测已启用并配置了 endpoint/token；未启用时只留在本机。
 - 仍不覆盖：没有 JVM handler 的原生崩溃/系统强杀、写日志前就 OOM 的极端情况。Rich 查看器如果走 JVM 崩溃或 parse/bind 失败，下一次遥测能看到 `crash_report` 或 `conductor_viewer*`。
+- 本地 464 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过；GitHub release 正文和 arm64 APK 已确认。
 
 ### wonder.82 真机 trace 复盘（2026-11-16）
 
