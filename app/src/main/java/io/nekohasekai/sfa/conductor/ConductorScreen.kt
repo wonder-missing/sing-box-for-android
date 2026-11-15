@@ -2263,6 +2263,7 @@ private fun ConductorInputBar(
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 },
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier =
                             Modifier
                                 .padding(end = 4.dp)

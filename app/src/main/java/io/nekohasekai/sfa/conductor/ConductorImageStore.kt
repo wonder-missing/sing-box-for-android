@@ -54,7 +54,9 @@ class ConductorImageStore(
 
     fun file(id: String): File? {
         if (id.isBlank() || id.any { it == '/' || it == '\\' || it == '.' }) return null
-        return dir.listFiles()?.firstOrNull { it.nameWithoutExtension == id && it.isFile }
+        return dir.listFiles()?.firstOrNull {
+            it.isFile && it.nameWithoutExtension == id && it.extension != "tmp"
+        }
     }
 
     fun clear() {
