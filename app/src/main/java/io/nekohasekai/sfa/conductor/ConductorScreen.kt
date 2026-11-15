@@ -41,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -48,7 +49,9 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.Icons
@@ -90,6 +93,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -112,6 +117,8 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentJson
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -304,6 +311,7 @@ fun ConductorScreen(
     }
     val suggestions = ConductorCommands.suggestions(input)
     val effortSuggestions = ConductorReasoningCommand.suggestions(input)
+    val briefSuggestions = ConductorBriefCommand.suggestions(input)
     val mcpTools by viewModel.mcpListed.collectAsState()
     val offerMcpVerb = ConductorMcpUse.offerVerb(input)
     val mcpToolSuggestions = ConductorMcpUse.toolSuggestions(input, mcpTools)
@@ -313,6 +321,7 @@ fun ConductorScreen(
             !slashMenuHidden &&
             (
                 effortSuggestions.isNotEmpty() ||
+                    briefSuggestions.isNotEmpty() ||
                     offerMcpVerb ||
                     mcpToolSuggestions.isNotEmpty() ||
                     suggestions.isNotEmpty()
@@ -571,6 +580,8 @@ fun ConductorScreen(
                             onConfirm = viewModel::confirmConfirmation,
                             onConfirmAll = viewModel::confirmAllAgent,
                             onCancel = viewModel::cancelConfirmation,
+                            onAnswerQuestion = viewModel::answerAskUser,
+                            onCancelQuestion = viewModel::cancelAskUser,
                             canRetry = uiState.canRetryLastTurn && index == uiState.items.lastIndex,
                             onRetry = viewModel::retryLastTurn,
                         )
@@ -610,6 +621,18 @@ fun ConductorScreen(
                         viewModel.submit("/reasoning $level")
                         focusManager.clearFocus()
                     },
+                    hint = ConductorReasoningCommand::hint,
+                )
+            } else if (slashMenuVisible && briefSuggestions.isNotEmpty()) {
+                EffortSuggestions(
+                    levels = briefSuggestions,
+                    onPick = { value ->
+                        replaceInput("")
+                        inputExpanded = false
+                        viewModel.submit("/brief $value")
+                        focusManager.clearFocus()
+                    },
+                    hint = ConductorBriefCommand::hint,
                 )
             } else if (slashMenuVisible && offerMcpVerb) {
                 McpUseSuggestions(
@@ -947,6 +970,7 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
     var expanded by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val lineHeight = 18.sp
+    val miniText = remember(item.text) { item.text.replace(Regex("""\s*\r?\n\s*"""), " ").trim() }
     val viewportHeight = with(LocalDensity.current) { lineHeight.toDp() * 2 }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -995,10 +1019,11 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
                         .height(viewportHeight)
                         .clip(RoundedCornerShape(8.dp))
                         .background(surface)
-                        .padding(horizontal = 8.dp),
+                        .padding(horizontal = 8.dp)
+                        .clickable { expanded = true },
                 ) {
                     Text(
-                        text = item.text,
+                        text = miniText,
                         style = MaterialTheme.typography.bodySmall.copy(lineHeight = lineHeight),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxSize().verticalScroll(scroll),
@@ -1036,6 +1061,8 @@ private fun ConductorItemView(
     onConfirm: () -> Unit,
     onConfirmAll: () -> Unit,
     onCancel: () -> Unit,
+    onAnswerQuestion: (String, List<String>) -> Unit,
+    onCancelQuestion: (String) -> Unit,
     canRetry: Boolean,
     onRetry: () -> Unit,
 ) {
@@ -1045,7 +1072,7 @@ private fun ConductorItemView(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                UserMessage(item.text)
+                UserMessage(item.text, item.sentAt)
             }
 
         is ConductorItem.Assistant ->
@@ -1123,6 +1150,13 @@ private fun ConductorItemView(
 
         is ConductorItem.Tool -> ToolItem(item)
 
+        is ConductorItem.Question ->
+            QuestionCard(
+                item = item,
+                onAnswer = { onAnswerQuestion(item.id, it) },
+                onDismiss = { onCancelQuestion(item.id) },
+            )
+
         is ConductorItem.Confirmation ->
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -1197,6 +1231,138 @@ private fun ConductorItemView(
     }
 }
 
+@Composable
+private fun QuestionCard(
+    item: ConductorItem.Question,
+    onAnswer: (List<String>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val settled = item.answered || item.cancelled
+    var picked by rememberSaveable(item.id) { mutableStateOf(item.selected) }
+    val choices = if (item.answered) item.selected else picked
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = item.header.ifBlank { "Conductor asks" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = item.question,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item.options.forEach { option ->
+                    val checked = option in choices
+                    Surface(
+                        modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = checked,
+                                enabled = !settled,
+                                role = if (item.multiple) Role.Checkbox else Role.RadioButton,
+                                onClick = {
+                                    picked =
+                                        if (item.multiple) {
+                                            if (checked) picked - option else picked + option
+                                        } else {
+                                            listOf(option)
+                                        }
+                                },
+                            ),
+                        shape = RoundedCornerShape(12.dp),
+                        color =
+                            if (checked) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val controlModifier = Modifier.clearAndSetSemantics {}
+                            if (item.multiple) {
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = null,
+                                    enabled = !settled,
+                                    modifier = controlModifier,
+                                )
+                            } else {
+                                RadioButton(
+                                    selected = checked,
+                                    onClick = null,
+                                    enabled = !settled,
+                                    modifier = controlModifier,
+                                )
+                            }
+                            Text(
+                                text = option,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color =
+                                    if (checked) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            when {
+                item.answered ->
+                    Text(
+                        text = "Answered",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+
+                item.cancelled ->
+                    Text(
+                        text = "Dismissed",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                else -> {
+                    Text(
+                        text = if (item.multiple) "Select any that apply." else "Select one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = onDismiss) {
+                            Text("Dismiss")
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Button(
+                            onClick = { onAnswer(picked) },
+                            enabled = picked.isNotEmpty(),
+                        ) {
+                            Text("Answer")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private val InlineMarkdown = Regex("""\*\*(.+?)\*\*|`([^`]+)`""")
 
 private fun ConductorItem.contentVersion(): Int =
@@ -1204,6 +1370,7 @@ private fun ConductorItem.contentVersion(): Int =
         is ConductorItem.Assistant -> text.length
         is ConductorItem.Reasoning -> text.length
         is ConductorItem.Tool -> (result?.output?.toString()?.length ?: 0) + (result?.message?.length ?: 0)
+        is ConductorItem.Question -> if (answered || cancelled) 1 else 0
         else -> 0
     }
 
@@ -1216,6 +1383,7 @@ private fun ConductorItem.stableKey(index: Int): String =
         is ConductorItem.Notice -> "notice:$index"
         is ConductorItem.Error -> "error:$index"
         is ConductorItem.Confirmation -> "confirm:${request.id}"
+        is ConductorItem.Question -> "question:${id}"
     }
 
 private fun markdownAnnotated(text: String): AnnotatedString =
@@ -1246,17 +1414,29 @@ private fun markdownAnnotated(text: String): AnnotatedString =
     }
 
 @Composable
-private fun UserMessage(text: String) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-    ) {
-        SelectionContainer {
+private fun UserMessage(text: String, sentAt: Long) {
+    var showTime by remember { mutableStateOf(false) }
+    Column(horizontalAlignment = Alignment.End) {
+        Surface(
+            modifier = Modifier.clickable(enabled = sentAt > 0L) { showTime = !showTime },
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+        ) {
+            SelectionContainer {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
+        }
+        if (showTime && sentAt > 0L) {
             Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                text = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(sentAt)),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, end = 4.dp),
             )
         }
     }
@@ -1292,12 +1472,28 @@ private fun ToolItem(item: ConductorItem.Tool) {
                 style = MaterialTheme.typography.labelMedium,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
             Text(
                 text = statusText,
                 style = MaterialTheme.typography.labelSmall,
                 color = statusColor,
             )
+            if (result != null) {
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(
+                        stringResource(
+                            if (expanded) R.string.conductor_tool_hide_details else R.string.conductor_tool_details,
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
         }
         if (item.call.displayArgsJson.isNotBlank() && item.call.displayArgsJson != "{}") {
             SelectionContainer {
@@ -1350,13 +1546,6 @@ private fun ToolItem(item: ConductorItem.Tool) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                )
-            }
-            TextButton(onClick = { expanded = !expanded }) {
-                Text(
-                    stringResource(
-                        if (expanded) R.string.conductor_tool_hide_details else R.string.conductor_tool_details,
-                    ),
                 )
             }
         }
@@ -1416,6 +1605,7 @@ private fun McpUseSuggestions(
 private fun EffortSuggestions(
     levels: List<String>,
     onPick: (String) -> Unit,
+    hint: (String) -> String,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1441,7 +1631,7 @@ private fun EffortSuggestions(
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
-                        text = ConductorReasoningCommand.hint(level),
+                        text = hint(level),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

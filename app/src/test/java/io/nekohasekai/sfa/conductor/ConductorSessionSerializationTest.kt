@@ -56,6 +56,15 @@ class ConductorSessionSerializationTest {
                                     degraded = true,
                                 ),
                         ),
+                        ConductorItem.Question(
+                            id = "q1",
+                            question = "Continue?",
+                            header = "Confirm",
+                            options = listOf("Yes", "No"),
+                            multiple = true,
+                            selected = listOf("No"),
+                            answered = true,
+                        ),
                     ),
             )
         val json = Json { encodeDefaults = true }

@@ -63,6 +63,7 @@ class AgentRuntime(
     private val streamingModel: AgentStreamingModelClient? = null,
     private val toolRoutingEnabled: () -> Boolean = { config.toolRoutingEnabled },
     private val reasoningEffort: () -> String? = { null },
+    private val brief: () -> Boolean = { false },
     private val modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
 ) {
     private val confirmationIds = AtomicLong(0)
@@ -166,6 +167,7 @@ class AgentRuntime(
             AgentContext.systemPrompt(
                 deviceSummary,
                 if (routingEnabled) catalog.promptSection() else null,
+                brief(),
             )
         AgentApiTrace.recordSystemPrompt(systemMessage.content)
         val requestTools =

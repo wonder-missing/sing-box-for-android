@@ -58,6 +58,24 @@ class AgentPromptStabilityTest {
     }
 
     @Test
+    fun briefModeAddsOnlyTheStyleLine() {
+        val normal = AgentContext.systemPrompt("locale=zh; tz=Asia/Shanghai", catalog.promptSection()).content
+        val brief = AgentContext.systemPrompt("locale=zh; tz=Asia/Shanghai", catalog.promptSection(), brief = true).content
+
+        val briefLine =
+            "Brief mode is on. Answer in at most three short paragraphs or one short list. " +
+                "Do not restate the question, do not open with a preamble, and omit optional background. " +
+                "Keep exact values, required warnings and the next step."
+        val styleLine =
+            "Use short plain-text paragraphs. **bold** and `inline code` are allowed; " +
+                "do not use Markdown tables, headings or code fences."
+
+        assertTrue(!normal.contains(briefLine))
+        assertTrue(brief.contains(briefLine))
+        assertEquals(brief, normal.replace(styleLine, "$styleLine\n$briefLine"))
+    }
+
+    @Test
     fun nativePromptKeepsProvidedToolsWording() {
         val prompt = AgentContext.systemPrompt("locale=zh").content
 

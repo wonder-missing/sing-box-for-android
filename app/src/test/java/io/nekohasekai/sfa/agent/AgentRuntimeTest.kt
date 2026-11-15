@@ -84,6 +84,18 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun briefModeReachesTheSystemPrompt() {
+        val model = ScriptedModel(mutableListOf(response("short")))
+        val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+        val runtime = runtime(model, executor, key = "sk-test", brief = { true })
+
+        runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        val system = model.requests.single().messages.first() as AgentMessage.System
+        assertTrue(system.content.contains("Brief mode is on"))
+    }
+
+    @Test
     fun initialEventIsPrependedToTheNextUserMessage() {
         val model = ScriptedModel(mutableListOf(response("done")))
         val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
@@ -985,6 +997,7 @@ class AgentRuntimeTest {
         key: String?,
         config: AgentConfig = AgentConfig(maxToolRounds = 1),
         reasoningEffort: () -> String? = { null },
+        brief: () -> Boolean = { false },
         modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
     ): AgentRuntime =
         AgentRuntime(
@@ -994,6 +1007,7 @@ class AgentRuntimeTest {
             apiKeys = FakeKeyProvider(key),
             config = config,
             reasoningEffort = reasoningEffort,
+            brief = brief,
             modelLimits = modelLimits,
         )
 

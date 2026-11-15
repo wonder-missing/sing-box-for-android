@@ -1334,6 +1334,13 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.73：回答长度与答题卡（2026-11-15）
+
+- `/brief on|off` 只改 system prompt 的一行风格约束，不传 temperature。温度影响用词随机性，不能让模型少说背景或省掉复述；`AgentPromptStabilityTest` 锁定默认 prompt 不变，brief 只在默认 prompt 的风格行后插入一行。
+- 新增 `ask_user(question, options, multiple, header)`：普通工具调用，权限 `user_interaction`，无确认卡；选项 2–6 个、标签唯一。App 在会话里插入 `ConductorItem.Question` 卡片，单选/多选由 `multiple` 决定；答案以所选标签返回，卡片保留在会话里。
+- 题目等待走 `AskUserPort`：10 分钟超时、Stop、`/clear`、activity 结束、进程结束都收口为 `cancelled=true`；恢复会话时未答的卡片标记为 Dismissed。`ask_user` 与 `request_files` 一样受工具级超时保护。
+- 同一批 UI：用户气泡点按显示发送时间；迷你 Reasoning 去掉换行后展示、点按整条展开（Show/Hide 保留）；工具 Details/Hide details 固定在表头右侧。
+
 ### wonder.33 真机 trace 复盘（2026-11-10）
 
 5 次模型请求，system/tools 逐字节一致，messages 严格追加；#3/#5 命中 97%/93%，#4 间隔 2 分钟只命中 1,024（约等于公共前缀），#5 间隔 4 分 38 秒命中 93%。因此 #4 的低命中是 provider 侧缓存淘汰，不是前缀变化；间隔不是决定因素。

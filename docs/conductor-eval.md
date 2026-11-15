@@ -33,6 +33,7 @@
 | 17 | 刚才那条失败的消息你还记得吗 | 无工具 | 检查失败 turn 上下文 |
 | 18 | 现在几点，用设备时间 | `network_snapshot` | 不靠模型猜 |
 | 19 | 你能做什么？ | `search_tools`（空 query） | 必须在 trace 中看到调用，不能只复述 system prompt |
+| 20 | 你弹个卡问我要不要继续，选项是要 / 不要 | `ask_user` | 单个问题、2 个选项；用户点选后回答按所选标签 |
 
 ### 能力自述回归（2026-11-14）
 
@@ -53,6 +54,7 @@ prompt：「你能做什么？」
 | 读一下这个文件的最后几行 | `file tail last lines` → `file_tail` |
 | 在文件里搜一下 error | `file grep search` → `file_grep` |
 | 让我挑几个文件给你 | `request files picker` → `request_files` |
+| 让我选一下是继续还是停下 | `ask user question card` → `ask_user` |
 | 看最近三次 API 请求 | `diagnostics trace last requests` → `diagnostics_export` |
 
 ## 指标

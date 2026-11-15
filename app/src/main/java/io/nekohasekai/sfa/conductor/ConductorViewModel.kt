@@ -28,6 +28,10 @@ import io.nekohasekai.sfa.agent.DynamicToolExecutor
 import io.nekohasekai.sfa.agent.mcp.McpListedTool
 import io.nekohasekai.sfa.agent.mcp.McpRuntimes
 import io.nekohasekai.sfa.agent.mcp.McpTokenCipherFactory
+import io.nekohasekai.sfa.agent.AskUserPort
+import io.nekohasekai.sfa.agent.AskUserRequest
+import io.nekohasekai.sfa.agent.AskUserResult
+import io.nekohasekai.sfa.agent.AskUserTool
 import io.nekohasekai.sfa.agent.AgentTailscaleEndpoint
 import io.nekohasekai.sfa.agent.AgentTailscalePeer
 import io.nekohasekai.sfa.agent.AgentTailscaleSnapshot
@@ -501,6 +505,128 @@ class ConductorViewModel(
             }
         }
 
+    /**
+     * Bridges ask_user to an inline question card. The card stays in the
+     * conversation after it is answered, so the selected labels remain
+     * readable and are also what the model receives.
+     */
+    private val askUserPort =
+        object : AskUserPort {
+            override suspend fun ask(
+                request: AskUserRequest,
+                cancellation: ToolCancellation?,
+            ): AskUserResult {
+                val pending =
+                    PendingAskUser(
+                        id = UUID.randomUUID().toString().take(8),
+                        deferred = CompletableDeferred(),
+                    )
+                synchronized(askUserLock) {
+                    if (pendingAskUser != null) {
+                        return AskUserResult(
+                            cancelled = true,
+                            message = "Another question is already waiting for the user.",
+                        )
+                    }
+                    pendingAskUser = pending
+                }
+                append(
+                    ConductorItem.Question(
+                        id = pending.id,
+                        question = request.question,
+                        header = request.header.orEmpty(),
+                        options = request.options,
+                        multiple = request.multiple,
+                    ),
+                )
+                persistSession()
+                cancellation?.onCancel {
+                    completeAskUser(
+                        pending,
+                        AskUserResult(cancelled = true, message = "The request was cancelled."),
+                    )
+                }
+                return try {
+                    val result =
+                        withTimeoutOrNull(AskUserTool.ASK_USER_TIMEOUT_MS) { pending.deferred.await() }
+                            ?: AskUserResult(cancelled = true, message = "The user did not answer in time.")
+                    settleQuestion(pending.id, result)
+                    result
+                } finally {
+                    synchronized(askUserLock) {
+                        if (pendingAskUser === pending) pendingAskUser = null
+                    }
+                }
+            }
+        }
+
+    private data class PendingAskUser(
+        val id: String,
+        val deferred: CompletableDeferred<AskUserResult>,
+    )
+
+    private val askUserLock = Any()
+    private var pendingAskUser: PendingAskUser? = null
+
+    fun answerAskUser(
+        id: String,
+        selected: List<String>,
+    ) {
+        val pending = synchronized(askUserLock) { pendingAskUser?.takeIf { it.id == id } } ?: return
+        val question =
+            _uiState.value.items
+                .filterIsInstance<ConductorItem.Question>()
+                .lastOrNull { it.id == id } ?: return
+        val allowed = selected.filter { it in question.options }
+        if (allowed.isEmpty()) return
+        val normalized = if (question.multiple) allowed.distinct() else allowed.take(1)
+        completeAskUser(pending, AskUserResult(selected = normalized))
+    }
+
+    fun cancelAskUser(id: String) {
+        val pending = synchronized(askUserLock) { pendingAskUser?.takeIf { it.id == id } } ?: return
+        completeAskUser(pending, AskUserResult(cancelled = true, message = "The user dismissed the question."))
+    }
+
+    private fun completeAskUser(
+        pending: PendingAskUser,
+        result: AskUserResult,
+    ) {
+        synchronized(askUserLock) {
+            if (pendingAskUser === pending) pendingAskUser = null
+        }
+        settleQuestion(pending.id, result)
+        pending.deferred.complete(result)
+    }
+
+    private fun cancelPendingAskUser(message: String) {
+        val pending = synchronized(askUserLock) { pendingAskUser } ?: return
+        completeAskUser(pending, AskUserResult(cancelled = true, message = message))
+    }
+
+    /** Marks the card answered or cancelled; later calls cannot overwrite a settled card. */
+    private fun settleQuestion(
+        id: String,
+        result: AskUserResult,
+    ) {
+        updateUi {
+            val settled =
+                items.map { item ->
+                    if (item is ConductorItem.Question && item.id == id && !item.answered && !item.cancelled) {
+                        if (result.cancelled) {
+                            item.copy(cancelled = true)
+                        } else {
+                            item.copy(answered = true, selected = result.selected)
+                        }
+                    } else {
+                        item
+                    }
+                }
+            copy(items = settled)
+        }
+        persistSession()
+    }
+
     private val agentConfig = AgentConfig()
 
     private val vfsDeviceIdStore =
@@ -645,7 +771,7 @@ class ConductorViewModel(
                     taildrop = taildropPort,
                     fileSelection = fileSelectionPort,
                 ).all +
-                listOf(VfsConnectTool(vfsConnectionManager)),
+                listOf(VfsConnectTool(vfsConnectionManager), AskUserTool(askUserPort)),
             toolTimeoutMs = agentConfig.toolTimeoutMs,
         )
 
@@ -661,6 +787,7 @@ class ConductorViewModel(
             streamingModel = modelClient,
             toolRoutingEnabled = { Settings.conductorToolRouting },
             reasoningEffort = { ReasoningEffort.wireValue(Settings.conductorReasoningEffort) },
+            brief = { Settings.conductorBrief },
             modelLimits = { ModelProviderSettings.limitsFor(ModelProviderSettings.endpoint()) },
         )
 
@@ -758,7 +885,7 @@ class ConductorViewModel(
                 )
                 return
             }
-            append(ConductorItem.User(text))
+            append(ConductorItem.User(text, System.currentTimeMillis()))
             // Persist before the model call: a process death mid-turn must not
             // lose the user message. Restore reconciles it into the transcript.
             persistSession()
@@ -766,7 +893,7 @@ class ConductorViewModel(
             return
         }
 
-        append(ConductorItem.User(text))
+        append(ConductorItem.User(text, System.currentTimeMillis()))
         persistSession()
 
         val parsed =
@@ -838,6 +965,25 @@ class ConductorViewModel(
                 persistSession()
             }
 
+            ConductorCommandKind.BRIEF -> {
+                when (
+                    val outcome =
+                        ConductorBriefCommand.apply(parsed.args, Settings.conductorBrief)
+                ) {
+                    is ConductorBriefCommand.Outcome.Updated -> {
+                        Settings.conductorBrief = outcome.value
+                        append(ConductorItem.Notice("brief", outcome.message))
+                    }
+                    is ConductorBriefCommand.Outcome.Shown -> {
+                        append(ConductorItem.Notice("brief", outcome.message))
+                    }
+                    is ConductorBriefCommand.Outcome.Invalid -> {
+                        append(ConductorItem.Error("brief", outcome.message))
+                    }
+                }
+                persistSession()
+            }
+
             ConductorCommandKind.NODES -> runTool("list_nodes")
             ConductorCommandKind.NETWORK -> runTool("network_snapshot")
             ConductorCommandKind.TAILSCALE -> runTailscale()
@@ -882,6 +1028,7 @@ class ConductorViewModel(
         stopRequested = true
         autoApproveAgentToolName = null
         cancelPendingFileRequest("The turn was stopped.")
+        cancelPendingAskUser("The turn was stopped.")
         pendingAgentConfirmation?.complete(false)
         removeConfirmationItems()
         runtime.cancel()
@@ -1009,6 +1156,7 @@ class ConductorViewModel(
     /** The host activity is finishing; a picker result can no longer arrive. */
     fun onHostFinishing() {
         cancelPendingFileRequest("The app was closed while waiting for file selection.")
+        cancelPendingAskUser("The app was closed while waiting for an answer.")
         cancelPendingVfsConsent("The app was closed while waiting for VFS confirmation.")
     }
 
@@ -1153,6 +1301,7 @@ class ConductorViewModel(
         pendingTurnEvent = null
         pendingCommandConfirmation = null
         cancelPendingFileRequest("The conversation was cleared.")
+        cancelPendingAskUser("The conversation was cleared.")
         synchronized(selectedFilesLock) { selectedFiles.clear() }
         sessionStartVersion = BuildConfig.VERSION_NAME
         toolStartedAt.clear()
@@ -1180,6 +1329,7 @@ class ConductorViewModel(
         runtime.cancel()
         McpRuntimes.get(getApplication()).cancelActive()
         cancelPendingFileRequest("The conversation was closed.")
+        cancelPendingAskUser("The conversation was closed.")
         synchronized(selectedFilesLock) { selectedFiles.clear() }
         agentJob?.cancel()
         commandClient.disconnect()
@@ -1342,7 +1492,7 @@ class ConductorViewModel(
         return when (val outcome = ConductorMcpUse.resolve(args, mcp.listedTools())) {
             is ConductorMcpUse.Outcome.Draft -> outcome
             is ConductorMcpUse.Outcome.Rejected -> {
-                append(ConductorItem.User(raw.trim()))
+                append(ConductorItem.User(raw.trim(), System.currentTimeMillis()))
                 append(ConductorItem.Notice("mcp", outcome.message))
                 persistSession()
                 outcome

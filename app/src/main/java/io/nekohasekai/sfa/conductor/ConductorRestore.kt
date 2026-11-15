@@ -25,6 +25,13 @@ internal fun restoreConductorItems(items: List<ConductorItem>): RestoredConducto
                 is ConductorItem.Reasoning ->
                     if (item.streaming) item.copy(streaming = false) else item
 
+                is ConductorItem.Question ->
+                    if (!item.answered && !item.cancelled) {
+                        item.copy(cancelled = true)
+                    } else {
+                        item
+                    }
+
                 is ConductorItem.Tool ->
                     if (item.status == ToolStatus.RUNNING) {
                         interrupted = true

@@ -37,6 +37,13 @@ class ConductorTranscriptTest {
                     ConfirmationRequest(1, "docker_run", """{"command":["true"]}""", "Run a container?"),
                 ),
                 ConductorItem.Error("Request failed", "The provider rejected the request."),
+                ConductorItem.Question(
+                    id = "q1",
+                    question = "Continue?",
+                    options = listOf("Yes", "No"),
+                    selected = listOf("Yes"),
+                    answered = true,
+                ),
             )
 
         val markdown = conductorConversationMarkdown(items, "1.2.3", "1.2.0")
@@ -57,6 +64,9 @@ class ConductorTranscriptTest {
         assertTrue(markdown.contains("Run a container?"))
         assertTrue(markdown.contains("## Error: Request failed"))
         assertTrue(markdown.contains("The provider rejected the request."))
+        assertTrue(markdown.contains("## Question: Continue?"))
+        assertTrue(markdown.contains("- options: Yes | No"))
+        assertTrue(markdown.contains("- answered: Yes"))
     }
 
     @Test

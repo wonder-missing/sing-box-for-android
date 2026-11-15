@@ -92,6 +92,18 @@ internal fun conductorConversationMarkdown(
                     appendLine()
                 }
 
+                is ConductorItem.Question -> {
+                    appendLine("## Question: ${item.question}")
+                    appendLine()
+                    appendLine("- options: ${item.options.joinToString(" | ")}")
+                    when {
+                        item.answered -> appendLine("- answered: ${item.selected.joinToString(", ")}")
+                        item.cancelled -> appendLine("- answered: (none; the card was dismissed or timed out)")
+                        else -> appendLine("- answered: (pending)")
+                    }
+                    appendLine()
+                }
+
                 is ConductorItem.Confirmation -> {
                     appendLine("## Pending confirmation: ${item.request.toolName}")
                     appendLine()

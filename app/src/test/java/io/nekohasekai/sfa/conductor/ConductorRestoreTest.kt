@@ -65,6 +65,29 @@ class ConductorRestoreTest {
     }
 
     @Test
+    fun aPendingQuestionBecomesCancelledOnRestore() {
+        val pending =
+            ConductorItem.Question(
+                id = "q1",
+                question = "Continue?",
+                options = listOf("Yes", "No"),
+            )
+        val answered =
+            ConductorItem.Question(
+                id = "q2",
+                question = "Which?",
+                options = listOf("A", "B"),
+                selected = listOf("A"),
+                answered = true,
+            )
+
+        val restored = restoreConductorItems(listOf(pending, answered)).items
+
+        assertTrue((restored[0] as ConductorItem.Question).cancelled)
+        assertEquals(answered, restored[1])
+    }
+
+    @Test
     fun completedSessionsDoNotMarkInterruption() {
         val restored =
             restoreConductorItems(

@@ -13,6 +13,7 @@ sealed interface ConductorItem {
     @SerialName("user")
     data class User(
         val text: String,
+        val sentAt: Long = 0L,
     ) : ConductorItem
 
     @Serializable
@@ -48,6 +49,20 @@ sealed interface ConductorItem {
     @SerialName("confirmation")
     data class Confirmation(
         val request: ConfirmationRequest,
+    ) : ConductorItem
+
+    /** An `ask_user` card: a question with tappable answers. */
+    @Serializable
+    @SerialName("question")
+    data class Question(
+        val id: String,
+        val question: String,
+        val header: String = "",
+        val options: List<String> = emptyList(),
+        val multiple: Boolean = false,
+        val selected: List<String> = emptyList(),
+        val answered: Boolean = false,
+        val cancelled: Boolean = false,
     ) : ConductorItem
 
     @Serializable

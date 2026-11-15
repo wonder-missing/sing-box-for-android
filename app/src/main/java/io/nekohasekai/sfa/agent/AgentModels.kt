@@ -18,6 +18,7 @@ enum class AgentPermission(
     WRITE_FILES("write_files"),
     FILE_TRANSFER("file_transfer"),
     DATA_EGRESS("data_egress"),
+    USER_INTERACTION("user_interaction"),
 }
 
 enum class ConfirmationPolicy {
@@ -196,6 +197,30 @@ interface FileSelectionPort {
         id: String,
         maxBytes: Int,
     ): SelectedFileRead
+}
+
+/**
+ * A small set of answers the model offers as a card instead of a plain-text
+ * question. Labels are both the UI text and the value returned to the model.
+ */
+data class AskUserRequest(
+    val question: String,
+    val header: String? = null,
+    val options: List<String>,
+    val multiple: Boolean = false,
+)
+
+data class AskUserResult(
+    val selected: List<String> = emptyList(),
+    val cancelled: Boolean = false,
+    val message: String? = null,
+)
+
+interface AskUserPort {
+    suspend fun ask(
+        request: AskUserRequest,
+        cancellation: ToolCancellation? = null,
+    ): AskUserResult
 }
 
 /**

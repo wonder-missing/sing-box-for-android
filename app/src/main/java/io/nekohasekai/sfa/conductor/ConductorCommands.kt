@@ -16,6 +16,7 @@ enum class ConductorCommandKind {
     MCP,
     CLEAR,
     REASONING,
+    BRIEF,
     NODES,
     NETWORK,
     TAILSCALE,
@@ -82,6 +83,13 @@ object ConductorCommands {
                 usage = ConductorReasoningCommand.USAGE,
                 takesArgs = true,
                 action = ConductorCommandKind.REASONING,
+            ),
+            ConductorCommand(
+                name = "brief",
+                description = "Keep answers short: on or off.",
+                usage = "/brief [on|off]",
+                takesArgs = true,
+                action = ConductorCommandKind.BRIEF,
             ),
             ConductorCommand(
                 name = "nodes",

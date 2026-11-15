@@ -12,6 +12,7 @@ object AgentContext {
     fun systemPrompt(
         deviceSummary: String? = null,
         toolRoster: String? = null,
+        brief: Boolean = false,
     ): AgentMessage.System {
         val hasRoster = !toolRoster.isNullOrBlank()
         return AgentMessage.System(
@@ -40,6 +41,9 @@ object AgentContext {
                 appendLine("If no tool fits after that check, say so plainly and name what you tried. Keep answers concise and match the user's language.")
                 appendLine("Do not expose internal reasoning; give the conclusion and the necessary details.")
                 appendLine("Use short plain-text paragraphs. **bold** and `inline code` are allowed; do not use Markdown tables, headings or code fences.")
+                if (brief) {
+                    appendLine("Brief mode is on. Answer in at most three short paragraphs or one short list. Do not restate the question, do not open with a preamble, and omit optional background. Keep exact values, required warnings and the next step.")
+                }
                 if (hasRoster) {
                     appendLine()
                     appendLine(toolRoster.orEmpty())
