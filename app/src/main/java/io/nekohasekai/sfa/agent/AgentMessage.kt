@@ -18,6 +18,7 @@ sealed interface AgentMessage {
     @SerialName("user")
     data class User(
         val content: String,
+        val images: List<AgentImageRef> = emptyList(),
     ) : AgentMessage
 
     @Serializable

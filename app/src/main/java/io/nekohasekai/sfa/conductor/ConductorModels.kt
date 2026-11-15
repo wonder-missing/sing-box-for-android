@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.conductor
 
+import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.ConfirmationRequest
 import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolResultView
@@ -14,6 +15,7 @@ sealed interface ConductorItem {
     data class User(
         val text: String,
         val sentAt: Long = 0L,
+        val images: List<AgentImageRef> = emptyList(),
     ) : ConductorItem
 
     @Serializable

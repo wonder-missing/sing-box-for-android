@@ -377,6 +377,7 @@ dependencies {
     // Block-based renderer for the large Conductor transcript/trace viewers.
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:recycler:4.6.2")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("org.kodein.emoji:emoji-kt:2.5.0")
 
     // Terminal emulator

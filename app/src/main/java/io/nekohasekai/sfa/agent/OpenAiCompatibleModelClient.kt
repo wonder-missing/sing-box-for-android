@@ -164,7 +164,10 @@ class OpenAiCompatibleModelClient(
                                                     put("type", "image_url")
                                                     put(
                                                         "image_url",
-                                                        buildJsonObject { put("url", dataUrl) },
+                                                        buildJsonObject {
+                                                            put("url", dataUrl)
+                                                            put("detail", "auto")
+                                                        },
                                                     )
                                                 },
                                             )
@@ -375,7 +378,7 @@ class OpenAiCompatibleModelClient(
     ): String =
         buildJsonObject {
             put("model", endpoint.model)
-            put("messages", buildMessages(request.messages))
+            put("messages", buildMessages(request.messages, request.images))
             if (request.tools.isNotEmpty()) {
                 put(
                     "tools",
@@ -397,7 +400,10 @@ class OpenAiCompatibleModelClient(
             put("stream", stream)
         }.toString()
 
-    private fun buildMessages(messages: List<AgentMessage>): JsonArray =
+    private fun buildMessages(
+        messages: List<AgentMessage>,
+        images: Map<String, AgentImageData>,
+    ): JsonArray =
         buildJsonArray {
             messages.forEach { message ->
                 when (message) {
@@ -413,7 +419,51 @@ class OpenAiCompatibleModelClient(
                         add(
                             buildJsonObject {
                                 put("role", "user")
-                                put("content", message.content)
+                                if (message.images.isEmpty()) {
+                                    put("content", message.content)
+                                } else {
+                                    put(
+                                        "content",
+                                        buildJsonArray {
+                                            if (message.content.isNotBlank()) {
+                                                add(
+                                                    buildJsonObject {
+                                                        put("type", "text")
+                                                        put("text", message.content)
+                                                    },
+                                                )
+                                            }
+                                            message.images.forEach { ref ->
+                                                val data = images[ref.id]
+                                                if (data == null) {
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("type", "text")
+                                                            put("text", "[image unavailable: ${ref.name}]")
+                                                        },
+                                                    )
+                                                } else {
+                                                    val mime = data.mimeType.ifBlank { ref.mimeType }
+                                                    val dataUrl =
+                                                        "data:$mime;base64," +
+                                                            data.bytes.toByteString().base64()
+                                                    add(
+                                                        buildJsonObject {
+                                                            put("type", "image_url")
+                                                            put(
+                                                                "image_url",
+                                                                buildJsonObject {
+                                                                    put("url", dataUrl)
+                                                                    put("detail", "auto")
+                                                                },
+                                                            )
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        },
+                                    )
+                                }
                             },
                         )
 

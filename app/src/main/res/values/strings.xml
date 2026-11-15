@@ -861,6 +861,10 @@
     <string name="conductor_viewer_options">Viewer options</string>
     <string name="conductor_viewer_auto_wrap">Auto wrap</string>
     <string name="conductor_viewer_render_failed">Could not render Markdown. Switch to Raw to view the text.</string>
+    <string name="conductor_image_add">Add image</string>
+    <string name="conductor_image_remove">Remove image</string>
+    <string name="conductor_image_importing">Importing image…</string>
+    <string name="conductor_image_unavailable">Image unavailable</string>
     <string name="conductor_tool_details">Details</string>
     <string name="conductor_tool_hide_details">Hide details</string>
     <string name="conductor_tool_details_hint">Tap Details to view the tool output.</string>

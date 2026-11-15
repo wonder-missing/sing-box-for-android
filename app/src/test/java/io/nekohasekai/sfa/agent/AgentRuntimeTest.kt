@@ -56,6 +56,37 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun userImagesReachTheModelRequest() {
+        val image = AgentImageRef("img1", "shot.jpg", "image/jpeg", 10, 20, 3)
+        val model = ScriptedModel(mutableListOf(response("done")))
+        val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+        val runtime =
+            runtime(
+                model,
+                executor,
+                key = "sk-test",
+                imageLoader = { id ->
+                    if (id == "img1") AgentImageData(byteArrayOf(1, 2, 3), "image/jpeg") else null
+                },
+            )
+
+        runBlocking {
+            runtime.runTurn(
+                "look",
+                emptyList(),
+                onEvent = {},
+                confirm = { true },
+                images = listOf(image),
+            )
+        }
+
+        val request = model.requests.single()
+        assertEquals(listOf(image), (request.messages.last() as AgentMessage.User).images)
+        assertEquals(3, request.images["img1"]?.bytes?.size)
+        assertEquals("image/jpeg", request.images["img1"]?.mimeType)
+    }
+
+    @Test
     fun reasoningEffortIsFixedAtTurnStart() {
         val call = ToolCall("call_1", "list_nodes", "{}")
         var stored = ReasoningEffort.LOW
@@ -999,6 +1030,7 @@ class AgentRuntimeTest {
         reasoningEffort: () -> String? = { null },
         brief: () -> Boolean = { false },
         modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
+        imageLoader: (String) -> AgentImageData? = { null },
     ): AgentRuntime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
@@ -1009,6 +1041,7 @@ class AgentRuntimeTest {
             reasoningEffort = reasoningEffort,
             brief = brief,
             modelLimits = modelLimits,
+            imageLoader = imageLoader,
         )
 
     private fun response(text: String): AgentModelResponse =

@@ -1,8 +1,10 @@
 package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -65,6 +67,7 @@ class AgentRuntime(
     private val reasoningEffort: () -> String? = { null },
     private val brief: () -> Boolean = { false },
     private val modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
+    private val imageLoader: (String) -> AgentImageData? = { null },
 ) {
     private val confirmationIds = AtomicLong(0)
 
@@ -102,6 +105,7 @@ class AgentRuntime(
         onEvent: (AgentEvent) -> Unit,
         confirm: suspend (ConfirmationRequest) -> Boolean,
         initialEvent: TurnEvent? = null,
+        images: List<AgentImageRef> = emptyList(),
     ): TurnResult {
         preparedHistoryForTurn = null
         streamingModel?.resetCancel()
@@ -158,7 +162,10 @@ class AgentRuntime(
             AgentContext.compactOldObservations(history, config.maxHistoricalObservationChars)
         preparedHistoryForTurn = preparedHistory.takeIf { it !== history }
         val transcript =
-            (preparedHistory + AgentMessage.User(formatUserMessage(userText, initialEvent))).toMutableList()
+            (
+                preparedHistory +
+                    AgentMessage.User(formatUserMessage(userText, initialEvent), images = images)
+            ).toMutableList()
         var startSize = preparedHistory.size
         val routingEnabled = toolRoutingEnabled()
         val turnReasoningEffort = reasoningEffort()?.takeIf { it.isNotBlank() }
@@ -265,6 +272,7 @@ class AgentRuntime(
                     timeoutMs = config.modelTimeoutMs,
                     toolChoice = if (toolsEnabled) AgentToolChoice.AUTO else AgentToolChoice.NONE,
                     reasoningEffort = turnReasoningEffort,
+                    images = imageDataFor(fittedMessages),
                 )
             onEvent(AgentEvent.StateChanged(TurnState.CallingModel(step)))
             val response =
@@ -1033,6 +1041,21 @@ class AgentRuntime(
      * A failure falls back to the normal trim path; three failures disable
      * compaction for this runtime instance.
      */
+    private suspend fun imageDataFor(messages: List<AgentMessage>): Map<String, AgentImageData> =
+        withContext(Dispatchers.IO) {
+            val result = LinkedHashMap<String, AgentImageData>()
+            messages.forEach { message ->
+                if (message is AgentMessage.User) {
+                    message.images.forEach { ref ->
+                        if (!result.containsKey(ref.id)) {
+                            imageLoader(ref.id)?.let { result[ref.id] = it }
+                        }
+                    }
+                }
+            }
+            result
+        }
+
     private suspend fun compactTranscript(
         transcript: MutableList<AgentMessage>,
         systemMessage: AgentMessage.System,

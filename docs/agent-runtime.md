@@ -1334,12 +1334,15 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
-### wonder.82（待发）：vision trace、参数提示与 Taildrop 语义
+### wonder.82：直接图片输入、analyze_image 与 trace 修正（2026-11-15）
 
-- `analyzeImage` 改为记录脱敏后的 trace：请求体里的 `data:image/...;base64,...` 换成 `[redacted N chars]`，保留模型名、问题、状态、finish_reason 和 provider 响应；空答案错误会带 `finish_reason`、provider `error` 和截断的 `reasoning_content`，不再只有一句 empty answer。
+- 输入栏发送按钮左侧新增加号，打开系统图片选择器；选中的图片先以 36dp 缩略图停在输入栏，不单独发请求。下一条消息发送时，文本和图片作为同一个 user message 的 content parts 进入主 Chat。图片可以不带文字单独发送，但不会在选择后自动发送。
+- 图片在导入时做 EXIF 旋转、长边压到 1600px、JPEG 88，输出超过 3MB 时继续降质量；源文件上限 25MB。图片字节存到 `filesDir/conductor/images/`，会话 JSON 只存 `AgentImageRef`（id/name/mime/尺寸/大小），不存 base64。图片目录上限 80 个文件/80MB，`/clear` 会清空。
+- 主 Chat 请求把 `AgentMessage.User.images` 转成 OpenAI Chat Completions 的 `text` + `image_url` content parts，带 `detail=auto`；图片按 DeepSeek 每张 1024 token 计入上下文预算。请求体里的 data URL 在进入 API trace 前被替换成 `[redacted N chars]`。消息气泡显示缩略图，点按可全屏查看。
+- `analyze_image` 保留为工具，按 DeepSeek Chat Completions 文档使用 `deepseek-flash`、`image_url` content part 和 `detail=auto`；空答案错误带 `finish_reason`、provider `error` 和截断的 reasoning。视觉请求也进脱敏 trace，便于下次定位。
 - 工具注册表的 `missing_parameter` / `unknown_parameter` 错误追加 `Accepted parameters: name (type, required)`；MCP 透传工具用 schema 的 `properties` / `required`。这样模型在 `handle`/`id`、`pattern`/`query` 这类错误上可以同轮改对，不用再 `search_tools`。
-- `taildrop_send` / `taildrop_send_selected` 成功时输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和 `note`，明确文件已到对端的 Taildrop inbox，但未保存到对端磁盘；描述同步说明「success means peer inbox received, not saved/opened」。接收方仍需 `tailscale file get` 或 Taildrop UI 落盘。
-- 本地 456 用例绿。Mini 侧自动 drain 仍待 home 会话处理，见 [`TODO.md`](../TODO.md)「下个会话接手」。
+- `taildrop_send` / `taildrop_send_selected` 成功时输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和 `note`，明确文件已到对端的 Taildrop inbox，但未保存到对端磁盘；描述同步说明「success means peer inbox received, not saved/opened」。接收方仍需 `tailscale file get` 或 Taildrop UI 落盘。离线 peer 直接报错，不做 sender-side 排队。
+- 本地 460 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。图片选择、缩略图、全屏查看和直接图片请求仍需真机确认。
 
 ### wonder.81：查看器性能、折行开关与 DeepSeek 模型名（2026-11-15）
 
@@ -1364,7 +1367,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - DeepSeek V4.1 Flash（`deepseek-flash`）的 Chat Completions 原生支持图片输入，OpenAI 兼容端点用 `content` 数组里的 `text` + `image_url` data URL。
 - 结论：主模型支持视觉时，直接进主线更好：图片留在对话上下文里，可以追问细节，少一次调用和确认，也更接近用户「把图发给你」的直觉。工具只在主模型不支持视觉、或需要独立 OCR/分析模型时有价值；当前 App 只有一个 provider/model，`analyze_image` 不应是长期主路径。
 - 直接输入的代价：`AgentMessage.User` 改成 content parts；会话持久化不能存 base64，图片要落到 `filesDir` 私有文件并用引用恢复；API trace 必须把 `image_url` 换成尺寸/大小占位；需要相册选图、预览、压缩和 EXIF 旋转；provider capability 要有 vision 标记和文本-only 回退；图片 token 成本和隐私提示也要处理。
-- 下一步：单独一版实现单图 direct input，`analyze_image` 先保留作 fallback，稳定后再删除或隐藏。
+- 82 已实现单图 direct input；`analyze_image` 保留为独立工具，适合用户明确要求单独分析或主消息没有附图的情况。
 
 ### wonder.80：查看器、滚动位置与图片分析（2026-11-15）
 

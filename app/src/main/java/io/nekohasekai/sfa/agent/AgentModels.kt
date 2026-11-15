@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import java.io.File
 
@@ -210,6 +211,23 @@ data class SelectedImage(
     val name: String,
     val mimeType: String,
     val bytes: ByteArray,
+)
+
+/** Persistent reference to an image stored under the app's private Conductor directory. */
+@Serializable
+data class AgentImageRef(
+    val id: String,
+    val name: String,
+    val mimeType: String = "image/jpeg",
+    val width: Int = 0,
+    val height: Int = 0,
+    val size: Long = 0,
+)
+
+/** Bytes loaded for the next model request; never persisted in the session JSON. */
+data class AgentImageData(
+    val bytes: ByteArray,
+    val mimeType: String,
 )
 
 interface FileSelectionPort {

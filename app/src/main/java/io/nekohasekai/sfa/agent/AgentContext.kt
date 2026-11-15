@@ -85,7 +85,8 @@ object AgentContext {
     fun estimateMessageTokens(message: AgentMessage): Int =
         when (message) {
             is AgentMessage.System -> 4 + estimateTokens(message.content)
-            is AgentMessage.User -> 4 + estimateTokens(message.content)
+            // DeepSeek caps each image at 1024 tokens; assume the cap for budgeting.
+            is AgentMessage.User -> 4 + estimateTokens(message.content) + message.images.size * 1024
 
             is AgentMessage.Assistant ->
                 4 +

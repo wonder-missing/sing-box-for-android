@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.conductor
 
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.app.Application
 import android.os.SystemClock
@@ -8,11 +9,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -79,6 +82,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
@@ -92,8 +96,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -127,10 +134,12 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.compat.CodeEditorSyntax
 import io.nekohasekai.sfa.compat.ProfileCodeEditor
 import io.nekohasekai.sfa.compat.ProfileEditorColors
+import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -320,6 +329,20 @@ fun ConductorScreen(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    var importingImage by remember { mutableStateOf(false) }
+    val imagePicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+            if (uri != null) {
+                coroutineScope.launch {
+                    importingImage = true
+                    try {
+                        viewModel.importImage(uri)
+                    } finally {
+                        importingImage = false
+                    }
+                }
+            }
+        }
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
     val scaffoldPadding = LocalScaffoldPadding.current
@@ -374,13 +397,20 @@ fun ConductorScreen(
 
     fun send() {
         val text = input.trim()
-        if (text.isEmpty()) return
+        val hasImage = uiState.pendingImage != null
+        if (text.isEmpty() && !hasImage) return
         if (text.length > MaxInputChars) {
             Toast.makeText(
                 context,
                 context.getString(R.string.conductor_input_too_long, MaxInputChars),
                 Toast.LENGTH_LONG,
             ).show()
+            return
+        }
+        if (hasImage && text.startsWith("/")) {
+            // Let the ViewModel explain that a command cannot carry an image;
+            // keep both the draft and the pending image.
+            viewModel.submit(text)
             return
         }
         if (ConductorMcpUse.isCommand(text)) {
@@ -591,6 +621,7 @@ fun ConductorScreen(
                             onCancelQuestion = viewModel::cancelAskUser,
                             canRetry = uiState.canRetryLastTurn && index == uiState.items.lastIndex,
                             onRetry = viewModel::retryLastTurn,
+                            imageFile = viewModel::imageFile,
                         )
                     }
                     item(key = "conversation-actions") {
@@ -773,6 +804,15 @@ fun ConductorScreen(
             onSend = { send() },
             onStop = viewModel::stopAgent,
             isRunning = uiState.isRunning,
+            pendingImage = uiState.pendingImage,
+            importingImage = importingImage,
+            onAddImage = {
+                imagePicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            },
+            onRemoveImage = viewModel::clearPendingImage,
+            imageFile = viewModel::imageFile,
             statusText = uiState.turnStatus,
             statusSince = uiState.turnStatusSince,
             contextPercent = uiState.contextPercent,
@@ -1262,6 +1302,7 @@ private fun ConductorItemView(
     onCancelQuestion: (String) -> Unit,
     canRetry: Boolean,
     onRetry: () -> Unit,
+    imageFile: (String) -> File?,
 ) {
     when (item) {
         is ConductorItem.User ->
@@ -1269,7 +1310,7 @@ private fun ConductorItemView(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                UserMessage(item.text, item.sentAt)
+                UserMessage(item.text, item.sentAt, item.images, imageFile)
             }
 
         is ConductorItem.Assistant ->
@@ -1641,7 +1682,78 @@ private fun markdownAnnotated(text: String): AnnotatedString =
     }
 
 @Composable
-private fun UserMessage(text: String, sentAt: Long) {
+private fun UserImage(
+    ref: AgentImageRef,
+    imageFile: (String) -> File?,
+) {
+    var fullscreen by remember { mutableStateOf(false) }
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, ref.id) {
+        value =
+            withContext(Dispatchers.IO) {
+                imageFile(ref.id)?.let { file ->
+                    BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+                }
+            }
+    }
+    val preview = bitmap
+    if (preview != null) {
+        Image(
+            bitmap = preview,
+            contentDescription = ref.name,
+            contentScale = ContentScale.Crop,
+            modifier =
+                Modifier
+                    .size(160.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { fullscreen = true },
+        )
+        if (fullscreen) {
+            Dialog(
+                onDismissRequest = { fullscreen = false },
+                properties = DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                            .clickable { fullscreen = false },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        bitmap = preview,
+                        contentDescription = ref.name,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+    } else {
+        Box(
+            modifier =
+                Modifier
+                    .size(160.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.conductor_image_unavailable),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UserMessage(
+    text: String,
+    sentAt: Long,
+    images: List<AgentImageRef>,
+    imageFile: (String) -> File?,
+) {
     var showTime by remember { mutableStateOf(false) }
     Column(horizontalAlignment = Alignment.End) {
         Surface(
@@ -1654,13 +1766,22 @@ private fun UserMessage(text: String, sentAt: Long) {
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
         ) {
-            SelectionContainer {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                )
+            Column {
+                images.forEach { ref ->
+                    Box(modifier = Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp)) {
+                        UserImage(ref, imageFile)
+                    }
+                }
+                if (text.isNotBlank()) {
+                    SelectionContainer {
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                    }
+                }
             }
         }
         if (showTime && sentAt > 0L) {
@@ -1987,6 +2108,11 @@ private fun ConductorInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     isRunning: Boolean,
+    pendingImage: AgentImageRef?,
+    importingImage: Boolean,
+    onAddImage: () -> Unit,
+    onRemoveImage: () -> Unit,
+    imageFile: (String) -> File?,
     statusText: String?,
     statusSince: Long,
     contextPercent: Int,
@@ -2095,9 +2221,16 @@ private fun ConductorInputBar(
                     label = stringResource(R.string.conductor_mention),
                     onClick = onAt,
                 )
+                pendingImage?.let { ref ->
+                    PendingImageChip(
+                        ref = ref,
+                        imageFile = imageFile,
+                        onRemove = onRemoveImage,
+                    )
+                }
                 if (statusText == null) {
                     Spacer(modifier = Modifier.weight(1f))
-                    if (contextLimitTokens > 0) {
+                    if (contextLimitTokens > 0 && pendingImage == null) {
                         val contextDescription =
                             stringResource(
                                 R.string.conductor_context_usage_description,
@@ -2134,6 +2267,23 @@ private fun ConductorInputBar(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                if (importingImage) {
+                    Box(
+                        modifier = Modifier.size(48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                } else {
+                    InputGlyphButton(
+                        icon = R.drawable.ic_conductor_add,
+                        label = stringResource(R.string.conductor_image_add),
+                        onClick = onAddImage,
+                    )
+                }
                 if (isRunning) {
                     Box(
                         modifier =
@@ -2161,7 +2311,7 @@ private fun ConductorInputBar(
                         }
                     }
                 } else {
-                    val enabled = input.text.isNotBlank()
+                    val enabled = !importingImage && (input.text.isNotBlank() || pendingImage != null)
                     Box(
                         modifier =
                         Modifier
@@ -2200,6 +2350,70 @@ private fun ConductorInputBar(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PendingImageChip(
+    ref: AgentImageRef,
+    imageFile: (String) -> File?,
+    onRemove: () -> Unit,
+) {
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, ref.id) {
+        value =
+            withContext(Dispatchers.IO) {
+                imageFile(ref.id)?.let { file ->
+                    BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+                }
+            }
+    }
+    val removeLabel = stringResource(R.string.conductor_image_remove)
+    Box(
+        modifier = Modifier.size(48.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center,
+        ) {
+            val preview = bitmap
+            if (preview != null) {
+                Image(
+                    bitmap = preview,
+                    contentDescription = ref.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    text = "IMG",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Box(
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.error)
+                    .clickable(onClick = onRemove)
+                    .semantics { contentDescription = removeLabel },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onError,
+                modifier = Modifier.size(14.dp),
+            )
         }
     }
 }

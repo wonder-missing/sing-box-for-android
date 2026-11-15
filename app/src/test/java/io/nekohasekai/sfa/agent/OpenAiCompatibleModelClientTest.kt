@@ -109,6 +109,34 @@ class OpenAiCompatibleModelClientTest {
     }
 
     @Test
+    fun serializesUserImagesAsContentParts() {
+        responseBody =
+            """
+            {"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]}
+            """.trimIndent()
+
+        val ref = AgentImageRef("img1", "shot.jpg", "image/jpeg", 10, 20, 3)
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
+        runBlocking {
+            client.complete(
+                AgentModelRequest(
+                    messages = listOf(AgentMessage.User("what is shown?", listOf(ref))),
+                    tools = emptyList(),
+                    maxOutputTokens = 16,
+                    timeoutMs = 5_000,
+                    images = mapOf("img1" to AgentImageData(byteArrayOf(1, 2, 3), "image/jpeg")),
+                ),
+                apiKey = "sk-test",
+            )
+        }
+
+        assertTrue(requestBody.contains("\"type\":\"text\""))
+        assertTrue(requestBody.contains("\"text\":\"what is shown?\""))
+        assertTrue(requestBody.contains("\"type\":\"image_url\""))
+        assertTrue(requestBody.contains("data:image/jpeg;base64,AQID"))
+    }
+
+    @Test
     fun omitsMaxTokensWhenTheProviderDefaultApplies() {
         responseBody =
             """

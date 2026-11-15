@@ -93,6 +93,8 @@ data class AgentModelRequest(
     val timeoutMs: Long,
     val toolChoice: AgentToolChoice = AgentToolChoice.AUTO,
     val reasoningEffort: String? = null,
+    /** Image bytes keyed by [AgentImageRef.id]; never serialized into the session. */
+    val images: Map<String, AgentImageData> = emptyMap(),
 )
 
 data class AgentModelResponse(

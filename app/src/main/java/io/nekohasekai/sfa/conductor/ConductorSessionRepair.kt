@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.conductor
 
+import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.AgentSanitizer
 import io.nekohasekai.sfa.agent.RUNTIME_EVENT_PREFIX
@@ -29,7 +30,7 @@ internal fun reconcileAgentUserMessages(
     items: List<ConductorItem>,
 ): List<AgentMessage> {
     val expected =
-        agentUserTexts(items).map { formatUserMessage(it, null) }
+        agentUserMessages(items).map { it.copy(content = formatUserMessage(it.content, null)) }
     if (expected.isEmpty()) return transcript
 
     val firstUserIndex = transcript.indexOfFirst { it is AgentMessage.User }
@@ -41,7 +42,7 @@ internal fun reconcileAgentUserMessages(
         if (firstUser == null) {
             expected.lastIndex
         } else {
-            expected.indexOfFirst { userContentMatches(firstUser.content, it) }
+            expected.indexOfFirst { userContentMatches(firstUser, it) }
                 .takeIf { it >= 0 }
                 ?: return transcript
         }
@@ -49,11 +50,11 @@ internal fun reconcileAgentUserMessages(
     val result = transcript.toMutableList()
     var searchFrom = firstUserIndex.coerceAtLeast(0)
     for (index in anchor until expected.size) {
-        val content = expected[index]
+        val message = expected[index]
         val found =
             (searchFrom until result.size).firstOrNull { position ->
-                val message = result[position]
-                message is AgentMessage.User && userContentMatches(message.content, content)
+                val candidate = result[position]
+                candidate is AgentMessage.User && userContentMatches(candidate, message)
             }
         if (found != null) {
             searchFrom = found + 1
@@ -62,26 +63,38 @@ internal fun reconcileAgentUserMessages(
         val insertAt =
             (searchFrom until result.size).firstOrNull { result[it] is AgentMessage.User }
                 ?: result.size
-        result.add(insertAt, AgentMessage.User(content))
+        result.add(insertAt, AgentMessage.User(message.content, images = message.images))
         searchFrom = insertAt + 1
     }
     return result
 }
 
-private fun agentUserTexts(items: List<ConductorItem>): List<String> =
+private data class ExpectedUser(
+    val content: String,
+    val images: List<AgentImageRef>,
+)
+
+private fun agentUserMessages(items: List<ConductorItem>): List<ExpectedUser> =
     items.mapNotNull { item ->
-        if (item is ConductorItem.User && !item.text.startsWith("/")) item.text else null
+        if (item is ConductorItem.User && !item.text.startsWith("/")) {
+            ExpectedUser(item.text, item.images)
+        } else {
+            null
+        }
     }
 
 private fun userContentMatches(
-    content: String,
-    expected: String,
-): Boolean =
-    content == expected ||
-        (
-            content.startsWith(RUNTIME_EVENT_PREFIX) &&
-                content.endsWith("\n$expected")
-        )
+    message: AgentMessage.User,
+    expected: ExpectedUser,
+): Boolean {
+    val contentMatches =
+        message.content == expected.content ||
+            (
+                message.content.startsWith(RUNTIME_EVENT_PREFIX) &&
+                    message.content.endsWith("\n${expected.content}")
+            )
+    return contentMatches && message.images.map { it.id } == expected.images.map { it.id }
+}
 
 /**
  * The Tailscale tool now hides the account email and peer IPs from the agent

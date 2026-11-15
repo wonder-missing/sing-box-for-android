@@ -19,6 +19,7 @@ import io.nekohasekai.sfa.agent.AgentDataTools
 import io.nekohasekai.sfa.agent.AgentError
 import io.nekohasekai.sfa.agent.AgentEvent
 import io.nekohasekai.sfa.agent.AgentInvocationResult
+import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.AgentRuntime
@@ -164,6 +165,8 @@ class ConductorViewModel(
         /** Transient status shown next to the composer while a turn is active. */
         val turnStatus: String? = null,
         val turnStatusSince: Long = 0L,
+        /** An image picked in the composer and waiting for the next sent message. */
+        val pendingImage: AgentImageRef? = null,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -232,6 +235,7 @@ class ConductorViewModel(
 
     private val workingDir: File = application.getExternalFilesDir(null) ?: application.filesDir
     private val fileStore = ConductorFileStore(workingDir)
+    private val imageStore = ConductorImageStore(File(application.filesDir, "conductor/images"))
 
     private val diagnosticsSource =
         object : DiagnosticsSource {
@@ -865,6 +869,7 @@ class ConductorViewModel(
             reasoningEffort = { ReasoningEffort.wireValue(Settings.conductorReasoningEffort) },
             brief = { Settings.conductorBrief },
             modelLimits = { ModelProviderSettings.limitsFor(ModelProviderSettings.endpoint()) },
+            imageLoader = { id -> imageStore.load(id) },
         )
 
     private var transcript: List<AgentMessage> = emptyList()
@@ -943,8 +948,45 @@ class ConductorViewModel(
     }
 
     fun submit(raw: String) {
+        submitInternal(
+            raw = raw,
+            images = listOfNotNull(_uiState.value.pendingImage),
+            clearPending = true,
+        )
+    }
+
+    /**
+     * Imports one picked image and holds it in the composer until the next
+     * message is sent. Import and compression run off the main thread.
+     */
+    suspend fun importImage(uri: Uri): AgentImageRef? =
+        try {
+            val ref = ConductorImageImporter.import(getApplication(), uri, imageStore)
+            updateUi { copy(pendingImage = ref) }
+            ref
+        } catch (e: Exception) {
+            append(
+                ConductorItem.Notice(
+                    "image",
+                    e.message ?: "Could not import the selected image.",
+                ),
+            )
+            null
+        }
+
+    fun clearPendingImage() {
+        updateUi { copy(pendingImage = null) }
+    }
+
+    fun imageFile(id: String): File? = imageStore.file(id)
+
+    private fun submitInternal(
+        raw: String,
+        images: List<AgentImageRef>,
+        clearPending: Boolean,
+    ) {
         val text = raw.trim()
-        if (text.isEmpty()) return
+        if (text.isEmpty() && images.isEmpty()) return
         val isClear = text == "/clear" || text.startsWith("/clear ")
         if (_uiState.value.isRunning) {
             if (isClear) {
@@ -954,10 +996,18 @@ class ConductorViewModel(
             append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
             return
         }
+        if (isClear) {
+            clearConversation()
+            return
+        }
+        if (text.startsWith("/") && images.isNotEmpty()) {
+            append(ConductorItem.Notice("conductor", "Remove the image before running a command."))
+            return
+        }
         updateUi { copy(canRetryLastTurn = false) }
 
         if (!text.startsWith("/")) {
-            if (DefaultAgentInputGuard.check(text) is InputGuardResult.Blocked) {
+            if (text.isNotEmpty() && DefaultAgentInputGuard.check(text) is InputGuardResult.Blocked) {
                 append(
                     ConductorItem.Notice(
                         "conductor",
@@ -967,11 +1017,12 @@ class ConductorViewModel(
                 )
                 return
             }
-            append(ConductorItem.User(text, System.currentTimeMillis()))
+            append(ConductorItem.User(text, System.currentTimeMillis(), images))
+            if (clearPending) updateUi { copy(pendingImage = null) }
             // Persist before the model call: a process death mid-turn must not
             // lose the user message. Restore reconciles it into the transcript.
             persistSession()
-            submitAgent(text)
+            submitAgent(text, images)
             return
         }
 
@@ -1348,7 +1399,7 @@ class ConductorViewModel(
         val lastUserIndex = items.indexOfLast { it is ConductorItem.User }
         if (lastUserIndex < 0) return
         if (transcript.lastOrNull() !is AgentMessage.User) return
-        val text = (items[lastUserIndex] as ConductorItem.User).text
+        val user = items[lastUserIndex] as ConductorItem.User
         transcript = transcript.dropLast(1)
         updateUi {
             copy(
@@ -1356,7 +1407,11 @@ class ConductorViewModel(
                 canRetryLastTurn = false,
             )
         }
-        submit(text)
+        submitInternal(
+            raw = user.text,
+            images = user.images,
+            clearPending = false,
+        )
     }
 
     fun confirmConfirmation() {
@@ -1417,9 +1472,11 @@ class ConductorViewModel(
                 contextPercent = 0,
                 turnStatus = null,
                 turnStatusSince = 0L,
+                pendingImage = null,
             )
         }
         sessionStore.clear()
+        imageStore.clear()
         AgentApiTrace.clear()
     }
 
@@ -1438,7 +1495,10 @@ class ConductorViewModel(
         super.onCleared()
     }
 
-    private fun submitAgent(text: String) {
+    private fun submitAgent(
+        text: String,
+        images: List<AgentImageRef>,
+    ) {
         if (!apiKeyProvider.supported) {
             append(ConductorItem.Error("agent", "The Conductor agent requires Android 7.0 or newer."))
             return
@@ -1482,6 +1542,7 @@ class ConductorViewModel(
                             onEvent = ::handleAgentEvent,
                             confirm = { awaitAgentConfirmation() },
                             initialEvent = initialEvent,
+                            images = images,
                         )
                     } catch (e: CancellationException) {
                         throw e
