@@ -47,7 +47,7 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.82`（tag 待发，工作树基于 `21162e4`）。本地 462 用例绿，release/otherLegacy 编译和 R8 通过；发版后更新 tag/commit。下一次从 83 开始。
+- 当前已发布 `wonder.82`（tag `v1.15.0-alpha.13-wonder.82`，commit `5ba198b`）。本地 463 用例绿，release/otherLegacy 编译和 R8 通过；GitHub release 正文和 arm64 APK 已确认。下一次从 83 开始。
 - Mini 侧 Taildrop 收件箱不会自动落盘：Conductor 的 `taildrop_send` 只把文件送进对端 Tailscale inbox，headless Mini 需要 `tailscale file get --conflict=rename <目录>` 才搬出来。主人否决了自动 drain 的 LaunchAgent；App 只按实际能感知的状态返回 `peer_inbox` + `receiverActionRequired`，不承诺落盘时机。
 - v80 trace 复盘：`analyze_image` 空答案（模型名 `deepseek-v4-flash`，81 已改 `deepseek-flash`）；`file_grep` 误用 `pattern`（82 已加参数提示）；`diagnostics_export` 的 `overwrite` 在 v80 trace 前半段缺失是因为那几条是 v79 会话，v80 代码和 APK 已带；`taildrop_send` 成功但 inbox 未 drain。
 - 顺序建议：先做 P1 的进程死亡恢复、1 秒取消、敏感导出；再推 P2 的 Taildrop 收件和自省证据。VFS 只在出现“远端 Agent 持续读手机数据”的具体用例时再碰，不扩 background provider/bundle。
@@ -55,7 +55,7 @@
 
 ## 最近完成
 
-- wonder.82（2026-11-16）：直接图片输入与 vision 修正。输入栏发送按钮左侧加号选图，图片以缩略图停在输入栏，下一条消息用 text + `image_url` content parts 一起请求；图片压缩到长边 1600px/JPEG、私有目录存 ref、不写 base64 到会话 JSON、trace data URL 脱敏。`analyze_image` 按 DeepSeek Chat Completions 文档保留为工具，`deepseek-flash` + `detail=auto`，content 为空时回退 `reasoning_content`，空答案错误带 finish_reason/provider error，视觉请求进脱敏 trace。参数错误带 `Accepted parameters`；Taildrop 返回 `peer_inbox` + `receiverActionRequired`，不再暗示落盘。本地 462 用例绿，release/otherLegacy 编译和 R8 通过；图片选择、缩略图、全屏查看和直接图片请求需真机确认。
+- wonder.82（2026-11-16）：直接图片输入与 vision 修正。输入栏发送按钮左侧加号选图，图片以缩略图停在输入栏，下一条消息用 text + `image_url` content parts 一起请求；图片压缩到长边 1600px/JPEG、私有目录存 ref、不写 base64 到会话 JSON、trace data URL 脱敏。`analyze_image` 按 DeepSeek Chat Completions 文档保留为工具，`deepseek-flash` + `detail=auto`，content 为空时回退 `reasoning_content`，空答案错误带 finish_reason/provider error，视觉请求进脱敏 trace。参数错误带 `Accepted parameters`；Taildrop 返回 `peer_inbox` + `receiverActionRequired`，不再暗示落盘。本地 463 用例绿，release/otherLegacy 编译和 R8 通过；图片选择、缩略图、全屏查看和直接图片请求需真机确认。
 - wonder.81（2026-11-15）：查看器性能与 DeepSeek 模型名。Raw 默认不折行，标题栏三点菜单可切 Auto wrap；Rich 改用 Markwon Recycler（后台解析 + 只渲染可见 block），行内代码/代码块用主题 surfaceContainer 背景和 onSurface 前景；底部按钮紧凑内边距和 8dp 间距。DeepSeek 默认模型改 `deepseek-flash`，旧名读取时归一化。本地 454 用例绿，release/otherLegacy 编译和 R8 通过。
 - wonder.80（2026-11-15）：Conductor 图片分析与查看器。新增 `analyze_image`：从相册选一张图，按 `image_url` data URL 发给当前配置的模型，返回文本分析；5MB 上限、5 分钟工具超时、`DATA_EGRESS` 确认，base64 不写 trace。Plain Transcript / API Trace 查看器打开 Markdown 行级高亮，底部左侧 Raw/Rich 开关默认 Raw，Rich 用 `MarkdownText` 渲染。重新进入 Conductor 保持上次滚动位置。三点图标在涟漪内居中且左边缘对齐消息；答题卡选项间距回到 6dp。release 正文不再追加签名 footer，已验证 80 的正文只有 tag 消息。`request_files` 的 `reason` 改为可选，`file_read_selected` 明确 handle 放 `id`、二进制改用 `analyze_image`；Taildrop 工具提升为 core。本地 453 个用例绿，arm64 APK 已发，Feishu 通知成功。注意：图片分析依赖 provider 配置的视觉模型 ID（79 trace 里是 `deepseek-v4-flash`）。
 - wonder.79（2026-11-15）：Conductor 消息流与 trace 导出。答题卡选项改用 20dp 自定义圆圈/方框，左边缘对齐题目，控制与文字留 10dp；消息流底部工具条与最后一条消息间距加到 24dp，三点图标左对齐消息；菜单只留 Plain Transcript / API Trace，打开只读 `ProfileCodeEditor`（PLAIN），底部 Copy text / Save to file。`diagnostics_export(kind=trace)` 增加 `since_minutes`，返回 `entries`/`rangeStart`/`rangeEnd`/`availableFrom`/`missingBefore`；完整 trace body 落到应用私有文件（2.5M 字符封顶），更新/重启后可恢复。本地 450 个用例绿。

@@ -1343,7 +1343,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 无文字的直接图片消息补一个 `What is in this image?` 文本 part，避免部分 provider 拒绝纯图片 content。
 - 工具注册表的 `missing_parameter` / `unknown_parameter` 错误追加 `Accepted parameters: name (type, required)`；MCP 透传工具用 schema 的 `properties` / `required`。这样模型在 `handle`/`id`、`pattern`/`query` 这类错误上可以同轮改对，不用再 `search_tools`。
 - `taildrop_send` / `taildrop_send_selected` 成功时输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和 `note`，明确文件已到对端的 Taildrop inbox，但未保存到对端磁盘；描述同步说明「success means peer inbox received, not saved/opened」。接收方仍需 `tailscale file get` 或 Taildrop UI 落盘。离线 peer 直接报错，不做 sender-side 排队。
-- 本地 462 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。图片选择、缩略图、全屏查看和直接图片请求仍需真机确认。
+- 本地 463 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。GitHub release 正文和 arm64 APK 已确认。图片选择、缩略图、全屏查看和直接图片请求仍需真机确认。
 
 ### wonder.81：查看器性能、折行开关与 DeepSeek 模型名（2026-11-15）
 
