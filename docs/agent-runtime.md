@@ -1334,6 +1334,13 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.78：MCP 工具来源元数据（2026-11-15）
+
+- `AgentToolDefinition` 增加 `serverName` 和 `namespace`。MCP 工具填充这两个字段，description 以 `MCP server: <显示名>.` 开头；`search_tools` 的 matches 和空 query 的 catalog 都返回 `server`/`namespace`。
+- 命名空间只是唯一性前缀，不承载语义；用户可以继续用 `cpk` 这样的短词。模型判断来源不再靠前缀，而是读元数据和 description。参考前沿实现：Claude Code 把服务器编进 `mcp__<server>__<tool>`，OpenAI Agents SDK 用可选的 server prefix；这里保留短本地名，把来源放进元数据。
+- 发布正文从 78 起使用 annotated tag 消息：`release.yml` 的 publish checkout 取全量 tag，`scripts/release.sh` 自动附上上一版以来的 commit 列表。77 的旧正文未改。
+- 本地全量 447 个用例绿。
+
 ### wonder.77：Conductor 日常体验与 MCP 命名（2026-11-15）
 
 - 新增 `release_notes` 工具，从公开 release Atom feed 读取当前 `BuildConfig.VERSION_NAME` 的说明，返回 version/tag/notes；`ReleaseNotesSource` 可注入，JVM 测试不联网。

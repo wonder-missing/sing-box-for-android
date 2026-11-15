@@ -104,6 +104,8 @@ class AgentToolCatalog(
                     buildJsonObject {
                         put("name", tool.name)
                         put("category", tool.category)
+                        tool.serverName?.let { put("server", it) }
+                        tool.namespace?.let { put("namespace", it) }
                         put("description", tool.description)
                         // Weak matches are a discovery hint, not a schema
                         // lookup. Keep them compact; the model can search by
@@ -134,6 +136,8 @@ class AgentToolCatalog(
                     buildJsonObject {
                         put("name", tool.name)
                         put("category", tool.category)
+                        tool.serverName?.let { put("server", it) }
+                        tool.namespace?.let { put("namespace", it) }
                         put("description", tool.description)
                         put("requiresConfirmation", tool.confirmationPolicy != ConfirmationPolicy.NEVER)
                     }

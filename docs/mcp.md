@@ -28,7 +28,9 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 ## 工具怎么进 Agent
 
-本地名字是 `<命名空间>_<工具名>`，不再带 `mcp_` 前缀。命名空间在添加或编辑服务器时设置，默认取 Name 的 slug，限制 16 个字符，只允许小写字母、数字和下划线，且必须以字母开头。改名只改展示和描述；改命名空间才会改工具名，下一轮消息生效。旧配置没有命名空间时回退到服务器 id。分类仍是 `mcp`，不是 core；这些名字只留在目录里，给 `search_tools` 用，不进 system prompt。schema 用服务器的 `inputSchema`。命名空间要避开内置工具名（例如 `file_read`），内置工具优先，撞名时 MCP 工具不会注册。
+本地名字是 `<命名空间>_<工具名>`，不再带 `mcp_` 前缀。命名空间在添加或编辑服务器时设置，默认取 Name 的 slug，限制 16 个字符，只允许小写字母、数字和下划线，且必须以字母开头。命名空间只是唯一性前缀，不承载语义，`cpk` 这样的短词是合法的。改名只改展示和描述；改命名空间才会改工具名，下一轮消息生效。旧配置没有命名空间时回退到服务器 id。分类仍是 `mcp`，不是 core；这些名字只留在目录里，给 `search_tools` 用，不进 system prompt。schema 用服务器的 `inputSchema`。命名空间要避开内置工具名（例如 `file_read`），内置工具优先，撞名时 MCP 工具不会注册。
+
+工具来源不靠前缀猜：`AgentToolDefinition` 带 `serverName`（服务器显示名）和 `namespace`（前缀），MCP 工具的 description 以 `MCP server: <名字>.` 开头；`search_tools` 的每条结果（含空 query 的 catalog）也带 `server` 和 `namespace` 字段。这样即使用户把前缀改成 `cpk`，模型仍能明确知道工具属于 Clawdy Portal Knocks。前沿客户端通常把服务器编进模型可见的工具名（Claude Code 的 `mcp__<server>__<tool>`，OpenAI Agents SDK 的可选 server prefix）；这里保留短本地名，把来源放进元数据和描述，避免名字过长。
 
 参数不走内置工具那套「只能是字符串」。本机只检查 schema `required` 里的键：缺了、是 null、或是空字符串，就拒绝。其余类型交给服务器。
 

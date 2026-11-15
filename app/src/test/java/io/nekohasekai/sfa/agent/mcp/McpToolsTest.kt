@@ -57,6 +57,9 @@ class McpToolsTest {
 
         assertEquals("portal_docker_run", definition.name)
         assertFalse(definition.name.startsWith("mcp_"))
+        assertEquals("Clawdy Portal Knocks", definition.serverName)
+        assertEquals("portal", definition.namespace)
+        assertTrue(definition.description.startsWith("MCP server: Clawdy Portal Knocks."))
     }
 
     @Test
@@ -162,7 +165,7 @@ class McpToolsTest {
 
         val definition = mcpAgentTools("Demo", "demo", listOf(tool), unusedSession()).single().definition
 
-        assertEquals("Demo: $description", definition.description)
+        assertEquals("MCP server: Demo. $description", definition.description)
         assertFalse(definition.description.contains("…"))
     }
 

@@ -213,11 +213,22 @@ SHA=$(git rev-parse HEAD)
 TEST_ID=$(wait_for_id test_run_for "$SHA" "Test" 120)
 wait_run "$TEST_ID" "Test" 7200
 
+PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*-wonder.*' HEAD 2>/dev/null || true)
+CHANGES=""
+if [ -n "$PREV_TAG" ]; then
+    CHANGES=$(git log --no-merges --pretty='- %s' "$PREV_TAG..HEAD" | head -40)
+fi
+
 MESSAGE="release: wonder.$BUILD"
 if [ -n "$NOTE" ]; then
     MESSAGE="$MESSAGE
 
 $NOTE"
+fi
+if [ -n "$CHANGES" ]; then
+    MESSAGE="$MESSAGE
+Changes since $PREV_TAG:
+$CHANGES"
 fi
 if [ -n "$AGENT_TIME" ]; then
     MESSAGE="$MESSAGE

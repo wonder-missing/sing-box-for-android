@@ -29,7 +29,7 @@
 - [ ] **消息内富 Markdown 与本地文件查看**：业界约定就是标准 Markdown，不用自定义标记：链接用 `[label](url)`，文件名/路径/命令用行内代码。App 侧把 `markdownAnnotated` 升级为可点击：链接交给浏览器，行内代码点按复制；本地文件链接点按弹出只读查看器（标题、路径、内容、复制），不执行。system prompt 只加一行「用户很可能复制的值用行内代码，链接用 Markdown 链接」。需要真机确认点按/长按手感。
 - [ ] **多模态图片输入**：输入栏加相册选图和预览；`AgentMessage.User` 支持 OpenAI content parts（text + `image_url` data URL），provider capability 加 vision 标记，文本-only 回退保留。先用 DeepSeek V4.1 Flash 和一张相册图片跑通「分析这张图」，再决定是否支持多图。涉及消息序列化、会话持久化和模型客户端，单独一版做。
 - [ ] **Reasoning 前置阶段**：流式请求用 OkHttp `EventListener` 区分 DNS、TCP、TLS、请求已发出、收到响应头；首字前 turn 状态行显示细分阶段，首字后回到「Receiving response」。新增 `AgentModelChunk.Stage` 和 VM 状态映射；保留 `Waiting for the provider` 作为兜底。77 验收 trace 里有两次 120 秒 `network_timeout`（17:00:53、17:02:54），正好是这条需求的证据。
-- [ ] **Release Notes 正文**：`release.yml` 的 `publish` 步骤写死两行 generic notes，annotated tag 的说明没有进入 release body；`release_notes` 工具实测只能读到「Wonder fork… Signed with…」。改为把 tag 消息（以及上一版以来的 commit 列表）写进 release body，并更新 77 已发布的正文。
+- [ ] **77 的已发布 Release Notes 正文**：`release.yml` 已改为从 78 起使用 annotated tag 消息生成 release body，`scripts/release.sh` 会把上一版以来的 commit 列表写进 tag；77 的已发布正文仍是旧模板，单独更新需要一次 `gh release edit`。
 - [ ] **MCP 旧服务器前缀**：旧配置没有 namespace 时回退到 id 并截到 16，实测 `clawdy_portal_kn_orb_status` 仍然很长。给旧配置加一次性提示或在卡片上标出过长前缀，用户可在 Edit 里改成 `portal`。
 - [ ] **ask_user 取消原因结构化**：工具输出增加 `reason`（`dismissed` / `timeout` / `stopped`），当前只有 `message`；实测模型无法稳定区分超时和主动取消。
 

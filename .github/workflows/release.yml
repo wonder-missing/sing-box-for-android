@@ -382,6 +382,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Download APKs
         uses: actions/download-artifact@v4
         with:
@@ -403,7 +405,11 @@ jobs:
             exit 1
           fi
           TITLE="${TAG}"
-          NOTES=$(printf '%s\n' "Wonder fork of sing-box for Android." "Signed with the repository signing key.")
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)
+          if [ -z "$TAG_MESSAGE" ]; then
+            TAG_MESSAGE="Release $TAG"
+          fi
+          NOTES=$(printf '%s\n\n%s\n' "$TAG_MESSAGE" "WonderSing release. Signed with the repository signing key.")
           PRERELEASE=()
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
             PRERELEASE=(--prerelease)

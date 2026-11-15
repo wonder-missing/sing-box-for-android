@@ -45,6 +45,8 @@ fun mcpAgentTools(
                     category = "mcp",
                     aliases = aliases(serverName, serverPrefix, tool.name, localName),
                     core = false,
+                    serverName = serverName,
+                    namespace = serverPrefix,
                     confirmationReason = "This sends the arguments to the MCP server \"$serverName\".",
                     parametersSchemaOverride = withVfsScopeHint(tool.name, tool.inputSchema),
                     passthroughArguments = true,
@@ -100,8 +102,8 @@ private fun describe(
     serverName: String,
     tool: McpRemoteTool,
 ): String {
-    val base = "$serverName: ${tool.description.ifBlank { tool.name }}"
-    return if (tool.name == VFS_LINK_REQUEST_TOOL) "$VFS_SCOPE_HINT $base" else base
+    val base = "MCP server: $serverName. ${tool.description.ifBlank { tool.name }}"
+    return if (tool.name == VFS_LINK_REQUEST_TOOL) "$base $VFS_SCOPE_HINT" else base
 }
 
 private val VFS_SCOPE_HINT =

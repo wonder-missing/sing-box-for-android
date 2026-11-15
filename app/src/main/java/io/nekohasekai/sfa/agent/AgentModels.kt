@@ -69,6 +69,10 @@ data class AgentToolDefinition(
     val allowedUrlParameter: String? = null,
     val parametersSchemaOverride: JsonObject? = null,
     val passthroughArguments: Boolean = false,
+    /** MCP server display name; null for built-in tools. */
+    val serverName: String? = null,
+    /** MCP tool prefix chosen by the user; null for built-in tools. */
+    val namespace: String? = null,
     /** Per-tool execution budget; null uses the registry default. */
     val timeoutMs: Long? = null,
 ) {

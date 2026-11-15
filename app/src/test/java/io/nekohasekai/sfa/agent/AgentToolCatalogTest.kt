@@ -92,6 +92,22 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun mcpSearchResultsCarryTheServerNameAndNamespace() {
+        val mcp =
+            definition("cpk_orb_status", "mcp", listOf("orb", "cpk"))
+                .copy(serverName = "Clawdy Portal Knocks", namespace = "cpk")
+        val scoped = AgentToolCatalog(listOf(mcp))
+
+        val match = (scoped.searchOutput("orb", limit = 5)["matches"] as JsonArray).first() as JsonObject
+        assertEquals("Clawdy Portal Knocks", (match["server"] as JsonPrimitive).content)
+        assertEquals("cpk", (match["namespace"] as JsonPrimitive).content)
+
+        val entry = (scoped.catalogOutput()["tools"] as JsonArray).first() as JsonObject
+        assertEquals("Clawdy Portal Knocks", (entry["server"] as JsonPrimitive).content)
+        assertEquals("cpk", (entry["namespace"] as JsonPrimitive).content)
+    }
+
+    @Test
     fun searchOutputListsCategoriesEvenWhenMatchesAreWeak() {
         val mcp = definition("mcp_demo_echo", "mcp", listOf("echo", "Demo", "mcp"))
         val scoped = AgentToolCatalog(listOf(listNodes, mcp))
