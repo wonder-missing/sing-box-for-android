@@ -1687,6 +1687,7 @@ private fun UserImage(
     imageFile: (String) -> File?,
 ) {
     var fullscreen by remember { mutableStateOf(false) }
+    var loaded by remember(ref.id) { mutableStateOf(false) }
     val bitmap by produceState<ImageBitmap?>(initialValue = null, ref.id) {
         value =
             withContext(Dispatchers.IO) {
@@ -1694,6 +1695,7 @@ private fun UserImage(
                     BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
                 }
             }
+        loaded = true
     }
     val preview = bitmap
     if (preview != null) {
@@ -1738,11 +1740,18 @@ private fun UserImage(
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = stringResource(R.string.conductor_image_unavailable),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (!loaded) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.conductor_image_unavailable),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
