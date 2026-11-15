@@ -28,7 +28,7 @@
 
 ## 从零重装
 
-按顺序执行：
+前置：Homebrew 可用，GitHub CLI 已登录（`gh auth status`），仓库在 `~/workspace/sing-box-for-android`。按顺序执行：
 
 ```sh
 brew install openjdk@17
@@ -46,7 +46,7 @@ sdkmanager --sdk_root="$ANDROID_HOME" \
 ```
 
 `libbox.aar` 必须来自同一 `CORE_VERSION` 和 `core/patches/dial-attempt.patch` 的 Test 运行。
-`version.properties` 刚改过、还没有成功的 Test 时，先推送等 CI 产出 artifact：
+`version.properties` 刚改过、还没有成功的 Test，或 artifact 已过期时，先推送等 CI 产出 artifact：
 
 ```sh
 RUN=$(gh run list -R wonder-missing/sing-box-for-android -w Test -L 10 \
