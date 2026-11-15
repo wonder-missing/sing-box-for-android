@@ -1342,7 +1342,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 重新进入 Conductor 页面时，`ConductorViewModel` 记住 `transcriptScrollIndex` / `transcriptScrollOffset` / `transcriptStickToBottom`，列表用保存的位置初始化，不再从顶部滚到底部。
 - 新增 `analyze_image(question)`：拉起系统图片选择器，读取选中图片（5MB 上限），以 OpenAI `image_url` data URL 发到当前配置的模型，返回文本分析（12k 字符上限）；工具级超时 5 分钟。该调用 `recordTrace=false`，避免 base64 撑大 trace。`DATA_EGRESS` 走 `AGENT_ONLY`，模型调用前需要用户确认。图片分析依赖 provider 侧模型本身支持图片输入；当前设置需填视觉模型 ID（79 trace 里是 `deepseek-v4-flash`）。
 - `request_files` 的 `reason` 改为可选，缺省用通用说明，避免模型漏参数后重试一次；`file_read_selected` 的描述和错误消息都明确 handle 放在 `id` 参数、二进制文件不能按文本读、图片改用 `analyze_image`。`taildrop_peers` / `taildrop_send` 设为 core，补 deliver / send to peer / send to device alias。`diagnostics_export` 增加 `overwrite`。
-- 本地全量 453 个用例绿。
+- 本地全量 453 个用例绿。GitHub release 正文已验证只有 tag 消息，没有旧 footer；arm64 APK 和 Feishu 通知正常。
 
 ### wonder.79：消息流工具条与 trace 范围（2026-11-15）
 

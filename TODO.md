@@ -48,12 +48,13 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.79`（tag `v1.15.0-alpha.13-wonder.79`，commit `2eac81d`）。下一次从 80 开始；tag 用 annotated tag，能说清就写 `Agent-Time`/`Agent-Loops`，说不清留空。发布用 `scripts/release.sh`。
+- 当前已发布 `wonder.80`（tag `v1.15.0-alpha.13-wonder.80`，commit `457484f`）。下一次从 81 开始；tag 用 annotated tag，能说清就写 `Agent-Time`/`Agent-Loops`，说不清留空。发布用 `scripts/release.sh`。
 - 顺序建议：先做 P1 的进程死亡恢复、1 秒取消、敏感导出；再推 P2 的 Taildrop 收件和自省证据。VFS 只在出现“远端 Agent 持续读手机数据”的具体用例时再碰，不扩 background provider/bundle。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；发布流程见 `AGENTS.md`。旧的 49–59 手机检查清单已过期，不再保留。
 
 ## 最近完成
 
+- wonder.80（2026-11-15）：Conductor 图片分析与查看器。新增 `analyze_image`：从相册选一张图，按 `image_url` data URL 发给当前配置的模型，返回文本分析；5MB 上限、5 分钟工具超时、`DATA_EGRESS` 确认，base64 不写 trace。Plain Transcript / API Trace 查看器打开 Markdown 行级高亮，底部左侧 Raw/Rich 开关默认 Raw，Rich 用 `MarkdownText` 渲染。重新进入 Conductor 保持上次滚动位置。三点图标在涟漪内居中且左边缘对齐消息；答题卡选项间距回到 6dp。release 正文不再追加签名 footer，已验证 80 的正文只有 tag 消息。`request_files` 的 `reason` 改为可选，`file_read_selected` 明确 handle 放 `id`、二进制改用 `analyze_image`；Taildrop 工具提升为 core。本地 453 个用例绿，arm64 APK 已发，Feishu 通知成功。注意：图片分析依赖 provider 配置的视觉模型 ID（79 trace 里是 `deepseek-v4-flash`）。
 - wonder.79（2026-11-15）：Conductor 消息流与 trace 导出。答题卡选项改用 20dp 自定义圆圈/方框，左边缘对齐题目，控制与文字留 10dp；消息流底部工具条与最后一条消息间距加到 24dp，三点图标左对齐消息；菜单只留 Plain Transcript / API Trace，打开只读 `ProfileCodeEditor`（PLAIN），底部 Copy text / Save to file。`diagnostics_export(kind=trace)` 增加 `since_minutes`，返回 `entries`/`rangeStart`/`rangeEnd`/`availableFrom`/`missingBefore`；完整 trace body 落到应用私有文件（2.5M 字符封顶），更新/重启后可恢复。本地 450 个用例绿。
 - wonder.78 真机验收（2026-11-15）：5 个 `cpk_*` MCP 工具的 `search_tools` 结果都带 `server=Clawdy Portal Knocks` 和 `namespace=cpk`，description 以 `MCP server: Clawdy Portal Knocks.` 开头；非 MCP 工具不受影响。`release_notes` 已返回真实改动（78 的正文实际是 commit message，不是 tag 注解；79 的 workflow 修复会换成 tag 消息）。77→78 更新后，19:08 的完整 trace body 已丢，只剩持久化摘要；`tail` 也不能按时间取，19:10 之后的 10 条足够完成 78 验收。
 - wonder.78（2026-11-15）：MCP 工具来源元数据。`AgentToolDefinition` 增加 `serverName`/`namespace`，description 以 `MCP server: <名字>.` 开头，`search_tools` 的 matches 和 catalog 都带 `server`/`namespace`；短 namespace `cpk` 不再让模型分不清来源。本地 447 个用例绿。发布正文改用 tag 注解的 CI 修复排到 79。
