@@ -40,8 +40,9 @@ class ConductorBriefCommandTest {
     fun `suggestions appear only after the command and a space`() {
         assertTrue(ConductorBriefCommand.suggestions("/brief").isEmpty())
         assertEquals(listOf("on", "off"), ConductorBriefCommand.suggestions("/brief "))
-        assertEquals(listOf("off"), ConductorBriefCommand.suggestions("/brief O"))
-        assertEquals(listOf("on"), ConductorBriefCommand.suggestions("/brief o"))
+        assertEquals(listOf("on", "off"), ConductorBriefCommand.suggestions("/brief O"))
+        assertEquals(listOf("on"), ConductorBriefCommand.suggestions("/brief on"))
+        assertEquals(listOf("off"), ConductorBriefCommand.suggestions("/brief of"))
         assertTrue(ConductorBriefCommand.suggestions("/brief on extra").isEmpty())
         assertTrue(ConductorBriefCommand.suggestions("/reasoning ").isEmpty())
     }
