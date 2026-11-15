@@ -23,7 +23,7 @@
 - [ ] **`probe_via_node` 的 HEAD 歧义**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；`speed_test` 后续。
 - [ ] **工具参数错误带 schema 提示**：wonder.79 trace 里 `file_read_selected` 先用 `handle` 报 `missing_parameter 'id'`，模型又花一次 `search_tools` 才拿到参数名；wonder.80 trace 里 `file_grep` 又把 `query` 写成 `pattern`。工作树已让 `missing_parameter` / `unknown_parameter` 附上 `Accepted parameters: ...`（MCP 透传工具用 properties/required），待发 82。
 - [ ] **Vision 调用可观测性**：wonder.80 trace 里 `analyze_image` 两次返回 `DeepSeek returned an empty vision answer.`，由于 `recordTrace=false`，trace 里看不到视觉请求和 provider 原始响应。工作树已改为记录**脱敏** trace（`data:image/...;base64,...` 换成 `[redacted N chars]`），空答案错误带 `finish_reason`、provider `error` 和截断的 reasoning；待发 82。81 已把默认模型改成 `deepseek-flash` 并归一化旧名，需在 81/82 上复测。
-- [ ] **Taildrop 投递语义**：`taildrop_send` 的 `ok=true` 只表示文件进入了对端的 Taildrop inbox，不表示对端已落盘。工作树已加 `delivery=queued` + `note`，工具描述改为「receiver must accept」，待发 82。Mini 侧还需要自动 drain（`tailscale file get --loop` 的 launchd agent），见「下个会话接手」。
+- [ ] **Taildrop 投递语义**：`taildrop_send` 的 `ok=true` 表示对端 Tailscale daemon 已把文件收进 Taildrop inbox，不表示对端已保存到磁盘或已打开；Taildrop 没有「接收方已保存」的 ack。工作树已加 `delivery=peer_inbox`、`receiverActionRequired=true` 和 `note`，描述写清 success 的边界，待发 82。离线 peer 仍直接报错，不做 sender-side 排队。接收方动作由用户决定，不做 Mini 自动 drain。
 - [ ] **批量确认：预览与分级**：整批预检合成一张卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS`/MCP 写工具逐次确认。
 - [ ] **工具编排计划（tool_plan / DAG）**：把有依赖的多步调用压成一次提交，支持字段绑定、`when`/`retry`/`fallback`；先只读工具。目标是减少往返和 token。
 - [ ] **对话级 LLM 摘要**：现有只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要未做。
@@ -52,7 +52,7 @@
 ## 下个会话接手
 
 - 当前已发布 `wonder.81`（tag `v1.15.0-alpha.13-wonder.81`，commit `77ad406`）。工作树已有一批待发 82 修复：vision 脱敏 trace + 空答案细节、注册表参数提示、Taildrop `delivery=queued`。本地 456 用例绿，**未发版**，等主人看过分析再发。
-- Mini 侧 Taildrop 收件箱不会自动落盘：Conductor 的 `taildrop_send` 只把文件放进 Tailscale inbox，headless Mini 需要 `tailscale file get --conflict=rename <目录>` 才搬出来。建议在 home 会话给 Mini 装一个 `tailscale file get --loop` 的 LaunchAgent，日志和目录写进 `~/blueprint`；本项目只负责 App 侧把结果说成 queued。
+- Mini 侧 Taildrop 收件箱不会自动落盘：Conductor 的 `taildrop_send` 只把文件送进对端 Tailscale inbox，headless Mini 需要 `tailscale file get --conflict=rename <目录>` 才搬出来。主人否决了自动 drain 的 LaunchAgent；App 只按实际能感知的状态返回 `peer_inbox` + `receiverActionRequired`，不承诺落盘时机。
 - v80 trace 复盘：`analyze_image` 空答案（模型名 `deepseek-v4-flash`，81 已改 `deepseek-flash`）；`file_grep` 误用 `pattern`（82 工作树已加参数提示）；`diagnostics_export` 的 `overwrite` 在 v80 trace 前半段缺失是因为那几条是 v79 会话，v80 代码和 APK 已带；`taildrop_send` 成功但 inbox 未 drain。
 - 顺序建议：先做 P1 的进程死亡恢复、1 秒取消、敏感导出；再推 P2 的 Taildrop 收件和自省证据。VFS 只在出现“远端 Agent 持续读手机数据”的具体用例时再碰，不扩 background provider/bundle。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；发布流程见 `AGENTS.md`。旧的 49–59 手机检查清单已过期，不再保留。

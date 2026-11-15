@@ -255,7 +255,7 @@ class AgentDataToolsTest {
 
         val confirmed = runBlocking { registry.confirmUserCommand("taildrop_send_selected", args) }
         assertTrue(confirmed.errorMessage ?: "", confirmed.ok)
-        assertEquals("queued", confirmed.output!!.string("delivery"))
+        assertEquals("peer_inbox", confirmed.output!!.string("delivery"))
         assertEquals(listOf("peer-a" to listOf("one", "two")), sentSelected)
     }
 
@@ -288,8 +288,8 @@ class AgentDataToolsTest {
 
         assertTrue(result.errorMessage ?: "", result.ok)
         assertEquals("peer-a", result.output!!.string("peer"))
-        assertEquals("queued", result.output!!.string("delivery"))
-        assertTrue(result.output!!.string("note").contains("receiver must accept"))
+        assertEquals("peer_inbox", result.output!!.string("delivery"))
+        assertTrue(result.output!!.string("note").contains("Taildrop inbox"))
         assertEquals(1, sent.size)
         assertEquals("peer-a", sent[0].first)
         assertEquals("report.md", sent[0].second.single().name)

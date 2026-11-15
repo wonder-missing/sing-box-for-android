@@ -637,9 +637,10 @@ class AgentDataTools(
                 AgentToolDefinition(
                     name = "taildrop_send",
                     description =
-                        "Send files from the working directory to a Tailscale peer's Taildrop inbox. The receiver " +
-                            "must accept them before they appear on the peer's disk. Use taildrop_peers for the peer " +
-                            "name; the peer must be online. Requires confirmation.",
+                        "Send files from the working directory to a Tailscale peer's Taildrop inbox. Success means " +
+                            "the peer's Tailscale daemon received the file into its inbox; it does not mean the file " +
+                            "was saved to the peer's disk or opened. The peer must save it from the Taildrop inbox. " +
+                            "Use taildrop_peers for the peer name; the peer must be online. Requires confirmation.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -854,9 +855,10 @@ class AgentDataTools(
                 AgentToolDefinition(
                     name = "taildrop_send_selected",
                     description =
-                        "Send files the user selected in this session to a Tailscale peer's Taildrop inbox. The " +
-                            "receiver must accept them before they appear on the peer's disk. The peer must be " +
-                            "online. Requires confirmation.",
+                        "Send files the user selected in this session to a Tailscale peer's Taildrop inbox. Success " +
+                            "means the peer's Tailscale daemon received the file into its inbox; it does not mean " +
+                            "the file was saved to the peer's disk or opened. The peer must save it from the " +
+                            "Taildrop inbox. The peer must be online. Requires confirmation.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -1090,11 +1092,13 @@ class AgentDataTools(
             )
             put("ok", result.ok)
             if (result.ok) {
-                put("delivery", "queued")
+                put("delivery", "peer_inbox")
+                put("receiverActionRequired", true)
                 put(
                     "note",
-                    "Queued in the peer's Taildrop inbox. The receiver must accept the file " +
-                        "before it appears on the peer's disk.",
+                    "The peer's Tailscale daemon received the file into its Taildrop inbox. " +
+                        "It is not saved to the peer's disk until the receiver saves it, for example with " +
+                        "`tailscale file get` or the Taildrop inbox UI.",
                 )
             }
             result.message?.let { put("message", it) }
