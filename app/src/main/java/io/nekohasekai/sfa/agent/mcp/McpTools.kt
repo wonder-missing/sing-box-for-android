@@ -27,13 +27,13 @@ internal const val MCP_DOCKER_RUN_TIMEOUT_MS: Long = 3_700_000L
 
 fun mcpAgentTools(
     serverName: String,
-    serverId: String,
+    serverPrefix: String,
     remote: List<McpRemoteTool>,
     session: McpSession,
 ): List<AgentTool> {
     val used = mutableSetOf<String>()
     return remote.map { tool ->
-        val localName = allocateToolName(serverId, tool.name, used)
+        val localName = allocateToolName(serverPrefix, tool.name, used)
         McpBoundTool(
             definition =
                 AgentToolDefinition(
@@ -43,7 +43,7 @@ fun mcpAgentTools(
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
                     category = "mcp",
-                    aliases = aliases(serverName, serverId, tool.name, localName),
+                    aliases = aliases(serverName, serverPrefix, tool.name, localName),
                     core = false,
                     confirmationReason = "This sends the arguments to the MCP server \"$serverName\".",
                     parametersSchemaOverride = withVfsScopeHint(tool.name, tool.inputSchema),
@@ -62,13 +62,13 @@ fun mcpAgentTools(
 }
 
 internal fun allocateToolName(
-    serverId: String,
+    serverPrefix: String,
     remoteName: String,
     used: MutableSet<String>,
 ): String {
-    val base = "mcp_${McpServerValidator.slug(serverId, 24)}_${McpServerValidator.slug(remoteName, 32)}"
+    val base = "${McpServerValidator.slug(serverPrefix, 16)}_${McpServerValidator.slug(remoteName, 40)}"
     var name = base.take(60).trimEnd('_')
-    if (name.isBlank()) name = "mcp_server_tool"
+    if (name.isBlank()) name = "server_tool"
     var n = 2
     while (name in used || name in reservedToolNames) {
         val suffix = "_$n"
@@ -81,11 +81,11 @@ internal fun allocateToolName(
 
 private fun aliases(
     serverName: String,
-    serverId: String,
+    serverPrefix: String,
     remoteName: String,
     localName: String,
 ): List<String> =
-    listOf(remoteName, serverName, serverId, "mcp")
+    listOf(remoteName, serverName, serverPrefix, "mcp")
         .map { it.trim() }
         .filter { it.isNotEmpty() && !it.equals(localName, ignoreCase = true) }
         .distinctBy { it.lowercase(Locale.US) }

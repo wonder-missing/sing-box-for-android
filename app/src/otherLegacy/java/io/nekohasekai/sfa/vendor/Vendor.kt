@@ -106,6 +106,9 @@ object Vendor : VendorInterface {
 
     override val hasCustomUpdate = true
 
+    override suspend fun releaseNotes(): io.nekohasekai.sfa.update.ReleaseNotes? =
+        GitHubUpdateChecker().currentReleaseNotes()
+
     override fun checkUpdateAsync(): UpdateInfo? = GitHubUpdateChecker().use { checker -> checker.checkUpdate() }
 
     override fun scheduleAutoUpdate() {

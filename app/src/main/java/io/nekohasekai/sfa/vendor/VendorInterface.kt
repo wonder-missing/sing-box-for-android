@@ -23,6 +23,8 @@ interface VendorInterface {
 
     fun checkUpdateAsync(): UpdateInfo? = null
 
+    suspend fun releaseNotes(): io.nekohasekai.sfa.update.ReleaseNotes? = null
+
     fun scheduleAutoUpdate() {}
 
     suspend fun verifySilentInstallMethod(method: String): Boolean = false

@@ -32,7 +32,6 @@ data class ConnectionsUiState(
     val stateFilter: ConnectionStateFilter = ConnectionStateFilter.Active,
     val sort: ConnectionSort = ConnectionSort.ByDate,
     val searchText: String = "",
-    val isSearchActive: Boolean = false,
 )
 
 sealed class ConnectionsEvent : ScreenEvent {
@@ -135,19 +134,6 @@ class ConnectionsViewModel :
     fun setSearchText(text: String) {
         updateState { copy(searchText = text) }
         requestConnectionsRefresh()
-    }
-
-    fun toggleSearch() {
-        val newSearchActive = !currentState.isSearchActive
-        updateState {
-            copy(
-                isSearchActive = newSearchActive,
-                searchText = if (newSearchActive) searchText else "",
-            )
-        }
-        if (!newSearchActive) {
-            requestConnectionsRefresh()
-        }
     }
 
     fun closeConnection(connectionId: String) {

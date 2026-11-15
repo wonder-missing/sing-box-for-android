@@ -26,7 +26,9 @@
 - [ ] **对话级 LLM 摘要**：现有只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要未做。
 - [ ] **trace 长 body 与 release 驻留**：单条 body 超 200k 截断，跨重启只有摘要；`AgentApiTrace` 在 release 默认驻留完整请求/响应。先评估按需开启。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持。
-- [ ] **消息内可交互元素（Agent 主动标记）**：业界约定就是标准 Markdown，不用自定义标记：链接用 `[label](url)`，文件名/路径/命令用行内代码。App 侧把 `markdownAnnotated` 升级为可点击（链接用 `LinkAnnotation` 交给浏览器，行内代码点按复制），system prompt 只加一行「用户很可能复制的值用行内代码，链接用 Markdown 链接」。需要真机确认点按/长按手感。
+- [ ] **消息内富 Markdown 与本地文件查看**：业界约定就是标准 Markdown，不用自定义标记：链接用 `[label](url)`，文件名/路径/命令用行内代码。App 侧把 `markdownAnnotated` 升级为可点击：链接交给浏览器，行内代码点按复制；本地文件链接点按弹出只读查看器（标题、路径、内容、复制），不执行。system prompt 只加一行「用户很可能复制的值用行内代码，链接用 Markdown 链接」。需要真机确认点按/长按手感。
+- [ ] **多模态图片输入**：输入栏加相册选图和预览；`AgentMessage.User` 支持 OpenAI content parts（text + `image_url` data URL），provider capability 加 vision 标记，文本-only 回退保留。先用 DeepSeek V4.1 Flash 和一张相册图片跑通「分析这张图」，再决定是否支持多图。涉及消息序列化、会话持久化和模型客户端，单独一版做。
+- [ ] **Reasoning 前置阶段**：流式请求用 OkHttp `EventListener` 区分 DNS、TCP、TLS、请求已发出、收到响应头；首字前 turn 状态行显示细分阶段，首字后回到「Receiving response」。新增 `AgentModelChunk.Stage` 和 VM 状态映射；保留 `Waiting for the provider` 作为兜底。
 
 ### P3 低优先 / 可选 / 阻塞
 
@@ -50,6 +52,7 @@
 
 ## 最近完成
 
+- wonder.77（2026-11-15）：Conductor/MCP 日常体验。新增 `release_notes` 工具读当前版本发布说明；Connections 搜索框常开；用户气泡去掉点按涟漪；答题卡选项去胶囊背景并加 8dp 间距；MCP 工具名改为 `<namespace>_<tool>`（去掉 `mcp_`），添加/编辑服务器支持 Name 和 Namespace，改名不影响工具前缀；MCP 配置从 Provider 卡片独立出来；Tool routing 改为 `/routing on|off`。
 - wonder.76（2026-11-15）：更新安装链路和更新后状态恢复。应用内更新走 `FileProvider` + `ACTION_VIEW`，不经过浏览器下载链路，扫描提示由系统/Play Protect 决定；文档见 [`docs/update-install.md`](docs/update-install.md)。安装前记住服务是否在跑，`MY_PACKAGE_REPLACED` 后由 `BootReceiver` 自动拉起；`ServiceRestorePolicyTest` 覆盖判定。
 - wonder.75（2026-11-15）：`diagnostics_export` 生成的文件名统一成 `.md`（请求 `api-trace.json` 会写成 `api-trace.md`）；对话复制和导出现在会遮掉邮箱和 Tailscale 地址，旧会话里的 `tailscale_status` 原文不再随分享泄露。发布流程收进 `scripts/release.sh`。
 - 本地 JVM 单测环境（2026-11-15）：Mini 装好 JDK 17、Android SDK 37.1/36 和 CI 的 `libbox.aar`，用 `scripts/local-test.sh` 跑全量 433 个用例。依赖、重装步骤和磁盘预算见 [`docs/local-testing.md`](docs/local-testing.md)；签名、发布、通知和 libbox 编译仍在 CI。

@@ -15,6 +15,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -312,6 +314,7 @@ fun ConductorScreen(
     val suggestions = ConductorCommands.suggestions(input)
     val effortSuggestions = ConductorReasoningCommand.suggestions(input)
     val briefSuggestions = ConductorBriefCommand.suggestions(input)
+    val routingSuggestions = ConductorRoutingCommand.suggestions(input)
     val mcpTools by viewModel.mcpListed.collectAsState()
     val offerMcpVerb = ConductorMcpUse.offerVerb(input)
     val mcpToolSuggestions = ConductorMcpUse.toolSuggestions(input, mcpTools)
@@ -322,6 +325,7 @@ fun ConductorScreen(
             (
                 effortSuggestions.isNotEmpty() ||
                     briefSuggestions.isNotEmpty() ||
+                    routingSuggestions.isNotEmpty() ||
                     offerMcpVerb ||
                     mcpToolSuggestions.isNotEmpty() ||
                     suggestions.isNotEmpty()
@@ -633,6 +637,17 @@ fun ConductorScreen(
                         focusManager.clearFocus()
                     },
                     hint = ConductorBriefCommand::hint,
+                )
+            } else if (slashMenuVisible && routingSuggestions.isNotEmpty()) {
+                EffortSuggestions(
+                    levels = routingSuggestions,
+                    onPick = { value ->
+                        replaceInput("")
+                        inputExpanded = false
+                        viewModel.submit("/routing $value")
+                        focusManager.clearFocus()
+                    },
+                    hint = ConductorRoutingCommand::hint,
                 )
             } else if (slashMenuVisible && offerMcpVerb) {
                 McpUseSuggestions(
@@ -1264,10 +1279,11 @@ private fun QuestionCard(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item.options.forEach { option ->
                     val checked = option in choices
-                    Surface(
+                    Row(
                         modifier =
                         Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
                             .selectable(
                                 selected = checked,
                                 enabled = !settled,
@@ -1280,47 +1296,38 @@ private fun QuestionCard(
                                             listOf(option)
                                         }
                                 },
-                            ),
-                        shape = RoundedCornerShape(12.dp),
-                        color =
-                            if (checked) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            },
+                            )
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            val controlModifier = Modifier.clearAndSetSemantics {}
-                            if (item.multiple) {
-                                Checkbox(
-                                    checked = checked,
-                                    onCheckedChange = null,
-                                    enabled = !settled,
-                                    modifier = controlModifier,
-                                )
-                            } else {
-                                RadioButton(
-                                    selected = checked,
-                                    onClick = null,
-                                    enabled = !settled,
-                                    modifier = controlModifier,
-                                )
-                            }
-                            Text(
-                                text = option,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color =
-                                    if (checked) {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    },
-                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        val controlModifier = Modifier.clearAndSetSemantics {}
+                        if (item.multiple) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = null,
+                                enabled = !settled,
+                                modifier = controlModifier,
+                            )
+                        } else {
+                            RadioButton(
+                                selected = checked,
+                                onClick = null,
+                                enabled = !settled,
+                                modifier = controlModifier,
                             )
                         }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = option,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color =
+                                if (checked) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                            modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        )
                     }
                 }
             }
@@ -1418,7 +1425,12 @@ private fun UserMessage(text: String, sentAt: Long) {
     var showTime by remember { mutableStateOf(false) }
     Column(horizontalAlignment = Alignment.End) {
         Surface(
-            modifier = Modifier.clickable(enabled = sentAt > 0L) { showTime = !showTime },
+            modifier =
+            Modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = sentAt > 0L,
+            ) { showTime = !showTime },
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
         ) {

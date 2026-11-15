@@ -1,10 +1,5 @@
 package io.nekohasekai.sfa.compose.screen.connections
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,8 +42,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -236,27 +229,6 @@ fun ConnectionsPage(
                     onDismissRequest = { showConnectionsMenu = false },
                 ) {
                     DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (uiState.isSearchActive) {
-                                    stringResource(R.string.close_search)
-                                } else {
-                                    stringResource(R.string.search)
-                                },
-                            )
-                        },
-                        onClick = {
-                            viewModel.toggleSearch()
-                            showConnectionsMenu = false
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (uiState.isSearchActive) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = null,
-                            )
-                        },
-                    )
-                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.connection_close_all)) },
                         onClick = {
                             viewModel.closeAllConnections()
@@ -428,37 +400,11 @@ fun ConnectionsScreen(
             }
 
             item(key = "connections_search") {
-                AnimatedVisibility(
-                    visible = uiState.isSearchActive,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut(),
-                ) {
-                    val focusRequester = remember { FocusRequester() }
-
-                    LaunchedEffect(Unit) {
-                        focusRequester.requestFocus()
-                    }
-
-                    OutlinedTextField(
-                        value = uiState.searchText,
-                        onValueChange = { viewModel.setSearchText(it) },
-                        modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp)
-                            .focusRequester(focusRequester),
-                        placeholder = { Text(stringResource(R.string.search_connections)) },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        trailingIcon = {
-                            if (uiState.searchText.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.setSearchText("") }) {
-                                    Icon(Icons.Default.Clear, contentDescription = null)
-                                }
-                            }
-                        },
-                        singleLine = true,
-                    )
-                }
+                ConnectionsSearchField(
+                    text = uiState.searchText,
+                    onTextChange = viewModel::setSearchText,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                )
             }
 
             when {
@@ -507,38 +453,15 @@ fun ConnectionsScreen(
         }
     } else {
         Column(modifier = modifier.fillMaxSize()) {
-            AnimatedVisibility(
-                visible = uiState.isSearchActive,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut(),
-            ) {
-                val focusRequester = remember { FocusRequester() }
-
-                LaunchedEffect(Unit) {
-                    focusRequester.requestFocus()
-                }
-
-                OutlinedTextField(
-                    value = uiState.searchText,
-                    onValueChange = { viewModel.setSearchText(it) },
-                    modifier =
+            ConnectionsSearchField(
+                text = uiState.searchText,
+                onTextChange = viewModel::setSearchText,
+                modifier =
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .padding(bottom = 8.dp)
-                        .focusRequester(focusRequester),
-                    placeholder = { Text(stringResource(R.string.search_connections)) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (uiState.searchText.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.setSearchText("") }) {
-                                Icon(Icons.Default.Clear, contentDescription = null)
-                            }
-                        }
-                    },
-                    singleLine = true,
-                )
-            }
+                        .padding(bottom = 8.dp),
+            )
 
             when {
                 uiState.isLoading -> {
@@ -590,6 +513,29 @@ fun ConnectionsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ConnectionsSearchField(
+    text: String,
+    onTextChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = text,
+        onValueChange = onTextChange,
+        modifier = modifier,
+        placeholder = { Text(stringResource(R.string.search_connections)) },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        trailingIcon = {
+            if (text.isNotEmpty()) {
+                IconButton(onClick = { onTextChange("") }) {
+                    Icon(Icons.Default.Clear, contentDescription = null)
+                }
+            }
+        },
+        singleLine = true,
+    )
 }
 
 @Composable

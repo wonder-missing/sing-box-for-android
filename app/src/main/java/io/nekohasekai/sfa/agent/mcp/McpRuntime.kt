@@ -41,6 +41,7 @@ data class McpListedTool(
 data class McpServerView(
     val id: String,
     val name: String,
+    val namespace: String,
     val url: String,
     val hasToken: Boolean,
     val enabled: Boolean,
@@ -115,15 +116,36 @@ class McpRuntime(
         name: String,
         url: String,
         token: String,
+    ): McpAddResult = add(name, "", url, token)
+
+    suspend fun add(
+        name: String,
+        namespace: String,
+        url: String,
+        token: String,
     ): McpAddResult {
         val config =
             gate.withLock {
-                val error = McpServerValidator.validate(name, url, token, servers.size)
+                val usedPrefixes = servers.map { it.toolPrefix }.toSet()
+                val resolvedNamespace =
+                    namespace.trim().ifBlank {
+                        McpServerValidator.allocateNamespace(name, usedPrefixes)
+                    }
+                val error =
+                    McpServerValidator.validate(
+                        name = name,
+                        url = url,
+                        token = token,
+                        existingCount = servers.size,
+                        namespace = resolvedNamespace,
+                        existingNamespaces = usedPrefixes,
+                    )
                 if (error != null) return McpAddResult.Invalid(error)
                 val created =
                     McpServerConfig(
                         id = McpServerValidator.allocateId(name, servers.map { it.id }.toSet()),
                         name = name.trim(),
+                        namespace = resolvedNamespace,
                         url = url.trim(),
                         token = token.trim(),
                         enabled = false,
@@ -134,6 +156,50 @@ class McpRuntime(
                 created
             }
         connect(config, disableOnFailure = true)
+        return McpAddResult.Saved
+    }
+
+    suspend fun rename(
+        id: String,
+        name: String,
+        namespace: String,
+    ): McpAddResult {
+        gate.withLock {
+            val current = servers.firstOrNull { it.id == id } ?: return McpAddResult.Invalid(McpConfigError.NOT_FOUND)
+            val otherPrefixes = servers.filter { it.id != id }.map { it.toolPrefix }.toSet()
+            val resolvedNamespace =
+                namespace.trim().ifBlank {
+                    McpServerValidator.allocateNamespace(name, otherPrefixes)
+                }
+            val error =
+                McpServerValidator.validate(
+                    name = name,
+                    url = current.url,
+                    token = current.token,
+                    existingCount = 0,
+                    namespace = resolvedNamespace,
+                    existingNamespaces = otherPrefixes,
+                )
+            if (error != null) return McpAddResult.Invalid(error)
+            servers =
+                servers.map { config ->
+                    if (config.id == id) {
+                        config.copy(name = name.trim(), namespace = resolvedNamespace)
+                    } else {
+                        config
+                    }
+                }
+            val updated = servers.first { it.id == id }
+            cache[id]?.let { entry ->
+                cache[id] =
+                    entry.copy(
+                        tools = mcpAgentTools(updated.name, updated.toolPrefix, entry.remote, entry.session),
+                    )
+            }
+            repository.save(servers)
+            rebuildToolsLocked()
+            publishLocked()
+        }
         return McpAddResult.Saved
     }
 
@@ -283,7 +349,7 @@ class McpRuntime(
         return ServerCache(
             session = session,
             remote = remote,
-            tools = mcpAgentTools(config.name, config.id, remote, session),
+            tools = mcpAgentTools(config.name, config.toolPrefix, remote, session),
             fetchedAt = clock(),
         )
     }
@@ -341,6 +407,7 @@ class McpRuntime(
                 McpServerView(
                     id = config.id,
                     name = config.name,
+                    namespace = config.toolPrefix,
                     url = config.url,
                     hasToken = config.token.isNotBlank(),
                     enabled = config.enabled,

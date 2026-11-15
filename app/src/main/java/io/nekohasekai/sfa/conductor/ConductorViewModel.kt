@@ -51,6 +51,7 @@ import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
 import io.nekohasekai.sfa.agent.ReasoningEffort
+import io.nekohasekai.sfa.agent.ReleaseNotesSource
 import io.nekohasekai.sfa.agent.SelectedFileInfo
 import io.nekohasekai.sfa.agent.SelectedFileRead
 import io.nekohasekai.sfa.agent.TaildropPeerInfo
@@ -80,6 +81,7 @@ import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
 import io.nekohasekai.sfa.utils.AppLifecycleObserver
+import io.nekohasekai.sfa.vendor.Vendor
 import io.nekohasekai.sfa.vfs.AndroidVirtualDirectorySource
 import io.nekohasekai.sfa.vfs.FileVfsResumeTokenStore
 import io.nekohasekai.sfa.vfs.OkHttpVfsProviderConnector
@@ -627,6 +629,13 @@ class ConductorViewModel(
         persistSession()
     }
 
+    private val releaseNotesSource =
+        object : ReleaseNotesSource {
+            override suspend fun current() =
+                Vendor.releaseNotes()
+                    ?: throw IllegalStateException("Release notes for this version are not available.")
+        }
+
     private val agentConfig = AgentConfig()
 
     private val vfsDeviceIdStore =
@@ -770,6 +779,7 @@ class ConductorViewModel(
                     diagnostics = diagnosticsSource,
                     taildrop = taildropPort,
                     fileSelection = fileSelectionPort,
+                    releaseNotes = releaseNotesSource,
                 ).all +
                 listOf(VfsConnectTool(vfsConnectionManager), AskUserTool(askUserPort)),
             toolTimeoutMs = agentConfig.toolTimeoutMs,
@@ -979,6 +989,25 @@ class ConductorViewModel(
                     }
                     is ConductorBriefCommand.Outcome.Invalid -> {
                         append(ConductorItem.Error("brief", outcome.message))
+                    }
+                }
+                persistSession()
+            }
+
+            ConductorCommandKind.ROUTING -> {
+                when (
+                    val outcome =
+                        ConductorRoutingCommand.apply(parsed.args, Settings.conductorToolRouting)
+                ) {
+                    is ConductorRoutingCommand.Outcome.Updated -> {
+                        Settings.conductorToolRouting = outcome.value
+                        append(ConductorItem.Notice("routing", outcome.message))
+                    }
+                    is ConductorRoutingCommand.Outcome.Shown -> {
+                        append(ConductorItem.Notice("routing", outcome.message))
+                    }
+                    is ConductorRoutingCommand.Outcome.Invalid -> {
+                        append(ConductorItem.Error("routing", outcome.message))
                     }
                 }
                 persistSession()

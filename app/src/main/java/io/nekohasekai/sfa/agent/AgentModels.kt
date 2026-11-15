@@ -148,6 +148,10 @@ data class TaildropSendResult(
     val message: String? = null,
 )
 
+interface ReleaseNotesSource {
+    suspend fun current(): io.nekohasekai.sfa.update.ReleaseNotes
+}
+
 interface TaildropPort {
     suspend fun peers(): List<TaildropPeerInfo>
 

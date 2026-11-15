@@ -17,6 +17,7 @@ enum class ConductorCommandKind {
     CLEAR,
     REASONING,
     BRIEF,
+    ROUTING,
     NODES,
     NETWORK,
     TAILSCALE,
@@ -90,6 +91,13 @@ object ConductorCommands {
                 usage = "/brief [on|off]",
                 takesArgs = true,
                 action = ConductorCommandKind.BRIEF,
+            ),
+            ConductorCommand(
+                name = "routing",
+                description = "Turn tool routing on or off for new turns.",
+                usage = "/routing [on|off]",
+                takesArgs = true,
+                action = ConductorCommandKind.ROUTING,
             ),
             ConductorCommand(
                 name = "nodes",

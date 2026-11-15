@@ -158,7 +158,7 @@ class McpClientTest {
 
             val accepted =
                 registry.invokeAgent(
-                    ToolCall("1", "mcp_demo_echo", """{"text":"hi","n":1,"extra":true}"""),
+                    ToolCall("1", "demo_echo", """{"text":"hi","n":1,"extra":true}"""),
                     humanApproved = true,
                 )
             assertTrue(accepted.errorMessage ?: "", accepted.ok)
@@ -166,7 +166,7 @@ class McpClientTest {
 
             val missing =
                 registry.invokeAgent(
-                    ToolCall("2", "mcp_demo_echo", """{"text":"   "}"""),
+                    ToolCall("2", "demo_echo", """{"text":"   "}"""),
                     humanApproved = true,
                 )
             assertEquals("missing_parameter", missing.errorCode)
@@ -188,7 +188,7 @@ class McpClientTest {
         val without = AgentToolCatalog(listOf(builtin)).promptSection()
         val withMcp = AgentToolCatalog(listOf(builtin, passthroughTool { }.definition)).promptSection()
         assertEquals(without, withMcp)
-        assertFalse(withMcp.contains("mcp_demo_echo"))
+        assertFalse(withMcp.contains("demo_echo"))
         // A static "not exhaustive" note is allowed; tool names still are not.
         assertTrue(withMcp.contains("not exhaustive"))
         assertTrue(withMcp.contains("network_snapshot()"))
@@ -285,7 +285,7 @@ class McpClientTest {
         assertNull(McpServerValidator.validate("Mini Portal", "http://127.0.0.1:9/mcp", "", 0))
         assertEquals("mini_portal", McpServerValidator.allocateId("Mini Portal", emptySet()))
         assertEquals(
-            "mcp_mini_portal_create_note",
+            "mini_portal_create_note",
             allocateToolName("mini_portal", "create note", mutableSetOf()),
         )
     }
@@ -308,7 +308,7 @@ class McpClientTest {
 
                 val executor = DynamicToolExecutor(emptyList())
                 executor.setExtras(runtime.tools())
-                val echo = executor.definitions().first { it.name == "mcp_demo_echo" }
+                val echo = executor.definitions().first { it.name == "demo_echo" }
                 assertEquals(ConfirmationPolicy.AGENT_ONLY, echo.confirmationPolicy)
                 assertFalse(echo.core)
                 assertTrue(echo.parametersSchema.toString().contains("\"n\""))
@@ -318,7 +318,7 @@ class McpClientTest {
                     ToolCall(
                         "call_2",
                         AgentMetaTools.ROUTE_CALL,
-                        """{"tool":"mcp_demo_echo","args":{"text":"hello","n":1}}""",
+                        """{"tool":"demo_echo","args":{"text":"hello","n":1}}""",
                     )
                 val model =
                     ScriptedModel(
@@ -346,11 +346,11 @@ class McpClientTest {
 
                 val toolMessages = result.messages.filterIsInstance<AgentMessage.Tool>()
                 assertEquals(2, toolMessages.size)
-                assertTrue(toolMessages[0].content.contains("mcp_demo_echo"))
+                assertTrue(toolMessages[0].content.contains("demo_echo"))
                 assertTrue(toolMessages[0].content.contains("\"n\""))
                 assertTrue(toolMessages[1].content.contains("echo:hello:1"))
                 val prompt = (model.requests.first().messages.first() as AgentMessage.System).content
-                assertFalse(prompt.contains("mcp_demo_echo"))
+                assertFalse(prompt.contains("demo_echo"))
                 assertFalse(prompt.contains("- mcp:"))
                 assertEquals(
                     listOf(AgentMetaTools.ROUTE_CALL, AgentMetaTools.SEARCH_TOOLS),
@@ -360,7 +360,7 @@ class McpClientTest {
                 assertEquals("sess-1", call.session)
                 assertEquals("Bearer test-token", call.authorization)
                 assertTrue(call.body.contains("\"name\":\"echo\""))
-                assertFalse(call.body.contains("mcp_demo_echo"))
+                assertFalse(call.body.contains("demo_echo"))
             }
         }
 
@@ -370,7 +370,7 @@ class McpClientTest {
             LoopbackMcp().use { server ->
                 val runtime = runtime()
                 runtime.add("Demo", server.url, "test-token")
-                val echo = runtime.tools().first { it.definition.name == "mcp_demo_echo" }
+                val echo = runtime.tools().first { it.definition.name == "demo_echo" }
                 val registry = AgentToolRegistry(listOf(echo))
 
                 val pending = registry.invokeAgent(ToolCall("1", echo.definition.name, """{"text":"hi"}"""), humanApproved = false)
@@ -386,7 +386,7 @@ class McpClientTest {
             LoopbackMcp().use { server ->
                 val runtime = runtime()
                 runtime.add("Demo", server.url, "test-token")
-                val write = runtime.tools().first { it.definition.name == "mcp_demo_write" }
+                val write = runtime.tools().first { it.definition.name == "demo_write" }
                 assertEquals(ConfirmationPolicy.AGENT_ONLY, write.definition.confirmationPolicy)
                 val registry = AgentToolRegistry(listOf(write))
                 val args = """{"text":"hi"}"""
@@ -497,7 +497,7 @@ class McpClientTest {
                 object : AgentTool {
                     override val definition =
                         AgentToolDefinition(
-                            name = "mcp_demo_echo",
+                            name = "demo_echo",
                             description = "Echo",
                             permission = AgentPermission.DATA_EGRESS,
                             parameters = emptyList(),
@@ -520,7 +520,7 @@ class McpClientTest {
             executor.setExtras(listOf(tool))
             val job =
                 launch {
-                    executor.invokeAgent(ToolCall("1", "mcp_demo_echo", "{}"), humanApproved = true)
+                    executor.invokeAgent(ToolCall("1", "demo_echo", "{}"), humanApproved = true)
                 }
             started.await()
             executor.setExtras(emptyList())
@@ -542,7 +542,7 @@ class McpClientTest {
         object : AgentTool {
             override val definition =
                 AgentToolDefinition(
-                    name = "mcp_demo_echo",
+                    name = "demo_echo",
                     description = "Echo text",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters = emptyList(),

@@ -109,6 +109,7 @@ class ConductorCommandsTest {
             McpServerView(
                 id = "clawdy_portal_knocks",
                 name = "Clawdy Portal Knocks",
+                namespace = "portal",
                 url = "https://portal.example/mcp",
                 hasToken = true,
                 enabled = true,

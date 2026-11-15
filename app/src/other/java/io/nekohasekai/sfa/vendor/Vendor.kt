@@ -112,6 +112,9 @@ object Vendor : VendorInterface {
 
     override val updateSources = listOf(UpdateSource.GITHUB, UpdateSource.FDROID)
 
+    override suspend fun releaseNotes(): io.nekohasekai.sfa.update.ReleaseNotes? =
+        GitHubUpdateChecker().currentReleaseNotes()
+
     override fun checkUpdateAsync(): UpdateInfo? {
         val source = UpdateSource.fromString(Settings.updateSource)
         return try {

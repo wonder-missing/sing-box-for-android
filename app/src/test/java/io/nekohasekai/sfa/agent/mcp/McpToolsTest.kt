@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.agent.mcp
 
 import io.nekohasekai.sfa.agent.ToolCancellation
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -39,6 +40,80 @@ class McpToolsTest {
         val definition = mcpAgentTools("Demo", "demo", listOf(tool), unusedSession()).single().definition
 
         assertEquals(MCP_DOCKER_RUN_TIMEOUT_MS, definition.timeoutMs)
+    }
+
+    @Test
+    fun toolNamesUseTheNamespaceWithoutTheMcpPrefix() {
+        val tool =
+            McpRemoteTool(
+                name = "docker_run",
+                description = "Run a container",
+                inputSchema = buildJsonObject { put("type", "object") },
+                readOnly = false,
+            )
+
+        val definition =
+            mcpAgentTools("Clawdy Portal Knocks", "portal", listOf(tool), unusedSession()).single().definition
+
+        assertEquals("portal_docker_run", definition.name)
+        assertFalse(definition.name.startsWith("mcp_"))
+    }
+
+    @Test
+    fun renameChangesTheDisplayNameAndNamespace() =
+        runBlocking {
+            var saved =
+                listOf(
+                    McpServerConfig(
+                        id = "portal",
+                        name = "Portal",
+                        url = "https://example.com/mcp",
+                        namespace = "portal",
+                    ),
+                )
+            val repository =
+                object : McpServerRepository {
+                    override fun load(): List<McpServerConfig> = saved
+
+                    override fun save(servers: List<McpServerConfig>) {
+                        saved = servers
+                    }
+                }
+            val runtime = McpRuntime(repository, { error("transport is not used") })
+
+            val renamed = runtime.rename("portal", "Clawdy Portal", "clawdy")
+            val duplicate = runtime.add("Other", "clawdy", "https://example.org/mcp", "")
+
+            assertTrue(renamed is McpAddResult.Saved)
+            assertEquals("Clawdy Portal", runtime.views.value.single().name)
+            assertEquals("clawdy", runtime.views.value.single().namespace)
+            assertTrue(duplicate is McpAddResult.Invalid)
+            assertEquals(McpConfigError.NAMESPACE_DUPLICATE, (duplicate as McpAddResult.Invalid).error)
+        }
+
+    @Test
+    fun namespaceIsValidatedAndAllocated() {
+        assertEquals("portal", McpServerValidator.allocateNamespace("Portal", emptySet()))
+        assertEquals("portal_2", McpServerValidator.allocateNamespace("Portal", setOf("portal")))
+        assertEquals("s123_server", McpServerValidator.allocateNamespace("123 Server", emptySet()))
+        assertNull(
+            McpServerValidator.validate("Portal", "https://example.com/mcp", "", 0, namespace = "portal"),
+        )
+        assertEquals(
+            McpConfigError.NAMESPACE,
+            McpServerValidator.validate("Portal", "https://example.com/mcp", "", 0, namespace = "1bad"),
+        )
+        assertEquals(
+            McpConfigError.NAMESPACE_DUPLICATE,
+            McpServerValidator.validate(
+                "Portal",
+                "https://example.com/mcp",
+                "",
+                0,
+                namespace = "portal",
+                existingNamespaces = setOf("portal"),
+            ),
+        )
     }
 
     @Test

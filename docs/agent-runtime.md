@@ -1334,6 +1334,14 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.77：Conductor 日常体验与 MCP 命名（2026-11-15）
+
+- 新增 `release_notes` 工具，从公开 release Atom feed 读取当前 `BuildConfig.VERSION_NAME` 的说明，返回 version/tag/notes；`ReleaseNotesSource` 可注入，JVM 测试不联网。
+- Connections 搜索框常开，删掉菜单里的开/关搜索；用户气泡点按用无 indication 的 clickable，去掉涟漪；`ask_user` 选项去掉胶囊背景，控件和文字之间留 8dp。
+- MCP 工具名改为 `<namespace>_<tool>`，去掉 `mcp_`。`McpServerConfig.namespace` 持久化，旧配置回退到 id；添加/编辑对话框支持 Name 与 Namespace，改名只改展示，改前缀才改工具名；`rename` 用缓存里的 remote 列表重建工具，不重新连接。
+- MCP 配置独立成卡片，不再放在 Provider 卡片里；Tool routing 从设置页移出，改为 `/routing on|off`，设置页只留一行命令提示。
+- 本地全量 446 个用例绿（增量 5 秒）。
+
 ### wonder.76：更新后恢复服务（2026-11-15）
 
 - `ApkInstaller.stopServiceIfRunning()` 在停服务前写 `restore_service_after_update` 并 flush。停止路径会把 `started_by_user` 清掉，原来的 `MY_PACKAGE_REPLACED` 分支因此不会重启。

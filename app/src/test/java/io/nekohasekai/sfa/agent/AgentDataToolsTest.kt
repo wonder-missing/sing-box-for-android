@@ -94,6 +94,28 @@ class AgentDataToolsTest {
     }
 
     @Test
+    fun releaseNotesComeFromTheUpdateSource() {
+        val source =
+            object : ReleaseNotesSource {
+                override suspend fun current() =
+                    io.nekohasekai.sfa.update.ReleaseNotes(
+                        version = "1.0-wonder.77",
+                        tag = "v1.0-wonder.77",
+                        notes = "- Added release notes\n- Fixed a thing",
+                        releaseUrl = "https://example.com/release",
+                    )
+            }
+        val registry = AgentToolRegistry(AgentDataTools(store, diagnostics, taildrop, releaseNotes = source).all)
+
+        val result = registry.exec("release_notes", "{}")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("1.0-wonder.77", result.output!!.string("version"))
+        assertEquals("v1.0-wonder.77", result.output!!.string("tag"))
+        assertEquals("- Added release notes\n- Fixed a thing", result.output!!.string("notes"))
+    }
+
+    @Test
     fun diagnosticsExportCorrectsTheExtensionToMarkdown() {
         val registry = AgentToolRegistry(tools.all)
 

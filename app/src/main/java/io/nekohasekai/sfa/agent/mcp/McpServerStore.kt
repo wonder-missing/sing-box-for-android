@@ -16,6 +16,9 @@ enum class McpConfigError {
     URL_QUERY_SECRET,
     TOKEN,
     LIMIT,
+    NAMESPACE,
+    NAMESPACE_DUPLICATE,
+    NOT_FOUND,
 }
 
 @Serializable
@@ -27,9 +30,14 @@ data class McpServerConfig(
     val enabled: Boolean = false,
     /** Optional VFS server base; derived from [url] when blank. */
     val serverBase: String = "",
+    /** Stable prefix for local tool names; old configs fall back to [id]. */
+    val namespace: String = "",
 ) {
+    val toolPrefix: String
+        get() = namespace.ifBlank { id }
+
     override fun toString(): String =
-        "McpServerConfig(id=$id, name=$name, url=$url, enabled=$enabled, hasToken=${token.isNotBlank()}, hasServerBase=${serverBase.isNotBlank()})"
+        "McpServerConfig(id=$id, name=$name, url=$url, enabled=$enabled, namespace=$namespace, hasToken=${token.isNotBlank()}, hasServerBase=${serverBase.isNotBlank()})"
 }
 
 interface McpServerRepository {
@@ -43,7 +51,9 @@ object McpServerValidator {
     const val MAX_NAME = 32
     const val MAX_URL = 300
     const val MAX_TOKEN = 512
+    const val MAX_NAMESPACE = 16
 
+    private val namespacePattern = Regex("^[a-z][a-z0-9_]{0,15}$")
     private val secretQuery = Regex("(?i)(?:^|&)(?:token|access_token|api_key|key|secret)=")
 
     fun validate(
@@ -51,6 +61,8 @@ object McpServerValidator {
         url: String,
         token: String,
         existingCount: Int,
+        namespace: String = "",
+        existingNamespaces: Set<String> = emptySet(),
     ): McpConfigError? {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return McpConfigError.NAME_BLANK
@@ -70,8 +82,36 @@ object McpServerValidator {
         if (uri.host.isNullOrBlank()) return McpConfigError.URL_HOST
         if (uri.rawQuery?.let { secretQuery.containsMatchIn(it) } == true) return McpConfigError.URL_QUERY_SECRET
         if (token.length > MAX_TOKEN || token.any { it == '\n' || it == '\r' }) return McpConfigError.TOKEN
+        val trimmedNamespace = namespace.trim()
+        if (trimmedNamespace.isNotEmpty()) {
+            if (!namespacePattern.matches(trimmedNamespace)) return McpConfigError.NAMESPACE
+            if (existingNamespaces.any { it.equals(trimmedNamespace, ignoreCase = true) }) {
+                return McpConfigError.NAMESPACE_DUPLICATE
+            }
+        }
         if (existingCount >= MAX_SERVERS) return McpConfigError.LIMIT
         return null
+    }
+
+    fun allocateNamespace(
+        name: String,
+        used: Set<String>,
+    ): String {
+        val raw = slug(name, MAX_NAMESPACE)
+        val base =
+            if (raw.firstOrNull()?.isLetter() == true) {
+                raw
+            } else {
+                "s$raw".take(MAX_NAMESPACE).trimEnd('_')
+            }
+        if (used.none { it.equals(base, ignoreCase = true) }) return base
+        var n = 2
+        while (true) {
+            val suffix = "_$n"
+            val candidate = base.take(MAX_NAMESPACE - suffix.length).trimEnd('_') + suffix
+            if (used.none { it.equals(candidate, ignoreCase = true) }) return candidate
+            n += 1
+        }
     }
 
     fun allocateId(

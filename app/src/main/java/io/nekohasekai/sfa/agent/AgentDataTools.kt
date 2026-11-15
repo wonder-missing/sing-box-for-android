@@ -21,6 +21,7 @@ class AgentDataTools(
     private val diagnostics: DiagnosticsSource? = null,
     private val taildrop: TaildropPort? = null,
     private val fileSelection: FileSelectionPort? = null,
+    private val releaseNotes: ReleaseNotesSource? = null,
 ) {
     private val fileList =
         object : AgentTool {
@@ -875,6 +876,46 @@ class AgentDataTools(
             }
         }
 
+    private val releaseNotesTool =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "release_notes",
+                    description =
+                        "Read the release notes for the installed WonderSing version. Use this when the user asks " +
+                            "what changed, what is new in this version, or wants to try a new feature. Returns the " +
+                            "installed version, tag and the public release notes text.",
+                    permission = AgentPermission.READ_NETWORK_STATE,
+                    parameters = emptyList(),
+                    confirmationPolicy = ConfirmationPolicy.NEVER,
+                    category = "about",
+                    core = true,
+                    aliases = listOf("release notes", "changelog", "what's new", "new features", "version changes"),
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val source = releaseNotes ?: return unavailable()
+                return try {
+                    val notes = source.current()
+                    ToolExecution(
+                        output =
+                            buildJsonObject {
+                                put("version", notes.version)
+                                put("tag", notes.tag)
+                                put("notes", notes.notes)
+                            },
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failure(e)
+                }
+            }
+        }
+
     val all: List<AgentTool>
         get() =
             buildList {
@@ -887,6 +928,7 @@ class AgentDataTools(
                 add(fileMkdir)
                 add(fileDelete)
                 if (diagnostics != null) add(diagnosticsExport)
+                if (releaseNotes != null) add(releaseNotesTool)
                 if (taildrop != null) {
                     add(taildropPeers)
                     add(taildropSend)

@@ -78,6 +78,7 @@ fun McpServersScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     val scaffoldPadding = LocalScaffoldPadding.current
     var showAdd by remember { mutableStateOf(false) }
+    var pendingEdit by remember { mutableStateOf<McpServerView?>(null) }
     var pendingRemove by remember { mutableStateOf<McpServerView?>(null) }
 
     LaunchedEffect(runtime) {
@@ -117,6 +118,7 @@ fun McpServersScreen(navController: NavController) {
                     scope.launch { runtime.setEnabled(server.id, enabled) }
                 },
                 onRefresh = { scope.launch { runtime.refresh(server.id) } },
+                onEdit = { pendingEdit = server },
                 onRemove = { pendingRemove = server },
             )
         }
@@ -131,9 +133,20 @@ fun McpServersScreen(navController: NavController) {
     if (showAdd) {
         AddServerDialog(
             onDismiss = { showAdd = false },
-            onAdd = { name, url, token, onResult ->
+            onAdd = { name, namespace, url, token, onResult ->
                 scope.launch {
-                    onResult(runtime.add(name, url, token))
+                    onResult(runtime.add(name, namespace, url, token))
+                }
+            },
+        )
+    }
+    pendingEdit?.let { server ->
+        EditServerDialog(
+            server = server,
+            onDismiss = { pendingEdit = null },
+            onRename = { name, namespace, onResult ->
+                scope.launch {
+                    onResult(runtime.rename(server.id, name, namespace))
                 }
             },
         )
@@ -167,6 +180,7 @@ private fun ServerCard(
     server: McpServerView,
     onEnabled: (Boolean) -> Unit,
     onRefresh: () -> Unit,
+    onEdit: () -> Unit,
     onRemove: () -> Unit,
 ) {
     val connecting = server.phase == McpPhase.CONNECTING
@@ -204,6 +218,11 @@ private fun ServerCard(
                 )
             }
             Text(
+                text = stringResource(R.string.mcp_servers_namespace_value, server.namespace),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
                 text = statusText(server),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -227,6 +246,12 @@ private fun ServerCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                TextButton(
+                    onClick = onEdit,
+                    enabled = !connecting,
+                ) {
+                    Text(stringResource(R.string.mcp_servers_edit))
+                }
                 TextButton(
                     onClick = onRefresh,
                     enabled = server.enabled && !connecting,
@@ -253,9 +278,10 @@ private fun statusText(server: McpServerView): String {
 @Composable
 private fun AddServerDialog(
     onDismiss: () -> Unit,
-    onAdd: (String, String, String, (McpAddResult) -> Unit) -> Unit,
+    onAdd: (String, String, String, String, (McpAddResult) -> Unit) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
+    var namespace by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
     var reveal by remember { mutableStateOf(false) }
@@ -274,6 +300,16 @@ private fun AddServerDialog(
                     singleLine = true,
                     enabled = !busy,
                     label = { Text(stringResource(R.string.mcp_servers_name)) },
+                )
+                OutlinedTextField(
+                    value = namespace,
+                    onValueChange = { namespace = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !busy,
+                    label = { Text(stringResource(R.string.mcp_servers_namespace)) },
+                    placeholder = { Text("portal") },
+                    supportingText = { Text(stringResource(R.string.mcp_servers_namespace_help)) },
                 )
                 OutlinedTextField(
                     value = url,
@@ -319,7 +355,7 @@ private fun AddServerDialog(
                 onClick = {
                     busy = true
                     errorCode = null
-                    onAdd(name, url, token) { result ->
+                    onAdd(name, namespace, url, token) { result ->
                         busy = false
                         when (result) {
                             McpAddResult.Saved -> onDismiss()
@@ -344,6 +380,79 @@ private fun AddServerDialog(
 }
 
 @Composable
+private fun EditServerDialog(
+    server: McpServerView,
+    onDismiss: () -> Unit,
+    onRename: (String, String, (McpAddResult) -> Unit) -> Unit,
+) {
+    var name by remember(server.id) { mutableStateOf(server.name) }
+    var namespace by remember(server.id) { mutableStateOf(server.namespace) }
+    var busy by remember { mutableStateOf(false) }
+    var errorCode by remember { mutableStateOf<McpConfigError?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(stringResource(R.string.mcp_servers_edit_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !busy,
+                    label = { Text(stringResource(R.string.mcp_servers_name)) },
+                )
+                OutlinedTextField(
+                    value = namespace,
+                    onValueChange = { namespace = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !busy,
+                    label = { Text(stringResource(R.string.mcp_servers_namespace)) },
+                    supportingText = { Text(stringResource(R.string.mcp_servers_namespace_help)) },
+                )
+                Text(
+                    text = stringResource(R.string.mcp_servers_namespace_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                errorCode?.let { code ->
+                    Text(
+                        text = configErrorText(code),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy,
+                onClick = {
+                    busy = true
+                    errorCode = null
+                    onRename(name, namespace) { result ->
+                        busy = false
+                        when (result) {
+                            McpAddResult.Saved -> onDismiss()
+                            is McpAddResult.Invalid -> errorCode = result.error
+                        }
+                    }
+                },
+            ) {
+                Text(stringResource(R.string.mcp_servers_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) {
+                Text(stringResource(R.string.mcp_servers_cancel))
+            }
+        },
+    )
+}
+
+@Composable
 private fun configErrorText(error: McpConfigError): String =
     when (error) {
         McpConfigError.NAME_BLANK -> stringResource(R.string.mcp_error_name)
@@ -355,4 +464,7 @@ private fun configErrorText(error: McpConfigError): String =
         McpConfigError.URL_QUERY_SECRET -> stringResource(R.string.mcp_error_url_query)
         McpConfigError.TOKEN -> stringResource(R.string.mcp_error_token)
         McpConfigError.LIMIT -> stringResource(R.string.mcp_error_limit)
+        McpConfigError.NAMESPACE -> stringResource(R.string.mcp_error_namespace)
+        McpConfigError.NAMESPACE_DUPLICATE -> stringResource(R.string.mcp_error_namespace_duplicate)
+        McpConfigError.NOT_FOUND -> stringResource(R.string.mcp_error_not_found)
     }

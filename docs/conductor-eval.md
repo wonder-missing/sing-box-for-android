@@ -55,6 +55,7 @@ prompt：「你能做什么？」
 | 在文件里搜一下 error | `file grep search` → `file_grep` |
 | 让我挑几个文件给你 | `request files picker` → `request_files` |
 | 让我选一下是继续还是停下 | `ask user question card` → `ask_user` |
+| 这个版本更新了什么 | `release notes changelog` → `release_notes` |
 | 看最近三次 API 请求 | `diagnostics trace last requests` → `diagnostics_export` |
 
 ## 指标
