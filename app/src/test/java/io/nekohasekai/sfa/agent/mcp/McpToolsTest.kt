@@ -72,6 +72,26 @@ class McpToolsTest {
     }
 
     @Test
+    fun longDescriptionsArePassedThroughUnchanged() {
+        val description =
+            "Run a command in an allowlisted container. Public internet is allowed; this Mac and LAN are " +
+                "blocked. Images: alpine, ubuntu, debian, python, node, busybox. command is argv. " +
+                "vfs true mounts the caller VFS at /vfs and output at /work."
+        val tool =
+            McpRemoteTool(
+                name = "docker_run",
+                description = description,
+                inputSchema = buildJsonObject { put("type", "object") },
+                readOnly = false,
+            )
+
+        val definition = mcpAgentTools("Demo", "demo", listOf(tool), unusedSession()).single().definition
+
+        assertEquals("Demo: $description", definition.description)
+        assertFalse(definition.description.contains("…"))
+    }
+
+    @Test
     fun vfsLinkRequestCarriesTheWholeWorkspaceScopeHint() {
         val tool =
             McpRemoteTool(

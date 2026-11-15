@@ -90,19 +90,18 @@ private fun aliases(
         .filter { it.isNotEmpty() && !it.equals(localName, ignoreCase = true) }
         .distinctBy { it.lowercase(Locale.US) }
 
+/**
+ * The remote description is sent whole. The model decides whether to call a
+ * tool from this text, so a mid-sentence cap can hide the one constraint that
+ * matters. The catalog bounds its own output by dropping whole tools and
+ * marking `truncated`, rather than shortening a description.
+ */
 private fun describe(
     serverName: String,
     tool: McpRemoteTool,
 ): String {
     val base = "$serverName: ${tool.description.ifBlank { tool.name }}"
-    val text =
-        if (tool.name == VFS_LINK_REQUEST_TOOL) {
-            "$VFS_SCOPE_HINT $base"
-        } else {
-            base
-        }
-    val limit = if (tool.name == VFS_LINK_REQUEST_TOOL) 400 else 240
-    return if (text.length <= limit) text else text.take(limit - 1) + "…"
+    return if (tool.name == VFS_LINK_REQUEST_TOOL) "$VFS_SCOPE_HINT $base" else base
 }
 
 private val VFS_SCOPE_HINT =

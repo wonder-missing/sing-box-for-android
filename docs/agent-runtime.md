@@ -1334,6 +1334,11 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 3. 真机 A/B 后再决定默认开路由，以及是否把核心工具提升为原生 tool。
 4. Stop、流式、上下文压缩已完成（wonder.36）。
 
+### wonder.74：MCP 描述不截断（2026-11-15）
+
+- 删除 `McpTools.describe` 的 240/400 字符上限。工具描述是模型决定是否调用的依据，句子中间截断会藏掉关键约束（实际截掉了 Portal `docker_run` 的 `output at /work`）。
+- 输出体积由 `AgentToolCatalog` 的既有预算兜底：超限时整条丢弃尾部工具并标 `truncated`，不缩短任何一条描述。MCP 设置页的 180 字符 `summary` 只用于 UI，不进入模型。
+
 ### wonder.73：回答长度与答题卡（2026-11-15）
 
 - `/brief on|off` 只改 system prompt 的一行风格约束，不传 temperature。温度影响用词随机性，不能让模型少说背景或省掉复述；`AgentPromptStabilityTest` 锁定默认 prompt 不变，brief 只在默认 prompt 的风格行后插入一行。
