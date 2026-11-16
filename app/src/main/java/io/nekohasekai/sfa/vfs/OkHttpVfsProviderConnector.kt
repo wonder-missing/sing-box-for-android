@@ -31,6 +31,7 @@ data class VfsSessionClose(
 class OkHttpVfsProviderConnector(
     private val sourceFactory: (Set<VfsScope>) -> VirtualDirectorySource,
     private val client: OkHttpClient = defaultClient(),
+    private val onUploadBytes: (Long) -> Unit = {},
 ) : VfsProviderConnector {
     override suspend fun connect(request: VfsProviderConnectRequest): VfsProviderSession {
         val hello = CompletableDeferred<VfsServerHello>()
@@ -46,6 +47,7 @@ class OkHttpVfsProviderConnector(
                     hello.completeExceptionally(error)
                     socket.get()?.close(1008, "protocol error")
                 },
+                onUploadBytes = onUploadBytes,
             )
 
         val requestBuilder =

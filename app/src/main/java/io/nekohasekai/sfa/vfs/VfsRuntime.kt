@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -20,6 +21,9 @@ object VfsRuntime {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow<VfsConnectionState>(VfsConnectionState.Idle)
     val state: StateFlow<VfsConnectionState> = _state.asStateFlow()
+
+    private val _uploadBytes = MutableStateFlow(0L)
+    val uploadBytes: StateFlow<Long> = _uploadBytes.asStateFlow()
 
     private val trustLock = Any()
 
@@ -52,7 +56,14 @@ object VfsRuntime {
         collectJob?.cancel()
         collectJob =
             scope.launch {
-                manager.state.collect { state -> _state.value = state }
+                var wasConnected = false
+                manager.state.collect { state ->
+                    val connected = state is VfsConnectionState.Connected
+                    if (connected && !wasConnected) _uploadBytes.value = 0L
+                    if (!connected && wasConnected) _uploadBytes.value = 0L
+                    wasConnected = connected
+                    _state.value = state
+                }
             }
         lifecycleJob?.cancel()
         lifecycleJob =
@@ -65,6 +76,10 @@ object VfsRuntime {
                     }
                 }
             }
+    }
+
+    fun recordUploadBytes(bytes: Long) {
+        if (bytes > 0) _uploadBytes.update { it + bytes }
     }
 
     fun disconnect() {

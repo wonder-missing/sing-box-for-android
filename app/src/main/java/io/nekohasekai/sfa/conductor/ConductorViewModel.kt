@@ -776,6 +776,7 @@ class ConductorViewModel(
             sourceFactory = { scopes ->
                 VfsScopedSource(AndroidVirtualDirectorySource(getApplication<Application>()), scopes)
             },
+            onUploadBytes = VfsRuntime::recordUploadBytes,
         )
 
     private val vfsConnectionManager =

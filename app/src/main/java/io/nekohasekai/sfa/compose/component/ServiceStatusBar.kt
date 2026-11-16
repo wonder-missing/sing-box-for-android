@@ -8,19 +8,18 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Cable
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -40,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.constant.Status
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 @Composable
 fun ServiceStatusBar(
@@ -52,6 +52,7 @@ fun ServiceStatusBar(
     connectionsCount: Int,
     onConnectionsClick: () -> Unit,
     vfsOn: Boolean,
+    vfsUploadBytes: Long,
     onVfsClick: () -> Unit,
     onStopClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -168,40 +169,47 @@ fun ServiceStatusBar(
                     )
                 }
 
-                // VFS status: informational, not a control. Disconnecting stays
-                // on the dedicated VFS sharing bar.
+                // VFS status: same pill shape as the other counters. The number
+                // is bytes uploaded to the consumer during the current session;
+                // tapping the pill toggles the VFS sharing card.
                 Row(
                     modifier =
                     Modifier
                         .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (vfsOn) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                        )
                         .clickable(enabled = vfsOn, onClick = onVfsClick)
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    Box(
-                        modifier =
-                        Modifier
-                            .size(8.dp)
-                            .background(
-                                if (vfsOn) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.outline
-                                },
-                                CircleShape,
-                            ),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text =
-                        stringResource(
-                            if (vfsOn) R.string.vfs_status_on else R.string.vfs_status_off,
-                        ),
+                        text = humanBytes(vfsUploadBytes),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Medium,
                         color =
                         if (vfsOn) {
-                            MaterialTheme.colorScheme.onSurface
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.FolderOpen,
+                        contentDescription =
+                        stringResource(
+                            if (vfsOn) R.string.vfs_status_on else R.string.vfs_status_off,
+                        ),
+                        modifier = Modifier.size(18.dp),
+                        tint =
+                        if (vfsOn) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
@@ -209,6 +217,16 @@ fun ServiceStatusBar(
                 }
             }
         }
+    }
+}
+
+internal fun humanBytes(bytes: Long): String {
+    val value = bytes.coerceAtLeast(0L)
+    return when {
+        value < 1024L -> "$value B"
+        value < 1024L * 1024L -> String.format(Locale.US, "%.1f KB", value / 1024.0)
+        value < 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f MB", value / (1024.0 * 1024.0))
+        else -> String.format(Locale.US, "%.1f GB", value / (1024.0 * 1024.0 * 1024.0))
     }
 }
 

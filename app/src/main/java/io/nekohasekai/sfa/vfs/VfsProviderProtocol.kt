@@ -10,26 +10,27 @@ class VfsProviderProtocol(
     private val send: (String) -> Boolean,
     private val onHello: (VfsServerHello) -> Unit,
     private val onError: (VfsConnectException) -> Unit = {},
+    private val onUploadBytes: (Long) -> Unit = {},
 ) {
     private val session = VirtualDirectorySession(source)
 
     @Volatile
     private var helloSeen = false
 
-    fun sendClientHello(): Boolean = send(VfsProtocol.clientHello())
+    fun sendClientHello(): Boolean = sendFrame(VfsProtocol.clientHello())
 
     suspend fun onMessage(text: String) {
         val incoming = VfsProtocol.parseIncoming(text) ?: return
         when (incoming) {
             is VfsIncoming.ServerHello -> onServerHello(incoming)
             is VfsIncoming.Ping -> {
-                send(VfsProtocol.pong(incoming.id))
+                sendFrame(VfsProtocol.pong(incoming.id))
             }
 
             else -> {
                 if (!helloSeen) return
                 val reply = session.respond(incoming) ?: return
-                if (!send(reply.text)) {
+                if (!sendFrame(reply.text)) {
                     onError(
                         VfsConnectException(
                             "VFS_CONNECT_FAILED",
@@ -39,6 +40,12 @@ class VfsProviderProtocol(
                 }
             }
         }
+    }
+
+    private fun sendFrame(text: String): Boolean {
+        val sent = send(text)
+        if (sent) onUploadBytes(text.encodeToByteArray().size.toLong())
+        return sent
     }
 
     private fun onServerHello(hello: VfsIncoming.ServerHello) {

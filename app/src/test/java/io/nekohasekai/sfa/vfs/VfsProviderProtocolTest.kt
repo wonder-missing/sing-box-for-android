@@ -10,6 +10,7 @@ class VfsProviderProtocolTest {
     private val sent = mutableListOf<String>()
     private var hello: VfsServerHello? = null
     private var error: VfsConnectException? = null
+    private var uploadedBytes = 0L
 
     private val source =
         object : VirtualDirectorySource {
@@ -34,6 +35,7 @@ class VfsProviderProtocolTest {
             },
             onHello = { hello = it },
             onError = { error = it },
+            onUploadBytes = { uploadedBytes += it },
         )
 
     @Test
@@ -98,5 +100,6 @@ class VfsProviderProtocolTest {
 
         assertTrue(protocol.sendClientHello())
         assertTrue(sent.single().contains("\"type\":\"hello\""))
+        assertEquals(sent.single().toByteArray().size.toLong(), uploadedBytes)
     }
 }
