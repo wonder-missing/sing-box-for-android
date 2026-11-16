@@ -1246,6 +1246,7 @@ class MainActivity :
                                 onGroupsClick = { showGroupsSheet = true },
                                 connectionsCount = dashboardUiState.connectionsCount,
                                 onConnectionsClick = { showConnectionsSheet = true },
+                                vfsOn = vfsConnected != null,
                                 onStopClick = { dashboardViewModel.toggleService() },
                                 modifier =
                                 Modifier
@@ -1262,8 +1263,8 @@ class MainActivity :
                                 (if (statusBarVisible) statusBarHeight else 0.dp) +
                                 (if (statusBarVisible) 8.dp else 0.dp)
                         VfsStatusBar(
-                            serverName = vfsConnected?.serverName ?: "VFS",
-                            scope = vfsConnected?.scope ?: emptySet(),
+                            serverName = vfsConnected.serverName ?: "VFS",
+                            scope = vfsConnected.scope,
                             onDisconnect = { VfsRuntime.disconnect() },
                             modifier =
                             Modifier

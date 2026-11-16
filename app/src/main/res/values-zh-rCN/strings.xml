@@ -92,6 +92,8 @@
     <string name="vfs_access_this_session">仅本次</string>
     <string name="vfs_status_sharing">VFS 正在共享给 %1$s</string>
     <string name="vfs_status_disconnect">断开</string>
+    <string name="vfs_status_on">VFS 开</string>
+    <string name="vfs_status_off">VFS 关</string>
     <string name="conductor_commands">命令</string>
     <string name="conductor_mention">提及</string>
     <string name="conductor_empty_title">命令面板</string>

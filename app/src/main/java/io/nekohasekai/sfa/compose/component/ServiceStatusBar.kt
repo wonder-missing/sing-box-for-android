@@ -8,12 +8,14 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
@@ -49,6 +51,7 @@ fun ServiceStatusBar(
     onGroupsClick: () -> Unit,
     connectionsCount: Int,
     onConnectionsClick: () -> Unit,
+    vfsOn: Boolean,
     onStopClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -68,20 +71,9 @@ fun ServiceStatusBar(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Status text
-                StatusItem(
-                    text = when (serviceStatus) {
-                        Status.Starting -> stringResource(R.string.status_starting)
-                        Status.Started -> stringResource(R.string.status_started)
-                        Status.Stopping -> stringResource(R.string.status_stopping)
-                        else -> ""
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-
                 // Connections button
                 if (serviceStatus == Status.Started) {
                     Row(
@@ -149,7 +141,21 @@ fun ServiceStatusBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    if (startTime != null) {
+                    val transitionLabel =
+                        when (serviceStatus) {
+                            Status.Starting -> stringResource(R.string.status_starting)
+                            Status.Stopping -> stringResource(R.string.status_stopping)
+                            else -> null
+                        }
+                    if (transitionLabel != null) {
+                        Text(
+                            text = transitionLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                    } else if (startTime != null) {
                         UptimeText(startTime = startTime)
                         Spacer(modifier = Modifier.width(4.dp))
                     }
@@ -160,20 +166,45 @@ fun ServiceStatusBar(
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
+
+                // VFS status: informational, not a control. Disconnecting stays
+                // on the dedicated VFS sharing bar.
+                Row(
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier =
+                        Modifier
+                            .size(8.dp)
+                            .background(
+                                if (vfsOn) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.outline
+                                },
+                                CircleShape,
+                            ),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text =
+                        stringResource(
+                            if (vfsOn) R.string.vfs_status_on else R.string.vfs_status_off,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium,
+                        color =
+                        if (vfsOn) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
         }
     }
-}
-
-@Composable
-private fun StatusItem(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Medium,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier,
-    )
 }
 
 @Composable
