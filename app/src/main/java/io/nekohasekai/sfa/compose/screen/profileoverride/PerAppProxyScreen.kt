@@ -1395,6 +1395,17 @@ object PerAppProxyScanner {
                         )
                         return true
                     }
+                    val availableHeap =
+                        Runtime.getRuntime().let { runtime ->
+                            runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+                        }
+                    if (packageEntry.size.toLong() * 2L > availableHeap) {
+                        Log.d(
+                            "PerAppProxyScanner",
+                            "Skip $packageName dex=${packageEntry.size} available=$availableHeap",
+                        )
+                        continue
+                    }
                     val input = it.getInputStream(packageEntry).buffered()
                     val dexFile =
                         try {
