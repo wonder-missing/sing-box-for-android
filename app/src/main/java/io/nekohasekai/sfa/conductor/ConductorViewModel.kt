@@ -1800,16 +1800,21 @@ class ConductorViewModel(
             }
 
             is AgentEvent.ToolFinished -> {
+                val elapsedMs =
+                    toolStartedAt.remove(event.result.callId)?.let { startedAt ->
+                        SystemClock.uptimeMillis() - startedAt
+                    }
                 AppLog.info(
-                    "conductor tool=${event.result.name} ok=${event.result.ok} code=${event.result.errorCode ?: "-"}",
+                    "conductor tool=${event.result.name} ok=${event.result.ok} " +
+                        "code=${event.result.errorCode ?: "-"} ms=${elapsedMs ?: "-"}",
                 )
-                toolStartedAt.remove(event.result.callId)?.let { startedAt ->
+                if (elapsedMs != null) {
                     TelemetryEventLog.recordAsync(
                         getApplication<Application>(),
                         "conductor_tool",
                         buildMap {
                             put("tool", telemetryToolName(event.result.name))
-                            put("ms", SystemClock.uptimeMillis() - startedAt)
+                            put("ms", elapsedMs)
                             put("ok", event.result.ok)
                             put("code", event.result.errorCode ?: "-")
                             if (!event.result.ok) {

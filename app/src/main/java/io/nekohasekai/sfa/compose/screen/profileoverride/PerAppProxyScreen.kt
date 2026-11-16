@@ -95,6 +95,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -1233,6 +1235,8 @@ private fun PerAppProxyMenus(
 }
 
 object PerAppProxyScanner {
+    private const val SCAN_CONCURRENCY = 2
+
     private val skipPrefixList =
         listOf(
             "com.google",
@@ -1300,11 +1304,16 @@ object PerAppProxyScanner {
         }
         val installedPackages = PackageQueryManager.getInstalledPackages(packageManagerFlags)
         val chinaApps = mutableSetOf<String>()
+        // Each scan can materialise a dex file and package archive. Bounding
+        // this prevents a large installed-app set from exhausting the heap.
+        val scanGate = Semaphore(SCAN_CONCURRENCY)
         installedPackages.map { packageInfo ->
             async {
-                if (scanChinaPackage(packageInfo)) {
-                    synchronized(chinaApps) {
-                        chinaApps.add(packageInfo.packageName)
+                scanGate.withPermit {
+                    if (scanChinaPackage(packageInfo)) {
+                        synchronized(chinaApps) {
+                            chinaApps.add(packageInfo.packageName)
+                        }
                     }
                 }
             }
