@@ -54,7 +54,7 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.86`（tag `v1.15.0-alpha.13-wonder.86`，commit `a5a9b01`）。本地 496 用例绿；release/otherLegacy 编译和 R8 通过；GitHub release 正文、arm64 APK 和 Feishu 通知已确认。下一次从 87 开始。
+- 当前已发布 `wonder.88`（tag `v1.15.0-alpha.13-wonder.88`，commit `a258420`）。本地 502 用例绿；release/otherLegacy 编译和 R8 通过；GitHub release 正文、arm64 APK、APK 内 release-notes asset 和 Feishu 通知已确认。下一次从 89 开始。
 - Mini 侧 Taildrop 收件箱不会自动落盘：Conductor 的 `taildrop_send` 只把文件送进对端 Tailscale inbox，headless Mini 需要 `tailscale file get --conflict=rename <目录>` 才搬出来。主人否决了自动 drain 的 LaunchAgent；App 只按实际能感知的状态返回 `peer_inbox` + `receiverActionRequired`，不承诺落盘时机。
 - v80 trace 复盘：`analyze_image` 空答案（模型名 `deepseek-v4-flash`，81 已改 `deepseek-flash`）；`file_grep` 误用 `pattern`（82 已加参数提示）；`diagnostics_export` 的 `overwrite` 在 v80 trace 前半段缺失是因为那几条是 v79 会话，v80 代码和 APK 已带；`taildrop_send` 成功但 inbox 未 drain。
 - v82 trace 复盘：直接图片输入成功（text+image content parts，模型读出 Portal 首页）；`analyze_image` 不再空答案，但 `max_tokens=1024` 命中 length，返回 reasoning 草稿，待 83 修；trace 脱敏（803171 chars）、参数提示、Taildrop `peer_inbox` 均验证通过；Rich 查看器打不开；`file_grep` regex/长行和对话导出含 reasoning 待处理。
@@ -64,10 +64,11 @@
 
 ## 最近完成
 
+- wonder.87/88（2026-11-17）：87 已发布，但 APK 内 release notes asset 是提交信息而不是 tag 注解；88 修复 release workflow 显式 fetch annotated tag，并加版本前缀校验，88 的 APK asset 已核对为 `wonder.88` 注解。本批包含 VFS 上传/重连 pill、会话写入移出主线程、20 轮工具预算、VFS 生命周期/取消竞态修复、Stop 1 秒；Rich 查看器已由主人确认可用。
 - wonder.87 工作树（2026-11-17）：`release_notes` 改读 APK 内置 tag asset，不再访问 GitHub；主界面 VFS 状态位改为与左侧按钮同款 pill，显示本次连接累计上传字节数（humanize），重连时显示 spinner/连接中，点击 On 状态切换 VFS 分享浮动卡，默认隐藏；Stop 未确认取消的宽限期缩到 1 秒并显示 turn error；Rich 查看器已由主人确认可用。`/tool` 工具名补全、参数/示例提示也在本批。
 - wonder.86 更新后服务恢复已验证（2026-11-16）：遥测记录 `service_stop` 后出现 `service_restore`，action=`package_replaced`、result=`started`、`started_by_user=false`、`restore_after_update=true`，17ms 后 `service_start`；84→85 的丢失没有在 86 复现。
 - wonder.86（2026-11-16）：状态栏去掉 `Started`，Connections / Groups / Timer+Stop 左对齐，新增可点击的 `VFS 开/关` 状态位（点击切换 VFS 分享卡）；Conductor 要求路径、命令、flag、工具名、配置键使用行内代码，并给行内代码加背景。包含 `/tool`、slash fuzzy、Viewer 修复和更新恢复遥测。496 用例绿；release/otherLegacy 编译和 R8 通过；Release `v1.15.0-alpha.13-wonder.86`、arm64 APK 和 Feishu 通知已确认。
-- `/tool` 开发者直调与 slash fuzzy（2026-11-16，工作树）：`/tool` / `/tool <name>` / `/tool <name> <json>`，复用注册表和确认策略；结果只进临时 Tool console，不写 transcript 和 API trace。命令、取值、`/tool` 工具名和 MCP 工具建议都支持 fuzzy；`/tool <name> ` 会提示必填/可选参数和示例 JSON。501 用例绿，待发版。
+- `/tool` 开发者直调与 slash fuzzy（2026-11-16，工作树）：`/tool` / `/tool <name>` / `/tool <name> <json>`，复用注册表和确认策略；结果只进临时 Tool console，不写 transcript 和 API trace。命令、取值、`/tool` 工具名和 MCP 工具建议都支持 fuzzy；`/tool <name> ` 会提示必填/可选参数和示例 JSON。随 87/88 发布。
 - wonder.85（2026-11-16）：Rich 查看器空白修复。84 遥测显示 `conductor_viewer` open/ready 在 26–46ms 内完成且无错误，根因是 `MarkwonAdapterImpl.setParsedMarkdown` 不调用 `notifyDataSetChanged`；现在解析后显式刷新，并记录 `stage=adapter` / items。487 用例绿，release/otherLegacy 编译和 R8 通过；release、arm64 APK 和 Feishu 已确认。
 - VFS 新 scope 与预设（wonder.84，2026-11-16）：新增 `workdir`、`appfiles` 两个根，`/vfs` 根暴露外部工作目录，`/vfs/appfiles` 暴露内部 `filesDir` 并排除 `vfs/`；新增 `all`、`conductor_session` 两个 App 侧预设，解析 Link 时展开成根，Portal 和 VFS 协议不改。487 个 JVM 用例绿，release/otherLegacy 编译和 R8 通过；arm64 APK 和 Feishu 通知已确认，待真机验收。
 - wonder.83 低端机实证（2026-11-16）：VFS/MCP 链路通过，服务重启后 core 不可达、境内外 DNS 分裂、trace 预算缩身已记入 P1/P2 和 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
