@@ -1239,6 +1239,7 @@ class ConductorViewModel(
             // the timeout explicit instead of leaving Stop on screen for 3s.
             agentJob?.cancel()
             agentJob = null
+            if (!_uiState.value.isRunning) return@launch
             val stoppedItems =
                 _uiState.value.items.map { item ->
                     if (item is ConductorItem.Tool && item.status == ToolStatus.RUNNING) {
