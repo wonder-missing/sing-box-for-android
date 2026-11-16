@@ -44,7 +44,7 @@
 
 P7 导出摩擦（2026-11-14 真机）：`diagnostics_export(kind=trace, name=api-trace.json)` 写入的是 Markdown 文本，先改用 `.md` 名称。App 侧待做：按 kind 自动纠正扩展名，或名称与内容不符时提示。
 
-2026-11-16 真机 VFS 故障（wonder.84，SM-F741U）：`vfs_connect` 四次 `VFS_CONNECT_FAILED ... handshake in time`，`docker_run(vfs=true)` 返回 `VFS_UNAVAILABLE`。App 侧没有 scope 报错；vfsd-vm 日志在 19:09 连续出现 `fuse init timed out`，且容器内残留 `p_5612...`、`p_f20...`、`p_0951...` 三个旧 provider 的 FUSE mount。重启 `vfsd-vm` 后 stale mounts 清空。根因在 vfsd 的 mount 生命周期：`detach` 只把 link 标 offline，不 unmount 旧 provider；重连新 provider 时 FUSE init 超时。App 的 `VFS_CONNECT_FAILED` 是握手超时的表象，不是 `all` / `appfiles` scope 导致；长期修在 vfs 项目。
+2026-11-16 真机 VFS 故障（wonder.84，SM-F741U）：`vfs_connect` 四次 `VFS_CONNECT_FAILED ... handshake in time`，`docker_run(vfs=true)` 返回 `VFS_UNAVAILABLE`。App 侧没有 scope 报错；vfsd-vm 日志在 19:09 连续出现 `fuse init timed out`，且容器内残留 `p_5612...`、`p_f20...`、`p_0951...` 三个旧 provider 的 FUSE mount。重启 `vfsd-vm` 后 stale mounts 清空。App 的 `VFS_CONNECT_FAILED` 是握手超时的表象，不是 `all` / `appfiles` scope 导致；vfsd 的 `detach` 会保留 mount 供复用，本次还不能证明它是唯一原因，具体触发点需要 vfs 项目继续取证。
 
 P7-5 的参考命令：
 

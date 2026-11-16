@@ -53,7 +53,7 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.84`（tag `v1.15.0-alpha.13-wonder.84`，commit `0acad01`）。本地 487 用例绿；release/otherLegacy 编译和 R8 通过；GitHub release 正文、arm64 APK 和 Feishu 通知已确认。下一次从 85 开始。
+- 当前已发布 `wonder.85`（tag `v1.15.0-alpha.13-wonder.85`，commit `b7ab60e`）。本地 487 用例绿；release/otherLegacy 编译和 R8 通过；GitHub release 正文、arm64 APK 和 Feishu 通知已确认。下一次从 86 开始。
 - Mini 侧 Taildrop 收件箱不会自动落盘：Conductor 的 `taildrop_send` 只把文件送进对端 Tailscale inbox，headless Mini 需要 `tailscale file get --conflict=rename <目录>` 才搬出来。主人否决了自动 drain 的 LaunchAgent；App 只按实际能感知的状态返回 `peer_inbox` + `receiverActionRequired`，不承诺落盘时机。
 - v80 trace 复盘：`analyze_image` 空答案（模型名 `deepseek-v4-flash`，81 已改 `deepseek-flash`）；`file_grep` 误用 `pattern`（82 已加参数提示）；`diagnostics_export` 的 `overwrite` 在 v80 trace 前半段缺失是因为那几条是 v79 会话，v80 代码和 APK 已带；`taildrop_send` 成功但 inbox 未 drain。
 - v82 trace 复盘：直接图片输入成功（text+image content parts，模型读出 Portal 首页）；`analyze_image` 不再空答案，但 `max_tokens=1024` 命中 length，返回 reasoning 草稿，待 83 修；trace 脱敏（803171 chars）、参数提示、Taildrop `peer_inbox` 均验证通过；Rich 查看器打不开；`file_grep` regex/长行和对话导出含 reasoning 待处理。
@@ -63,6 +63,7 @@
 
 ## 最近完成
 
+- wonder.85（2026-11-16）：Rich 查看器空白修复。84 遥测显示 `conductor_viewer` open/ready 在 26–46ms 内完成且无错误，根因是 `MarkwonAdapterImpl.setParsedMarkdown` 不调用 `notifyDataSetChanged`；现在解析后显式刷新，并记录 `stage=adapter` / items。487 用例绿，release/otherLegacy 编译和 R8 通过；release、arm64 APK 和 Feishu 已确认。
 - VFS 新 scope 与预设（wonder.84，2026-11-16）：新增 `workdir`、`appfiles` 两个根，`/vfs` 根暴露外部工作目录，`/vfs/appfiles` 暴露内部 `filesDir` 并排除 `vfs/`；新增 `all`、`conductor_session` 两个 App 侧预设，解析 Link 时展开成根，Portal 和 VFS 协议不改。487 个 JVM 用例绿，release/otherLegacy 编译和 R8 通过；arm64 APK 和 Feishu 通知已确认，待真机验收。
 - wonder.83 低端机实证（2026-11-16）：VFS/MCP 链路通过，服务重启后 core 不可达、境内外 DNS 分裂、trace 预算缩身已记入 P1/P2 和 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - wonder.83（2026-11-16）：输入栏 v1.3、transcript 口径与端侧遥测。按 Lyra `SPEC-v1.3` 去掉 `@`，`/` 与附件 `+` 左分组，发送/停止右侧固定；状态槽空闲显示 `used/limit`，进行中显示 spinner + `Waiting…`/`Thinking…`/`Running…`，不再显示长句、工具名或秒数。Copy/Save/Plain Transcript 统一叫 transcript，默认不包含 `## Thinking`，API trace 保留 reasoning；诊断导出默认文件名改为 `transcript-`，文件头改为 `# Conductor transcript`。图片选择器 launch/result/import 失败会写 `conductor_image` 遥测和 AppLog；Rich 查看器新增 open/ready/parse/bind/render 遥测，工具/整轮失败带脱敏 detail；未捕获 JVM 崩溃仍走 crash report。本地 464 用例绿。
