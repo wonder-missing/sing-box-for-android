@@ -187,12 +187,14 @@ class McpToolsTest {
 
         val definition = mcpAgentTools("Portal", "portal", listOf(tool), unusedSession()).single().definition
 
-        assertTrue(definition.description.contains("Whole app working directory"))
-        assertTrue(definition.description.contains("workdir"))
+        assertTrue(definition.description.contains("Prefer a preset"))
+        assertTrue(definition.description.contains("appfiles"))
         val schema = definition.parametersSchemaOverride as JsonObject
         val scope = (schema["properties"] as JsonObject)["scope"] as JsonObject
         val hint = (scope["description"] as JsonPrimitive).content
-        assertTrue(hint.contains("conductor, trace, system_prompt, conversation, workdir"))
+        assertTrue(hint.contains("all = whole app"))
+        assertTrue(hint.contains("conductor_session"))
+        assertTrue(hint.contains("appfiles"))
         assertTrue(hint.contains("Never ask the user to name scopes"))
     }
 

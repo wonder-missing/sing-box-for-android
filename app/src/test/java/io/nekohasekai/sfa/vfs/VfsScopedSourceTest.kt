@@ -19,6 +19,7 @@ class VfsScopedSourceTest {
                             entry(".runtime", true),
                             entry("crash_reports", true),
                             entry("cache.db", false),
+                            entry("appfiles", true),
                         )
 
                     "conductor" -> listOf(entry("conductor/a.md", false))
@@ -103,6 +104,41 @@ class VfsScopedSourceTest {
             )
             assertEquals(".runtime/trace.md", scoped.stat(".runtime/trace.md").path)
             assertEquals("not_found", failure { scoped.stat(".runtime/conversation.md") }.code)
+        }
+
+    @Test
+    fun appfilesOnlySeesInternalFiles() =
+        runBlocking {
+            val scoped = VfsScopedSource(source, setOf(VfsScope.APPFILES))
+
+            assertEquals(listOf("appfiles"), scoped.list("").map { it.path })
+            assertEquals("appfiles/logs/app.log", scoped.stat("appfiles/logs/app.log").path)
+            assertEquals("not_found", failure { scoped.stat("conductor/a.md") }.code)
+            assertEquals("not_found", failure { scoped.stat("cache.db") }.code)
+            assertEquals("not_found", failure { scoped.stat(".runtime/trace.md") }.code)
+        }
+
+    @Test
+    fun allPresetSeesEveryExpandedRoot() =
+        runBlocking {
+            val scoped =
+                VfsScopedSource(
+                    source,
+                    setOf(
+                        VfsScope.WORKDIR,
+                        VfsScope.APPFILES,
+                        VfsScope.TRACE,
+                        VfsScope.SYSTEM_PROMPT,
+                        VfsScope.CONVERSATION,
+                    ),
+                )
+
+            assertEquals(
+                listOf(".runtime", "appfiles", "cache.db", "conductor", "crash_reports"),
+                scoped.list("").map { it.path }.sorted(),
+            )
+            assertEquals("appfiles/logs/app.log", scoped.stat("appfiles/logs/app.log").path)
+            assertEquals(".runtime/conversation.md", scoped.stat(".runtime/conversation.md").path)
         }
 
     @Test

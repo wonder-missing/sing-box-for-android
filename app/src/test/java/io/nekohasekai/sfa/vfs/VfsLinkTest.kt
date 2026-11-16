@@ -52,6 +52,54 @@ class VfsLinkTest {
     }
 
     @Test
+    fun expandsAllPreset() {
+        val link = parse(link(scope = listOf("all")))
+
+        assertEquals(
+            setOf(
+                VfsScope.WORKDIR,
+                VfsScope.APPFILES,
+                VfsScope.TRACE,
+                VfsScope.SYSTEM_PROMPT,
+                VfsScope.CONVERSATION,
+            ),
+            link.scope,
+        )
+        assertTrue(VfsScope.CONDUCTOR !in link.scope)
+    }
+
+    @Test
+    fun expandsConductorSessionPreset() {
+        val link = parse(link(scope = listOf("conductor_session")))
+
+        assertEquals(
+            setOf(
+                VfsScope.CONDUCTOR,
+                VfsScope.TRACE,
+                VfsScope.SYSTEM_PROMPT,
+                VfsScope.CONVERSATION,
+            ),
+            link.scope,
+        )
+    }
+
+    @Test
+    fun expandsPresetsAlongsideRoots() {
+        val link = parse(link(scope = listOf("conductor_session", "appfiles")))
+
+        assertEquals(
+            setOf(
+                VfsScope.CONDUCTOR,
+                VfsScope.TRACE,
+                VfsScope.SYSTEM_PROMPT,
+                VfsScope.CONVERSATION,
+                VfsScope.APPFILES,
+            ),
+            link.scope,
+        )
+    }
+
+    @Test
     fun rejectsUnsupportedScopeSeparately() {
         val error = failure { parse(link(scope = listOf("conductor", "camera"))) }
 

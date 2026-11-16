@@ -7,6 +7,7 @@ import io.nekohasekai.sfa.agent.ConfirmationPolicy
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolExecution
 import io.nekohasekai.sfa.vfs.VfsScope
+import io.nekohasekai.sfa.vfs.VfsScopeAliases
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -107,9 +108,12 @@ private fun describe(
 }
 
 private val VFS_SCOPE_HINT =
-    "Whole app working directory / all files: pass all scopes in one request (" +
+    "Prefer a preset when it matches: " +
+        "${VfsScopeAliases.ALL} = whole app (workdir + appfiles + trace + system_prompt + conversation); " +
+        "${VfsScopeAliases.CONDUCTOR_SESSION} = Conductor workspace + trace/system_prompt/conversation. " +
+        "Fine-grained roots: " +
         VfsScope.entries.joinToString(", ") { it.wire } +
-        "). Never ask the user to name scopes."
+        ". Prefer the narrowest grant. Never ask the user to name scopes."
 
 /**
  * Puts the scope mapping next to the parameter the model actually fills in.

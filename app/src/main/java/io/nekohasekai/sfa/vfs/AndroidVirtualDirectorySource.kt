@@ -34,8 +34,10 @@ class AndroidVirtualDirectorySource(
                             ?: "No system prompt has been recorded in this session."
                 },
         )
-    private val delegate =
-        externalDir?.let { WorkspaceVirtualDirectorySource(it, conductorSource) } ?: conductorSource
+    private val externalSource =
+        externalDir?.let { WorkspaceVirtualDirectorySource(it, conductorSource) }
+    private val internalSource = InternalFilesVirtualDirectorySource(appContext.filesDir)
+    private val delegate = AppVirtualDirectorySource(externalSource, conductorSource, internalSource)
 
     override suspend fun stat(path: String): VfsEntry = delegate.stat(path)
 

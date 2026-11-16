@@ -18,7 +18,7 @@
 ### P2 数据面与能力
 
 - [ ] **ApplicationExitInfo 进程退出取证**：API 30+ 用 `ActivityManager.getHistoricalProcessExitReasons` 读取本进程退出原因、说明、时间戳和 ANR/native trace，写到外部 `diagnostics/exit-info.json`；API 24–29 回退到 crash report 和 `onTrimMemory` 内存快照。用于服务重启后 core 不可达、ANR、native crash。
-- [ ] **VFS workdir 真机验收**：按 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md) 的 P7-2b / P7-2c 验证 `/vfs` 根列出外部工作目录、`conductor/` 仍可见、`.runtime` 仍按独立 scope 控制；再确认 `/work` 隔离和只读写入失败不变。
+- [ ] **VFS 新 scope 真机验收**：按 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md) 的 P7-2b 到 P7-2f 验证 `workdir` 外部目录、`appfiles` 内部目录与 `vfs/` 排除、`all` / `conductor_session` 预设展开、`.runtime` 独立 scope；再确认 `/work` 隔离和只读写入失败不变。
 - [ ] **数据面 Phase B：Taildrop 收件**：`taildrop_inbox`、`taildrop_receive`；沿用 typed 工具 + `ALWAYS` 确认，只允许 tailnet peer。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md)。
 - [ ] **数据面 Phase C：自省与证据**：`export_log_tail`、`self_test` 固定套件、`conductor_eval` 开关；脱敏 `diagnostics_network_history`（最近 N 条 network/service/VPN 事件），报告写工作区并可用 Taildrop 交给 Mini。
 - [ ] **Provider capability 剩余**：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权；DeepSeek `none`/`max`、xAI `xhigh` 等不能三家共用的档位。现有矩阵见 `ModelLimits`。
@@ -63,7 +63,7 @@
 
 ## 最近完成
 
-- VFS `workdir` scope（2026-11-16，工作树）：新增 `VfsScope.WORKDIR`，`/vfs` 根只读暴露 App 外部工作目录，`conductor/` 和 `.runtime/` 语义不变；Portal 对 scope 只做透传，协议和 Portal 代码都不用改。111 个 VFS 单测绿，待真机验收。
+- VFS 新 scope 与预设（2026-11-16，工作树）：新增 `workdir`、`appfiles` 两个根，`/vfs` 根暴露外部工作目录，`/vfs/appfiles` 暴露内部 `filesDir` 并排除 `vfs/`；新增 `all`、`conductor_session` 两个 App 侧预设，解析 Link 时展开成根，Portal 和 VFS 协议不改。487 个 JVM 用例绿，release/otherLegacy 编译和 R8 通过，待真机验收。
 - wonder.83 低端机实证（2026-11-16）：VFS/MCP 链路通过，服务重启后 core 不可达、境内外 DNS 分裂、trace 预算缩身已记入 P1/P2 和 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - wonder.83（2026-11-16）：输入栏 v1.3、transcript 口径与端侧遥测。按 Lyra `SPEC-v1.3` 去掉 `@`，`/` 与附件 `+` 左分组，发送/停止右侧固定；状态槽空闲显示 `used/limit`，进行中显示 spinner + `Waiting…`/`Thinking…`/`Running…`，不再显示长句、工具名或秒数。Copy/Save/Plain Transcript 统一叫 transcript，默认不包含 `## Thinking`，API trace 保留 reasoning；诊断导出默认文件名改为 `transcript-`，文件头改为 `# Conductor transcript`。图片选择器 launch/result/import 失败会写 `conductor_image` 遥测和 AppLog；Rich 查看器新增 open/ready/parse/bind/render 遥测，工具/整轮失败带脱敏 detail；未捕获 JVM 崩溃仍走 crash report。本地 464 用例绿。
 - wonder.82（2026-11-16）：直接图片输入与 vision 修正。输入栏发送按钮左侧加号选图，图片以缩略图停在输入栏，下一条消息用 text + `image_url` content parts 一起请求；图片压缩到长边 1600px/JPEG、私有目录存 ref、不写 base64 到会话 JSON、trace data URL 脱敏。`analyze_image` 按 DeepSeek Chat Completions 文档保留为工具，`deepseek-flash` + `detail=auto`，content 为空时回退 `reasoning_content`，空答案错误带 finish_reason/provider error，视觉请求进脱敏 trace。参数错误带 `Accepted parameters`；Taildrop 返回 `peer_inbox` + `receiverActionRequired`，不再暗示落盘。本地 463 用例绿，release/otherLegacy 编译和 R8 通过；图片选择、缩略图、全屏查看和直接图片请求需真机确认。

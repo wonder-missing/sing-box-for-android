@@ -36,6 +36,7 @@ class VfsScopedSource(
     private fun allowedSegments(segments: List<String>): Boolean {
         if (segments.isEmpty()) return true
         return when (segments.first()) {
+            "appfiles" -> VfsScope.APPFILES in scopes
             "conductor" -> VfsScope.CONDUCTOR in scopes || VfsScope.WORKDIR in scopes
             ".runtime" -> {
                 if (segments.size == 1) {

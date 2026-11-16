@@ -16,6 +16,7 @@ enum class VfsScope(
     SYSTEM_PROMPT("system_prompt", ".runtime/system_prompt.md", "System prompt"),
     CONVERSATION("conversation", ".runtime/conversation.md", "Full conversation"),
     WORKDIR("workdir", "**", "App working directory"),
+    APPFILES("appfiles", "appfiles/**", "App internal files"),
     ;
 
     companion object {
@@ -75,7 +76,21 @@ object VfsLinkParser {
         }
         if (requested.isEmpty()) invalid("Link scope is empty.")
 
-        val unsupported = requested.filter { VfsScope.fromWire(it) == null }
+        val expanded = LinkedHashSet<VfsScope>()
+        val unsupported = mutableListOf<String>()
+        for (item in requested) {
+            val alias = VfsScopeAliases.expand(item)
+            if (alias != null) {
+                expanded.addAll(alias)
+                continue
+            }
+            val scope = VfsScope.fromWire(item)
+            if (scope == null) {
+                unsupported.add(item)
+            } else {
+                expanded.add(scope)
+            }
+        }
         if (unsupported.isNotEmpty()) {
             throw VfsConnectException(
                 "VFS_SCOPE_UNSUPPORTED",
@@ -86,7 +101,7 @@ object VfsLinkParser {
         return VfsLink(
             server = server,
             linkId = linkId,
-            scope = requested.mapNotNull { VfsScope.fromWire(it) }.toSet(),
+            scope = expanded,
         )
     }
 
