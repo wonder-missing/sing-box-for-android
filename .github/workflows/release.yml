@@ -211,6 +211,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
+          # Checkout can expose the tag as a lightweight ref. Fetch the tag
+          # object explicitly so %(contents) is the annotation, not the commit.
+          git fetch --force --no-tags origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          test "$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")" = tag
           CORE_VERSION=$(awk -F= '/^CORE_VERSION=/{print $2; exit}' version.properties)
           WONDER_BUILD=$(awk -F= '/^WONDER_BUILD=/{print $2; exit}' version.properties)
           test -n "$CORE_VERSION"

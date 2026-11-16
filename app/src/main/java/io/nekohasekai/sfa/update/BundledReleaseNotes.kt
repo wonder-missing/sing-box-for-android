@@ -18,12 +18,20 @@ object BundledReleaseNotes {
             runCatching {
                 context.assets.open(asset).bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
             }.getOrNull()
-        if (notes.isNullOrBlank()) return null
+        if (!looksLikeCurrentReleaseNotes(notes, version)) return null
         return ReleaseNotes(
             version = version,
             tag = "v$version",
-            notes = notes,
+            notes = notes.orEmpty(),
             releaseUrl = "$REPO_URL/tag/v$version",
         )
+    }
+
+    internal fun looksLikeCurrentReleaseNotes(
+        notes: String?,
+        version: String,
+    ): Boolean {
+        val build = version.substringAfterLast("wonder.", missingDelimiterValue = "")
+        return build.isNotBlank() && notes?.trimStart()?.startsWith("wonder.$build") == true
     }
 }
