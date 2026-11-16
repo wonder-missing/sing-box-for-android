@@ -64,7 +64,7 @@
 
 ## 最近完成
 
-- wonder.87 工作树（2026-11-17）：`release_notes` 改读 APK 内置 tag asset，不再访问 GitHub；主界面 VFS 状态位可点击，默认隐藏 VFS 分享浮动卡；Stop 未确认取消的宽限期缩到 1 秒并显示 turn error；Rich 查看器已由主人确认可用。`/tool` 工具名补全、参数/示例提示也在本批。
+- wonder.87 工作树（2026-11-17）：`release_notes` 改读 APK 内置 tag asset，不再访问 GitHub；主界面 VFS 状态位改为与左侧按钮同款 pill，显示本次连接累计上传字节数（humanize），点击切换 VFS 分享浮动卡，默认隐藏；Stop 未确认取消的宽限期缩到 1 秒并显示 turn error；Rich 查看器已由主人确认可用。`/tool` 工具名补全、参数/示例提示也在本批。
 - wonder.86 更新后服务恢复已验证（2026-11-16）：遥测记录 `service_stop` 后出现 `service_restore`，action=`package_replaced`、result=`started`、`started_by_user=false`、`restore_after_update=true`，17ms 后 `service_start`；84→85 的丢失没有在 86 复现。
 - wonder.86（2026-11-16）：状态栏去掉 `Started`，Connections / Groups / Timer+Stop 左对齐，新增可点击的 `VFS 开/关` 状态位（点击切换 VFS 分享卡）；Conductor 要求路径、命令、flag、工具名、配置键使用行内代码，并给行内代码加背景。包含 `/tool`、slash fuzzy、Viewer 修复和更新恢复遥测。496 用例绿；release/otherLegacy 编译和 R8 通过；Release `v1.15.0-alpha.13-wonder.86`、arm64 APK 和 Feishu 通知已确认。
 - `/tool` 开发者直调与 slash fuzzy（2026-11-16，工作树）：`/tool` / `/tool <name>` / `/tool <name> <json>`，复用注册表和确认策略；结果只进临时 Tool console，不写 transcript 和 API trace。命令、取值、`/tool` 工具名和 MCP 工具建议都支持 fuzzy；`/tool <name> ` 会提示必填/可选参数和示例 JSON。501 用例绿，待发版。

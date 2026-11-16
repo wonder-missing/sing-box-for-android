@@ -17,6 +17,18 @@ The current session covered 23:55:08–00:05:20 (about 10 minutes); 16 API reque
 4. **Scope inference was wrong.** The final answer said `conductor` was not authorized for the container, although the `workdir` scope exposed `/vfs/conductor` and the model had already listed it locally. `conversation` and `system_prompt` were indeed not requested; `conductor` was covered by `workdir`.
 5. **Local paths and VFS paths were mixed.** `file_tail(".runtime/trace.md")` correctly failed because local file tools start at the app working directory; the model recovered by using `docker_run` over `/vfs`. The distinction should be stated more explicitly in the tool descriptions.
 6. **Two provider requests timed out at 120 s.** These account for most of the wall time; the app retried as designed, but the user sees a long turn with no useful progress.
+7. **VFS goes Off on every app background/resume.** `VfsRuntime` intentionally disconnects the provider when the app leaves the foreground and calls `reconnectLast()` on return. The status chip is Off during that handshake; it is not evidence that the link failed. The provider was online while the trace was copied; that is why the mounted files were readable.
+
+## Did it find a performance problem?
+
+No. The final answer is explicit that it stopped before reading `app.log` or `api-trace.json`. Its file inventory is a lead sheet, not a diagnosis.
+
+Two of its stated concerns are not supported:
+
+- `telemetry/pending.log` contains pending core log lines, not a telemetry backlog; `last_ack` is a batch hash, not an older timestamp.
+- A 400 KB profile JSON and a 1 MB API trace are worth watching only after measuring how they are loaded; their size alone does not prove an app performance defect.
+
+The only concrete performance signals in the captured material are two 120-second provider timeouts, a long turn with 16 model requests, and three `ui_jank` windows (one with a 399 ms frame gap). Those are leads for a real follow-up, not a completed performance review.
 
 ## Feedback / follow-ups
 
