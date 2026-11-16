@@ -9,7 +9,6 @@
 
 ### P1 稳定性与隐私
 
-- [ ] **VFS 连接稳定性（用户切后台）**：当前 `AppLifecycleObserver.onStop` 会立即断开 provider，用户切到聊天/浏览器时 vfsd 立即 offline，`docker_run(vfs=true)` 失败，已有容器 EIO。先做 P0 可取消 grace（约 90 秒）+ `vfs_lifecycle` 遥测；再做 foreground service + 通知/断开，保持 provider 在线并允许用户随时停止。方案、Android 限制和验收矩阵见 [`docs/vfs-connection-stability.md`](docs/vfs-connection-stability.md)。
 - [ ] **Conductor VFS 长分析预算**：86 的 10 分钟会话里，模型完成 VFS 挂载、日志定位和两次容器读取后，最后一条 `route_call` 收到 `step_budget_exceeded`，`app.log` 正文分析没开始。下一步给长分析一个可续跑路径（提高工具轮数、显式 continuation，或拆成异步任务），别再让用户重新解释一遍。复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 - [ ] **`conductor/` 旧诊断文件进入新会话**：新会话的 `file_list` 能看到 `vfs-failure-handoff.md`、`session-trace-w84.md`、`session-transcript-w84.md`、`w84-transcript.md` 和 `w82-*`；模型因此直接知道了 84 的事。先定保留/归档规则，或在新会话开始前把这些一次性文件移出工作目录。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
@@ -43,7 +42,7 @@
 ### P3 低优先 / 可选 / 阻塞
 
 - [ ] **数据面 Phase D（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍只走 typed 工具 + 确认。
-- [ ] **VFS 后续（可选）**：P6e 进程被杀恢复最后一条 Link；后台 provider 模式（前台服务/常驻通知），否则 Portal Agent 只能在 App 前台时读。结论见「最近完成」；其余 vfsd async/refs/30 秒 cache 归 vfs 项目。
+- [ ] **VFS 后续（可选）**：P6e 进程被杀后恢复最后一条 Link；按 Portal refs/consumer 生命周期自动停止；后台共享时长设置。后台 provider 与前台服务已在 wonder.90 落地，见 [`docs/vfs-connection-stability.md`](docs/vfs-connection-stability.md)。
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，`probe_many` 仍顺序执行。
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康，不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **跨版本旧 tool schema 归一**：wonder.51 已加版本 Notice/`app_updated`/导出 header；旧 tool observation 的 `ok` 等字段仍按旧语义留在 transcript。

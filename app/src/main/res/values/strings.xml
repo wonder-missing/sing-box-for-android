@@ -99,6 +99,10 @@
     <string name="vfs_status_on">VFS On</string>
     <string name="vfs_status_off">VFS Off</string>
     <string name="vfs_status_connecting">VFS connecting</string>
+    <string name="vfs_notification_channel">VFS sharing</string>
+    <string name="vfs_notification_title">VFS sharing</string>
+    <string name="vfs_notification_text">%1$s · ↑ %2$s</string>
+    <string name="vfs_notification_scopes">Readable: %1$s</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Conductor</string>

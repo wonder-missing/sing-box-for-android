@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class VfsServerTarget(
     val name: String,
@@ -46,6 +47,7 @@ class VfsConnectionManager(
     private val cooldowns: VfsCooldownStore = VfsCooldownStore(),
     private val now: () -> Long = System::currentTimeMillis,
     private val isForeground: () -> Boolean = { true },
+    private val backgroundSharing: () -> Boolean = { false },
     private val sleeper: suspend (Long) -> Unit = { delay(it) },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : VfsConnectPort {
@@ -60,8 +62,14 @@ class VfsConnectionManager(
     )
 
     private val gate = Mutex()
+    private val reconnectRunning = AtomicBoolean(false)
+
+    @Volatile
     private var active: ActiveConnection? = null
     private var closeJob: Job? = null
+
+    val hasActiveConnection: Boolean
+        get() = active != null
 
     @Volatile
     private var lastLink: VfsLink? = null
@@ -72,7 +80,7 @@ class VfsConnectionManager(
     override suspend fun connect(link: VfsLink): VfsConnectResult = gate.withLock { connectLocked(link) }
 
     private suspend fun connectLocked(link: VfsLink): VfsConnectResult {
-        if (!isForeground()) {
+        if (!isForeground() && !backgroundSharing()) {
             throw VfsConnectException(
                 "VFS_CONFIRMATION_REQUIRED",
                 "Open the app before approving a VFS connection.",
@@ -105,6 +113,14 @@ class VfsConnectionManager(
         }
 
         if (trust.find(server, link.scope) == null) {
+            // A background sharing service may reconnect a Link that is already
+            // trusted, but it must never put up a consent dialog nobody can see.
+            if (!isForeground()) {
+                throw VfsConnectException(
+                    "VFS_CONFIRMATION_REQUIRED",
+                    "Open the app before approving a VFS connection.",
+                )
+            }
             _state.value = VfsConnectionState.Confirming(link, target.name)
             val decision =
                 try {
@@ -234,17 +250,29 @@ class VfsConnectionManager(
     }
 
     /**
-     * Foreground heal. Waits for the screen to settle, then retries the last
-     * approved Link with the standard backoff. Terminal and consent errors stop
+     * Heals the last approved Link with the standard backoff. Foreground entry
+     * waits for the screen to settle; the sharing service keeps the same loop
+     * running while the app is backgrounded. Terminal and consent errors stop
      * the loop.
      */
     suspend fun reconnectLast() {
+        // Foreground and service-driven heal can race. One loop is enough:
+        // a running loop already re-reads both predicates on every pass.
+        if (!reconnectRunning.compareAndSet(false, true)) return
+        try {
+            reconnectLastLoop()
+        } finally {
+            reconnectRunning.set(false)
+        }
+    }
+
+    private suspend fun reconnectLastLoop() {
         val link = lastLink ?: return
-        if (!isForeground()) return
+        if (!isForeground() && !backgroundSharing()) return
         if (trust.find(link.server, link.scope) == null) return
-        sleeper(1_500L)
+        if (isForeground()) sleeper(1_500L)
         val backoff = VfsBackoff()
-        while (isForeground()) {
+        while (isForeground() || backgroundSharing()) {
             try {
                 connect(link)
                 return

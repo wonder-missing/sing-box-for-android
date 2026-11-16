@@ -29,7 +29,6 @@ import io.nekohasekai.sfa.agent.AgentTools
 import io.nekohasekai.sfa.agent.DynamicToolExecutor
 import io.nekohasekai.sfa.agent.mcp.McpListedTool
 import io.nekohasekai.sfa.agent.mcp.McpRuntimes
-import io.nekohasekai.sfa.agent.mcp.McpTokenCipherFactory
 import io.nekohasekai.sfa.agent.AskUserPort
 import io.nekohasekai.sfa.agent.AskUserRequest
 import io.nekohasekai.sfa.agent.AskUserResult
@@ -87,27 +86,11 @@ import io.nekohasekai.sfa.telemetry.TelemetryEvents
 import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
-import io.nekohasekai.sfa.utils.AppLifecycleObserver
 import io.nekohasekai.sfa.vendor.Vendor
-import io.nekohasekai.sfa.vfs.AndroidVirtualDirectorySource
-import io.nekohasekai.sfa.vfs.FileVfsResumeTokenStore
-import io.nekohasekai.sfa.vfs.OkHttpVfsProviderConnector
-import io.nekohasekai.sfa.vfs.VfsConnectException
-import io.nekohasekai.sfa.vfs.VfsConnectTool
-import io.nekohasekai.sfa.vfs.VfsConnectionManager
 import io.nekohasekai.sfa.vfs.VfsConsentDecision
-import io.nekohasekai.sfa.vfs.VfsConsentPort
-import io.nekohasekai.sfa.vfs.VfsConsentRequest
-import io.nekohasekai.sfa.vfs.VfsCooldownStore
-import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
-import io.nekohasekai.sfa.vfs.VfsServerBase
-import io.nekohasekai.sfa.vfs.VfsPrivateFiles
-import io.nekohasekai.sfa.vfs.VfsResumeTokenStore
+import io.nekohasekai.sfa.vfs.VfsConsentUi
+import io.nekohasekai.sfa.vfs.VfsConnectTool
 import io.nekohasekai.sfa.vfs.VfsRuntime
-import io.nekohasekai.sfa.vfs.VfsScopedSource
-import io.nekohasekai.sfa.vfs.VfsScope
-import io.nekohasekai.sfa.vfs.VfsServerTarget
-import io.nekohasekai.sfa.vfs.VfsTrustStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
@@ -143,14 +126,6 @@ data class FileRequestUi(
     val reason: String,
     val multiple: Boolean,
     val mimeTypes: List<String>,
-)
-
-/** The app-level VFS consent dialog. It is not Conductor's tool confirmation. */
-data class VfsConsentUi(
-    val id: String,
-    val serverName: String,
-    val server: String,
-    val scope: List<VfsScope>,
 )
 
 /** Developer-only tool output. It is UI state and is never saved or exported. */
@@ -709,131 +684,12 @@ class ConductorViewModel(
 
     private val agentConfig = AgentConfig()
 
-    private val vfsDeviceIdStore =
-        VfsDeviceIdStore(
-            VfsPrivateFiles.deviceIdFile(getApplication<Application>().noBackupFilesDir),
-        )
-    private val vfsResumeTokenStore =
-        FileVfsResumeTokenStore(
-            VfsPrivateFiles.resumeFile(getApplication<Application>().noBackupFilesDir),
-            McpTokenCipherFactory.create(),
-        )
-    private val vfsTrustStore = VfsRuntime.trustStore(getApplication())
-    private val vfsCooldownStore = VfsCooldownStore()
-    private val vfsConsentLock = Any()
-    private var pendingVfsConsent: PendingVfsConsent? = null
-    private val _vfsConsent = MutableStateFlow<VfsConsentUi?>(null)
-    val vfsConsent: StateFlow<VfsConsentUi?> = _vfsConsent.asStateFlow()
+    private val vfsConnectionManager = VfsRuntime.manager(getApplication())
 
-    private data class PendingVfsConsent(
-        val id: String,
-        val deferred: CompletableDeferred<VfsConsentDecision>,
-    )
-
-    private val vfsConsentPort =
-        object : VfsConsentPort {
-            override suspend fun request(request: VfsConsentRequest): VfsConsentDecision {
-                val pending =
-                    PendingVfsConsent(
-                        id = UUID.randomUUID().toString().take(8),
-                        deferred = CompletableDeferred(),
-                    )
-                synchronized(vfsConsentLock) {
-                    if (pendingVfsConsent != null) {
-                        throw VfsConnectException(
-                            "VFS_CONNECT_FAILED",
-                            "Another VFS confirmation is already waiting for the user.",
-                        )
-                    }
-                    pendingVfsConsent = pending
-                }
-                _vfsConsent.value =
-                    VfsConsentUi(
-                        id = pending.id,
-                        serverName = request.serverName,
-                        server = request.server,
-                        scope = request.scope.sortedBy { it.ordinal },
-                    )
-                return try {
-                    withTimeoutOrNull(VFS_CONSENT_TIMEOUT_MS) { pending.deferred.await() }
-                        ?: throw VfsConnectException(
-                            "VFS_CONFIRMATION_TIMEOUT",
-                            "The user did not decide within 5 minutes.",
-                        )
-                } finally {
-                    clearVfsConsent(pending.id)
-                }
-            }
-        }
-
-    private suspend fun resolveVfsServer(server: String): VfsServerTarget? {
-        val config = McpRuntimes.get(getApplication()).resolveServerForVfs(server) ?: return null
-        val providerUrl = VfsServerBase.providerUrl(server) ?: return null
-        return VfsServerTarget(
-            name = config.name,
-            providerUrl = providerUrl,
-            token = config.token,
-        )
-    }
-
-    private val vfsConnector =
-        OkHttpVfsProviderConnector(
-            sourceFactory = { scopes ->
-                VfsScopedSource(AndroidVirtualDirectorySource(getApplication<Application>()), scopes)
-            },
-            onUploadBytes = VfsRuntime::recordUploadBytes,
-        )
-
-    private val vfsConnectionManager =
-        VfsConnectionManager(
-            resolveServer = ::resolveVfsServer,
-            consent = vfsConsentPort,
-            connector = vfsConnector,
-            deviceId = { vfsDeviceIdStore.getOrCreate() },
-            resumeTokens = vfsResumeTokenStore,
-            trust = vfsTrustStore,
-            cooldowns = vfsCooldownStore,
-            isForeground = { AppLifecycleObserver.isForeground.value },
-        )
-
-    init {
-        VfsRuntime.attach(vfsConnectionManager)
-    }
+    val vfsConsent: StateFlow<VfsConsentUi?> = VfsRuntime.consent
 
     fun resolveVfsConsent(decision: VfsConsentDecision) {
-        val pending = synchronized(vfsConsentLock) { pendingVfsConsent } ?: return
-        completeVfsConsent(pending, decision)
-    }
-
-    private fun completeVfsConsent(
-        pending: PendingVfsConsent,
-        decision: VfsConsentDecision,
-    ) {
-        synchronized(vfsConsentLock) {
-            if (pendingVfsConsent !== pending) return
-            pendingVfsConsent = null
-        }
-        _vfsConsent.update { current -> if (current?.id == pending.id) null else current }
-        pending.deferred.complete(decision)
-    }
-
-    private fun cancelPendingVfsConsent(message: String) {
-        val pending = synchronized(vfsConsentLock) { pendingVfsConsent } ?: return
-        synchronized(vfsConsentLock) {
-            if (pendingVfsConsent !== pending) return
-            pendingVfsConsent = null
-        }
-        _vfsConsent.update { current -> if (current?.id == pending.id) null else current }
-        pending.deferred.completeExceptionally(
-            VfsConnectException("VFS_CONFIRMATION_REQUIRED", message),
-        )
-    }
-
-    private fun clearVfsConsent(id: String) {
-        synchronized(vfsConsentLock) {
-            if (pendingVfsConsent?.id == id) pendingVfsConsent = null
-        }
-        _vfsConsent.update { current -> if (current?.id == id) null else current }
+        VfsRuntime.resolveVfsConsent(decision)
     }
 
     private val visionPort: VisionPort by lazy {
@@ -1358,7 +1214,7 @@ class ConductorViewModel(
     fun onHostFinishing() {
         cancelPendingFileRequest("The app was closed while waiting for file selection.")
         cancelPendingAskUser("The app was closed while waiting for an answer.")
-        cancelPendingVfsConsent("The app was closed while waiting for VFS confirmation.")
+        VfsRuntime.cancelPendingConsent("The app was closed while waiting for VFS confirmation.")
     }
 
     fun cancelFileRequest(requestId: String) {
@@ -2798,7 +2654,6 @@ class ConductorViewModel(
         // Keep the picker deadline below the tool's 10-minute registry budget
         // so a timeout comes back as a structured cancelled result.
         private const val FILE_PICK_TIMEOUT_MS = 9L * 60L * 1000L
-        private const val VFS_CONSENT_TIMEOUT_MS = 5L * 60L * 1000L
         private const val MAX_SELECTED_FILES = 10
         private const val MAX_RETAINED_SELECTED_FILES = 30
         private const val MAX_FILE_NAME_CHARS = 200

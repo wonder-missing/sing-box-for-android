@@ -64,6 +64,7 @@ class VfsConnectionManagerTest {
         trust: VfsTrustStore = VfsTrustStore(now = { now }, inactivityMs = 1_000L),
         resumes: VfsResumeTokenStore = InMemoryVfsResumeTokenStore(),
         foreground: Boolean = true,
+        backgroundSharing: Boolean = false,
         resolver: suspend (String) -> VfsServerTarget? = { target },
         sleeper: suspend (Long) -> Unit = {},
     ): VfsConnectionManager =
@@ -80,6 +81,7 @@ class VfsConnectionManagerTest {
                 ),
             now = { now },
             isForeground = { foreground },
+            backgroundSharing = { backgroundSharing },
             sleeper = sleeper,
         )
 
@@ -236,6 +238,28 @@ class VfsConnectionManagerTest {
             assertEquals("VFS_UNAUTHORIZED", error.code)
             assertNull(resumes.get(server, link.linkId))
             assertNull(trust.find(server, link.scope))
+        }
+
+    @Test
+    fun reconnectsATrustedLinkWhileBackgroundSharingIsActive() =
+        runBlocking {
+            val connector = FakeConnector()
+            val trust = VfsTrustStore(now = { now }, inactivityMs = 1_000L)
+            manager(connector, trust = trust).connect(link)
+            manager(connector, trust = trust).disconnect(VfsCloseCodes.BACKGROUND, "background")
+
+            val background =
+                manager(
+                    connector,
+                    trust = trust,
+                    foreground = false,
+                    backgroundSharing = true,
+                )
+            background.connect(link)
+
+            assertEquals(2, connector.requests.size)
+            assertTrue(background.state.value is VfsConnectionState.Connected)
+            assertTrue(background.hasActiveConnection)
         }
 
     @Test

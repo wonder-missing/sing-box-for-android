@@ -190,6 +190,14 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="taildrop" />
         </service>
+        <service
+            android:name=".bg.VfsSharingService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vfs" />
+        </service>
 
         <receiver
             android:name=".bg.BootReceiver"

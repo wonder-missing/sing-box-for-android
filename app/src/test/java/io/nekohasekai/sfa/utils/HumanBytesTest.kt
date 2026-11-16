@@ -1,4 +1,4 @@
-package io.nekohasekai.sfa.compose.component
+package io.nekohasekai.sfa.utils
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
