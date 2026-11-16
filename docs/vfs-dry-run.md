@@ -19,7 +19,8 @@
 |---|---|---|---|
 | P7-1 | 安装 App，使用现有 WonderSing MCP Server；必要时刷新或重连工具列表 | 现有凭证不改；`vfs_link_request` 出现在该 Server 的工具列表 | App 设置页、Conductor 的 `/mcp` 或工具列表 |
 | P7-2 | 让 Conductor 调 `vfs_link_request`，再调本地 `vfs_connect`；确认框选「仅本次」 | 确认框显示 Server 名、server、scope 路径；批准后状态条出现，Portal 记为一次 provider 连接。Link 只含 `type`/`version`/`server`/`linkId`/`scope`，不含 token、endpoint 或签名 | 确认框截图或文字记录、Link 字段检查、状态条、Portal 日志时间戳 |
-| P7-2b | 用原话说「你把咱们这个 APP 的整个工作目录都挂到 Portal 上去」 | Conductor 自己映射到全部四个 scope（conductor、trace、system_prompt、conversation），不反问 scope/参数，不让用户记参数；确认框用人类标签列出四项 | 工具调用参数、Link 的 scope、确认框文字 |
+| P7-2b | 用原话说「你把咱们这个 APP 的整个工作目录都挂到 Portal 上去」 | Conductor 自己映射到全部五个 scope（conductor、trace、system_prompt、conversation、workdir），不反问 scope/参数，不让用户记参数；确认框用人类标签列出五项 | 工具调用参数、Link 的 scope、确认框文字 |
+| P7-2c | 只请求 workdir scope，再连一次 | `/vfs` 根只读列出 App 外部工作目录（`crash_reports`、`cache.db`、`Taildrop` 等），`conductor/` 仍可见；`.runtime` 不因 workdir 出现，仍需 trace/system_prompt/conversation scope | `/vfs` 根列表、`docker_run` 读文件、scope 字段 |
 | P7-3 | 断开后重新走一遍，确认框选「信任 15 天」 | Settings > Security > VFS access 出现该 server 和精确 scope；再次连接不再弹框 | Settings 页面、第二次连接无确认框 |
 | P7-4 | 前台连接后按 Home，等 2 秒以上，再回到 App | 后台时状态条消失，Portal 收到 close 4000；回前台约 1.5 秒后自动愈合，状态条恢复，无需重新请求 Link | Portal 日志 close/connect、状态条出现时间 |
 | P7-4b | 连接建立后闲置 35 秒（不操作、不切后台），再调 `docker_run(vfs=true)` | 必须仍然成功。Portal 每 30 秒发应用层 ping，App 回 pong，Portal 转发 `alive` 给 vfsd；vfsd 不能把 idle provider 判离线 | Portal 日志 ping/pong/`alive`、vfsd status、`docker_run` 输出 |
@@ -35,6 +36,8 @@
 | P7-13 | 可选：用 `PORTAL_VFS_LINK_IDLE_MS` 很短的 dev Portal 模拟 15 天过期 | 过期后 `vfs_link_request` 重签，旧 Link 清理；生产 Portal 不动 | dev Portal 配置、Link 前后对比、Portal 日志 |
 
 2026-11-15 v2 实测：P7-4b 通过（01:33:16 provider connect，01:33:35 Link reuse，01:33:47 / 01:35:18 两次 docker 读，间隔 91 秒；provider 01:36:41 才退后台，`.71` 无错误）。P7-5 未验：两个 `/work` 目录为空，没有 `out.txt`；`/vfs` 只读和 `/work` 写由 vfsd e2e 覆盖，本轮不要求补跑。
+
+2026-11-16 起 App 新增 `workdir` scope（`**`），VFS 根只读暴露 App 外部工作目录，`conductor/` 和 `.runtime/` 语义不变；`.runtime` 仍由 trace/system_prompt/conversation 三个 scope 单独控制。Portal 把 scope 当不透明字符串集合，只做类型、长度和去重校验，不需要改 VFS 协议或 Portal 代码。
 
 P7 导出摩擦（2026-11-14 真机）：`diagnostics_export(kind=trace, name=api-trace.json)` 写入的是 Markdown 文本，先改用 `.md` 名称。App 侧待做：按 kind 自动纠正扩展名，或名称与内容不符时提示。
 

@@ -13,7 +13,14 @@ class VfsScopedSourceTest {
 
             override suspend fun list(path: String): List<VfsEntry> =
                 when (path) {
-                    "" -> listOf(entry("conductor", true), entry(".runtime", true))
+                    "" ->
+                        listOf(
+                            entry("conductor", true),
+                            entry(".runtime", true),
+                            entry("crash_reports", true),
+                            entry("cache.db", false),
+                        )
+
                     "conductor" -> listOf(entry("conductor/a.md", false))
                     ".runtime" ->
                         listOf(
@@ -67,6 +74,35 @@ class VfsScopedSourceTest {
 
             val with = VfsScopedSource(source, defaultScope + VfsScope.CONVERSATION)
             assertEquals(".runtime/conversation.md", with.stat(".runtime/conversation.md").path)
+        }
+
+    @Test
+    fun workdirOnlySeesThePhysicalWorkingDirectory() =
+        runBlocking {
+            val scoped = VfsScopedSource(source, setOf(VfsScope.WORKDIR))
+
+            assertEquals(
+                listOf("cache.db", "conductor", "crash_reports"),
+                scoped.list("").map { it.path }.sorted(),
+            )
+            assertEquals("crash_reports", scoped.stat("crash_reports").path)
+            assertEquals("cache.db", scoped.stat("cache.db").path)
+            assertEquals("conductor/a.md", scoped.stat("conductor/a.md").path)
+            assertEquals("not_found", failure { scoped.stat(".runtime/trace.md") }.code)
+            assertEquals("not_found", failure { scoped.list(".runtime") }.code)
+        }
+
+    @Test
+    fun workdirWithTraceStillKeepsRuntimeFilesSeparate() =
+        runBlocking {
+            val scoped = VfsScopedSource(source, setOf(VfsScope.WORKDIR, VfsScope.TRACE))
+
+            assertEquals(
+                listOf(".runtime", "cache.db", "conductor", "crash_reports"),
+                scoped.list("").map { it.path }.sorted(),
+            )
+            assertEquals(".runtime/trace.md", scoped.stat(".runtime/trace.md").path)
+            assertEquals("not_found", failure { scoped.stat(".runtime/conversation.md") }.code)
         }
 
     @Test

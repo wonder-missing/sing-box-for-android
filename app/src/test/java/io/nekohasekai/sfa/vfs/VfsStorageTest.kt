@@ -225,7 +225,14 @@ class VfsStorageTest {
                         length: Int,
                     ): VfsRead = VfsRead(ByteArray(1), true)
                 }
-            val scoped = VfsScopedSource(permissive, VfsScope.entries.toSet())
+            // workdir is intentionally broader; the real source is rooted in the
+            // external working directory, so internal VFS-private files are not
+            // reachable through it.
+            val scoped =
+                VfsScopedSource(
+                    permissive,
+                    VfsScope.entries.filter { it != VfsScope.WORKDIR }.toSet(),
+                )
 
             assertEquals("not_found", failure { scoped.stat("vfs/trust.json") }.code)
             assertEquals("not_found", failure { scoped.read("vfs/trust.json", 0, 1) }.code)

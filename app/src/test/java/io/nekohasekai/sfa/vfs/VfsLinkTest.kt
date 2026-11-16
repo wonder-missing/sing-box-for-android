@@ -45,6 +45,13 @@ class VfsLinkTest {
     }
 
     @Test
+    fun parsesWorkdirScope() {
+        val link = parse(link(scope = listOf("workdir")))
+
+        assertEquals(setOf(VfsScope.WORKDIR), link.scope)
+    }
+
+    @Test
     fun rejectsUnsupportedScopeSeparately() {
         val error = failure { parse(link(scope = listOf("conductor", "camera"))) }
 

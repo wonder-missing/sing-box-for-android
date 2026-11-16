@@ -107,7 +107,7 @@ private fun describe(
 }
 
 private val VFS_SCOPE_HINT =
-    "Whole workspace / all files: pass all scopes in one request (" +
+    "Whole app working directory / all files: pass all scopes in one request (" +
         VfsScope.entries.joinToString(", ") { it.wire } +
         "). Never ask the user to name scopes."
 

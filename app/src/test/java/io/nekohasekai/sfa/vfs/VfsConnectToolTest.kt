@@ -50,11 +50,11 @@ class VfsConnectToolTest {
                 execution.output?.get("visibleRoots")?.jsonArray?.map { it.jsonPrimitive.content },
             )
             assertEquals(
-                listOf("conversation", "system_prompt"),
+                listOf("conversation", "system_prompt", "workdir"),
                 execution.output?.get("missingScopes")?.jsonArray?.map { it.jsonPrimitive.content },
             )
             assertEquals(
-                listOf("Full conversation", "System prompt"),
+                listOf("Full conversation", "System prompt", "App working directory"),
                 execution.output?.get("missingScopeLabels")?.jsonArray?.map { it.jsonPrimitive.content },
             )
             assertTrue(

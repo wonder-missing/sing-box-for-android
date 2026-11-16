@@ -170,7 +170,7 @@ class McpToolsTest {
     }
 
     @Test
-    fun vfsLinkRequestCarriesTheWholeWorkspaceScopeHint() {
+    fun vfsLinkRequestCarriesTheWholeWorkingDirectoryScopeHint() {
         val tool =
             McpRemoteTool(
                 name = "vfs_link_request",
@@ -187,12 +187,12 @@ class McpToolsTest {
 
         val definition = mcpAgentTools("Portal", "portal", listOf(tool), unusedSession()).single().definition
 
-        assertTrue(definition.description.contains("Whole workspace"))
-        assertTrue(definition.description.contains("conversation"))
+        assertTrue(definition.description.contains("Whole app working directory"))
+        assertTrue(definition.description.contains("workdir"))
         val schema = definition.parametersSchemaOverride as JsonObject
         val scope = (schema["properties"] as JsonObject)["scope"] as JsonObject
         val hint = (scope["description"] as JsonPrimitive).content
-        assertTrue(hint.contains("conductor, trace, system_prompt, conversation"))
+        assertTrue(hint.contains("conductor, trace, system_prompt, conversation, workdir"))
         assertTrue(hint.contains("Never ask the user to name scopes"))
     }
 

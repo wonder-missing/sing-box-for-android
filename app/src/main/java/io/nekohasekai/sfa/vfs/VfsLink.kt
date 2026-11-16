@@ -15,6 +15,7 @@ enum class VfsScope(
     TRACE("trace", ".runtime/trace.md", "API trace"),
     SYSTEM_PROMPT("system_prompt", ".runtime/system_prompt.md", "System prompt"),
     CONVERSATION("conversation", ".runtime/conversation.md", "Full conversation"),
+    WORKDIR("workdir", "**", "App working directory"),
     ;
 
     companion object {

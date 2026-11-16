@@ -36,10 +36,10 @@ class VfsScopedSource(
     private fun allowedSegments(segments: List<String>): Boolean {
         if (segments.isEmpty()) return true
         return when (segments.first()) {
-            "conductor" -> VfsScope.CONDUCTOR in scopes
+            "conductor" -> VfsScope.CONDUCTOR in scopes || VfsScope.WORKDIR in scopes
             ".runtime" -> {
                 if (segments.size == 1) {
-                    scopes.any { it != VfsScope.CONDUCTOR }
+                    RUNTIME_SCOPES.any { it in scopes }
                 } else {
                     when (segments[1]) {
                         "trace.md" -> VfsScope.TRACE in scopes
@@ -50,8 +50,12 @@ class VfsScopedSource(
                 }
             }
 
-            else -> false
+            else -> VfsScope.WORKDIR in scopes
         }
+    }
+
+    private companion object {
+        val RUNTIME_SCOPES = setOf(VfsScope.TRACE, VfsScope.SYSTEM_PROMPT, VfsScope.CONVERSATION)
     }
 
     private fun notFound(): VfsException =

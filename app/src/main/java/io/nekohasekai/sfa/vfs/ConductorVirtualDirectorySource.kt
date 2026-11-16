@@ -230,7 +230,7 @@ class ConductorVirtualDirectorySource(
                 else -> "application/octet-stream"
             }
 
-        private fun fileEtag(
+        internal fun fileEtag(
             size: Long,
             modifiedAt: Long,
         ): String = "\"$size-$modifiedAt\""

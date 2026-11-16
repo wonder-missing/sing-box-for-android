@@ -11,9 +11,11 @@ class AndroidVirtualDirectorySource(
     context: Context,
 ) : VirtualDirectorySource {
     private val appContext = context.applicationContext
-    private val delegate =
+    private val externalDir = appContext.getExternalFilesDir(null)
+    private val workingDir = externalDir ?: appContext.filesDir
+    private val conductorSource =
         ConductorVirtualDirectorySource(
-            workingDir = appContext.getExternalFilesDir(null) ?: appContext.filesDir,
+            workingDir = workingDir,
             runtimeFiles =
                 object : VirtualDirectoryRuntimeFiles {
                     override fun traceMarkdown(): String = AgentApiTrace.asMarkdown()
@@ -32,6 +34,8 @@ class AndroidVirtualDirectorySource(
                             ?: "No system prompt has been recorded in this session."
                 },
         )
+    private val delegate =
+        externalDir?.let { WorkspaceVirtualDirectorySource(it, conductorSource) } ?: conductorSource
 
     override suspend fun stat(path: String): VfsEntry = delegate.stat(path)
 

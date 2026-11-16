@@ -995,6 +995,7 @@ private fun vfsScopeLabel(scope: VfsScope): String =
             VfsScope.TRACE -> R.string.vfs_scope_trace
             VfsScope.SYSTEM_PROMPT -> R.string.vfs_scope_system_prompt
             VfsScope.CONVERSATION -> R.string.vfs_scope_conversation
+            VfsScope.WORKDIR -> R.string.vfs_scope_workdir
         },
     )
 
