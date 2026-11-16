@@ -98,6 +98,7 @@
     <string name="vfs_status_disconnect">Disconnect</string>
     <string name="vfs_status_on">VFS On</string>
     <string name="vfs_status_off">VFS Off</string>
+    <string name="vfs_status_connecting">VFS connecting</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Conductor</string>

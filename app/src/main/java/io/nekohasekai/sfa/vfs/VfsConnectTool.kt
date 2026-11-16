@@ -28,7 +28,10 @@ class VfsConnectTool(
                     "this call waits for the user's decision and then connects. Use it only with a link " +
                     "issued by a configured MCP server. The result lists visibleRoots, which is the complete " +
                     "list of VFS-visible paths; the local app working directory is not the VFS root. " +
-                    "expiresInSeconds is the remaining Link lifetime; do not estimate days from expiresAt. " +
+                    "The `workdir` root (`**`) includes the app working directory and its `conductor/` " +
+                    "subdirectory; `.runtime/*` is visible only through the VFS root, not through local file " +
+                    "tools. After connecting, inspect `/vfs` with docker_run(vfs=true) before concluding that " +
+                    "a path is missing. expiresInSeconds is the remaining Link lifetime; do not estimate days from expiresAt. " +
                     "VFS container reads may be cached for up to 30 seconds; a stale read is not a Link snapshot. " +
                     "If a path is missing, request a new Link with the needed scope and never ask the user to name scopes.",
             permission = AgentPermission.READ_FILES,

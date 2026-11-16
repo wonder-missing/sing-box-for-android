@@ -94,6 +94,7 @@
     <string name="vfs_status_disconnect">断开</string>
     <string name="vfs_status_on">VFS 开</string>
     <string name="vfs_status_off">VFS 关</string>
+    <string name="vfs_status_connecting">VFS 连接中</string>
     <string name="conductor_commands">命令</string>
     <string name="conductor_mention">提及</string>
     <string name="conductor_empty_title">命令面板</string>

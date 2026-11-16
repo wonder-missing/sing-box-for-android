@@ -875,6 +875,10 @@ class MainActivity :
         val remoteStartedAt by RemoteControlManager.startedAt.collectAsState()
         val vfsState by VfsRuntime.state.collectAsState()
         val vfsConnected = vfsState as? VfsConnectionState.Connected
+        val vfsConnecting =
+            vfsState is VfsConnectionState.Connecting ||
+                vfsState is VfsConnectionState.Backoff ||
+                vfsState is VfsConnectionState.Confirming
         val vfsUploadBytes by VfsRuntime.uploadBytes.collectAsState()
         var vfsCardVisible by remember { mutableStateOf(false) }
         LaunchedEffect(vfsConnected) {
@@ -1252,6 +1256,7 @@ class MainActivity :
                                 connectionsCount = dashboardUiState.connectionsCount,
                                 onConnectionsClick = { showConnectionsSheet = true },
                                 vfsOn = vfsConnected != null,
+                                vfsConnecting = vfsConnecting,
                                 vfsUploadBytes = vfsUploadBytes,
                                 onVfsClick = { vfsCardVisible = !vfsCardVisible },
                                 onStopClick = { dashboardViewModel.toggleService() },

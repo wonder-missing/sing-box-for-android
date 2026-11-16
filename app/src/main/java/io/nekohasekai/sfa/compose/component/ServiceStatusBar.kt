@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Cable
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
@@ -52,6 +55,7 @@ fun ServiceStatusBar(
     connectionsCount: Int,
     onConnectionsClick: () -> Unit,
     vfsOn: Boolean,
+    vfsConnecting: Boolean,
     vfsUploadBytes: Long,
     onVfsClick: () -> Unit,
     onStopClick: () -> Unit,
@@ -172,6 +176,14 @@ fun ServiceStatusBar(
                 // VFS status: same pill shape as the other counters. The number
                 // is bytes uploaded to the consumer during the current session;
                 // tapping the pill toggles the VFS sharing card.
+                val vfsDescription =
+                    stringResource(
+                        when {
+                            vfsConnecting -> R.string.vfs_status_connecting
+                            vfsOn -> R.string.vfs_status_on
+                            else -> R.string.vfs_status_off
+                        },
+                    )
                 Row(
                     modifier =
                     Modifier
@@ -200,20 +212,28 @@ fun ServiceStatusBar(
                         },
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Outlined.FolderOpen,
-                        contentDescription =
-                        stringResource(
-                            if (vfsOn) R.string.vfs_status_on else R.string.vfs_status_off,
-                        ),
-                        modifier = Modifier.size(18.dp),
-                        tint =
-                        if (vfsOn) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+                    if (vfsConnecting) {
+                        CircularProgressIndicator(
+                            modifier =
+                                Modifier
+                                    .size(16.dp)
+                                    .semantics { contentDescription = vfsDescription },
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.FolderOpen,
+                            contentDescription = vfsDescription,
+                            modifier = Modifier.size(18.dp),
+                            tint =
+                            if (vfsOn) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                 }
             }
         }
