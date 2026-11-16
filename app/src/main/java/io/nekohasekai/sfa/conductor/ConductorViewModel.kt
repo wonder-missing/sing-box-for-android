@@ -134,6 +134,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
 /** A pending request_files call, shown above the composer until the user picks or cancels. */
@@ -204,6 +205,10 @@ class ConductorViewModel(
 
     private val apiKeyProvider = AgentApiKeyProviderFactory.create(application)
     private val sessionStore = ConductorSessionStore(application)
+    private val sessionWrites =
+        Executors.newSingleThreadExecutor { task ->
+            Thread(task, "conductor-session").apply { isDaemon = true }
+        }
 
     private val commandClient =
         CommandClient(
@@ -1527,7 +1532,7 @@ class ConductorViewModel(
                 pendingImage = null,
             )
         }
-        sessionStore.clear()
+        sessionWrites.execute { sessionStore.clear() }
         imageStore.clear()
         AgentApiTrace.clear()
     }
@@ -1544,6 +1549,7 @@ class ConductorViewModel(
         agentJob?.cancel()
         commandClient.disconnect()
         ModelProviderSettings.unpin()
+        sessionWrites.shutdown()
         super.onCleared()
     }
 
@@ -2673,17 +2679,24 @@ class ConductorViewModel(
     private fun persistSession() {
         val items = _uiState.value.items.filterNot { it is ConductorItem.Confirmation }
         if (transcript.isEmpty() && items.isEmpty() && pendingTurnEvent == null) {
-            sessionStore.clear()
+            runCatching { sessionWrites.execute { sessionStore.clear() } }
             return
         }
         if (!validateTranscriptPairing(transcript)) return
-        sessionStore.save(
-            transcript = transcript,
-            items = items,
-            pendingEvent = pendingTurnEvent,
-            appVersion = BuildConfig.VERSION_NAME,
-            trace = AgentApiTrace.summaries(),
-        )
+        val transcriptSnapshot = transcript.toList()
+        val pendingEvent = pendingTurnEvent
+        val trace = AgentApiTrace.summaries()
+        runCatching {
+            sessionWrites.execute {
+                sessionStore.save(
+                    transcript = transcriptSnapshot,
+                    items = items,
+                    pendingEvent = pendingEvent,
+                    appVersion = BuildConfig.VERSION_NAME,
+                    trace = trace,
+                )
+            }
+        }
     }
 
     private fun deviceSummary(): String {

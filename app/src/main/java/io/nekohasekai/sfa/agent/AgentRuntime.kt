@@ -18,7 +18,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 data class AgentConfig(
-    val maxToolRounds: Int = 12,
+    val maxToolRounds: Int = 20,
     val maxToolCallsPerRound: Int = 8,
     val modelTimeoutMs: Long = 120_000,
     val turnTimeoutMs: Long = 1_800_000,
