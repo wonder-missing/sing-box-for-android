@@ -1412,6 +1412,14 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - `note_create` / `file_put` 生成文件在 Mini 上的绝对路径。
 - 观测到的 vfs 相关 MCP 工具是否为本版本新增（`release_notes` 拉取失败，无法确认）。
 
+### wonder.85：Rich 查看器空白修复（2026-11-16）
+
+- 现象：Transcript / API Trace 查看器切到 Rich 后一直空白，Raw 正常。wonder.84 的 CFG 遥测里两次尝试都是 `conductor_viewer` `stage=open` 后 26–46ms 内 `stage=ready`（112,244 字符），没有 `conductor_viewer_error`，说明 Markwon 解析没有卡住。
+- 根因：`MarkwonAdapterImpl.setParsedMarkdown` 只把 `MarkwonReducer.reduce` 的结果写进 `nodes`，不会通知 RecyclerView。查看器的 `AndroidView` 先以空 adapter 完成首次布局，随后 `LaunchedEffect` 才解析完成并设置 node 列表；没有 `notifyDataSetChanged` 时，RecyclerView 一直是 item count 0，所以看起来像“永远没渲染完”。
+- 修复：`ConductorMarkdownViewer` 在 `setParsedMarkdown` 后调用 `markdownAdapter.notifyDataSetChanged()`，并新增 `conductor_viewer` `stage=adapter` + `items` 遥测，下一次真机可直接确认 item 数大于 0。
+- 本地 487 用例绿；release/otherLegacy 编译和 R8 通过；wonder.85 待真机验收。
+- 同期 VFS 挂载失败不是 wonder.84 scope 的问题：vfsd-vm 日志在 19:09 出现连续 `fuse init timed out`，并残留多个旧 provider 的 FUSE mount；重启 `vfsd-vm` 后 stale mounts 清空。vfsd 的 `detach` 只 markOffline、不 unmount，长期修在 vfs 项目；App 端 `VFS_CONNECT_FAILED` 只是握手超时的表象。
+
 ### wonder.84：VFS workdir/appfiles 与预设（2026-11-16）
 
 - 新增 `workdir` 根：`/vfs` 根只读暴露外部 `getExternalFilesDir`，包括 `crash_reports`、`oom_reports`、`power_reports`、`cache.db`、`Taildrop`、`tailscale` 和 `conductor/`。路径做 canonical 检查和 symlink 防逃逸。

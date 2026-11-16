@@ -9,7 +9,7 @@
 
 ### P1 稳定性与隐私
 
-- [ ] **82 Rich 查看器打不开**：wonder.82 真机反馈，Transcript / API Trace 查看器切到 Rich 后无法打开，Raw 正常。83 已加 `conductor_viewer` / `conductor_viewer_error` 遥测；下次复现先看 `crash_report` 或这两类事件，再要 logcat。重点查 `ConductorMarkdownViewer` 的 Markwon Recycler 初始化、`ThemedEntry`/`RecyclerView`，以及约 1MB Markdown AST 的内存/解析失败。
+- [ ] **Rich 查看器空白（已修，待真机验证）**：wonder.82/84 真机点 Rich 后一直空白，Raw 正常。84 遥测 `conductor_viewer` 的 open/ready 在 26–46ms 内完成，且没有 `conductor_viewer_error`，说明 Markwon 解析正常；根因是 `MarkwonAdapterImpl.setParsedMarkdown` 只替换 node 列表、不调用 `notifyDataSetChanged`，RecyclerView 首次空布局后不再刷新。wonder.85 在解析完成后显式 `notifyDataSetChanged`，并记录 `stage=adapter` 和 items 数；待 85 真机确认。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
 - [ ] **`TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时和 Tailscale 取消已落地；Stop 后 1 秒内未确认取消应转成 turn error，而不是等 3 秒强制结束。
 - [ ] **服务重启后 core 不可达（83 低端机实测）**：BIRD P50S_PRO / Android 11 上，用户停止并重开 Service 后，`network_snapshot` 连续三次（10:25 / 10:27 / 10:31）返回 `core.running=false`、`groupCount=0`、`outboundCount=0`，错误 `groups stream recv: rpc error: code = Unavailable desc = error reading from server: EOF`；同一时刻 `vpnActive=true`、`serviceMode=vpn`，未见自行恢复。下一步：用 Conductor 的文件工具读 crash/OOM reports 和 AppLog，查 CFG `service_start` / `service_stop` / `vpn_session_id`；判断是 core 进程没起来、被杀，还是 `CommandClient` 的 stream 没重连；在 .83 上复现并记录。若 core 真没起来，补一个明确的「服务已启动但核心不可达」状态和重启入口，不能只显示 VPN 已连接。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。

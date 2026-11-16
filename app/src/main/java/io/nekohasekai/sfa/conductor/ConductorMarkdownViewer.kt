@@ -111,19 +111,34 @@ internal fun ConductorMarkdownViewer(
     val ready = parseState as? ParseState.Ready
     LaunchedEffect(ready) {
         if (ready == null) return@LaunchedEffect
-        runCatching { markdownAdapter.setParsedMarkdown(markwon, ready.node) }
-            .onFailure { error ->
-                TelemetryEventLog.recordAsync(
-                    context,
-                    "conductor_viewer_error",
-                    mapOf(
-                        "viewer" to viewerName.take(40),
-                        "stage" to "bind",
-                        "error" to error.javaClass.simpleName,
-                        "detail" to TelemetryEvents.scrub(error.message.orEmpty(), 160),
-                    ),
-                )
-            }
+        runCatching {
+            markdownAdapter.setParsedMarkdown(markwon, ready.node)
+            // MarkwonAdapterImpl.setParsedMarkdown only swaps its node list; it
+            // does not notify the RecyclerView. Without this the view stays at
+            // item count 0 after the initial empty layout: parse finishes, but
+            // Rich never shows a block.
+            markdownAdapter.notifyDataSetChanged()
+            TelemetryEventLog.recordAsync(
+                context,
+                "conductor_viewer",
+                mapOf(
+                    "viewer" to viewerName.take(40),
+                    "stage" to "adapter",
+                    "items" to markdownAdapter.itemCount,
+                ),
+            )
+        }.onFailure { error ->
+            TelemetryEventLog.recordAsync(
+                context,
+                "conductor_viewer_error",
+                mapOf(
+                    "viewer" to viewerName.take(40),
+                    "stage" to "bind",
+                    "error" to error.javaClass.simpleName,
+                    "detail" to TelemetryEvents.scrub(error.message.orEmpty(), 160),
+                ),
+            )
+        }
     }
 
     when (val state = parseState) {
