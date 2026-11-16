@@ -113,8 +113,10 @@ class ConductorCommandsTest {
     }
 
     @Test
-    fun `suggestions filter by prefix`() {
-        assertEquals(listOf("tailscale"), ConductorCommands.suggestions("/ta").map { it.name })
+    fun `suggestions put prefix matches first`() {
+        val matches = ConductorCommands.suggestions("/ta").map { it.name }
+        assertEquals("tailscale", matches.first())
+        assertTrue(matches.contains("telemetry-upload"))
         assertEquals(ConductorCommands.all.size, ConductorCommands.suggestions("/").size)
         assertTrue(ConductorCommands.suggestions("tailscale").isEmpty())
     }
@@ -122,6 +124,24 @@ class ConductorCommandsTest {
     @Test
     fun `suggestions close while typing arguments`() {
         assertTrue(ConductorCommands.suggestions("/help nodes").isEmpty())
+    }
+
+    @Test
+    fun `suggestions fuzzy match command names`() {
+        assertEquals(
+            listOf("capabilities"),
+            ConductorCommands.suggestions("/capa").map { it.name },
+        )
+        assertEquals(listOf("brief"), ConductorCommands.suggestions("/brf").map { it.name })
+        assertTrue(ConductorCommands.suggestions("/tls").map { it.name }.contains("tailscale"))
+        assertTrue(ConductorCommands.suggestions("/rting").map { it.name }.contains("routing"))
+    }
+
+    @Test
+    fun `value suggestions fuzzy match`() {
+        assertEquals(listOf("off"), ConductorBriefCommand.suggestions("/brief of"))
+        assertEquals(listOf("off"), ConductorRoutingCommand.suggestions("/routing of"))
+        assertEquals(listOf("medium"), ConductorReasoningCommand.suggestions("/reasoning med"))
     }
 
     @Test
@@ -203,6 +223,25 @@ class ConductorCommandsTest {
         val filtered = ConductorCommands.mcpText(listOf(server), tools, "note")
         assertTrue(filtered.contains("note_create"))
         assertTrue(!filtered.contains("orb_status"))
+    }
+
+    @Test
+    fun `mcp tool suggestions fuzzy match`() {
+        val tool =
+            McpListedTool(
+                serverId = "server",
+                serverName = "Portal",
+                remoteName = "orb_status",
+                localName = "cpk_orb_status",
+                summary = "Orb status",
+                asksFirst = true,
+                required = emptyList(),
+            )
+
+        assertEquals(
+            listOf("orb_status"),
+            ConductorMcpUse.toolSuggestions("/mcp use os", listOf(tool)).map { it.remoteName },
+        )
     }
 
     @Test

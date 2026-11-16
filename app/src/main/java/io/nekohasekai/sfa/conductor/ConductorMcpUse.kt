@@ -31,12 +31,30 @@ internal object ConductorMcpUse {
         tools: List<McpListedTool>,
     ): List<McpListedTool> {
         val typed = toolPrefix(input) ?: return emptyList()
+        if (typed.isEmpty()) {
+            return tools.sortedWith(
+                compareBy(
+                    { it.remoteName.lowercase(Locale.US) },
+                    { it.serverName.lowercase(Locale.US) },
+                ),
+            )
+        }
         return tools
-            .filter { tool ->
-                typed.isEmpty() ||
-                    tool.remoteName.startsWith(typed, ignoreCase = true) ||
-                    tool.localName.startsWith(typed, ignoreCase = true)
-            }.sortedWith(compareBy({ it.remoteName.lowercase(Locale.US) }, { it.serverName.lowercase(Locale.US) }))
+            .mapNotNull { tool ->
+                val score =
+                    listOfNotNull(
+                        SlashFuzzy.score(typed, tool.remoteName),
+                        SlashFuzzy.score(typed, tool.localName),
+                    ).minOrNull() ?: return@mapNotNull null
+                tool to score
+            }.sortedWith(
+                compareBy(
+                    { it.second },
+                    { it.first.remoteName.length },
+                    { it.first.remoteName.lowercase(Locale.US) },
+                    { it.first.serverName.lowercase(Locale.US) },
+                ),
+            ).map { it.first }
     }
 
     fun resolve(

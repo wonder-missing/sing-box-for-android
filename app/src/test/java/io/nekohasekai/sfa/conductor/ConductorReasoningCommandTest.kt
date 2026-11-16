@@ -41,7 +41,9 @@ class ConductorReasoningCommandTest {
             ReasoningEffort.options,
             ConductorReasoningCommand.suggestions("/reasoning "),
         )
-        assertEquals(listOf("low"), ConductorReasoningCommand.suggestions("/reasoning L"))
+        val l = ConductorReasoningCommand.suggestions("/reasoning L")
+        assertEquals("low", l.first())
+        assertTrue(l.contains("default"))
         assertTrue(ConductorReasoningCommand.suggestions("/reasoning low extra").isEmpty())
         assertTrue(ConductorReasoningCommand.suggestions("/help ").isEmpty())
     }

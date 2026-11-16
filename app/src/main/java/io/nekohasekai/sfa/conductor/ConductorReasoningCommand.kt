@@ -43,7 +43,7 @@ internal object ConductorReasoningCommand {
         if (afterHead.none { it.isWhitespace() }) return emptyList()
         val typed = afterHead.dropWhile { it.isWhitespace() }
         if (typed.any { it.isWhitespace() }) return emptyList()
-        return ReasoningEffort.options.filter { typed.isEmpty() || it.startsWith(typed, ignoreCase = true) }
+        return SlashFuzzy.rank(typed, ReasoningEffort.options) { it }
     }
 
     fun hint(value: String): String =

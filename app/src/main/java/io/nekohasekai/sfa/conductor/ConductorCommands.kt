@@ -165,7 +165,7 @@ object ConductorCommands {
         if (!text.startsWith("/")) return emptyList()
         val body = text.removePrefix("/")
         if (body.any { it.isWhitespace() }) return emptyList()
-        return all.filter { body.isEmpty() || it.name.startsWith(body, ignoreCase = true) }
+        return SlashFuzzy.rank(body, all) { it.name }
     }
 
     fun helpText(command: ConductorCommand? = null): String {
