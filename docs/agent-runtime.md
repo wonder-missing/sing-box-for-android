@@ -1412,6 +1412,15 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - `note_create` / `file_put` 生成文件在 Mini 上的绝对路径。
 - 观测到的 vfs 相关 MCP 工具是否为本版本新增（`release_notes` 拉取失败，无法确认）。
 
+### wonder.84：VFS workdir/appfiles 与预设（2026-11-16）
+
+- 新增 `workdir` 根：`/vfs` 根只读暴露外部 `getExternalFilesDir`，包括 `crash_reports`、`oom_reports`、`power_reports`、`cache.db`、`Taildrop`、`tailscale` 和 `conductor/`。路径做 canonical 检查和 symlink 防逃逸。
+- 新增 `appfiles` 根：`/vfs/appfiles` 只读暴露内部 `filesDir`，包括 `logs/`、`telemetry/`、`conductor/images/`、`datastore/` 等；`vfs/` 不暴露，避免 VFS 自己的 trust/resume/device 状态进入普通 scope。
+- 现有 `conductor`、`trace`、`system_prompt`、`conversation` 根语义不变；`conductor` 仍是 `workdir` 的子集，保留用于窄授权。
+- 新增两个 App 侧预设：`all` 展开为 `workdir + appfiles + trace + system_prompt + conversation`（`conductor` 由 `workdir` 覆盖）；`conductor_session` 展开为 `conductor + trace + system_prompt + conversation`。预设只在 `VfsLinkParser` 解析 Link 时展开成根，Portal 仍只透传 scope 字符串，VFS 协议不变；信任记录和确认框看到的是展开后的根。
+- `McpTools` 的 scope hint 改成先列预设、再列细粒度根，不再要求模型「pass all scopes」。授权页和状态条使用本地化标签。
+- 本地 487 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过。Release `v1.15.0-alpha.13-wonder.84` 已发布，arm64 APK 和 Feishu 通知已确认。
+
 ### wonder.82 真机 trace 复盘（2026-11-16）
 
 - 直接图片输入成功：用户消息以 `text` + `image_url` content part 发出，模型直接描述了 Portal 首页的五个卡片和 Orb 容器状态，不需要 `analyze_image`。trace 里图片 data URL 被替换成 `[redacted 73399 chars]`。
