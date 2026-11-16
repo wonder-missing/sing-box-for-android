@@ -52,6 +52,7 @@ fun ServiceStatusBar(
     connectionsCount: Int,
     onConnectionsClick: () -> Unit,
     vfsOn: Boolean,
+    onVfsClick: () -> Unit,
     onStopClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -71,7 +72,7 @@ fun ServiceStatusBar(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Connections button
@@ -170,7 +171,11 @@ fun ServiceStatusBar(
                 // VFS status: informational, not a control. Disconnecting stays
                 // on the dedicated VFS sharing bar.
                 Row(
-                    modifier = Modifier.padding(horizontal = 4.dp),
+                    modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = vfsOn, onClick = onVfsClick)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(

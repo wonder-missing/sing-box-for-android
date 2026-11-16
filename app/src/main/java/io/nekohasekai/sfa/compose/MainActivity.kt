@@ -875,6 +875,10 @@ class MainActivity :
         val remoteStartedAt by RemoteControlManager.startedAt.collectAsState()
         val vfsState by VfsRuntime.state.collectAsState()
         val vfsConnected = vfsState as? VfsConnectionState.Connected
+        var vfsCardVisible by remember { mutableStateOf(false) }
+        LaunchedEffect(vfsConnected) {
+            if (vfsConnected == null) vfsCardVisible = false
+        }
         val isRemote = remoteServer != null
 
         // Initialize the dashboard view model and store reference
@@ -1180,7 +1184,7 @@ class MainActivity :
                     val statusBarVisible = showStatusBar && !isSubScreen
                     var statusBarHeightPx by remember { mutableStateOf(0) }
                     val statusBarHeight = with(LocalDensity.current) { statusBarHeightPx.toDp() }
-                    val vfsBarVisible = vfsConnected != null && !isSubScreen
+                    val vfsBarVisible = vfsConnected != null && vfsCardVisible && !isSubScreen
                     var vfsBarHeightPx by remember { mutableStateOf(0) }
                     val vfsBarHeight = with(LocalDensity.current) { vfsBarHeightPx.toDp() }
                     val bottomStatusHeight =
@@ -1247,6 +1251,7 @@ class MainActivity :
                                 connectionsCount = dashboardUiState.connectionsCount,
                                 onConnectionsClick = { showConnectionsSheet = true },
                                 vfsOn = vfsConnected != null,
+                                onVfsClick = { vfsCardVisible = !vfsCardVisible },
                                 onStopClick = { dashboardViewModel.toggleService() },
                                 modifier =
                                 Modifier
