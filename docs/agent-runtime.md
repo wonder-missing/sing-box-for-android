@@ -1358,6 +1358,60 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 仍不覆盖：没有 JVM handler 的原生崩溃/系统强杀、写日志前就 OOM 的极端情况。Rich 查看器如果走 JVM 崩溃或 parse/bind 失败，下一次遥测能看到 `crash_report` 或 `conductor_viewer*`。
 - 本地 464 用例绿；`compileOtherReleaseKotlin`、`compileOtherLegacyReleaseKotlin` 和 `minifyOtherReleaseWithR8` 通过；GitHub release 正文和 arm64 APK 已确认。
 
+### wonder.83 低端机会话实证复盘（2026-11-16）
+
+设备 BIRD P50S_PRO / Android 11 (SDK 30)；会话从 `1.15.0-alpha.13-wonder.52` 开始，中途升级到 `.83`，升级后继续原会话。报告、conversation、trace 由 Conductor 自己导出；trace 20 条，范围 08:58:32 至 10:31:21，`missingBefore=false`。
+
+**通过项**
+
+- VFS 数据面：12 次带 `vfs=true` 的 `docker_run` 全部 `exit=0`，没有一次 `VFS_UNAVAILABLE`；`/vfs` 只读，写文件返回 `Read-only file system`；`/vfs` 下只有 `.runtime/` 三个文件和空的 `conductor/`；不存在的路径干净返回 `No such file or directory`。
+- 每次运行返回独立 `/work`（报告列出 10 个不同的 `r_*` 目录），上一轮输出不会出现在下一轮；`/work` 可写，停服重开后写入并读回成功。
+- 同一运行内连续 5 次读 `conversation.md` 的 sha256 一致；1,038,540 字节的 `trace.md` 全量 sha256 约 1 秒；所有调用返回同一个 `providerId`（`p_0951e053867ac7eb`），全程没有重新 `vfs_link_request` / `vfs_connect`。
+- 用户停止并重开 Service 后，未重连 VFS，带 `vfs=true` 的 `docker_run` 仍成功，`providerId`、可见根和读写行为不变。VFS provider 在 App 进程内，不随 core 重启消失。
+- MCP：`orb_status`、`docker_run`（busybox echo）、`note_create`、`file_put` 都成功，四个工具都标 `requiresConfirmation=true`。`note_create` / `file_put` 只返回文件名，不返回绝对路径。
+- 会话升级：`.52` 到 `.83` 后同一会话继续；导出头是 `# Conductor transcript`，默认不含 `## Thinking`；旧消息里的旧工具名（`mcp_clawdy_portal_knocks_*`、`clawdy_portal_kn_*`）和旧中文描述保留，新调用带英文 `MCP server:` 前缀。
+- `ask_user` 被主人划掉后返回取消，模型继续，没有卡住。
+
+**问题 1：停服重开后 core 不可达（P1）**
+
+用户停止并重开 Service 后，10:25、10:27、10:31 三次 `network_snapshot` 都是 `core.running=false`、`groupCount=0`、`outboundCount=0`、`degraded=true`，错误原文：
+
+`groups stream recv: rpc error: code = Unavailable desc = error reading from server: EOF`
+
+`list_nodes` 同样 `coreRunning=false`、groups 为空。同期 `local_sense` 仍报 `vpnActive=true`、`serviceMode=vpn`；三次查询之间没有自行恢复。升级后的启动事件之后，10:20 的 `list_nodes` 仍报 core 在跑；10:25 手动停/重开后才失败，因此不能把这次失败归到升级恢复路径。
+
+需要分清三种可能：core 进程没起来；core 起来后被杀/OOM；core 在跑但 `CommandClient` 的 gRPC stream 已断且没有重连。现有 trace 只能证明「命令面看不到 core」，不能证明是哪一个。下一步按「服务状态排障」先读 CFG 遥测和 crash/OOM reports，再读核心日志；在 .83 上复现并记录 stop/start 前后 `network_snapshot`、`list_nodes` 的变化。产品侧要补一个「服务已启动但核心不可达」的明确状态和重启入口，不能继续显示成正常的 VPN 已连接。
+
+**问题 2：境内外 DNS 分裂（P2）**
+
+停服前经 `CF-cf-67` 探测：
+
+- `https://www.baidu.com/` 可达，HTTP 200，304ms。
+- `https://github.com/`、`https://api.github.com/`、`https://www.google.com/` 都是 `dial tcp: lookup ...: no such host`，约 10 秒。
+- `https://1.1.1.1/` 返回 `ok=false`，错误是证书没有 IP SAN；TCP 和 TLS 已到对端，节点本身可达。
+- `release_notes` 连续 3 次失败：`Unable to resolve host "github.com": No address associated with hostname`。
+
+Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像 profile 的 DNS / fake-ip / 分流规则或本地 DNS 上游问题。现有工具看不到核心 DNS 配置，模型只能从 probe 结果推断。下一步：拿 profile 的 DNS 段和核心日志；在另一个节点复测；实现 `dns_lookup` / `route_decision` 能落地的部分；`probe_via_node` 输出 DNS/TCP/TLS/HTTP 阶段，避免把证书错误显示成节点不可达。
+
+**问题 3：trace.md 停服后变小（已解释，待核对）**
+
+`trace.md` 字节数：531,854 → 1,036,124 → 1,038,540 → 931,397。前三次递增，停服重开后下降。导出 trace 仍有 20 条，范围完整，`missingBefore=false`。`AgentApiTrace` 的 `MAX_TOTAL_BODY_CHARS = 1_000_000`，超过后把旧 body 缩到 `MAX_OLD_BODY_CHARS = 20_000`；1,038,540 已超过预算，所以重开后变小符合设计，不是条目丢失。需要核对的是导出的 entries 数和最后一条请求是否还在；如果只关心完整历史，应在停服前导出。
+
+**模型行为观察**
+
+- 一轮内连续 4 次 `search_tools`，后两次返回 `search_budget_exceeded`（每轮 2 次），模型随后改用已拿到的结果继续。属于模型没有按 system prompt 合并搜索，不是运行时错误。
+- 一次 `route_call` 的参数畸形，返回 `invalid_arguments`，模型自己改对。先记录；如果复现，再查流式 tool-call 解析。
+- `network_snapshot` 的 `degraded=true` 和 `groups stream ... EOF` 原样进入模型上下文。模型能据此判断 core 不在，但普通用户看到的界面未必有这个信息，见问题 1 的产品侧动作。
+
+**未验证**
+
+- core 未启动的具体原因（没读核心日志）。
+- DNS 失败的机制（没读核心 DNS / fake-ip 配置，没抓包）。
+- `trace.md` 缩小的精确触发点（只按常量推断）。
+- VFS 真实断链（Tailscale 掉线 / clawdy-mini 不可达）后的恢复行为。
+- `note_create` / `file_put` 生成文件在 Mini 上的绝对路径。
+- 观测到的 vfs 相关 MCP 工具是否为本版本新增（`release_notes` 拉取失败，无法确认）。
+
 ### wonder.82 真机 trace 复盘（2026-11-16）
 
 - 直接图片输入成功：用户消息以 `text` + `image_url` content part 发出，模型直接描述了 Portal 首页的五个卡片和 Orb 容器状态，不需要 `analyze_image`。trace 里图片 data URL 被替换成 `[redacted 73399 chars]`。
@@ -1562,6 +1616,8 @@ trace 里出现 `Service is not running` 时，先查 CFG 的客户端遥测，�
 - 或读 `~/.local/share/cfg/client_telemetry.jsonl` 里的 `service_start`、`service_stop`、`vpn_session_id`。
 
 2026-11-13 的 trace 就是例子：遥测显示 12:39:58 才有一条 `service_start`，之前的 `tailscale_status` 「Service is not running」与当时状态一致，不是 `CommandTarget` 误报。服务在 09:11 和 12:39 各 start 一次、中间没有 stop，可能是被杀/重启，也可能是 stop 批次没上传；先看遥测再归因。
+
+wonder.83 低端机的停服重开案例（`core.running=false`、`vpnActive=true`、`groups stream ... EOF`）见「wonder.83 低端机会话实证复盘」。先确认 core 进程是否起来，再怀疑 `CommandClient`；不要因为 VFS 还能用就认为 core 正常。
 
 ### wonder.52：数据面第一版（2026-11-13）
 

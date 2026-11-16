@@ -9,10 +9,10 @@
 
 ### P1 稳定性与隐私
 
-- [ ] **82 Rich 查看器打不开**：wonder.82 真机反馈，Transcript / API Trace 查看器切到 Rich 后无法打开，Raw 正常。需要 logcat/stack；重点查 `ConductorMarkdownViewer` 的 Markwon Recycler 初始化、`ThemedEntry`/`RecyclerView`，以及约 1MB Markdown AST 的内存/解析失败。主人要求先记录，后面再修。
+- [ ] **82 Rich 查看器打不开**：wonder.82 真机反馈，Transcript / API Trace 查看器切到 Rich 后无法打开，Raw 正常。83 已加 `conductor_viewer` / `conductor_viewer_error` 遥测；下次复现先看 `crash_report` 或这两类事件，再要 logcat。重点查 `ConductorMarkdownViewer` 的 Markwon Recycler 初始化、`ThemedEntry`/`RecyclerView`，以及约 1MB Markdown AST 的内存/解析失败。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
 - [ ] **`TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时和 Tailscale 取消已落地；Stop 后 1 秒内未确认取消应转成 turn error，而不是等 3 秒强制结束。
-- [ ] **服务重启缺口**：CFG 遥测显示两次 `service_start` 中间没有 `service_stop`；用 Conductor 的文件工具读 crash/OOM reports，或对比当时的 `tailscale_status`。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
+- [ ] **服务重启后 core 不可达（83 低端机实测）**：BIRD P50S_PRO / Android 11 上，用户停止并重开 Service 后，`network_snapshot` 连续三次（10:25 / 10:27 / 10:31）返回 `core.running=false`、`groupCount=0`、`outboundCount=0`，错误 `groups stream recv: rpc error: code = Unavailable desc = error reading from server: EOF`；同一时刻 `vpnActive=true`、`serviceMode=vpn`，未见自行恢复。下一步：用 Conductor 的文件工具读 crash/OOM reports 和 AppLog，查 CFG `service_start` / `service_stop` / `vpn_session_id`；判断是 core 进程没起来、被杀，还是 `CommandClient` 的 stream 没重连；在 .83 上复现并记录。若 core 真没起来，补一个明确的「服务已启动但核心不可达」状态和重启入口，不能只显示 VPN 已连接。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - [ ] **会话编解码移出主线程**：`ConductorSessionStore` 的 JSON encode/decode 和 `AppLog` 同步写文件仍在调用线程；先用 `ui_jank` 取证，再把 encode/save 放 IO、load 放后台。
 
 ### P2 数据面与能力
@@ -20,17 +20,17 @@
 - [ ] **数据面 Phase B：Taildrop 收件**：`taildrop_inbox`、`taildrop_receive`；沿用 typed 工具 + `ALWAYS` 确认，只允许 tailnet peer。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md)。
 - [ ] **数据面 Phase C：自省与证据**：`export_log_tail`、`self_test` 固定套件、`conductor_eval` 开关；脱敏 `diagnostics_network_history`（最近 N 条 network/service/VPN 事件），报告写工作区并可用 Taildrop 交给 Mini。
 - [ ] **Provider capability 剩余**：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权；DeepSeek `none`/`max`、xAI `xhigh` 等不能三家共用的档位。现有矩阵见 `ModelLimits`。
-- [ ] **网络诊断**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`；libbox 没有 DNS/route API，先做能落地的部分。实验里模型只能从 probe 结果猜 DNS 故障。
-- [ ] **`probe_via_node` 的 HEAD 歧义**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；`speed_test` 后续。
+- [ ] **网络诊断**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`；libbox 没有 DNS/route API，先做能落地的部分。83 低端机实测：经 `CF-cf-67` 访问 Baidu 返回 200 / 304ms，`github.com`、`api.github.com`、`www.google.com` 都是 `no such host`（约 10s），`release_notes` 连续 3 次因 `github.com` 解析失败；模型只能从 probe 结果猜 DNS 故障。
+- [ ] **`probe_via_node` 的结果分类**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；输出区分 DNS / TCP / TLS / HTTP 阶段。83 实测 `https://1.1.1.1/` 返回 `ok=false`，但错误是证书没有 IP SAN，TCP 和 TLS 已到对端；`speed_test` 后续。
 - [ ] **批量确认：预览与分级**：整批预检合成一张卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS`/MCP 写工具逐次确认。
 - [ ] **工具编排计划（tool_plan / DAG）**：把有依赖的多步调用压成一次提交，支持字段绑定、`when`/`retry`/`fallback`；先只读工具。目标是减少往返和 token。
 - [ ] **对话级 LLM 摘要**：现有只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要未做。
-- [ ] **trace 长 body 与 release 驻留**：单条 body 超 200k 截断，旧 body 超 20k 先缩短；`AgentApiTrace` 在 release 默认驻留完整请求/响应，持久化文件按 2.5M 字符封顶。跨重启的完整 body 已解决，剩余的是单条上限和隐私/驻留策略。
+- [ ] **trace 长 body 与 release 驻留**：单条 body 超 200k 截断，旧 body 超 20k 先缩短；`AgentApiTrace` 在 release 默认驻留完整请求/响应，持久化文件按 2.5M 字符封顶。跨重启的完整 body 已解决，剩余的是单条上限和隐私/驻留策略。83 低端机实测 `trace.md` 531,854 → 1,036,124 → 1,038,540 → 931,397 字节，停服重开后下降；总量超过 `MAX_TOTAL_BODY_CHARS = 1_000_000` 后旧 body 被缩到 20k，符合预算行为，不是条目丢失（导出仍为 20 条、`missingBefore=false`）。
 - [ ] **连接与规则命中可观测性**：最近 N 条连接 + 命中规则 + 最终出站；需要 CommandClient 支持。
 - [ ] **消息内富 Markdown 与本地文件查看**：业界约定就是标准 Markdown，不用自定义标记：链接用 `[label](url)`，文件名/路径/命令用行内代码。App 侧把 `markdownAnnotated` 升级为可点击：链接交给浏览器，行内代码点按复制；本地文件链接点按弹出只读查看器（标题、路径、内容、复制），不执行。system prompt 只加一行「用户很可能复制的值用行内代码，链接用 Markdown 链接」。需要真机确认点按/长按手感。
 - [ ] **Reasoning 前置阶段**：流式请求用 OkHttp `EventListener` 区分 DNS、TCP、TLS、请求已发出、收到响应头；首字前 turn 状态行显示细分阶段，首字后回到「Receiving response」。新增 `AgentModelChunk.Stage` 和 VM 状态映射；保留 `Waiting for the provider` 作为兜底。77 验收 trace 里有两次 120 秒 `network_timeout`（17:00:53、17:02:54），正好是这条需求的证据。
 - [ ] **77/78 旧 release 正文**：77 是模板，78 是 commit message；79 起已按 tag 注解生成并验证。需要单独编辑旧版本时再动，不影响新版本。
-- [ ] **MCP 旧服务器前缀**：旧配置没有 namespace 时回退到 id 并截到 16，实测 `clawdy_portal_kn_orb_status` 仍然很长。给旧配置加一次性提示或在卡片上标出过长前缀，用户可在 Edit 里改成 `portal`。
+- [ ] **MCP 旧服务器前缀**：旧配置没有 namespace 时回退到 id 并截到 16，实测 `clawdy_portal_kn_orb_status` 仍然很长；83 低端机会话里仍能看到旧前缀（`clawdy_portal_kn_*`，旧 .52 会话里还有 `mcp_clawdy_portal_knocks_*`），83 新调用已带英文 `MCP server:` 前缀。给旧配置加一次性提示或在卡片上标出过长前缀，用户可在 Edit 里改成 `portal`。
 - [ ] **ask_user 取消原因结构化**：工具输出增加 `reason`（`dismissed` / `timeout` / `stopped`），当前只有 `message`；实测模型无法稳定区分超时和主动取消。
 - [ ] **analyze_image 的 max_tokens 与 reasoning 回退**：82 trace 的视觉调用 `finish=length`、completion=1024、reasoning_tokens=1024，content 为空，最终把 reasoning 草稿当 analysis 返回。提高 `max_tokens`（至少 4096，优先 8192），优先返回 content；content 空且 `finish=length` 时明确报错，不直接把整段 reasoning 当答案。
 - [ ] **file_grep 默认 literal 与超长行**：82 trace 里 query 含 `|` 但没开 regex，连续零匹配，模型误判 trace 没有 vision 请求；匹配行也可能是几十万字符的大 JSON 行，输出被压缩。无匹配时提示 `regex=true`（或对含元字符的 query 自动 regex），并给每条匹配行加最大字符数/分页。
@@ -55,11 +55,13 @@
 - Mini 侧 Taildrop 收件箱不会自动落盘：Conductor 的 `taildrop_send` 只把文件送进对端 Tailscale inbox，headless Mini 需要 `tailscale file get --conflict=rename <目录>` 才搬出来。主人否决了自动 drain 的 LaunchAgent；App 只按实际能感知的状态返回 `peer_inbox` + `receiverActionRequired`，不承诺落盘时机。
 - v80 trace 复盘：`analyze_image` 空答案（模型名 `deepseek-v4-flash`，81 已改 `deepseek-flash`）；`file_grep` 误用 `pattern`（82 已加参数提示）；`diagnostics_export` 的 `overwrite` 在 v80 trace 前半段缺失是因为那几条是 v79 会话，v80 代码和 APK 已带；`taildrop_send` 成功但 inbox 未 drain。
 - v82 trace 复盘：直接图片输入成功（text+image content parts，模型读出 Portal 首页）；`analyze_image` 不再空答案，但 `max_tokens=1024` 命中 length，返回 reasoning 草稿，待 83 修；trace 脱敏（803171 chars）、参数提示、Taildrop `peer_inbox` 均验证通过；Rich 查看器打不开；`file_grep` regex/长行和对话导出含 reasoning 待处理。
-- 顺序建议：先做 P1 的进程死亡恢复、1 秒取消、敏感导出；再推 P2 的 Taildrop 收件和自省证据。VFS 只在出现“远端 Agent 持续读手机数据”的具体用例时再碰，不扩 background provider/bundle。
+- wonder.83 低端机实证（2026-11-16）：VFS 12 次 `docker_run` 全部 exit 0，`/vfs` 只读、`/work` 每次运行隔离且可写，providerId `p_0951e053867ac7eb` 跨服务重启复用，VFS 数据面可收口。手动停/重开 Service 后 core 不可达（`core.running=false`，`groups stream ... EOF`），设备仍 `vpnActive=true`，是下一轮 P1 首要取证项。境内外 DNS 分裂（Baidu 200，GitHub/Google `no such host`）需要 `dns_lookup` 或核心 DNS 证据。trace.md 停服后从 1,038,540 降到 931,397，符合 `MAX_TOTAL_BODY_CHARS=1_000_000` 的旧 body 压缩，不是条目丢失。
+- 顺序建议：先修服务重启后 core 不可达和「VPN 已连接但 core 不在」的误导状态；再取 Rich 查看器、`analyze_image` max_tokens、`file_grep` 的证据并修；DNS 诊断在拿到核心 DNS / profile 证据后做。VFS 只在出现“远端 Agent 持续读手机数据”的具体用例时再碰，不扩 background provider/bundle。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；发布流程见 `AGENTS.md`。旧的 49–59 手机检查清单已过期，不再保留。
 
 ## 最近完成
 
+- wonder.83 低端机实证（2026-11-16）：VFS/MCP 链路通过，服务重启后 core 不可达、境内外 DNS 分裂、trace 预算缩身已记入 P1/P2 和 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - wonder.83（2026-11-16）：输入栏 v1.3、transcript 口径与端侧遥测。按 Lyra `SPEC-v1.3` 去掉 `@`，`/` 与附件 `+` 左分组，发送/停止右侧固定；状态槽空闲显示 `used/limit`，进行中显示 spinner + `Waiting…`/`Thinking…`/`Running…`，不再显示长句、工具名或秒数。Copy/Save/Plain Transcript 统一叫 transcript，默认不包含 `## Thinking`，API trace 保留 reasoning；诊断导出默认文件名改为 `transcript-`，文件头改为 `# Conductor transcript`。图片选择器 launch/result/import 失败会写 `conductor_image` 遥测和 AppLog；Rich 查看器新增 open/ready/parse/bind/render 遥测，工具/整轮失败带脱敏 detail；未捕获 JVM 崩溃仍走 crash report。本地 464 用例绿。
 - wonder.82（2026-11-16）：直接图片输入与 vision 修正。输入栏发送按钮左侧加号选图，图片以缩略图停在输入栏，下一条消息用 text + `image_url` content parts 一起请求；图片压缩到长边 1600px/JPEG、私有目录存 ref、不写 base64 到会话 JSON、trace data URL 脱敏。`analyze_image` 按 DeepSeek Chat Completions 文档保留为工具，`deepseek-flash` + `detail=auto`，content 为空时回退 `reasoning_content`，空答案错误带 finish_reason/provider error，视觉请求进脱敏 trace。参数错误带 `Accepted parameters`；Taildrop 返回 `peer_inbox` + `receiverActionRequired`，不再暗示落盘。本地 463 用例绿，release/otherLegacy 编译和 R8 通过；图片选择、缩略图、全屏查看和直接图片请求需真机确认。
 - wonder.81（2026-11-15）：查看器性能与 DeepSeek 模型名。Raw 默认不折行，标题栏三点菜单可切 Auto wrap；Rich 改用 Markwon Recycler（后台解析 + 只渲染可见 block），行内代码/代码块用主题 surfaceContainer 背景和 onSurface 前景；底部按钮紧凑内边距和 8dp 间距。DeepSeek 默认模型改 `deepseek-flash`，旧名读取时归一化。本地 454 用例绿，release/otherLegacy 编译和 R8 通过。
