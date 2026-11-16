@@ -34,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.component.vfsScopeLabel
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.vfs.VfsRuntime
@@ -123,7 +124,7 @@ private fun trustDetail(
     context: Context,
     trust: VfsTrust,
 ): String {
-    val scope = trust.scope.map { it.path }.sorted().joinToString(", ")
+    val scope = trust.scope.map { vfsScopeLabel(context, it) }.sorted().joinToString(", ")
     val whenText =
         if (trust.processScoped) {
             context.getString(R.string.vfs_access_this_session)
