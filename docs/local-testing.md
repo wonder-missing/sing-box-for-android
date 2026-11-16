@@ -28,7 +28,7 @@
 
 ## 从零重装
 
-前置：Homebrew 可用，GitHub CLI 已登录（`gh auth status`），仓库在 `~/workspace/sing-box-for-android`。按顺序执行：
+前置：Homebrew 可用，GitHub CLI 已登录（`gh auth status`），仓库在 `~/workspace/WonderSing`。按顺序执行：
 
 ```sh
 brew install openjdk@17
