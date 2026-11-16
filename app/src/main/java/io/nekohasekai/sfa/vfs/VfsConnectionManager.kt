@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.vfs
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -186,6 +187,8 @@ class VfsConnectionManager(
             } catch (error: VfsConnectException) {
                 clearIfTerminal(error, server, link.linkId)
                 _state.value = VfsConnectionState.Error(error.code, error.message ?: error.code)
+                throw error
+            } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 val wrapped =

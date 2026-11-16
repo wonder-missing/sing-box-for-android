@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.vfs
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -130,6 +131,10 @@ class OkHttpVfsProviderConnector(
             )
         } catch (error: VfsConnectException) {
             webSocket.close(1008, "handshake failed")
+            scope.cancel()
+            throw error
+        } catch (error: CancellationException) {
+            webSocket.close(1008, "cancelled")
             scope.cancel()
             throw error
         }

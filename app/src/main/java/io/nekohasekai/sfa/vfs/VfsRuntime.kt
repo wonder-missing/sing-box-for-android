@@ -9,7 +9,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -24,6 +23,9 @@ object VfsRuntime {
 
     private val _uploadBytes = MutableStateFlow(0L)
     val uploadBytes: StateFlow<Long> = _uploadBytes.asStateFlow()
+    private val uploadLock = Any()
+    private var pendingUploadBytes = 0L
+    private var lastUploadPublishNanos = 0L
 
     private val trustLock = Any()
 
@@ -35,6 +37,7 @@ object VfsRuntime {
 
     private var collectJob: Job? = null
     private var lifecycleJob: Job? = null
+    private var foregroundJob: Job? = null
 
     fun trustStore(context: Context): VfsTrustStore =
         synchronized(trustLock) {
@@ -52,6 +55,7 @@ object VfsRuntime {
     @Synchronized
     fun attach(manager: VfsConnectionManager) {
         if (this.manager === manager) return
+        val previous = this.manager
         this.manager = manager
         collectJob?.cancel()
         collectJob =
@@ -59,27 +63,57 @@ object VfsRuntime {
                 var wasConnected = false
                 manager.state.collect { state ->
                     val connected = state is VfsConnectionState.Connected
-                    if (connected && !wasConnected) _uploadBytes.value = 0L
-                    if (!connected && wasConnected) _uploadBytes.value = 0L
+                    if (connected != wasConnected) resetUploadBytes()
                     wasConnected = connected
                     _state.value = state
                 }
             }
         lifecycleJob?.cancel()
+        foregroundJob?.cancel()
         lifecycleJob =
             scope.launch {
                 AppLifecycleObserver.isForeground.collect { foreground ->
-                    if (foreground) {
-                        runCatching { manager.reconnectLast() }
-                    } else {
-                        runCatching { manager.disconnect(VfsCloseCodes.BACKGROUND, "background") }
-                    }
+                    // Never block the lifecycle collector on handshake/backoff.
+                    // A later background event must still be able to stop it.
+                    foregroundJob?.cancel()
+                    foregroundJob =
+                        scope.launch {
+                            if (foreground) {
+                                runCatching { manager.reconnectLast() }
+                            } else {
+                                runCatching { manager.disconnect(VfsCloseCodes.BACKGROUND, "background") }
+                            }
+                        }
                 }
             }
+        if (previous != null && previous !== manager) {
+            scope.launch {
+                runCatching { previous.disconnect(VfsCloseCodes.BACKGROUND, "replaced") }
+            }
+        }
     }
 
     fun recordUploadBytes(bytes: Long) {
-        if (bytes > 0) _uploadBytes.update { it + bytes }
+        if (bytes <= 0) return
+        synchronized(uploadLock) {
+            pendingUploadBytes += bytes
+            val now = System.nanoTime()
+            // A status-bar counter must not recompose for every FUSE chunk.
+            if (now - lastUploadPublishNanos < 250_000_000L && pendingUploadBytes < 64L * 1024L) {
+                return
+            }
+            _uploadBytes.value = _uploadBytes.value + pendingUploadBytes
+            pendingUploadBytes = 0L
+            lastUploadPublishNanos = now
+        }
+    }
+
+    private fun resetUploadBytes() {
+        synchronized(uploadLock) {
+            pendingUploadBytes = 0L
+            lastUploadPublishNanos = 0L
+            _uploadBytes.value = 0L
+        }
     }
 
     fun disconnect() {
