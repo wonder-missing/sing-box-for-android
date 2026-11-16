@@ -24,6 +24,7 @@ import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.AgentRuntime
 import io.nekohasekai.sfa.agent.AgentSanitizer
+import io.nekohasekai.sfa.agent.AgentToolDefinition
 import io.nekohasekai.sfa.agent.AgentTools
 import io.nekohasekai.sfa.agent.DynamicToolExecutor
 import io.nekohasekai.sfa.agent.mcp.McpListedTool
@@ -66,6 +67,7 @@ import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.agent.TraceExport
+import io.nekohasekai.sfa.agent.markdownFence
 import io.nekohasekai.sfa.agent.TurnEvent
 import io.nekohasekai.sfa.agent.TurnOutcome
 import io.nekohasekai.sfa.agent.TurnResult
@@ -150,6 +152,13 @@ data class VfsConsentUi(
     val scope: List<VfsScope>,
 )
 
+/** Developer-only tool output. It is UI state and is never saved or exported. */
+data class ToolConsoleState(
+    val title: String,
+    val body: String,
+    val running: Boolean = false,
+)
+
 class ConductorViewModel(
     application: Application,
 ) : AndroidViewModel(application),
@@ -168,6 +177,8 @@ class ConductorViewModel(
         val turnStatusSince: Long = 0L,
         /** An image picked in the composer and waiting for the next sent message. */
         val pendingImage: AgentImageRef? = null,
+        /** Transient developer tool output; never persisted into the session. */
+        val toolConsole: ToolConsoleState? = null,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -890,6 +901,7 @@ class ConductorViewModel(
     private var autoApproveAgentToolName: String? = null
 
     private var pendingCommandConfirmation: Pair<String, String>? = null
+    private var pendingCommandAsTool = false
 
     private data class PendingFileRequest(
         val id: String,
@@ -1010,6 +1022,24 @@ class ConductorViewModel(
             clearConversation()
             return
         }
+        val slash = if (text.startsWith("/")) ConductorCommands.parse(text) else null
+        if (slash?.command?.action == ConductorCommandKind.TOOL) {
+            if (images.isNotEmpty()) {
+                updateUi {
+                    copy(toolConsole = ToolConsoleState("Tool", "Remove the image before running /tool."))
+                }
+            } else if (_uiState.value.isRunning) {
+                updateUi {
+                    copy(
+                        toolConsole =
+                            ToolConsoleState("Tool", "Wait for the current command to finish."),
+                    )
+                }
+            } else {
+                runToolCommand(slash.tail)
+            }
+            return
+        }
         if (text.startsWith("/") && images.isNotEmpty()) {
             append(ConductorItem.Notice("conductor", "Remove the image before running a command."))
             return
@@ -1040,7 +1070,7 @@ class ConductorViewModel(
         persistSession()
 
         val parsed =
-            ConductorCommands.parse(text)
+            slash
                 ?: run {
                     append(ConductorItem.Error("command", ConductorCommands.unknownMessage(text)))
                     persistSession()
@@ -1070,6 +1100,8 @@ class ConductorViewModel(
                 )
                 persistSession()
             }
+
+            ConductorCommandKind.TOOL -> runToolCommand(parsed.tail)
 
             ConductorCommandKind.MCP -> {
                 if (ConductorMcpUse.isUse(parsed.args)) {
@@ -1442,17 +1474,23 @@ class ConductorViewModel(
 
     fun confirmCommand() {
         val pending = pendingCommandConfirmation ?: return
+        val asTool = pendingCommandAsTool
         pendingCommandConfirmation = null
+        pendingCommandAsTool = false
         removeConfirmationItems()
-        invokeCommandTool(pending.first, pending.second, pending.first)
+        invokeCommandTool(pending.first, pending.second, pending.first, asTool)
     }
 
     fun cancelCommand() {
+        val asTool = pendingCommandAsTool
         pendingCommandConfirmation = null
+        pendingCommandAsTool = false
         removeConfirmationItems()
-        updateUi { copy(isRunning = false) }
-        append(ConductorItem.Notice("command", "Cancelled."))
-        persistSession()
+        updateUi { copy(isRunning = false, toolConsole = if (asTool) null else toolConsole) }
+        if (!asTool) {
+            append(ConductorItem.Notice("command", "Cancelled."))
+            persistSession()
+        }
     }
 
     private fun clearConversation() {
@@ -1466,6 +1504,8 @@ class ConductorViewModel(
         pendingAgentConfirmation = null
         pendingTurnEvent = null
         pendingCommandConfirmation = null
+        pendingCommandAsTool = false
+        updateUi { copy(toolConsole = null) }
         cancelPendingFileRequest("The conversation was cleared.")
         cancelPendingAskUser("The conversation was cleared.")
         synchronized(selectedFilesLock) { selectedFiles.clear() }
@@ -1927,6 +1967,8 @@ class ConductorViewModel(
         name: String,
         argsJson: String = "{}",
         title: String = name,
+        asTool: Boolean = false,
+        refreshMcp: Boolean = false,
     ) {
         if (_uiState.value.isRunning) {
             append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
@@ -1934,31 +1976,282 @@ class ConductorViewModel(
         }
         updateUi { copy(isRunning = true) }
         viewModelScope.launch {
+            if (refreshMcp) refreshMcpTools()
             val result = invokeRegistryUserCommand(name, argsJson)
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
                 if (result.confirmation != null) {
-                    showCommandConfirmation(name, result.confirmation!!)
+                    showCommandConfirmation(name, result.confirmation!!, asTool)
+                } else if (asTool) {
+                    appendDirectToolResult(name, argsJson, result)
                 } else {
                     appendToolResult(title, result)
+                    persistSession()
                 }
-                persistSession()
             }
         }
+    }
+
+    private fun runToolCommand(tail: String) {
+        if (_uiState.value.isRunning) {
+            updateUi {
+                copy(
+                    toolConsole =
+                        ToolConsoleState("Tool", "Wait for the current command to finish."),
+                )
+            }
+            return
+        }
+        updateUi {
+            copy(
+                isRunning = true,
+                toolConsole = ToolConsoleState("Tool", "Reading tools…", running = true),
+            )
+        }
+        viewModelScope.launch {
+            refreshMcpTools()
+            val definitions = toolExecutor.definitions()
+            val text = tail.trim()
+            val name = text.takeWhile { !it.isWhitespace() }
+            val argsJson = text.drop(name.length).trim()
+            withContext(Dispatchers.Main) {
+                when {
+                    text.isEmpty() -> {
+                        updateUi {
+                            copy(
+                                isRunning = false,
+                                toolConsole =
+                                    ToolConsoleState(
+                                        "Tools",
+                                        ConductorCommands.toolListText(definitions),
+                                    ),
+                            )
+                        }
+                    }
+
+                    argsJson.isEmpty() -> {
+                        updateUi { copy(isRunning = false) }
+                        when (val resolution = resolveToolDefinition(name, definitions)) {
+                            is ToolResolution.Found ->
+                                updateUi {
+                                    copy(
+                                        toolConsole =
+                                            ToolConsoleState(
+                                                "Tool",
+                                                ConductorCommands.toolSchemaText(
+                                                    resolution.definition,
+                                                ),
+                                            ),
+                                    )
+                                }
+
+                            is ToolResolution.Ambiguous ->
+                                updateUi {
+                                    copy(
+                                        toolConsole =
+                                            ToolConsoleState(
+                                                "Tool",
+                                                "More than one tool matches \"$name\": " +
+                                                    resolution.definitions.joinToString { it.name } +
+                                                    ". Use the exact name.",
+                                            ),
+                                    )
+                                }
+
+                            ToolResolution.NotFound ->
+                                updateUi {
+                                    copy(
+                                        toolConsole =
+                                            ToolConsoleState(
+                                                "Tool",
+                                                "No registered tool matches \"$name\". " +
+                                                    "Type /tool to list tools.",
+                                            ),
+                                    )
+                                }
+                        }
+                    }
+
+                    else -> {
+                        when (val resolution = resolveToolDefinition(name, definitions)) {
+                            is ToolResolution.Found -> {
+                                updateUi {
+                                    copy(
+                                        isRunning = true,
+                                        toolConsole =
+                                            ToolConsoleState(
+                                                "Tool",
+                                                "Running ${resolution.definition.name}…",
+                                                running = true,
+                                            ),
+                                    )
+                                }
+                                val result =
+                                    invokeRegistryUserCommand(resolution.definition.name, argsJson)
+                                if (result.confirmation != null) {
+                                    updateUi {
+                                        copy(
+                                            isRunning = false,
+                                            toolConsole =
+                                                ToolConsoleState(
+                                                    "Tool",
+                                                    "Waiting for approval…",
+                                                    running = true,
+                                                ),
+                                        )
+                                    }
+                                    showCommandConfirmation(
+                                        resolution.definition.name,
+                                        result.confirmation!!,
+                                        asTool = true,
+                                    )
+                                } else {
+                                    updateUi { copy(isRunning = false) }
+                                    appendDirectToolResult(
+                                        resolution.definition.name,
+                                        argsJson,
+                                        result,
+                                    )
+                                }
+                            }
+
+                            is ToolResolution.Ambiguous ->
+                                updateUi {
+                                    copy(
+                                        isRunning = false,
+                                        toolConsole =
+                                            ToolConsoleState(
+                                                "Tool",
+                                                "More than one tool matches \"$name\": " +
+                                                    resolution.definitions.joinToString { it.name } +
+                                                    ". Use the exact name.",
+                                            ),
+                                    )
+                                }
+
+                            ToolResolution.NotFound ->
+                                updateUi {
+                                    copy(
+                                        isRunning = false,
+                                        toolConsole =
+                                            ToolConsoleState(
+                                                "Tool",
+                                                "No registered tool matches \"$name\". " +
+                                                    "Type /tool to list tools.",
+                                            ),
+                                    )
+                                }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun resolveToolDefinition(
+        name: String,
+        definitions: List<AgentToolDefinition>,
+    ): ToolResolution {
+        val exact = definitions.filter { it.name.equals(name, ignoreCase = true) }
+        if (exact.size == 1) return ToolResolution.Found(exact.single())
+        if (exact.size > 1) return ToolResolution.Ambiguous(exact)
+        val aliases =
+            definitions.filter { definition ->
+                definition.aliases.any { it.equals(name, ignoreCase = true) }
+            }
+        return when {
+            aliases.size == 1 -> ToolResolution.Found(aliases.single())
+            aliases.size > 1 -> ToolResolution.Ambiguous(aliases)
+            else -> ToolResolution.NotFound
+        }
+    }
+
+    private sealed interface ToolResolution {
+        data class Found(
+            val definition: AgentToolDefinition,
+        ) : ToolResolution
+
+        data class Ambiguous(
+            val definitions: List<AgentToolDefinition>,
+        ) : ToolResolution
+
+        data object NotFound : ToolResolution
+    }
+
+    private fun appendDirectToolResult(
+        name: String,
+        argsJson: String,
+        result: AgentInvocationResult,
+    ) {
+        val body =
+            buildString {
+                appendLine("Tool `${name}`")
+                appendLine()
+                appendLine(if (result.ok) "status: ok" else "status: failed")
+                appendLine()
+                appendLine("args:")
+                appendLine(
+                    markdownFence(
+                        AgentSanitizer.sanitizeArgsForDisplay(argsJson),
+                        "json",
+                    ),
+                )
+                result.output?.let { output ->
+                    appendLine()
+                    appendLine("output:")
+                    appendLine(markdownFence(AgentJson.pretty(output), "json"))
+                }
+                result.errorCode?.let { code ->
+                    appendLine()
+                    appendLine("error code: `$code`")
+                }
+                result.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                    appendLine()
+                    appendLine("error:")
+                    appendLine(markdownFence(AgentSanitizer.sanitizeText(message), "text"))
+                }
+                if (result.degraded) {
+                    appendLine()
+                    appendLine("degraded: true")
+                }
+            }.trim()
+        updateUi { copy(toolConsole = ToolConsoleState("Tool", body)) }
+        TelemetryEventLog.recordAsync(
+            getApplication<Application>(),
+            "conductor_tool",
+            buildMap {
+                put("tool", telemetryToolName(name))
+                put("source", "command")
+                put("ok", result.ok)
+                put("code", result.errorCode ?: "-")
+                if (!result.ok) {
+                    put("detail", TelemetryEvents.scrub(result.errorMessage.orEmpty(), 160))
+                }
+            },
+        )
+    }
+
+    fun dismissToolConsole() {
+        updateUi { copy(toolConsole = null) }
     }
 
     private fun invokeCommandTool(
         name: String,
         argsJson: String,
         title: String,
+        asTool: Boolean = false,
     ) {
         updateUi { copy(isRunning = true) }
         viewModelScope.launch {
             val result = invokeRegistryConfirmCommand(name, argsJson)
             withContext(Dispatchers.Main) {
                 updateUi { copy(isRunning = false) }
-                appendToolResult(title, result)
-                persistSession()
+                if (asTool) {
+                    appendDirectToolResult(name, argsJson, result)
+                } else {
+                    appendToolResult(title, result)
+                    persistSession()
+                }
             }
         }
     }
@@ -2000,8 +2293,10 @@ class ConductorViewModel(
     private fun showCommandConfirmation(
         name: String,
         confirmation: io.nekohasekai.sfa.agent.AgentConfirmation,
+        asTool: Boolean = false,
     ) {
         pendingCommandConfirmation = name to confirmation.argsJson
+        pendingCommandAsTool = asTool
         updateUi { copy(isRunning = true) }
         append(
             ConductorItem.Confirmation(

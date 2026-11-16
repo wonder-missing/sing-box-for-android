@@ -64,6 +64,7 @@
 
 ## 最近完成
 
+- `/tool` 开发者直调（2026-11-16，工作树）：`/tool` / `/tool <name>` / `/tool <name> <json>`，复用注册表和确认策略；结果只进临时 Tool console，不写 transcript 和 API trace。491 用例绿，待发版。
 - wonder.85（2026-11-16）：Rich 查看器空白修复。84 遥测显示 `conductor_viewer` open/ready 在 26–46ms 内完成且无错误，根因是 `MarkwonAdapterImpl.setParsedMarkdown` 不调用 `notifyDataSetChanged`；现在解析后显式刷新，并记录 `stage=adapter` / items。487 用例绿，release/otherLegacy 编译和 R8 通过；release、arm64 APK 和 Feishu 已确认。
 - VFS 新 scope 与预设（wonder.84，2026-11-16）：新增 `workdir`、`appfiles` 两个根，`/vfs` 根暴露外部工作目录，`/vfs/appfiles` 暴露内部 `filesDir` 并排除 `vfs/`；新增 `all`、`conductor_session` 两个 App 侧预设，解析 Link 时展开成根，Portal 和 VFS 协议不改。487 个 JVM 用例绿，release/otherLegacy 编译和 R8 通过；arm64 APK 和 Feishu 通知已确认，待真机验收。
 - wonder.83 低端机实证（2026-11-16）：VFS/MCP 链路通过，服务重启后 core 不可达、境内外 DNS 分裂、trace 预算缩身已记入 P1/P2 和 [`docs/agent-runtime.md`](docs/agent-runtime.md)。

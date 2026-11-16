@@ -54,6 +54,60 @@ class ConductorCommandsTest {
     }
 
     @Test
+    fun `tool command preserves raw json arguments`() {
+        val input = ConductorCommands.parse("/tool cpk_orb_status {\"note\": \"hello world\"}")!!
+
+        assertEquals("tool", input.command?.name)
+        assertEquals("cpk_orb_status {\"note\": \"hello world\"}", input.tail)
+    }
+
+    @Test
+    fun `tool list includes permission and confirmation`() {
+        val tool =
+            AgentToolDefinition(
+                name = "list_nodes",
+                description = "List nodes",
+                permission = AgentPermission.READ_NETWORK_STATE,
+                parameters = emptyList(),
+                confirmationPolicy = ConfirmationPolicy.NEVER,
+                category = "network",
+            )
+
+        val text = ConductorCommands.toolListText(listOf(tool))
+
+        assertTrue(text.contains("list_nodes"))
+        assertTrue(text.contains("read_network_state"))
+        assertTrue(text.contains("confirmation: NEVER"))
+    }
+
+    @Test
+    fun `tool schema includes parameters`() {
+        val tool =
+            AgentToolDefinition(
+                name = "probe_via_node",
+                description = "Probe a node",
+                permission = AgentPermission.READ_NETWORK_STATE,
+                parameters =
+                    listOf(
+                        io.nekohasekai.sfa.agent.AgentParameterSpec(
+                            name = "url",
+                            type = io.nekohasekai.sfa.agent.AgentParameterType.STRING,
+                            description = "URL to probe",
+                            required = true,
+                        ),
+                    ),
+                confirmationPolicy = ConfirmationPolicy.ALWAYS,
+                category = "network",
+            )
+
+        val text = ConductorCommands.toolSchemaText(tool)
+
+        assertTrue(text.contains("probe_via_node"))
+        assertTrue(text.contains("url"))
+        assertTrue(text.contains("confirmation: ALWAYS"))
+    }
+
+    @Test
     fun `unknown slash command has no command`() {
         assertNull(ConductorCommands.parse("/nope")?.command)
     }

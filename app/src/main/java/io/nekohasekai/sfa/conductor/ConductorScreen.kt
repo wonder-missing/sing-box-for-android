@@ -809,6 +809,13 @@ fun ConductorScreen(
             )
         }
 
+        uiState.toolConsole?.let { console ->
+            ToolConsoleDialog(
+                state = console,
+                onDismiss = viewModel::dismissToolConsole,
+            )
+        }
+
         ConductorInputBar(
             modifier = Modifier.align(Alignment.BottomCenter),
             height = panelHeight,
@@ -1043,6 +1050,95 @@ private fun ConversationActions(
                         onApiTrace()
                     },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolConsoleDialog(
+    state: ToolConsoleState,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(start = 16.dp, end = 8.dp, top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state.running) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp).padding(end = 12.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                    Text(
+                        text = state.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f).padding(start = if (state.running) 0.dp else 4.dp),
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.close),
+                        )
+                    }
+                }
+                SelectionContainer(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                ) {
+                    Text(
+                        text = state.body,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Spacer(Modifier.weight(1f))
+                    OutlinedButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(state.body))
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.conductor_text_copied),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                    ) {
+                        Text(stringResource(R.string.conductor_copy_text))
+                    }
+                    Button(onClick = onDismiss) {
+                        Text(stringResource(R.string.close))
+                    }
+                }
             }
         }
     }

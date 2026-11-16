@@ -14,6 +14,8 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 系统提示不写 MCP 服务器名，也不写 MCP 工具名。添加、关掉或换一套服务器，都不改变 system prompt，前缀缓存因此不受影响。人看清单用 `/mcp`。要让下一句优先用某个工具，输入 `/mcp use orb_status`（或点补全）。这会把一句普通文字放进输入框，光标留在后面，你补上要做的事再发送。这句话是 user 消息，不是 system message。Claude Code 的 slash、Cursor 的 `@` 也是把引用放进输入框。系统提示不罗列你连了哪些服务器。
 
+开发者要直接观察工具，用 `/tool`：`/tool` 列表，`/tool <name>` 看 schema，`/tool <name> <json>` 直接执行。结果打开临时 Tool console，不写会话、不进 transcript 和 API trace；确认策略与 Conductor 调工具相同。
+
 ## 协议
 
 只做 Streamable HTTP，协议版本 `2025-06-18`。没有 stdio，没有 OAuth，没有 prompts、resources、sampling。

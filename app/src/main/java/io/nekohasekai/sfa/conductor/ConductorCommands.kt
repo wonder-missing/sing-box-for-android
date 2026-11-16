@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.conductor
 
+import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentToolDefinition
 import io.nekohasekai.sfa.agent.mcp.McpListedTool
 import io.nekohasekai.sfa.agent.mcp.McpPhase
@@ -14,6 +15,7 @@ enum class ConductorCommandKind {
     HELP,
     CAPABILITIES,
     MCP,
+    TOOL,
     CLEAR,
     REASONING,
     BRIEF,
@@ -37,6 +39,8 @@ data class ConductorInput(
     val command: ConductorCommand?,
     val args: List<String>,
     val raw: String,
+    /** Everything after the command name, preserving JSON whitespace. */
+    val tail: String = "",
 )
 
 /**
@@ -71,6 +75,13 @@ object ConductorCommands {
                 usage = "/mcp [name]",
                 takesArgs = true,
                 action = ConductorCommandKind.MCP,
+            ),
+            ConductorCommand(
+                name = "tool",
+                description = "Developer: inspect or invoke a registered built-in or MCP tool.",
+                usage = "/tool [name] [json]",
+                takesArgs = true,
+                action = ConductorCommandKind.TOOL,
             ),
             ConductorCommand(
                 name = "clear",
@@ -141,13 +152,12 @@ object ConductorCommands {
         if (body.isEmpty()) return ConductorInput(command = null, args = emptyList(), raw = text)
         val parts = body.split(Regex("""\s+"""), limit = 2)
         val command = find(parts[0]) ?: return ConductorInput(command = null, args = emptyList(), raw = text)
+        val tail = parts.getOrNull(1)?.trim().orEmpty()
         val args =
-            parts
-                .getOrNull(1)
-                ?.split(Regex("""\s+"""))
-                ?.filter { it.isNotBlank() }
-                .orEmpty()
-        return ConductorInput(command = command, args = args, raw = text)
+            tail
+                .split(Regex("""\s+"""))
+                .filter { it.isNotBlank() }
+        return ConductorInput(command = command, args = args, raw = text, tail = tail)
     }
 
     fun suggestions(input: String): List<ConductorCommand> {
@@ -182,6 +192,39 @@ object ConductorCommands {
                 appendLine("    params: $params")
                 appendLine("    confirmation: ${tool.confirmationPolicy}")
             }
+        }
+
+    fun toolListText(tools: List<AgentToolDefinition>): String =
+        buildString {
+            if (tools.isEmpty()) {
+                append("No tools registered.")
+                return@buildString
+            }
+            appendLine("Tools:")
+            tools.sortedBy { it.name }.forEach { tool ->
+                append("  ${tool.name}")
+                tool.serverName?.takeIf { it.isNotBlank() }?.let { append("  (MCP: $it)") }
+                appendLine()
+                appendLine("    ${tool.description.lineSequence().firstOrNull().orEmpty()}")
+                appendLine("    permission: ${tool.permission.label}")
+                appendLine("    confirmation: ${tool.confirmationPolicy}")
+            }
+            append("Type /tool <name> for the full schema, or /tool <name> {\"key\":\"value\"} to invoke.")
+        }
+
+    fun toolSchemaText(tool: AgentToolDefinition): String =
+        buildString {
+            appendLine(tool.name)
+            appendLine()
+            appendLine(tool.description)
+            appendLine()
+            appendLine("permission: ${tool.permission.label}")
+            appendLine("confirmation: ${tool.confirmationPolicy}")
+            tool.serverName?.takeIf { it.isNotBlank() }?.let { appendLine("MCP server: $it") }
+            tool.namespace?.takeIf { it.isNotBlank() }?.let { appendLine("namespace: $it") }
+            appendLine()
+            appendLine("arguments:")
+            append(AgentJson.pretty(tool.parametersSchema))
         }
 
     private fun toolParameterNames(tool: AgentToolDefinition): String {
