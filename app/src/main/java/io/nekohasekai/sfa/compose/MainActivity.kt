@@ -156,6 +156,9 @@ import io.nekohasekai.sfa.constant.Alert
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.log.AppLog
+import io.nekohasekai.sfa.telemetry.TelemetryEventLog
+import io.nekohasekai.sfa.telemetry.TelemetryEvents
 import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.ktx.launchCustomTab
@@ -181,6 +184,7 @@ class MainActivity :
     private var showLocalNetworkPermissionDialog by mutableStateOf(false)
     private var notificationPermissionRequested = false
     private var localNetworkPermissionRequested = false
+    private var restoreAfterUpdateAttempted = false
     private var showImportProfileDialog by mutableStateOf(false)
     private var pendingImportProfile by mutableStateOf<Triple<String, String, String>?>(null)
     private var showImportLocalProfileDialog by mutableStateOf(false)
@@ -271,6 +275,7 @@ class MainActivity :
                     App()
                 }
             }
+            restoreServiceAfterUpdateIfNeeded()
         }
     }
 
@@ -377,6 +382,55 @@ class MainActivity :
                 return@launch
             }
             startService0()
+        }
+    }
+
+    private suspend fun restoreServiceAfterUpdateIfNeeded() {
+        if (restoreAfterUpdateAttempted) return
+        if (!Settings.restoreServiceAfterUpdate) return
+        restoreAfterUpdateAttempted = true
+        val app = applicationContext
+        try {
+            CrashReportManager.refresh()
+            if (CrashReportManager.unreadCount.value > 0) {
+                Settings.startedByUser = false
+                Settings.restoreServiceAfterUpdate = false
+                TelemetryEventLog.record(
+                    app,
+                    "service_restore",
+                    mapOf(
+                        "action" to "activity",
+                        "result" to "blocked_crash",
+                        "started_by_user" to false,
+                        "restore_after_update" to true,
+                    ),
+                )
+                AppLog.info("Service restore on launch blocked by unread crash report")
+                return
+            }
+            TelemetryEventLog.record(
+                app,
+                "service_restore",
+                mapOf(
+                    "action" to "activity",
+                    "result" to "requested",
+                    "started_by_user" to Settings.startedByUser,
+                    "restore_after_update" to true,
+                ),
+            )
+            AppLog.info("Service restore requested on launch")
+            startService()
+        } catch (e: Exception) {
+            TelemetryEventLog.record(
+                app,
+                "service_restore",
+                mapOf(
+                    "action" to "activity",
+                    "result" to "failed",
+                    "error" to TelemetryEvents.scrub(e.message.orEmpty(), 120),
+                ),
+            )
+            AppLog.warning("Service restore on launch failed: ${e.message}")
         }
     }
 

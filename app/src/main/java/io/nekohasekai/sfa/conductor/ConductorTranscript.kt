@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentSanitizer
+import io.nekohasekai.sfa.agent.markdownFence
 
 /**
  * Renders the plain transcript for the clipboard export, Plain Transcript
@@ -55,22 +56,21 @@ internal fun conductorConversationMarkdown(
                     appendLine()
                     val args = item.call.displayArgsJson
                     if (args.isNotBlank() && args != "{}") {
-                        appendLine("~~~json")
-                        appendLine(AgentJson.parseObject(args)?.let { AgentJson.pretty(it) } ?: args)
-                        appendLine("~~~")
+                        appendLine(
+                            markdownFence(
+                                AgentJson.parseObject(args)?.let { AgentJson.pretty(it) } ?: args,
+                                "json",
+                            ),
+                        )
                         appendLine()
                     }
                     item.result?.let { result ->
                         result.output?.let { output ->
-                            appendLine("~~~json")
-                            appendLine(AgentJson.pretty(output))
-                            appendLine("~~~")
+                            appendLine(markdownFence(AgentJson.pretty(output), "json"))
                             appendLine()
                         }
                         result.message?.takeIf { it.isNotBlank() }?.let { message ->
-                            appendLine("~~~text")
-                            appendLine(message)
-                            appendLine("~~~")
+                            appendLine(markdownFence(message, "text"))
                             appendLine()
                         }
                         result.errorCode
@@ -117,13 +117,14 @@ internal fun conductorConversationMarkdown(
                     appendLine()
                     appendLine(item.request.reason)
                     appendLine()
-                    appendLine("~~~json")
                     appendLine(
-                        AgentJson.parseObject(item.request.displayArgsJson)
-                            ?.let { AgentJson.pretty(it) }
-                            ?: item.request.displayArgsJson,
+                        markdownFence(
+                            AgentJson.parseObject(item.request.displayArgsJson)
+                                ?.let { AgentJson.pretty(it) }
+                                ?: item.request.displayArgsJson,
+                            "json",
+                        ),
                     )
-                    appendLine("~~~")
                     appendLine()
                 }
             }

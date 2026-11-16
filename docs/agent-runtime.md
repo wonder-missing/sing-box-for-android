@@ -1412,6 +1412,14 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - `note_create` / `file_put` 生成文件在 Mini 上的绝对路径。
 - 观测到的 vfs 相关 MCP 工具是否为本版本新增（`release_notes` 拉取失败，无法确认）。
 
+### wonder.86：Viewer 细节、经典 fence 与更新恢复取证（2026-11-16）
+
+- Transcript / Trace Viewer 左上角三点菜单从 `MoreVert` 改成 `MoreHoriz`，和横排操作一致。
+- Rich 查看器底部按钮组加实色 `surface` 背景和 `zIndex(1f)`，RecyclerView 改回 `clipToPadding=true`；滚动时 Markdown 不再从按钮组背后透出。
+- transcript / API trace 的代码块从 `~~~` 改为 Markdown 经典反引号 fence。fence 宽度按内容里最长反引号串自动加宽，最少三个；内容含三反引号时用四反引号，避免截断。`ConductorTranscriptTest` 覆盖普通和加宽两种情况。
+- 更新后服务恢复取证：84→85 真机遥测显示 20:04:48 `service_stop` 后，直到 20:06:38 才出现 app85 的 `service_start`，中间没有自动恢复。`BootReceiver` 现在记录 `service_restore`（action、started_by_user、restore_after_update、unread crash、result/error）；`ApkInstaller` 记录 `update_install`（prepare/install/error、command.sock 与 started_by_user）；restore 标记只在启动命令被接受后清除。`MainActivity` 启动时若标记仍在，会做一次前台 fallback，覆盖 `MY_PACKAGE_REPLACED` 未送达或被 OEM 拦截的情况。
+- 本地 488 用例绿；release/otherLegacy 编译和 R8 通过；wonder.86 待发版和真机验证。下次更新后先看 `service_restore` 的 `result` 与 `update_install.stage`，能区分「没写标记」「广播没到」「start 被拒」「用户手动启动」。
+
 ### wonder.85：Rich 查看器空白修复（2026-11-16）
 
 - 现象：Transcript / API Trace 查看器切到 Rich 后一直空白，Raw 正常。wonder.84 的 CFG 遥测里两次尝试都是 `conductor_viewer` `stage=open` 后 26–46ms 内 `stage=ready`（112,244 字符），没有 `conductor_viewer_error`，说明 Markwon 解析没有卡住。

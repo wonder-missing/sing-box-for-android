@@ -5,6 +5,8 @@ import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.bg.BoxService
 import io.nekohasekai.sfa.bg.RootClient
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.telemetry.TelemetryEventLog
+import io.nekohasekai.sfa.telemetry.TelemetryEvents
 import io.nekohasekai.sfa.utils.HookStatusClient
 import io.nekohasekai.sfa.xposed.XposedActivation
 import kotlinx.coroutines.delay
@@ -20,13 +22,35 @@ object ApkInstaller {
 
     private suspend fun stopServiceIfRunning() {
         val commandSocket = File(Application.application.filesDir, "command.sock")
-        if (!commandSocket.exists()) {
+        val socketRunning = commandSocket.exists()
+        val userStarted = Settings.startedByUser
+        if (!socketRunning && !userStarted) {
+            TelemetryEventLog.record(
+                Application.application,
+                "update_install",
+                mapOf(
+                    "stage" to "prepare",
+                    "running" to false,
+                    "socket" to false,
+                    "started_by_user" to false,
+                ),
+            )
             return
         }
         // The stop path clears startedByUser. Remember that the service was up
         // so BootReceiver can start it again after MY_PACKAGE_REPLACED.
         Settings.restoreServiceAfterUpdate = true
         Settings.dataStore.flush()
+        TelemetryEventLog.record(
+            Application.application,
+            "update_install",
+            mapOf(
+                "stage" to "prepare",
+                "running" to true,
+                "socket" to socketRunning,
+                "started_by_user" to userStarted,
+            ),
+        )
         BoxService.stop()
         repeat(20) {
             delay(100)
@@ -51,10 +75,29 @@ object ApkInstaller {
 
     suspend fun install(context: Context, apkFile: File, method: InstallMethod = getConfiguredMethod()) {
         stopServiceIfRunning()
-        when (method) {
-            InstallMethod.SHIZUKU -> ShizukuInstaller.install(apkFile)
-            InstallMethod.ROOT -> RootInstaller.install(apkFile)
-            InstallMethod.PACKAGE_INSTALLER -> SystemPackageInstaller.install(context, apkFile)
+        TelemetryEventLog.record(
+            Application.application,
+            "update_install",
+            mapOf("stage" to "install", "method" to method.name),
+        )
+        try {
+            when (method) {
+                InstallMethod.SHIZUKU -> ShizukuInstaller.install(apkFile)
+                InstallMethod.ROOT -> RootInstaller.install(apkFile)
+                InstallMethod.PACKAGE_INSTALLER -> SystemPackageInstaller.install(context, apkFile)
+            }
+        } catch (e: Exception) {
+            TelemetryEventLog.record(
+                Application.application,
+                "update_install",
+                mapOf(
+                    "stage" to "error",
+                    "method" to method.name,
+                    "error" to e.javaClass.simpleName,
+                    "detail" to TelemetryEvents.scrub(e.message.orEmpty(), 120),
+                ),
+            )
+            throw e
         }
     }
 

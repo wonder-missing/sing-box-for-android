@@ -148,8 +148,35 @@ class ConductorTranscriptTest {
 
         assertTrue(markdown.contains("- status: failed"))
         assertTrue(markdown.contains("- degraded: true"))
-        assertTrue(markdown.contains("~~~text\nDocker is not running.\n~~~"))
+        assertTrue(markdown.contains("```text\nDocker is not running.\n```"))
         assertFalse(markdown.contains("errorCode: DOCKER_UNAVAILABLE"))
+    }
+
+    @Test
+    fun widensBacktickFenceWhenContentContainsTripleBackticks() {
+        val items =
+            listOf(
+                ConductorItem.Tool(
+                    call = ToolCallView("call-3", "docker_run", "{}"),
+                    status = ToolStatus.FAILED,
+                    result =
+                        ToolResultView(
+                            callId = "call-3",
+                            name = "docker_run",
+                            ok = false,
+                            output = null,
+                            errorCode = "DOCKER_UNAVAILABLE",
+                            message = "```\ninner\n```",
+                            truncated = false,
+                            degraded = false,
+                        ),
+                ),
+            )
+
+        val markdown = conductorConversationMarkdown(items, "1.0")
+
+        assertTrue(markdown.contains("````text\n```\ninner\n```\n````"))
+        assertFalse(markdown.contains("~~~"))
     }
 
     @Test

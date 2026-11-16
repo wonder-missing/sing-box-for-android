@@ -163,7 +163,7 @@ internal fun ConductorMarkdownViewer(
                         layoutManager = LinearLayoutManager(ctx)
                         itemAnimator = null
                         adapter = markdownAdapter
-                        clipToPadding = false
+                        clipToPadding = true
                         val density = resources.displayMetrics.density
                         setPadding(
                             (16 * density).toInt(),

@@ -9,6 +9,7 @@
 
 ### P1 稳定性与隐私
 
+- [ ] **更新后服务恢复取证（wonder.86）**：84→85 遥测显示 20:04:48 `service_stop` 后，直到 20:06:38 才出现 app85 的 `service_start`，没有自动恢复。86 已加 `service_restore` / `update_install` 遥测和 App 启动 fallback；下次更新后看 `service_restore.result`（no_flags / blocked_crash / start_failed / started）和 `update_install.stage`，再决定是否继续修 OEM/广播路径。
 - [ ] **Rich 查看器空白（已修，待真机验证）**：wonder.82/84 真机点 Rich 后一直空白，Raw 正常。84 遥测 `conductor_viewer` 的 open/ready 在 26–46ms 内完成，且没有 `conductor_viewer_error`，说明 Markwon 解析正常；根因是 `MarkwonAdapterImpl.setParsedMarkdown` 只替换 node 列表、不调用 `notifyDataSetChanged`，RecyclerView 首次空布局后不再刷新。wonder.85 在解析完成后显式 `notifyDataSetChanged`，并记录 `stage=adapter` 和 items 数；待 85 真机确认。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
 - [ ] **`TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时和 Tailscale 取消已落地；Stop 后 1 秒内未确认取消应转成 turn error，而不是等 3 秒强制结束。

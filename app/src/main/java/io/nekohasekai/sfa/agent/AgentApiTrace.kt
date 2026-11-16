@@ -352,30 +352,22 @@ object AgentApiTrace {
                     appendLine()
                     appendLine("### Request headers")
                     appendLine()
-                    appendLine("~~~http")
-                    appendHeaders(entry.requestHeaders)
-                    appendLine("~~~")
+                    appendLine(markdownFence(headersText(entry.requestHeaders), "http"))
                     appendLine()
                     appendLine("### Request body")
                     appendLine()
-                    appendLine("~~~json")
-                    appendLine(prettyBody(entry.requestBody))
-                    appendLine("~~~")
+                    appendLine(markdownFence(prettyBody(entry.requestBody), "json"))
                     appendLine()
                     if (entry.responseHeaders.isNotEmpty()) {
                         appendLine("### Response headers")
                         appendLine()
-                        appendLine("~~~http")
-                        appendHeaders(entry.responseHeaders)
-                        appendLine("~~~")
+                        appendLine(markdownFence(headersText(entry.responseHeaders), "http"))
                         appendLine()
                     }
                     entry.responseBody?.let { body ->
                         appendLine("### Response body")
                         appendLine()
-                        appendLine("~~~json")
-                        appendLine(prettyBody(body))
-                        appendLine("~~~")
+                        appendLine(markdownFence(prettyBody(body), "json"))
                         appendLine()
                     }
                 }
@@ -439,9 +431,7 @@ object AgentApiTrace {
             appendLine()
             return
         }
-        appendLine("~~~text")
-        appendLine(firstPrompt)
-        appendLine("~~~")
+        appendLine(markdownFence(firstPrompt, "text"))
         appendLine()
         facts.forEachIndexed { index, fact ->
             if (
@@ -505,6 +495,9 @@ object AgentApiTrace {
         summary.error?.takeIf { it.isNotBlank() }?.let { append(" ${it.take(120)}") }
         appendLine()
     }
+
+    private fun headersText(headers: Map<String, String>): String =
+        buildString { appendHeaders(headers) }
 
     private fun StringBuilder.appendHeaders(headers: Map<String, String>) {
         headers

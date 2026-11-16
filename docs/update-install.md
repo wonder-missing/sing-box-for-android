@@ -37,6 +37,7 @@
 3. 启动前清掉 restore 标记，避免下一次开机重复启动；有未读 crash report 时仍然不自动启动，并清掉两个标记。
 4. 启动的是 `Settings.serviceClass()`，VPN 模式和代理模式都按更新前的模式恢复。
 5. 用户如果手动启动服务，`MainActivity` 也会清掉 restore 标记。
+6. wonder.86 起，`BootReceiver` 写 `service_restore` 遥测（action、两个标记、unread crash、start/skip/fail），`ApkInstaller` 写 `update_install`（prepare/install/error、socket 与 started_by_user），启动时如果 restore 标记还在，`MainActivity` 再做一次前台 fallback。这样即使 `MY_PACKAGE_REPLACED` 没到、被 Samsung 拦截或 start 被系统拒绝，下一次打开 App 也能补上或留下明确证据。restore 标记只在启动命令被接受后才清掉；启动失败会留给 fallback。
 
 边界：
 

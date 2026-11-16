@@ -65,7 +65,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -126,6 +125,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -1080,7 +1080,7 @@ private fun ConductorTextViewerDialog(
                     Box {
                         IconButton(onClick = { optionsOpen = true }) {
                             Icon(
-                                imageVector = Icons.Default.MoreVert,
+                                imageVector = Icons.Default.MoreHoriz,
                                 contentDescription = stringResource(R.string.conductor_viewer_options),
                             )
                         }
@@ -1168,6 +1168,8 @@ private fun ConductorTextViewerDialog(
                     modifier =
                         Modifier
                             .fillMaxWidth()
+                            .zIndex(1f)
+                            .background(MaterialTheme.colorScheme.surface)
                             .navigationBarsPadding()
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
