@@ -1231,19 +1231,11 @@ class ConductorViewModel(
         runtime.cancel()
         McpRuntimes.get(getApplication()).cancelActive()
         viewModelScope.launch {
-            delay(1_000)
+            delay(STOP_CONFIRM_TIMEOUT_MS)
             if (!_uiState.value.isRunning) return@launch
-            append(
-                ConductorItem.Notice(
-                    "conductor",
-                    "Stopping… the current tool has not confirmed cancellation yet.",
-                ),
-            )
-            delay(2_000)
-            if (!_uiState.value.isRunning) return@launch
-            // A blocked provider or tool call may never observe the flag.
-            // Give the turn a bounded grace period, then return the composer
-            // to its idle state instead of leaving Stop on screen forever.
+            // A blocked provider or tool call may never observe the flag. One
+            // second is the whole grace period: return the composer and make
+            // the timeout explicit instead of leaving Stop on screen for 3s.
             agentJob?.cancel()
             agentJob = null
             val stoppedItems =
@@ -1258,7 +1250,7 @@ class ConductorViewModel(
                                     ok = false,
                                     output = null,
                                     errorCode = "cancelled",
-                                    message = "Stopped by user.",
+                                    message = "Stopped by user; cancellation was not confirmed.",
                                     truncated = false,
                                 ),
                         )
@@ -1274,7 +1266,12 @@ class ConductorViewModel(
                     turnStatusSince = 0L,
                 )
             }
-            append(ConductorItem.Notice("conductor", "Stopped by user."))
+            append(
+                ConductorItem.Error(
+                    "agent",
+                    "Stopped by user; the current tool did not confirm cancellation within 1 second.",
+                ),
+            )
             stopRequested = false
             runtime.resetCancel()
             toolStartedAt.clear()
@@ -2774,6 +2771,7 @@ class ConductorViewModel(
 
     companion object {
         private const val MAX_ITEMS = 200
+        private const val STOP_CONFIRM_TIMEOUT_MS = 1_000L
         private const val TAILDROP_SEND_TIMEOUT_MS = 120_000L
         private const val TAILDROP_MAX_BYTES = 8L * 1024 * 1024
 
