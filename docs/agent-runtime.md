@@ -894,7 +894,8 @@ fun interface AgentInputGuard {
 - `allowedUrls` 只按工具定义的 `allowedUrlParameter` 生效；目前只有 `probe_via_node.url`。
 - 日志用独立的 `sanitizeForLog`，所有 URL、token、Authorization、订阅字段都打码；模型请求日志、错误日志、审计日志都不能出现 API key、Authorization header、订阅 URL。
 - 模型原始响应默认不落盘。调试开关只在 debug build 生效，且必须显式打开。
-- 模型输出按纯文本渲染，不执行 HTML，不自动打开链接；Phase 2b 如果加 Markdown，先做链接白名单。
+- 消息流用 Compose `Text` 渲染，只认 `**bold**` 和单反引号行内代码；行内代码使用等宽字体加 `surfaceContainerHigh` 背景，其余 Markdown 标记按普通文本显示。system prompt 因此要求字面量（路径、命令、flag、工具名、配置键）必须使用行内代码，并禁止表格、标题和围栏代码。不执行 HTML，不自动打开链接。
+- Transcript / API trace 查看器的 Rich 模式另用 Markwon core，支持 CommonMark 基础块和行内元素（标题、粗斜体、列表、引用、链接、行内/围栏代码、分隔线）；未加载 `ext-tables`、`ext-strikethrough`、`ext-tasklist` 等扩展。
 
 ## 10. 预算、超时、取消、重试
 

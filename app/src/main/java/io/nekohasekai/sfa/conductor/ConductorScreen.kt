@@ -1464,7 +1464,12 @@ private fun ConductorItemView(
                 }
                 SelectionContainer {
                     Text(
-                        text = markdownAnnotated(item.text),
+                        text =
+                            markdownAnnotated(
+                                item.text,
+                                codeBackground = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                codeColor = MaterialTheme.colorScheme.onSurface,
+                            ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.fillMaxWidth(),
@@ -1785,7 +1790,11 @@ private fun ConductorItem.stableKey(index: Int): String =
         is ConductorItem.Question -> "question:${id}"
     }
 
-private fun markdownAnnotated(text: String): AnnotatedString =
+internal fun markdownAnnotated(
+    text: String,
+    codeBackground: Color,
+    codeColor: Color,
+): AnnotatedString =
     buildAnnotatedString {
         var cursor = 0
         InlineMarkdown.findAll(text).forEach { match ->
@@ -1801,7 +1810,13 @@ private fun markdownAnnotated(text: String): AnnotatedString =
                     }
 
                 code != null ->
-                    withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) {
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            color = codeColor,
+                            background = codeBackground,
+                        ),
+                    ) {
                         append(code)
                     }
             }

@@ -54,7 +54,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("09f7ad553f8c84afa9869492dc5d864211d7b41539ae26fde28cb84e08b658c9", digest)
+        assertEquals("725912de6563069f446dd9c883e1211a7ea23f96c02e8c7088756c99f98f1598", digest)
     }
 
     @Test
@@ -67,8 +67,10 @@ class AgentPromptStabilityTest {
                 "Do not restate the question, do not open with a preamble, and omit optional background. " +
                 "Keep exact values, required warnings and the next step."
         val styleLine =
-            "Use short plain-text paragraphs. **bold** and `inline code` are allowed; " +
-                "do not use Markdown tables, headings or code fences."
+            "Use short paragraphs or one short list. Always wrap file paths, commands, flags, " +
+                "tool names, config keys and other literal identifiers in `inline code`. " +
+                "Use **bold** sparingly for a warning or the key conclusion. " +
+                "Do not use Markdown tables, headings or code fences."
 
         assertTrue(!normal.contains(briefLine))
         assertTrue(brief.contains(briefLine))
