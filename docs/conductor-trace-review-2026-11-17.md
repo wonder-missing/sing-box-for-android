@@ -19,6 +19,24 @@ The current session covered 23:55:08–00:05:20 (about 10 minutes); 16 API reque
 6. **Two provider requests timed out at 120 s.** These account for most of the wall time; the app retried as designed, but the user sees a long turn with no useful progress.
 7. **VFS goes Off on every app background/resume.** `VfsRuntime` intentionally disconnects the provider when the app leaves the foreground and calls `reconnectLast()` on return. The status chip is Off during that handshake; it is not evidence that the link failed. The provider was online while the trace was copied; that is why the mounted files were readable.
 
+## App-side performance findings
+
+These are code-path findings, not measurements attributed to a stack:
+
+- `ConductorViewModel.init` runs on the main thread. It calls `AgentApiTrace.attachPersistence()` (reads and decodes the persisted `conductor/api-trace.json`, 1.1 MB here), `restoreSession()` (reads and decodes the 512 KB-bounded session preference), and `fileStore.ensureWorkspace()` before the screen is ready. That is a plausible startup-jank source; the 399 ms `ui_jank` window at 23:16 is evidence that jank exists, not proof this exact path caused it.
+- `persistSession()` is called 25 times in the view model, including from UI event handling. `ConductorSessionStore.encodeBounded()` serializes the session, measures UTF-8 size, and can re-encode several times while halving limits; `SharedPreferences` is then written with `apply()`. The JSON work is on the caller thread. With long conversations this is a strong candidate for the observed frame gaps.
+- `AgentApiTrace.record()` encodes and rewrites a file of up to 1 MB for every traced model request. It runs on the request thread, not the main thread, but it can delay the next tool/model step and adds I/O load during a long turn.
+- The two 120-second `network_timeout` entries dominate the 10-minute turn. The app has a single “waiting for provider” state; there is no DNS/TCP/TLS/first-byte breakdown. This is both a latency and a diagnosability problem.
+
+## App-side logic and race findings
+
+- `VfsRuntime` collected `AppLifecycleObserver.isForeground` and **awaited `reconnectLast()` inside the collector**. A background event arriving during a 1.5 s settle or backoff could not be processed until reconnect returned; a handshake could also outlive foreground state. Fixed by running each lifecycle action in a cancellable child job.
+- `VfsConnectionManager.connectLocked()` caught every `Exception`, including `CancellationException`, and converted it into `VFS_CONNECT_FAILED`. Cancelling a foreground reconnect could therefore leave a stale session/state. Fixed by rethrowing cancellation.
+- `OkHttpVfsProviderConnector.connect()` did not close its WebSocket/scope when the caller cancelled during the handshake. Fixed with a cancellation branch that closes the socket.
+- `VfsRuntime.attach()` replaced its manager without disconnecting the previous active manager. Fixed by closing the previous manager.
+- Counting every VFS outbound frame into a `StateFlow` would recompose the status bar for each FUSE chunk. The counter is now throttled to 250 ms or 64 KB.
+- The Stop timeout path checks `isRunning` before cancelling the job; a turn can complete between that check and the forced error append. A second completion check should be kept when touching this path.
+
 ## Did it find a performance problem?
 
 No. The final answer is explicit that it stopped before reading `app.log` or `api-trace.json`. Its file inventory is a lead sheet, not a diagnosis.
