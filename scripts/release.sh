@@ -219,7 +219,7 @@ if [ -n "$PREV_TAG" ]; then
     CHANGES=$(git log --no-merges --pretty='- %s' "$PREV_TAG..HEAD" | head -40)
 fi
 
-MESSAGE="release: wonder.$BUILD"
+MESSAGE="wonder.$BUILD"
 if [ -n "$NOTE" ]; then
     MESSAGE="$MESSAGE
 
