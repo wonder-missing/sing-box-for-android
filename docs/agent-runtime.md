@@ -1418,6 +1418,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - `release_notes` 不再访问 GitHub：release workflow 从 annotated tag 生成 `app/src/main/assets/release-notes-<version>.txt`，`Vendor` 从 APK asset 读取；本地开发构建没有对应 asset 时返回明确的不可用错误。
 - 主界面 VFS 状态位可点击，默认隐藏 VFS sharing 浮动卡片；VFS 断开时自动收起。
 - Stop 的取消宽限期改为 1 秒；工具未确认取消时直接显示 turn error，不再等 3 秒。
+- wonder.86 真机 VFS 分析 trace 复盘见 [`conductor-trace-review-2026-11-17.md`](conductor-trace-review-2026-11-17.md)：旧 84 上下文来自 `conductor/` 下的历史 handoff，不是 `.runtime/trace.md`；工具步数在日志正文分析前耗尽。
 
 ### wonder.86：Viewer 细节、经典 fence 与更新恢复取证（2026-11-16）
 

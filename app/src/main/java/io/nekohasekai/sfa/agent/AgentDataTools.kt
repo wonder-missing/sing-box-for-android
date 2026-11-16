@@ -991,9 +991,9 @@ class AgentDataTools(
                 AgentToolDefinition(
                     name = "release_notes",
                     description =
-                        "Read the release notes for the installed WonderSing version. Use this when the user asks " +
-                            "what changed, what is new in this version, or wants to try a new feature. Returns the " +
-                            "installed version, tag and the public release notes text.",
+                        "Read the release notes bundled in the installed WonderSing build. Use this when the user " +
+                            "asks what changed, what is new in this version, or wants to try a new feature. Returns " +
+                            "the installed version, tag and the bundled release notes text.",
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
