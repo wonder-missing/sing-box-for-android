@@ -9,7 +9,6 @@
 
 ### P1 稳定性与隐私
 
-- [ ] **更新后服务恢复取证（wonder.86）**：84→85 遥测显示 20:04:48 `service_stop` 后，直到 20:06:38 才出现 app85 的 `service_start`，没有自动恢复。86 已加 `service_restore` / `update_install` 遥测和 App 启动 fallback；下次更新后看 `service_restore.result`（no_flags / blocked_crash / start_failed / started）和 `update_install.stage`，再决定是否继续修 OEM/广播路径。
 - [ ] **Rich 查看器空白（已修，待真机验证）**：wonder.82/84 真机点 Rich 后一直空白，Raw 正常。84 遥测 `conductor_viewer` 的 open/ready 在 26–46ms 内完成，且没有 `conductor_viewer_error`，说明 Markwon 解析正常；根因是 `MarkwonAdapterImpl.setParsedMarkdown` 只替换 node 列表、不调用 `notifyDataSetChanged`，RecyclerView 首次空布局后不再刷新。wonder.85/86 在解析完成后显式 `notifyDataSetChanged`，并记录 `stage=adapter` 和 items 数；待真机确认。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
 - [ ] **`TOOL_CANCEL_TIMEOUT` 精确 1 秒**：工具级超时和 Tailscale 取消已落地；Stop 后 1 秒内未确认取消应转成 turn error，而不是等 3 秒强制结束。
@@ -64,8 +63,9 @@
 
 ## 最近完成
 
+- wonder.86 更新后服务恢复已验证（2026-11-16）：遥测记录 `service_stop` 后出现 `service_restore`，action=`package_replaced`、result=`started`、`started_by_user=false`、`restore_after_update=true`，17ms 后 `service_start`；84→85 的丢失没有在 86 复现。
 - wonder.86（2026-11-16）：状态栏去掉 `Started`，Connections / Groups / Timer+Stop 左对齐，新增不可点击的 `VFS 开/关` 状态；Conductor 要求路径、命令、flag、工具名、配置键使用行内代码，并给行内代码加背景。包含 `/tool`、slash fuzzy、Viewer 修复和更新恢复遥测。496 用例绿；release/otherLegacy 编译和 R8 通过；Release `v1.15.0-alpha.13-wonder.86`、arm64 APK 和 Feishu 通知已确认。
-- `/tool` 开发者直调与 slash fuzzy（2026-11-16，工作树）：`/tool` / `/tool <name>` / `/tool <name> <json>`，复用注册表和确认策略；结果只进临时 Tool console，不写 transcript 和 API trace。命令、取值和 MCP 工具建议改为精确/前缀优先的 fuzzy。494 用例绿，待发版。
+- `/tool` 开发者直调与 slash fuzzy（2026-11-16，工作树）：`/tool` / `/tool <name>` / `/tool <name> <json>`，复用注册表和确认策略；结果只进临时 Tool console，不写 transcript 和 API trace。命令、取值、`/tool` 工具名和 MCP 工具建议都支持 fuzzy；`/tool <name> ` 会提示必填/可选参数和示例 JSON。501 用例绿，待发版。
 - wonder.85（2026-11-16）：Rich 查看器空白修复。84 遥测显示 `conductor_viewer` open/ready 在 26–46ms 内完成且无错误，根因是 `MarkwonAdapterImpl.setParsedMarkdown` 不调用 `notifyDataSetChanged`；现在解析后显式刷新，并记录 `stage=adapter` / items。487 用例绿，release/otherLegacy 编译和 R8 通过；release、arm64 APK 和 Feishu 已确认。
 - VFS 新 scope 与预设（wonder.84，2026-11-16）：新增 `workdir`、`appfiles` 两个根，`/vfs` 根暴露外部工作目录，`/vfs/appfiles` 暴露内部 `filesDir` 并排除 `vfs/`；新增 `all`、`conductor_session` 两个 App 侧预设，解析 Link 时展开成根，Portal 和 VFS 协议不改。487 个 JVM 用例绿，release/otherLegacy 编译和 R8 通过；arm64 APK 和 Feishu 通知已确认，待真机验收。
 - wonder.83 低端机实证（2026-11-16）：VFS/MCP 链路通过，服务重启后 core 不可达、境内外 DNS 分裂、trace 预算缩身已记入 P1/P2 和 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
