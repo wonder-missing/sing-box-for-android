@@ -406,6 +406,9 @@ fun ConductorScreen(
     val mcpTools by viewModel.mcpListed.collectAsState()
     val offerMcpVerb = ConductorMcpUse.offerVerb(input)
     val mcpToolSuggestions = ConductorMcpUse.toolSuggestions(input, mcpTools)
+    val toolDefinitions by viewModel.toolDefinitions.collectAsState()
+    val toolSuggestions = ConductorToolUse.toolSuggestions(input, toolDefinitions)
+    val toolHint = ConductorToolUse.hint(input, toolDefinitions)
     var slashMenuHidden by remember { mutableStateOf(false) }
     val slashMenuVisible =
         !inputExpanded &&
@@ -416,11 +419,17 @@ fun ConductorScreen(
                     routingSuggestions.isNotEmpty() ||
                     offerMcpVerb ||
                     mcpToolSuggestions.isNotEmpty() ||
+                    toolSuggestions.isNotEmpty() ||
+                    toolHint != null ||
                     suggestions.isNotEmpty()
             )
     val mcpCommand = input.trimStart().startsWith("/mcp")
     LaunchedEffect(mcpCommand) {
         if (mcpCommand) viewModel.refreshMcpQuietly()
+    }
+    val toolCommand = ConductorToolUse.isCommand(input)
+    LaunchedEffect(toolCommand) {
+        if (toolCommand) viewModel.refreshToolCatalog()
     }
 
     fun focusInput() {
@@ -754,6 +763,30 @@ fun ConductorScreen(
                         focusInput()
                     },
                 )
+            } else if (slashMenuVisible && toolSuggestions.isNotEmpty()) {
+                McpUseSuggestions(
+                    rows =
+                        toolSuggestions.map { tool ->
+                            McpUseRow(
+                                key = tool.name,
+                                title = tool.name,
+                                detail =
+                                    tool.description
+                                        .lineSequence()
+                                        .firstOrNull()
+                                        .orEmpty()
+                                        .ifBlank { tool.serverName ?: tool.category },
+                            )
+                        },
+                    header = toolHint,
+                    onPick = { index ->
+                        val next = "/tool ${toolSuggestions[index].name} "
+                        replaceInput(next, next.length)
+                        focusInput()
+                    },
+                )
+            } else if (slashMenuVisible && toolHint != null) {
+                ToolArgumentHint(toolHint)
             } else if (slashMenuVisible && suggestions.isNotEmpty()) {
                 CommandSuggestions(
                     commands = suggestions,
@@ -2070,42 +2103,69 @@ private data class McpUseRow(
 private fun McpUseSuggestions(
     rows: List<McpUseRow>,
     onPick: (Int) -> Unit,
+    header: String? = null,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 2.dp,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
     ) {
-        LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
-            items(rows.size, key = { index -> rows[index].key }) { index ->
-                val row = rows[index]
-                Row(
-                    modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { onPick(index) }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        text = row.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = row.detail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+        Column {
+            if (header != null) {
+                Text(
+                    text = header,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+            }
+            LazyColumn(modifier = Modifier.heightIn(max = 220.dp)) {
+                items(rows.size, key = { index -> rows[index].key }) { index ->
+                    val row = rows[index]
+                    Row(
+                        modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(index) }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = row.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = row.detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ToolArgumentHint(text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        )
     }
 }
 

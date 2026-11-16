@@ -867,6 +867,9 @@ class ConductorViewModel(
             toolTimeoutMs = agentConfig.toolTimeoutMs,
         )
 
+    private val _toolDefinitions = MutableStateFlow(toolExecutor.definitions())
+    val toolDefinitions: StateFlow<List<AgentToolDefinition>> = _toolDefinitions.asStateFlow()
+
     private val modelClient = OpenAiCompatibleModelClient(endpointProvider = ModelProviderSettings::endpoint)
 
     private val runtime =
@@ -1752,7 +1755,17 @@ class ConductorViewModel(
         } catch (_: Exception) {
             // A stale refresh must not fail the turn. The settings row keeps the error.
         }
-        if (!stopRequested) toolExecutor.setExtras(mcp.tools())
+        if (!stopRequested) {
+            toolExecutor.setExtras(mcp.tools())
+            _toolDefinitions.value = toolExecutor.definitions()
+        }
+    }
+
+    internal fun refreshToolCatalog() {
+        viewModelScope.launch {
+            refreshMcpTools()
+            _toolDefinitions.value = toolExecutor.definitions()
+        }
     }
 
     private fun handleAgentEvent(event: AgentEvent) {
