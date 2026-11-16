@@ -1,0 +1,5 @@
+wonder.86
+
+- Status bar: the redundant Started label is gone, the action chips are left-aligned, and a VFS On/Off indicator is available.
+- Conductor: paths, commands, flags, tool names, and config keys should use inline code; inline code has a background.
+- Also includes the developer /tool console, fuzzy slash suggestions, viewer fixes, and update service-restore diagnostics.

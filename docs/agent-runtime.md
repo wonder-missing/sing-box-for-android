@@ -1413,6 +1413,12 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - `note_create` / `file_put` 生成文件在 Mini 上的绝对路径。
 - 观测到的 vfs 相关 MCP 工具是否为本版本新增（`release_notes` 拉取失败，无法确认）。
 
+### wonder.87（工作树）：离线 release notes、VFS 卡片开关与 Stop 1 秒（2026-11-17）
+
+- `release_notes` 不再访问 GitHub：release workflow 从 annotated tag 生成 `app/src/main/assets/release-notes-<version>.txt`，`Vendor` 从 APK asset 读取；本地开发构建没有对应 asset 时返回明确的不可用错误。
+- 主界面 VFS 状态位可点击，默认隐藏 VFS sharing 浮动卡片；VFS 断开时自动收起。
+- Stop 的取消宽限期改为 1 秒；工具未确认取消时直接显示 turn error，不再等 3 秒。
+
 ### wonder.86：Viewer 细节、经典 fence 与更新恢复取证（2026-11-16）
 
 - Transcript / Trace Viewer 左上角三点菜单从 `MoreVert` 改成 `MoreHoriz`，和横排操作一致。
@@ -1516,7 +1522,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 
 ### wonder.77：Conductor 日常体验与 MCP 命名（2026-11-15）
 
-- 新增 `release_notes` 工具，从公开 release Atom feed 读取当前 `BuildConfig.VERSION_NAME` 的说明，返回 version/tag/notes；`ReleaseNotesSource` 可注入，JVM 测试不联网。
+- 新增 `release_notes` 工具，最初从公开 release Atom feed 读取当前 `BuildConfig.VERSION_NAME` 的说明，返回 version/tag/notes；`ReleaseNotesSource` 可注入，JVM 测试不联网。wonder.87 起改为读取 APK 内置 asset，见上文。
 - Connections 搜索框常开，删掉菜单里的开/关搜索；用户气泡点按用无 indication 的 clickable，去掉涟漪；`ask_user` 选项去掉胶囊背景，控件和文字之间留 8dp。
 - MCP 工具名改为 `<namespace>_<tool>`，去掉 `mcp_`。`McpServerConfig.namespace` 持久化，旧配置回退到 id；添加/编辑对话框支持 Name 与 Namespace，改名只改展示，改前缀才改工具名；`rename` 用缓存里的 remote 列表重建工具，不重新连接。
 - MCP 配置独立成卡片，不再放在 Provider 卡片里；Tool routing 从设置页移出，改为 `/routing on|off`，设置页只留一行命令提示。

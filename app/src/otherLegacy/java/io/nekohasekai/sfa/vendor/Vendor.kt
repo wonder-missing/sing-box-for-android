@@ -8,6 +8,7 @@ import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.RootClient
 import io.nekohasekai.sfa.compose.screen.qrscan.QRCodeCropArea
+import io.nekohasekai.sfa.update.BundledReleaseNotes
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateState
@@ -107,7 +108,7 @@ object Vendor : VendorInterface {
     override val hasCustomUpdate = true
 
     override suspend fun releaseNotes(): io.nekohasekai.sfa.update.ReleaseNotes? =
-        GitHubUpdateChecker().currentReleaseNotes()
+        BundledReleaseNotes.read(Application.application)
 
     override fun checkUpdateAsync(): UpdateInfo? = GitHubUpdateChecker().use { checker -> checker.checkUpdate() }
 

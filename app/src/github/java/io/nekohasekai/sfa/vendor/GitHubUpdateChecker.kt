@@ -3,7 +3,6 @@ package io.nekohasekai.sfa.vendor
 import android.os.Build
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.update.GitHubReleaseFeed
-import io.nekohasekai.sfa.update.ReleaseNotes
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import java.io.Closeable
@@ -52,19 +51,6 @@ class GitHubUpdateChecker : Closeable {
             )
         }
         return null
-    }
-
-    /** Release notes for the installed build, from the same public Atom feed. */
-    fun currentReleaseNotes(): ReleaseNotes? {
-        val entries = GitHubReleaseFeed.parseFeed(httpGet(FEED_URL))
-        val wanted = "v${BuildConfig.VERSION_NAME}"
-        val entry = entries.firstOrNull { it.tag == wanted } ?: return null
-        return ReleaseNotes(
-            version = BuildConfig.VERSION_NAME,
-            tag = entry.tag,
-            notes = entry.notes.orEmpty(),
-            releaseUrl = entry.releaseUrl,
-        )
     }
 
     override fun close() = Unit

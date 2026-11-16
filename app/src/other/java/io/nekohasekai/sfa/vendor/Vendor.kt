@@ -10,6 +10,7 @@ import io.nekohasekai.sfa.bg.RootClient
 import io.nekohasekai.sfa.compose.screen.qrscan.QRCodeCropArea
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.telemetry.TelemetryUpdateCheck
+import io.nekohasekai.sfa.update.BundledReleaseNotes
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateSource
@@ -113,7 +114,7 @@ object Vendor : VendorInterface {
     override val updateSources = listOf(UpdateSource.GITHUB, UpdateSource.FDROID)
 
     override suspend fun releaseNotes(): io.nekohasekai.sfa.update.ReleaseNotes? =
-        GitHubUpdateChecker().currentReleaseNotes()
+        BundledReleaseNotes.read(Application.application)
 
     override fun checkUpdateAsync(): UpdateInfo? {
         val source = UpdateSource.fromString(Settings.updateSource)

@@ -207,6 +207,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+      - name: Bundle release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          CORE_VERSION=$(awk -F= '/^CORE_VERSION=/{print $2; exit}' version.properties)
+          WONDER_BUILD=$(awk -F= '/^WONDER_BUILD=/{print $2; exit}' version.properties)
+          test -n "$CORE_VERSION"
+          test -n "$WONDER_BUILD"
+          VERSION_NAME="${CORE_VERSION}-wonder.${WONDER_BUILD}"
+          mkdir -p app/src/main/assets
+          git for-each-ref --format='%(contents)' "refs/tags/${GITHUB_REF_NAME}" > "app/src/main/assets/release-notes-${VERSION_NAME}.txt"
+          test -s "app/src/main/assets/release-notes-${VERSION_NAME}.txt"
       - name: Setup OpenJDK 17
         uses: actions/setup-java@v5
         with:
