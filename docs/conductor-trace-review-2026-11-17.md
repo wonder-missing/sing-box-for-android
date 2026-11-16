@@ -17,14 +17,14 @@ The current session covered 23:55:08–00:05:20 (about 10 minutes); 16 API reque
 4. **Scope inference was wrong.** The final answer said `conductor` was not authorized for the container, although the `workdir` scope exposed `/vfs/conductor` and the model had already listed it locally. `conversation` and `system_prompt` were indeed not requested; `conductor` was covered by `workdir`.
 5. **Local paths and VFS paths were mixed.** `file_tail(".runtime/trace.md")` correctly failed because local file tools start at the app working directory; the model recovered by using `docker_run` over `/vfs`. The distinction should be stated more explicitly in the tool descriptions.
 6. **Two provider requests timed out at 120 s.** These account for most of the wall time; the app retried as designed, but the user sees a long turn with no useful progress.
-7. **VFS goes Off on every app background/resume.** `VfsRuntime` intentionally disconnects the provider when the app leaves the foreground and calls `reconnectLast()` on return. The status chip is Off during that handshake; it is not evidence that the link failed. The provider was online while the trace was copied; that is why the mounted files were readable.
+7. **VFS goes Off on every app background/resume.** `VfsRuntime` intentionally disconnects the provider when the app leaves the foreground and calls `reconnectLast()` on return. The 87 worktree now shows a spinner plus `VFS 连接中` during that handshake instead of a misleading Off; it was online while the trace was copied, which is why the mounted files were readable.
 
 ## App-side performance findings
 
 These are code-path findings, not measurements attributed to a stack:
 
 - `ConductorViewModel.init` runs on the main thread. It calls `AgentApiTrace.attachPersistence()` (reads and decodes the persisted `conductor/api-trace.json`, 1.1 MB here), `restoreSession()` (reads and decodes the 512 KB-bounded session preference), and `fileStore.ensureWorkspace()` before the screen is ready. That is a plausible startup-jank source; the 399 ms `ui_jank` window at 23:16 is evidence that jank exists, not proof this exact path caused it.
-- `persistSession()` is called 25 times in the view model, including from UI event handling. `ConductorSessionStore.encodeBounded()` serializes the session, measures UTF-8 size, and can re-encode several times while halving limits; `SharedPreferences` is then written with `apply()`. The JSON work is on the caller thread. With long conversations this is a strong candidate for the observed frame gaps.
+- `persistSession()` was called 25 times in the view model, including from UI event handling. `ConductorSessionStore.encodeBounded()` serializes the session, measures UTF-8 size, and can re-encode several times while halving limits; `SharedPreferences` is then written with `apply()`. The JSON work is now on a single-thread `conductor-session` executor; the remaining startup load is still on the main thread.
 - `AgentApiTrace.record()` encodes and rewrites a file of up to 1 MB for every traced model request. It runs on the request thread, not the main thread, but it can delay the next tool/model step and adds I/O load during a long turn.
 - The two 120-second `network_timeout` entries dominate the 10-minute turn. The app has a single “waiting for provider” state; there is no DNS/TCP/TLS/first-byte breakdown. This is both a latency and a diagnosability problem.
 
@@ -50,7 +50,7 @@ The only concrete performance signals in the captured material are two 120-secon
 
 ## Feedback / follow-ups
 
-- P1: give a long VFS analysis a resumable budget or an explicit continuation path; 12 tool rounds is too small for “mount, inspect, analyze logs, compare trace”.
+- P1: give a long VFS analysis a resumable budget or an explicit continuation path. The default tool-round budget was raised from 12 to 20 in the 87 worktree, but a 20-round ceiling is still not a continuation guarantee.
 - P1: clean or archive one-off diagnostic files under `conductor/`; otherwise every new session can read stale `w84`/`w82` handoffs and misattribute current behaviour to an old build.
 - P2: make `vfs_connect` output map to concrete visible roots, or add a prompt rule to inspect `/vfs` after connecting instead of inferring from scope names.
 - P2: clarify that `.runtime/*` is VFS-only and that `conductor/` is part of `workdir`; the current local-vs-VFS split is easy for the model to get wrong.

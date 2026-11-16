@@ -13,11 +13,11 @@
 - [ ] **`conductor/` 旧诊断文件进入新会话**：新会话的 `file_list` 能看到 `vfs-failure-handoff.md`、`session-trace-w84.md`、`session-transcript-w84.md`、`w84-transcript.md` 和 `w82-*`；模型因此直接知道了 84 的事。先定保留/归档规则，或在新会话开始前把这些一次性文件移出工作目录。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
 - [ ] **服务重启后 core 不可达（83 低端机实测）**：BIRD P50S_PRO / Android 11 上，用户停止并重开 Service 后，`network_snapshot` 连续三次（10:25 / 10:27 / 10:31）返回 `core.running=false`、`groupCount=0`、`outboundCount=0`，错误 `groups stream recv: rpc error: code = Unavailable desc = error reading from server: EOF`；同一时刻 `vpnActive=true`、`serviceMode=vpn`，未见自行恢复。下一步：用 Conductor 的文件工具读 crash/OOM reports 和 AppLog，查 CFG `service_start` / `service_stop` / `vpn_session_id`；判断是 core 进程没起来、被杀，还是 `CommandClient` 的 stream 没重连；在 .83 上复现并记录。若 core 真没起来，补一个明确的「服务已启动但核心不可达」状态和重启入口，不能只显示 VPN 已连接。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
-- [ ] **会话编解码移出主线程**：`ConductorViewModel.init` 在主线程 `AgentApiTrace.attachPersistence()`（本次持久化 trace 约 1.1 MB）和 `restoreSession()`（会话上限 512 KB）；`persistSession()` 有 25 个调用点，`ConductorSessionStore.encodeBounded()` 可能多次 JSON 重编码。先用 `ui_jank` 对照，再把 encode/save 放单消费者 IO 队列、load 放后台；复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
+- [ ] **会话加载移出主线程（写入已修）**：`persistSession()` 的 JSON encode/save 已放到单线程 `conductor-session` executor，25 个调用点不再在主线程编码；剩余 `ConductorViewModel.init` 仍在主线程 `AgentApiTrace.attachPersistence()`（本次持久化 trace 约 1.1 MB）和 `restoreSession()`（会话上限 512 KB）。下一步把 load 放后台，并用启动阶段 `ui_jank` 对照；复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 
 ### P2 数据面与能力
 
-- [ ] **VFS 根与本地路径提示**：86 trace 里模型把 `workdir` 的 `**` 误判成 `conductor` 未授权，并把本地 `file_tail(".runtime/trace.md")` 和 VFS `/vfs/.runtime/trace.md` 混在一起。vfs_connect 输出更具体的根映射，或在 prompt 里要求连接后先看 `/vfs`；复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
+- [ ] **VFS 根与本地路径提示（已改描述，待验证）**：86 trace 里模型把 `workdir` 的 `**` 误判成 `conductor` 未授权，并把本地 `file_tail(".runtime/trace.md")` 和 VFS `/vfs/.runtime/trace.md` 混在一起。`vfs_connect` 描述已明确 `workdir` 覆盖 `conductor/`、`.runtime/*` 仅 VFS 可见，并要求连接后先看 `/vfs`；下次真机确认模型是否还犯。复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 - [ ] **ApplicationExitInfo 进程退出取证**：API 30+ 用 `ActivityManager.getHistoricalProcessExitReasons` 读取本进程退出原因、说明、时间戳和 ANR/native trace，写到外部 `diagnostics/exit-info.json`；API 24–29 回退到 crash report 和 `onTrimMemory` 内存快照。用于服务重启后 core 不可达、ANR、native crash。
 - [ ] **VFS 新 scope 真机验收**：按 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md) 的 P7-2b 到 P7-2f 验证 `workdir` 外部目录、`appfiles` 内部目录与 `vfs/` 排除、`all` / `conductor_session` 预设展开、`.runtime` 独立 scope；再确认 `/work` 隔离和只读写入失败不变。
 - [ ] **数据面 Phase B：Taildrop 收件**：`taildrop_inbox`、`taildrop_receive`；沿用 typed 工具 + `ALWAYS` 确认，只允许 tailnet peer。设计见 [`docs/conductor-work-plan-2026-11-13.md`](docs/conductor-work-plan-2026-11-13.md)。
@@ -64,7 +64,7 @@
 
 ## 最近完成
 
-- wonder.87 工作树（2026-11-17）：`release_notes` 改读 APK 内置 tag asset，不再访问 GitHub；主界面 VFS 状态位改为与左侧按钮同款 pill，显示本次连接累计上传字节数（humanize），点击切换 VFS 分享浮动卡，默认隐藏；Stop 未确认取消的宽限期缩到 1 秒并显示 turn error；Rich 查看器已由主人确认可用。`/tool` 工具名补全、参数/示例提示也在本批。
+- wonder.87 工作树（2026-11-17）：`release_notes` 改读 APK 内置 tag asset，不再访问 GitHub；主界面 VFS 状态位改为与左侧按钮同款 pill，显示本次连接累计上传字节数（humanize），重连时显示 spinner/连接中，点击 On 状态切换 VFS 分享浮动卡，默认隐藏；Stop 未确认取消的宽限期缩到 1 秒并显示 turn error；Rich 查看器已由主人确认可用。`/tool` 工具名补全、参数/示例提示也在本批。
 - wonder.86 更新后服务恢复已验证（2026-11-16）：遥测记录 `service_stop` 后出现 `service_restore`，action=`package_replaced`、result=`started`、`started_by_user=false`、`restore_after_update=true`，17ms 后 `service_start`；84→85 的丢失没有在 86 复现。
 - wonder.86（2026-11-16）：状态栏去掉 `Started`，Connections / Groups / Timer+Stop 左对齐，新增可点击的 `VFS 开/关` 状态位（点击切换 VFS 分享卡）；Conductor 要求路径、命令、flag、工具名、配置键使用行内代码，并给行内代码加背景。包含 `/tool`、slash fuzzy、Viewer 修复和更新恢复遥测。496 用例绿；release/otherLegacy 编译和 R8 通过；Release `v1.15.0-alpha.13-wonder.86`、arm64 APK 和 Feishu 通知已确认。
 - `/tool` 开发者直调与 slash fuzzy（2026-11-16，工作树）：`/tool` / `/tool <name>` / `/tool <name> <json>`，复用注册表和确认策略；结果只进临时 Tool console，不写 transcript 和 API trace。命令、取值、`/tool` 工具名和 MCP 工具建议都支持 fuzzy；`/tool <name> ` 会提示必填/可选参数和示例 JSON。501 用例绿，待发版。
