@@ -791,6 +791,9 @@ class ConductorViewModel(
     private val _fileRequest = MutableStateFlow<FileRequestUi?>(null)
     val fileRequest: StateFlow<FileRequestUi?> = _fileRequest.asStateFlow()
 
+    private val _initialDraft = MutableStateFlow<String?>(null)
+    val initialDraft: StateFlow<String?> = _initialDraft.asStateFlow()
+
     init {
         AgentApiTrace.setAppVersion(BuildConfig.VERSION_NAME)
         // Bind before any record can be written; the file read itself stays on
@@ -803,14 +806,16 @@ class ConductorViewModel(
             // A cancelled restore leaves this false, so onCleared never saves
             // the empty startup state over the stored session.
             var applied = false
+            var draft: String? = null
             try {
-                val session =
+                val restored =
                     withContext(Dispatchers.IO) {
                         AgentApiTrace.loadPersisted()
                         runCatching { fileStore.ensureWorkspace() }
-                        sessionStore.load()
+                        sessionStore.load() to sessionStore.loadDraft()
                     }
-                applyRestoredSession(session)
+                applyRestoredSession(restored.first)
+                draft = restored.second
                 applied = true
             } catch (e: CancellationException) {
                 throw e
@@ -818,6 +823,7 @@ class ConductorViewModel(
                 AppLog.warning("conductor restore failed: ${e.javaClass.simpleName}")
                 applied = true
             } finally {
+                _initialDraft.value = draft.orEmpty()
                 _uiState.update { it.copy(sessionRestoring = false) }
                 if (applied) sessionReady.complete(Unit)
             }
@@ -846,8 +852,6 @@ class ConductorViewModel(
             publishNodeState(CommandNodeState())
         }
     }
-
-    fun currentDraft(): String = sessionStore.loadDraft()
 
     fun saveDraft(text: String) {
         sessionStore.saveDraft(text)

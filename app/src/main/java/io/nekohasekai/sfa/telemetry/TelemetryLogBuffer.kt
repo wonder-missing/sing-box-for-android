@@ -44,6 +44,7 @@ internal interface TelemetryFileOps {
 internal class TelemetryLogBuffer(
     private val file: File,
     private val disk: TelemetryFileOps = TelemetryFileOps.Default,
+    private val lineFilter: (String) -> Boolean = { true },
     private val onPersistFailure: ((Exception) -> Unit)? = null,
 ) {
     private val lock = Any()
@@ -77,10 +78,14 @@ internal class TelemetryLogBuffer(
     fun append(newLines: List<String>, eventTs: List<Long?>? = null): Boolean {
         if (newLines.isEmpty()) return false
         synchronized(lock) {
+            var added = 0
             newLines.forEachIndexed { index, line ->
+                if (!lineFilter(line)) return@forEachIndexed
                 lines.addLast(Queued(line, eventTs?.getOrNull(index)))
                 rawBytes += line.toByteArray(Charsets.UTF_8).size
+                added++
             }
+            if (added == 0) return false
             dropOldestLocked()
             generation++
             dirty = true
@@ -255,12 +260,17 @@ internal class TelemetryLogBuffer(
         synchronized(lock) {
             lines.clear()
             rawBytes = 0
+            var filtered = 0
             for (line in loaded) {
+                if (!lineFilter(line)) {
+                    filtered++
+                    continue
+                }
                 lines.addLast(Queued(line, null))
                 rawBytes += line.toByteArray(Charsets.UTF_8).size
             }
             dropOldestLocked()
-            dirty = false
+            dirty = filtered > 0
         }
     }
 

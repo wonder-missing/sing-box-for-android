@@ -972,6 +972,7 @@ internal object TelemetryRuntime {
     private fun newBuffer(context: Context): TelemetryLogBuffer {
         return TelemetryLogBuffer(
             File(context.filesDir, "telemetry/pending.log"),
+            lineFilter = TelemetryLogFilter::shouldUpload,
             onPersistFailure = { error ->
                 Log.w(TAG, "telemetry persist failed: ${error.message}", error)
                 runCatching {

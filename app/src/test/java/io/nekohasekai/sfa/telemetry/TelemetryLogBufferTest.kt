@@ -69,6 +69,32 @@ class TelemetryLogBufferTest {
     private fun reload(file: File): TelemetryLogBuffer = TelemetryLogBuffer(file)
 
     @Test
+    fun appendDropsLinesRejectedByTheFilter() {
+        val file = pendingFile()
+        val buffer = TelemetryLogBuffer(file, lineFilter = { it != "drop-me" })
+
+        buffer.append(listOf("keep", "drop-me", "also-keep"))
+
+        assertEquals(listOf("keep", "also-keep"), buffer.peek())
+        assertTrue(buffer.persist())
+        assertEquals(listOf("keep", "also-keep"), reload(file).peek())
+    }
+
+    @Test
+    fun loadDropsHistoricalLinesRejectedByTheFilter() {
+        val file = pendingFile()
+        val source = TelemetryLogBuffer(file)
+        source.append(listOf("keep", "drop-me"))
+        assertTrue(source.persist())
+
+        val filtered = TelemetryLogBuffer(file, lineFilter = { it != "drop-me" })
+
+        assertEquals(listOf("keep"), filtered.peek())
+        assertTrue(filtered.persist())
+        assertEquals(listOf("keep"), reload(file).peek())
+    }
+
+    @Test
     fun persistFailureDoesNotThrowAndKeepsQueueDirtyForRetry() {
         val file = pendingFile()
         val ops = FakeOps().apply { failOpen = true }
