@@ -13,6 +13,13 @@ import java.util.Locale
  * runtime registry; invocation still goes through the normal tool executor.
  */
 internal object ConductorToolUse {
+    data class ToolArgumentAction(
+        val label: String,
+        val command: String,
+        val cursor: Int? = null,
+        val run: Boolean = false,
+    )
+
     fun isCommand(raw: String): Boolean {
         val parsed = ConductorCommands.parse(raw.trim()) ?: return false
         return parsed.command?.action == ConductorCommandKind.TOOL
@@ -72,6 +79,36 @@ internal object ConductorToolUse {
         return hintFor(tool)
     }
 
+    /**
+     * One-tap actions for the current `/tool <name> ` position. The console
+     * only invokes a tool through `{}` today; these actions remove the need to
+     * type the empty object or a required-argument skeleton by hand.
+     */
+    fun argumentActions(
+        input: String,
+        tools: List<AgentToolDefinition>,
+    ): List<ToolArgumentAction> {
+        val after = argument(input) ?: return emptyList()
+        val trimmed = after.dropWhile { it.isWhitespace() }
+        val name = trimmed.takeWhile { !it.isWhitespace() }
+        if (name.isEmpty()) return emptyList()
+        val rest = trimmed.substring(name.length)
+        if (rest.any { !it.isWhitespace() }) return emptyList()
+        val tool = resolve(name, tools) ?: return emptyList()
+        val required = parametersOf(tool).filter { it.required }
+        if (required.isEmpty()) {
+            return listOf(ToolArgumentAction("Run", "/tool ${tool.name} {}", run = true))
+        }
+        val template = templateJson(required)
+        val command = "/tool ${tool.name} $template"
+        val actions = mutableListOf<ToolArgumentAction>()
+        if (required.all { it.allowBlank }) {
+            actions += ToolArgumentAction("Run", command, run = true)
+        }
+        actions += ToolArgumentAction("Fill required", command, cursor = placeholderCursor(command))
+        return actions
+    }
+
     private fun hintFor(tool: AgentToolDefinition): String {
         val parameters = parametersOf(tool)
         if (parameters.isEmpty()) {
@@ -104,6 +141,27 @@ internal object ConductorToolUse {
         }
     }
 
+    private fun templateJson(required: List<Parameter>): String =
+        required.joinToString(prefix = "{", postfix = "}") { parameter ->
+            "\"${parameter.name}\":${templateValue(parameter.type)}"
+        }
+
+    private fun templateValue(type: AgentParameterType?): String =
+        when (type) {
+            AgentParameterType.INTEGER -> "0"
+            AgentParameterType.BOOLEAN -> "true"
+            AgentParameterType.STRING_ARRAY -> "[]"
+            else -> "\"\""
+        }
+
+    /** Cursor inside the first string placeholder, or after a non-string value. */
+    private fun placeholderCursor(command: String): Int {
+        val emptyString = command.indexOf(":\"\"")
+        if (emptyString >= 0) return (emptyString + 2).coerceAtMost(command.length)
+        val colon = command.indexOf(':')
+        return if (colon >= 0) (colon + 1).coerceAtMost(command.length) else command.length
+    }
+
     private fun exampleValue(type: AgentParameterType?): String =
         when (type) {
             AgentParameterType.INTEGER -> "0"
@@ -118,7 +176,7 @@ internal object ConductorToolUse {
     private fun parametersOf(tool: AgentToolDefinition): List<Parameter> {
         if (tool.parameters.isNotEmpty()) {
             return tool.parameters.map {
-                Parameter(it.name, it.type, it.required)
+                Parameter(it.name, it.type, it.required, it.allowBlank)
             }
         }
         val schema = tool.parametersSchema
@@ -129,7 +187,20 @@ internal object ConductorToolUse {
                 ?.toSet()
                 .orEmpty()
         return properties.keys.map { name ->
-            Parameter(name, null, name in required)
+            val property = properties[name] as? JsonObject
+            val type =
+                (property?.get("type") as? JsonPrimitive)
+                    ?.contentOrNull
+                    ?.let { raw ->
+                        when (raw) {
+                            "string" -> AgentParameterType.STRING
+                            "integer" -> AgentParameterType.INTEGER
+                            "boolean" -> AgentParameterType.BOOLEAN
+                            "array" -> AgentParameterType.STRING_ARRAY
+                            else -> null
+                        }
+                    }
+            Parameter(name, type, name in required)
         }
     }
 
@@ -170,5 +241,6 @@ internal object ConductorToolUse {
         val name: String,
         val type: AgentParameterType?,
         val required: Boolean,
+        val allowBlank: Boolean = false,
     )
 }

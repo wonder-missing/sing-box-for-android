@@ -419,6 +419,7 @@ fun ConductorScreen(
     val toolDefinitions by viewModel.toolDefinitions.collectAsState()
     val toolSuggestions = ConductorToolUse.toolSuggestions(input, toolDefinitions)
     val toolHint = ConductorToolUse.hint(input, toolDefinitions)
+    val toolArgumentActions = ConductorToolUse.argumentActions(input, toolDefinitions)
     var slashMenuHidden by remember { mutableStateOf(false) }
     val slashMenuVisible =
         !inputExpanded &&
@@ -808,7 +809,20 @@ fun ConductorScreen(
                     },
                 )
             } else if (slashMenuVisible && toolHint != null) {
-                ToolArgumentHint(toolHint)
+                ToolArgumentHint(
+                    text = toolHint,
+                    actions = toolArgumentActions,
+                    onAction = { action ->
+                        if (action.run) {
+                            replaceInput("")
+                            viewModel.submit(action.command)
+                            focusManager.clearFocus()
+                        } else {
+                            replaceInput(action.command, action.cursor ?: action.command.length)
+                            focusInput()
+                        }
+                    },
+                )
             } else if (slashMenuVisible && suggestions.isNotEmpty()) {
                 CommandSuggestions(
                     commands = suggestions,
@@ -2176,18 +2190,44 @@ private fun McpUseSuggestions(
 }
 
 @Composable
-private fun ToolArgumentHint(text: String) {
+private fun ToolArgumentHint(
+    text: String,
+    actions: List<ConductorToolUse.ToolArgumentAction>,
+    onAction: (ConductorToolUse.ToolArgumentAction) -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 2.dp,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (actions.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    actions.forEach { action ->
+                        Surface(
+                            shape = RoundedCornerShape(percent = 50),
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.clickable { onAction(action) },
+                        ) {
+                            Text(
+                                text = action.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

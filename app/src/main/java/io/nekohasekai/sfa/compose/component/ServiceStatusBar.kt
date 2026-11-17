@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,25 +44,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.constant.Status
-import io.nekohasekai.sfa.utils.humanBytes
 import kotlinx.coroutines.delay
 
-private val STATUS_CHIP_SHAPE = RoundedCornerShape(8.dp)
-private val STATUS_CHIP_HEIGHT = 36.dp
+private val STATUS_CHIP_SHAPE = RoundedCornerShape(percent = 50)
+private val STATUS_CHIP_MIN_HEIGHT = 36.dp
 private val STATUS_CHIP_TOUCH_HEIGHT = 48.dp
-private val STATUS_CHIP_ICON_SIZE = 18.dp
-
-// Below this width the VFS chip keeps only its label and dot; the upload
-// total stays visible in the sharing card above the bar.
-private val VFS_CHIP_FULL_TEXT_MIN_WIDTH = 400.dp
+private val STATUS_CHIP_ICON_SIZE = 16.dp
+private val STATUS_CHIP_HORIZONTAL_PADDING = 8.dp
 
 @Composable
 fun ServiceStatusBar(
@@ -76,7 +74,6 @@ fun ServiceStatusBar(
     onConnectionsClick: () -> Unit,
     vfsOn: Boolean,
     vfsConnecting: Boolean,
-    vfsUploadBytes: Long,
     onVfsClick: () -> Unit,
     onStopClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -90,10 +87,10 @@ fun ServiceStatusBar(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 3.dp,
         ) {
             BoxWithConstraints {
-                val compactVfs = maxWidth < VFS_CHIP_FULL_TEXT_MIN_WIDTH
+                val density = LocalDensity.current
+                val textMeasurer = rememberTextMeasurer()
                 val transitionLabel =
                     when (serviceStatus) {
                         Status.Starting -> stringResource(R.string.status_starting)
@@ -108,21 +105,41 @@ fun ServiceStatusBar(
                             else -> R.string.vfs_status_off
                         },
                     )
-                val vfsLabel =
-                    if (compactVfs) {
-                        stringResource(R.string.vfs_status_chip_compact)
-                    } else {
-                        stringResource(R.string.vfs_status_chip, humanBytes(vfsUploadBytes))
+                val vfsLabel = stringResource(R.string.vfs_status_chip_compact)
+                val visibleColumns =
+                    1 +
+                        (if (serviceStatus == Status.Started) 1 else 0) +
+                        (if (hasGroups) 1 else 0) +
+                        1
+                val columnWidth =
+                    ((maxWidth - 32.dp - 8.dp * (visibleColumns - 1)) / visibleColumns)
+                        .coerceAtLeast(0.dp)
+                val chipContentWidth =
+                    (columnWidth - STATUS_CHIP_HORIZONTAL_PADDING * 2).coerceAtLeast(0.dp)
+                val vfsLabelWidth =
+                    with(density) {
+                        textMeasurer
+                            .measure(
+                                text = vfsLabel,
+                                style =
+                                    MaterialTheme.typography.labelLarge.copy(
+                                        fontWeight = FontWeight.Medium,
+                                    ),
+                            ).size.width
+                            .toDp()
                     }
+                val showVfsText =
+                    chipContentWidth >=
+                        (6.dp + 4.dp + vfsLabelWidth + 6.dp + STATUS_CHIP_ICON_SIZE)
                 val vfsContainerColor =
                     if (vfsOn) {
-                        MaterialTheme.colorScheme.tertiaryContainer
+                        MaterialTheme.colorScheme.primaryContainer
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerHighest
                     }
                 val vfsContentColor =
                     if (vfsOn) {
-                        MaterialTheme.colorScheme.onTertiaryContainer
+                        MaterialTheme.colorScheme.onPrimaryContainer
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     }
@@ -135,97 +152,96 @@ fun ServiceStatusBar(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Left group: live counters.
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    StatusChip(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        onClick = onStopClick,
+                        modifier = Modifier.weight(1f),
+                        fillWidth = true,
                     ) {
-                        if (serviceStatus == Status.Started) {
-                            StatusChip(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                onClick = onConnectionsClick,
-                            ) {
-                                Text(
-                                    text = connectionsCount.toString(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                ChipIcon(
-                                    imageVector = Icons.Outlined.Cable,
-                                    contentDescription = stringResource(R.string.title_connections),
-                                )
-                            }
+                        if (transitionLabel != null) {
+                            CircularProgressIndicator(
+                                modifier =
+                                Modifier
+                                    .size(16.dp)
+                                    .semantics { contentDescription = transitionLabel },
+                                strokeWidth = 2.dp,
+                                color = LocalContentColor.current,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        } else if (startTime != null) {
+                            UptimeText(startTime = startTime)
+                            Spacer(modifier = Modifier.width(6.dp))
                         }
+                        ChipIcon(
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = stringResource(R.string.stop),
+                        )
+                    }
 
-                        if (hasGroups) {
-                            StatusChip(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                onClick = onGroupsClick,
-                            ) {
-                                Text(
-                                    text = groupsCount.toString(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                ChipIcon(
-                                    imageVector = Icons.Outlined.Layers,
-                                    contentDescription = stringResource(R.string.title_groups),
-                                )
-                            }
+                    if (serviceStatus == Status.Started) {
+                        StatusChip(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            onClick = onConnectionsClick,
+                            modifier = Modifier.weight(1f),
+                            fillWidth = true,
+                        ) {
+                            Text(
+                                text = connectionsCount.toString(),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            ChipIcon(
+                                imageVector = Icons.Outlined.Cable,
+                                contentDescription = stringResource(R.string.title_connections),
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    // Right group: session controls and sharing status.
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    if (hasGroups) {
                         StatusChip(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            onClick = onStopClick,
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            onClick = onGroupsClick,
+                            modifier = Modifier.weight(1f),
+                            fillWidth = true,
                         ) {
-                            if (transitionLabel != null) {
-                                Text(
-                                    text = transitionLabel,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                            } else if (startTime != null) {
-                                UptimeText(startTime = startTime)
-                                Spacer(modifier = Modifier.width(4.dp))
-                            }
+                            Text(
+                                text = groupsCount.toString(),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
                             ChipIcon(
-                                imageVector = Icons.Default.Stop,
-                                contentDescription = stringResource(R.string.stop),
+                                imageVector = Icons.Outlined.Layers,
+                                contentDescription = stringResource(R.string.title_groups),
                             )
                         }
+                    }
 
-                        // The number is bytes uploaded to the consumer during the
-                        // current session; tapping the chip toggles the sharing card.
-                        StatusChip(
-                            containerColor = vfsContainerColor,
-                            contentColor = vfsContentColor,
-                            onClick = onVfsClick,
-                            enabled = vfsOn,
-                        ) {
-                            if (vfsOn) {
-                                Box(
-                                    modifier =
-                                    Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.tertiary),
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                            }
+                    StatusChip(
+                        containerColor = vfsContainerColor,
+                        contentColor = vfsContentColor,
+                        onClick = onVfsClick,
+                        enabled = vfsOn,
+                        modifier = Modifier.weight(1f),
+                        fillWidth = true,
+                    ) {
+                        if (vfsOn) {
+                            Box(
+                                modifier =
+                                Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(LocalContentColor.current),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        if (showVfsText) {
                             Text(
                                 text = vfsLabel,
                                 style = MaterialTheme.typography.labelLarge,
@@ -233,27 +249,27 @@ fun ServiceStatusBar(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            if (vfsConnecting) {
-                                Box(
-                                    modifier = Modifier.size(STATUS_CHIP_ICON_SIZE),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier =
-                                        Modifier
-                                            .size(16.dp)
-                                            .semantics { contentDescription = vfsDescription },
-                                        strokeWidth = 2.dp,
-                                        color = vfsContentColor,
-                                    )
-                                }
-                            } else {
-                                ChipIcon(
-                                    imageVector = Icons.Outlined.CloudUpload,
-                                    contentDescription = vfsDescription,
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        if (vfsConnecting) {
+                            Box(
+                                modifier = Modifier.size(STATUS_CHIP_ICON_SIZE),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier =
+                                    Modifier
+                                        .size(16.dp)
+                                        .semantics { contentDescription = vfsDescription },
+                                    strokeWidth = 2.dp,
+                                    color = vfsContentColor,
                                 )
                             }
+                        } else {
+                            ChipIcon(
+                                imageVector = Icons.Outlined.CloudUpload,
+                                contentDescription = vfsDescription,
+                            )
                         }
                     }
                 }
@@ -274,12 +290,13 @@ internal fun StatusChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    fillWidth: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     Box(
         modifier =
         modifier
-            .height(STATUS_CHIP_TOUCH_HEIGHT)
+            .heightIn(min = STATUS_CHIP_TOUCH_HEIGHT)
             .defaultMinSize(minWidth = STATUS_CHIP_TOUCH_HEIGHT)
             .clip(STATUS_CHIP_SHAPE)
             .clickable(enabled = enabled, onClick = onClick),
@@ -289,10 +306,11 @@ internal fun StatusChip(
             Row(
                 modifier =
                 Modifier
-                    .height(STATUS_CHIP_HEIGHT)
+                    .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+                    .heightIn(min = STATUS_CHIP_MIN_HEIGHT)
                     .clip(STATUS_CHIP_SHAPE)
                     .background(containerColor)
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = STATUS_CHIP_HORIZONTAL_PADDING),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
                 content = content,
@@ -346,6 +364,8 @@ fun UptimeText(startTime: Long, modifier: Modifier = Modifier) {
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Medium,
         color = MaterialTheme.colorScheme.onPrimaryContainer,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = modifier,
     )
 }

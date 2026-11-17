@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,10 +64,10 @@ fun VfsStatusBar(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.FolderOpen,
+                        imageVector = Icons.Outlined.CloudUpload,
                         contentDescription = null,
                         modifier = Modifier.size(22.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))

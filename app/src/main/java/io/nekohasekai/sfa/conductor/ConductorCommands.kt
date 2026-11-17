@@ -118,7 +118,7 @@ object ConductorCommands {
             ),
             ConductorCommand(
                 name = "network",
-                description = "Show the current network snapshot.",
+                description = "Show the device and core snapshot.",
                 usage = "/network",
                 action = ConductorCommandKind.NETWORK,
             ),
@@ -204,6 +204,7 @@ object ConductorCommands {
             tools.sortedBy { it.name }.forEach { tool ->
                 append("  ${tool.name}")
                 tool.serverName?.takeIf { it.isNotBlank() }?.let { append("  (MCP: $it)") }
+                if (tool.category == "meta") append("  (runtime meta)")
                 appendLine()
                 appendLine("    ${tool.description.lineSequence().firstOrNull().orEmpty()}")
                 appendLine("    permission: ${tool.permission.label}")

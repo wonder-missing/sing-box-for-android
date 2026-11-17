@@ -1257,7 +1257,6 @@ class MainActivity :
                                 onConnectionsClick = { showConnectionsSheet = true },
                                 vfsOn = vfsConnected != null,
                                 vfsConnecting = vfsConnecting,
-                                vfsUploadBytes = vfsUploadBytes,
                                 onVfsClick = { vfsCardVisible = !vfsCardVisible },
                                 onStopClick = { dashboardViewModel.toggleService() },
                                 modifier =
@@ -1273,7 +1272,7 @@ class MainActivity :
                         val vfsBarBottom =
                             bottomOverlayPadding +
                                 (if (statusBarVisible) statusBarHeight else 0.dp) +
-                                (if (statusBarVisible) 8.dp else 0.dp)
+                                (if (statusBarVisible) 12.dp else 0.dp)
                         VfsStatusBar(
                             serverName = vfsConnected.serverName ?: "VFS",
                             scope = vfsConnected.scope,

@@ -1,11 +1,13 @@
 package io.nekohasekai.sfa.conductor
 
+import io.nekohasekai.sfa.agent.AgentMetaTools
 import io.nekohasekai.sfa.agent.AgentParameterSpec
 import io.nekohasekai.sfa.agent.AgentParameterType
 import io.nekohasekai.sfa.agent.AgentPermission
 import io.nekohasekai.sfa.agent.AgentToolDefinition
 import io.nekohasekai.sfa.agent.ConfirmationPolicy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -83,5 +85,45 @@ class ConductorToolUseTest {
     fun `no-space command still uses the command menu`() {
         assertTrue(ConductorToolUse.toolSuggestions("/tool", tools).isEmpty())
         assertNull(ConductorToolUse.hint("/tool", tools))
+    }
+
+    @Test
+    fun `console meta tools are listed and hinted`() {
+        val meta = AgentMetaTools.consoleDefinitions()
+        assertEquals(listOf("search_tools"), ConductorToolUse.toolSuggestions("/tool ", meta).map { it.name })
+        val hint = ConductorToolUse.hint("/tool search_tools ", meta)!!
+        assertTrue(hint.contains("query: string (required)"))
+        assertTrue(hint.contains("/tool search_tools {\"query\":\"...\"}"))
+    }
+
+    @Test
+    fun `argument actions run no-argument tools without braces`() {
+        val actions = ConductorToolUse.argumentActions("/tool list_nodes ", tools)
+
+        assertEquals(1, actions.size)
+        assertEquals("Run", actions.single().label)
+        assertEquals("/tool list_nodes {}", actions.single().command)
+        assertTrue(actions.single().run)
+    }
+
+    @Test
+    fun `argument actions fill required parameters with a template`() {
+        val actions = ConductorToolUse.argumentActions("/tool probe_via_node ", tools)
+
+        assertEquals(1, actions.size)
+        assertEquals("Fill required", actions.single().label)
+        assertEquals("/tool probe_via_node {\"url\":\"\"}", actions.single().command)
+        assertEquals(29, actions.single().cursor)
+        assertFalse(actions.single().run)
+    }
+
+    @Test
+    fun `blank required parameters also offer a direct run`() {
+        val meta = AgentMetaTools.consoleDefinitions()
+        val actions = ConductorToolUse.argumentActions("/tool search_tools ", meta)
+
+        assertEquals(listOf("Run", "Fill required"), actions.map { it.label })
+        assertEquals("/tool search_tools {\"query\":\"\"}", actions.first().command)
+        assertTrue(actions.first().run)
     }
 }
