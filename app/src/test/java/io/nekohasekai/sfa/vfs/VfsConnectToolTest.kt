@@ -64,6 +64,51 @@ class VfsConnectToolTest {
         }
 
     @Test
+    fun workdirDoesNotReportConductorAsMissing() =
+        runBlocking {
+            val tool =
+                VfsConnectTool(
+                    object : VfsConnectPort {
+                        override suspend fun connect(link: VfsLink) =
+                            VfsConnectResult(
+                                server = link.server,
+                                scope = setOf(
+                                    VfsScope.WORKDIR,
+                                    VfsScope.APPFILES,
+                                    VfsScope.TRACE,
+                                    VfsScope.SYSTEM_PROMPT,
+                                    VfsScope.CONVERSATION,
+                                ),
+                                expiresAt = null,
+                            )
+                    },
+                )
+            val link =
+                buildJsonObject {
+                    put("type", "vfs-link")
+                    put("version", 2)
+                    put("server", "https://example.com")
+                    put("linkId", "link_all")
+                    put(
+                        "scope",
+                        buildJsonArray {
+                            add("workdir")
+                            add("appfiles")
+                            add("trace")
+                            add("system_prompt")
+                            add("conversation")
+                        },
+                    )
+                }
+
+            val execution = tool.execute(args(link), noCancel)
+
+            assertTrue(execution.ok)
+            assertEquals(null, execution.output?.get("missingScopes"))
+            assertEquals(null, execution.output?.get("hint"))
+        }
+
+    @Test
     fun cooldownKeepsTheRetryFieldsInTheResult() =
         runBlocking {
             val tool =

@@ -66,6 +66,7 @@ object VfsRuntime {
 
     private var collectJob: Job? = null
     private var lifecycleJob: Job? = null
+    private var screenJob: Job? = null
     private var foregroundJob: Job? = null
     private var backgroundJob: Job? = null
 
@@ -201,6 +202,7 @@ object VfsRuntime {
                 }
             }
         lifecycleJob?.cancel()
+        screenJob?.cancel()
         foregroundJob?.cancel()
         backgroundJob?.cancel()
         lifecycleJob =
@@ -216,7 +218,18 @@ object VfsRuntime {
                                 runCatching { manager.reconnectLast() }
                             }
                     } else {
+                        if (sharingActive || manager.hasActiveConnection) {
+                            lifecycleEvent(context, "background")
+                        }
                         scheduleBackgroundGrace(context, manager)
+                    }
+                }
+            }
+        screenJob =
+            scope.launch {
+                AppLifecycleObserver.isScreenOn.collect { screenOn ->
+                    if (sharingActive || manager.hasActiveConnection) {
+                        lifecycleEvent(context, if (screenOn) "screen_on" else "screen_off")
                     }
                 }
             }

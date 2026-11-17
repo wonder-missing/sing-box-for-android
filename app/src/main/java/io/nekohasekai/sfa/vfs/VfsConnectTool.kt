@@ -75,7 +75,7 @@ class VfsConnectTool(
         return try {
             val link = VfsLinkParser.parse(linkObject)
             val result = manager.connect(link)
-            val missing = VfsScope.entries.filter { it !in result.scope }.sortedBy { it.wire }
+            val missing = uncoveredScopes(result.scope)
             ToolExecution(
                 output =
                     buildJsonObject {
@@ -127,6 +127,16 @@ class VfsConnectTool(
             failure("VFS_CONNECT_FAILED", error.message ?: "Could not connect to the VFS provider.")
         }
     }
+
+    /**
+     * `workdir` already exposes `conductor/`; listing CONDUCTOR as missing
+     * after an `all` Link contradicted visibleRoots and made the model ask for
+     * a scope that was already there.
+     */
+    private fun uncoveredScopes(scope: Set<VfsScope>): List<VfsScope> =
+        VfsScope.entries
+            .filter { it !in scope && !(it == VfsScope.CONDUCTOR && VfsScope.WORKDIR in scope) }
+            .sortedBy { it.wire }
 
     private fun failure(
         code: String,
