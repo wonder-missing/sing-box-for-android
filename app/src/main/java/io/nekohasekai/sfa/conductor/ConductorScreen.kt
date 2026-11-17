@@ -217,7 +217,7 @@ fun ConductorScreen(
     val uiState by viewModel.uiState.collectAsState()
     val fileRequest by viewModel.fileRequest.collectAsState()
     val vfsConsent by viewModel.vfsConsent.collectAsState()
-    val initialDraft by viewModel.initialDraft.collectAsState()
+    val draft by viewModel.draft.collectAsState()
     val remoteServer by RemoteControlManager.remoteServer.collectAsState()
     val remoteConnected by RemoteControlManager.isConnected.collectAsState()
     val hostActivity = LocalActivity.current as? ComponentActivity
@@ -256,17 +256,14 @@ fun ConductorScreen(
         )
     }
 
-    var draftApplied by rememberSaveable { mutableStateOf(false) }
     var inputField by rememberSaveable(stateSaver = InputFieldSaver) {
         mutableStateOf(TextFieldValue())
     }
-    LaunchedEffect(initialDraft) {
-        val draft = initialDraft ?: return@LaunchedEffect
-        if (!draftApplied && inputField.text.isEmpty()) {
+    LaunchedEffect(draft) {
+        if (inputField.text.isEmpty() && draft.isNotEmpty()) {
             val text = draft.take(MaxInputChars)
             inputField = TextFieldValue(text, TextRange(text.length))
         }
-        draftApplied = true
     }
     val input = inputField.text
 
@@ -301,9 +298,6 @@ fun ConductorScreen(
         replaceInput(edit.text, cursor)
     }
 
-    LaunchedEffect(Unit) {
-        viewModel.saveDraft(input)
-    }
     var inputExpanded by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(fileRequest?.id) {
         if (fileRequest != null) inputExpanded = false

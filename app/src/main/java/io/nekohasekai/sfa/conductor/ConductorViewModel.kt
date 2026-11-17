@@ -775,8 +775,11 @@ class ConductorViewModel(
     private val _fileRequest = MutableStateFlow<FileRequestUi?>(null)
     val fileRequest: StateFlow<FileRequestUi?> = _fileRequest.asStateFlow()
 
-    private val _initialDraft = MutableStateFlow<String?>(null)
-    val initialDraft: StateFlow<String?> = _initialDraft.asStateFlow()
+    private val _draft = MutableStateFlow("")
+    val draft: StateFlow<String> = _draft.asStateFlow()
+
+    @Volatile
+    private var draftTouched = false
 
     init {
         AgentApiTrace.setAppVersion(BuildConfig.VERSION_NAME)
@@ -807,7 +810,7 @@ class ConductorViewModel(
                 AppLog.warning("conductor restore failed: ${e.javaClass.simpleName}")
                 applied = true
             } finally {
-                _initialDraft.value = draft.orEmpty()
+                if (!draftTouched) _draft.value = draft.orEmpty()
                 _uiState.update { it.copy(sessionRestoring = false) }
                 if (applied) sessionReady.complete(Unit)
             }
@@ -838,7 +841,10 @@ class ConductorViewModel(
     }
 
     fun saveDraft(text: String) {
-        sessionStore.saveDraft(text)
+        val normalized = text.take(ConductorSessionStore.MAX_DRAFT)
+        draftTouched = true
+        if (_draft.value != normalized) _draft.value = normalized
+        sessionStore.saveDraft(normalized)
     }
 
     fun submit(raw: String) {
