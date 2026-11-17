@@ -21,6 +21,7 @@ enum class AgentPermission(
     DATA_EGRESS("data_egress"),
     USER_INTERACTION("user_interaction"),
     READ_APP_STATE("read_app_state"),
+    UTILITY("utility"),
 }
 
 enum class ConfirmationPolicy {

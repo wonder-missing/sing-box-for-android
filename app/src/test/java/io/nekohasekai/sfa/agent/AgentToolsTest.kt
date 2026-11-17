@@ -6,6 +6,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.long
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -152,6 +155,31 @@ class AgentToolsTest {
         assertTrue(output.obj("core").boolean("remoteControl"))
         assertTrue(output.string("note").contains("not available over Remote Control"))
     }
+
+    @Test
+    fun waitWithZeroSecondsReturnsImmediately() {
+        val result = buildTestRegistry().userExec("wait", """{"seconds":0}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals(0L, result.output!!.long("waitedMs"))
+    }
+
+    @Test
+    fun waitCanBeCancelled() =
+        runBlocking {
+            val registry = buildTestRegistry()
+            val pending =
+                async(Dispatchers.Default) {
+                    registry.invokeUserCommand("wait", """{"seconds":2}""")
+                }
+            delay(100)
+            registry.cancelActive()
+
+            val result = pending.await()
+
+            assertFalse(result.ok)
+            assertEquals("cancelled", result.errorCode)
+        }
 
     @Test
     fun probePassesOutboundAndUrlToPort() {

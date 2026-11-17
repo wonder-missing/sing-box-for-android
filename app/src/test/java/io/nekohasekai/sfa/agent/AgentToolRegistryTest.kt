@@ -45,7 +45,8 @@ class AgentToolRegistryTest {
                 it.permission == AgentPermission.READ_NETWORK_STATE ||
                     it.permission == AgentPermission.NETWORK_PROBE ||
                     it.permission == AgentPermission.NETWORK_CHANGE ||
-                    it.permission == AgentPermission.DATA_EGRESS
+                    it.permission == AgentPermission.DATA_EGRESS ||
+                    it.permission == AgentPermission.UTILITY
             },
         )
         assertTrue(AgentPermission.values().none { it.label.contains("shell") || it.label.contains("ssh") })
@@ -132,7 +133,7 @@ class AgentToolRegistryTest {
     fun definitionsExposeJsonSchemas() {
         val definitions = registry.definitions()
         assertEquals(
-            listOf("list_nodes", "system_snapshot", "probe_via_node", "probe_many"),
+            listOf("list_nodes", "system_snapshot", "wait", "probe_via_node", "probe_many"),
             definitions.map { it.name },
         )
 

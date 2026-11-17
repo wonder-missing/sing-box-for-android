@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -24,6 +25,55 @@ class AgentTools(
     private val httpFetchPort: HttpFetchPort? = null,
     private val webSearchPort: WebSearchPort? = null,
 ) {
+    private val wait =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "wait",
+                    description =
+                        "Pause for a bounded time between tool calls. Use it after select_outbound or " +
+                            "before retrying an operation whose effect is asynchronous. This is a blind " +
+                            "delay; when a concrete state can be read back, read it instead.",
+                    permission = AgentPermission.UTILITY,
+                    parameters =
+                        listOf(
+                            AgentParameterSpec(
+                                name = "seconds",
+                                type = AgentParameterType.INTEGER,
+                                required = false,
+                                description = "Delay in whole seconds, 0-10. Defaults to 1; 0 is a no-op.",
+                            ),
+                        ),
+                    confirmationPolicy = ConfirmationPolicy.NEVER,
+                    category = "utility",
+                    aliases = listOf("sleep", "delay", "pause", "settle", "wait for"),
+                    timeoutMs = WAIT_TIMEOUT_MS,
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val seconds = (AgentJson.int(args, "seconds") ?: 1).coerceIn(0, MAX_WAIT_SECONDS)
+                val durationMs = seconds * 1000L
+                val deadlineNanos = System.nanoTime() + durationMs * 1_000_000L
+                while (true) {
+                    if (cancellation.isCancelled()) {
+                        return ToolExecution(errorCode = "cancelled", errorMessage = "wait cancelled")
+                    }
+                    val remainingNanos = deadlineNanos - System.nanoTime()
+                    if (remainingNanos <= 0) break
+                    delay(minOf(100L, maxOf(1L, remainingNanos / 1_000_000L)))
+                }
+                return ToolExecution(
+                    output =
+                        buildJsonObject {
+                            put("waitedMs", durationMs)
+                        },
+                )
+            }
+        }
+
     private val listNodes =
         object : AgentTool {
             override val definition =
@@ -945,6 +995,7 @@ class AgentTools(
             buildList {
                 add(listNodes)
                 add(systemSnapshot)
+                add(wait)
                 add(probeViaNode)
                 add(probeMany)
                 if (selectionPort != null) add(selectOutbound)
@@ -1006,6 +1057,8 @@ class AgentTools(
 private const val MAX_PROBE_MANY = 20
 private const val DEFAULT_PROBE_MANY = 10
 private const val MAX_PROBE_MANY_MS = 90_000L
+private const val MAX_WAIT_SECONDS = 10
+private const val WAIT_TIMEOUT_MS = 15_000L
 
 private const val DEFAULT_FETCH_BYTES = 64 * 1024
 private const val MAX_FETCH_BYTES = 256 * 1024
