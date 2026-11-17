@@ -87,6 +87,12 @@ object AgentApiTrace {
     @Volatile
     private var persistenceFile: File? = null
 
+    /** True once the file bound by [bindPersistence] has been read. */
+    private var persistenceLoaded = true
+
+    /** Bumped by bind/clear so a slow load cannot apply stale entries. */
+    private var persistenceGeneration = 0
+
     @Volatile
     private var appVersion: String = ""
 
@@ -105,23 +111,68 @@ object AgentApiTrace {
     fun lastSystemPrompt(): String? = systemPrompt
 
     /**
-     * Loads the bounded trace file written by a previous process. The file is
-     * private to the app and is never exposed through the VFS or file tools.
+     * Binds the bounded trace file written by a previous process and loads it
+     * synchronously. Callers already on a worker thread can use this; startup
+     * code should use [bindPersistence] and [loadPersisted] instead so the
+     * read never runs on the main thread.
      */
     fun attachPersistence(file: File) {
+        bindPersistence(file)
+        loadPersisted()
+    }
+
+    /**
+     * Binds the trace file without reading it. Records written before
+     * [loadPersisted] finishes stay in memory, so the load never observes a
+     * partially written file and never drops what was recorded meanwhile.
+     */
+    fun bindPersistence(file: File) {
         synchronized(lock) {
             persistenceFile = file
-            val raw = if (file.isFile) runCatching { file.readText() }.getOrNull() else null
-            val persisted =
-                raw?.let {
-                    runCatching { persistJson.decodeFromString<PersistedApiTrace>(it) }.getOrNull()
-                } ?: return
-            entries.clear()
-            entries.addAll(persisted.entries.takeLast(MAX_ENTRIES))
-            summaryEntries.clear()
-            summaryEntries.addAll(persisted.summaries.takeLast(MAX_SUMMARIES))
-            systemPrompt = persisted.systemPrompt
-            if (persisted.appVersion.isNotBlank()) appVersion = persisted.appVersion
+            persistenceLoaded = false
+            persistenceGeneration += 1
+        }
+    }
+
+    /**
+     * Loads the file bound by [bindPersistence]. Call off the main thread: the
+     * file can hold megabytes of request bodies. Records buffered while the
+     * read was in flight are merged after the persisted entries and written
+     * once, keeping newest-last order.
+     */
+    fun loadPersisted() {
+        val (file, generation) =
+            synchronized(lock) {
+                val bound = persistenceFile ?: return
+                bound to persistenceGeneration
+            }
+        val persisted =
+            runCatching {
+                if (!file.isFile) return@runCatching null
+                persistJson.decodeFromString<PersistedApiTrace>(file.readText())
+            }.getOrNull()
+        synchronized(lock) {
+            if (generation != persistenceGeneration || persistenceFile !== file) return
+            val liveEntries = entries.toList()
+            val liveSummaries = summaryEntries.toList()
+            if (persisted != null) {
+                entries.clear()
+                entries.addAll(
+                    (persisted.entries.takeLast(MAX_ENTRIES) + liveEntries).takeLast(MAX_ENTRIES),
+                )
+                summaryEntries.clear()
+                summaryEntries.addAll(
+                    (persisted.summaries.takeLast(MAX_SUMMARIES) + liveSummaries)
+                        .takeLast(MAX_SUMMARIES),
+                )
+                if (systemPrompt == null) systemPrompt = persisted.systemPrompt
+                if (appVersion.isBlank() && persisted.appVersion.isNotBlank()) {
+                    appVersion = persisted.appVersion
+                }
+                enforceBodyBudget()
+            }
+            persistenceLoaded = true
+            if (liveEntries.isNotEmpty() || liveSummaries.isNotEmpty()) persistLocked()
         }
     }
 
@@ -167,11 +218,16 @@ object AgentApiTrace {
             entries.clear()
             summaryEntries.clear()
             systemPrompt = null
+            persistenceGeneration += 1
+            persistenceLoaded = true
         }
         runCatching { persistenceFile?.delete() }
     }
 
     private fun persistLocked() {
+        // A load in flight must not be overwritten with only the entries that
+        // arrived after the bind; loadPersisted flushes them after the merge.
+        if (!persistenceLoaded) return
         val file = persistenceFile ?: return
         runCatching {
             var selected = entries.toList()

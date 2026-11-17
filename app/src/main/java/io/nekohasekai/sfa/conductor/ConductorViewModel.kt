@@ -153,6 +153,8 @@ class ConductorViewModel(
         val turnStatusSince: Long = 0L,
         /** An image picked in the composer and waiting for the next sent message. */
         val pendingImage: AgentImageRef? = null,
+        /** True until the persisted session has been applied after process start. */
+        val sessionRestoring: Boolean = true,
         /** Transient developer tool output; never persisted into the session. */
         val toolConsole: ToolConsoleState? = null,
     )
@@ -184,6 +186,9 @@ class ConductorViewModel(
         Executors.newSingleThreadExecutor { task ->
             Thread(task, "conductor-session").apply { isDaemon = true }
         }
+
+    /** Completes after the persisted session has been applied (or found absent). */
+    private val sessionReady = CompletableDeferred<Unit>()
 
     private val commandClient =
         CommandClient(
@@ -787,13 +792,36 @@ class ConductorViewModel(
     val fileRequest: StateFlow<FileRequestUi?> = _fileRequest.asStateFlow()
 
     init {
-        AgentApiTrace.attachPersistence(
+        AgentApiTrace.setAppVersion(BuildConfig.VERSION_NAME)
+        // Bind before any record can be written; the file read itself stays on
+        // IO so a large persisted trace cannot jank the first frame.
+        AgentApiTrace.bindPersistence(
             File(getApplication<Application>().filesDir, "conductor/api-trace.json"),
         )
-        AgentApiTrace.setAppVersion(BuildConfig.VERSION_NAME)
-        runCatching { fileStore.ensureWorkspace() }
-        restoreSession()
         _uiState.update { it.copy(agentSupported = apiKeyProvider.supported) }
+        viewModelScope.launch {
+            // A cancelled restore leaves this false, so onCleared never saves
+            // the empty startup state over the stored session.
+            var applied = false
+            try {
+                val session =
+                    withContext(Dispatchers.IO) {
+                        AgentApiTrace.loadPersisted()
+                        runCatching { fileStore.ensureWorkspace() }
+                        sessionStore.load()
+                    }
+                applyRestoredSession(session)
+                applied = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLog.warning("conductor restore failed: ${e.javaClass.simpleName}")
+                applied = true
+            } finally {
+                _uiState.update { it.copy(sessionRestoring = false) }
+                if (applied) sessionReady.complete(Unit)
+            }
+        }
     }
 
     fun onServiceState(
@@ -826,11 +854,17 @@ class ConductorViewModel(
     }
 
     fun submit(raw: String) {
-        submitInternal(
-            raw = raw,
-            images = listOfNotNull(_uiState.value.pendingImage),
-            clearPending = true,
-        )
+        val images = listOfNotNull(_uiState.value.pendingImage)
+        if (sessionReady.isCompleted) {
+            submitInternal(raw = raw, images = images, clearPending = true)
+            return
+        }
+        // The stored conversation is still loading. Starting a turn now would
+        // use an empty history and persist over the stored session.
+        viewModelScope.launch {
+            sessionReady.await()
+            submitInternal(raw = raw, images = images, clearPending = true)
+        }
     }
 
     /**
@@ -1562,6 +1596,9 @@ class ConductorViewModel(
     }
 
     internal suspend fun resolveMcpUse(raw: String): ConductorMcpUse.Outcome {
+        // This path appends items without going through submit; wait so a
+        // restore cannot replace them with the stored conversation.
+        sessionReady.await()
         if (_uiState.value.isRunning) {
             append(ConductorItem.Notice("busy", "Wait for the current command to finish."))
             persistSession()
@@ -2505,8 +2542,12 @@ class ConductorViewModel(
 
     fun hasApiTrace(): Boolean = AgentApiTrace.hasEntries()
 
-    private fun restoreSession() {
-        val session = sessionStore.load() ?: return
+    /**
+     * Applies a session decoded on IO. Runs on the main thread, before any
+     * queued [submit] resumes, so it cannot overwrite user-visible state.
+     */
+    private fun applyRestoredSession(session: ConductorSession?) {
+        if (session == null) return
         sessionStartVersion = session.appVersion.ifBlank { BuildConfig.VERSION_NAME }
         val loadedTranscript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
         val repaired = repairRestoredTranscript(loadedTranscript, session.items)
@@ -2548,6 +2589,9 @@ class ConductorViewModel(
     }
 
     private fun persistSession() {
+        // The restored session must be applied before any write: a save during
+        // startup would replace the stored conversation with the empty state.
+        if (!sessionReady.isCompleted) return
         val items = _uiState.value.items.filterNot { it is ConductorItem.Confirmation }
         if (transcript.isEmpty() && items.isEmpty() && pendingTurnEvent == null) {
             runCatching { sessionWrites.execute { sessionStore.clear() } }

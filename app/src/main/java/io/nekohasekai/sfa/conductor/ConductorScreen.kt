@@ -639,7 +639,19 @@ fun ConductorScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                if (uiState.items.isEmpty()) {
+                if (uiState.items.isEmpty() && uiState.sessionRestoring) {
+                    item(key = "restoring") {
+                        Box(
+                            modifier = Modifier.fillParentMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                    }
+                } else if (uiState.items.isEmpty()) {
                     item(key = "empty") {
                         ConductorEmptyState(
                             onCommand = { command ->

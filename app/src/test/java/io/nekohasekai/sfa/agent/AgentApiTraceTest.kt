@@ -247,6 +247,67 @@ class AgentApiTraceTest {
     }
 
     @Test
+    fun recordsBufferedWhileLoadingAreMergedAfterPersistedEntries() {
+        val dir = Files.createTempDirectory("conductor-trace-bind").toFile()
+        val file = File(dir, "api-trace.json")
+        AgentApiTrace.clear()
+        AgentApiTrace.bindPersistence(file)
+        AgentApiTrace.loadPersisted()
+        AgentApiTrace.record(traceEntry(1_700_000_000_000L, "persisted-before"))
+        AgentApiTrace.resetInMemoryForTest()
+
+        // Startup binds the file first; a record can arrive before the load.
+        AgentApiTrace.bindPersistence(file)
+        AgentApiTrace.record(traceEntry(1_700_000_001_000L, "recorded-while-loading"))
+        assertFalse(file.readText().contains("recorded-while-loading"))
+
+        AgentApiTrace.loadPersisted()
+
+        val export = AgentApiTrace.export()
+        assertEquals(2, export.count)
+        assertTrue(
+            export.text.indexOf("persisted-before") <
+                export.text.indexOf("recorded-while-loading"),
+        )
+        assertTrue(file.readText().contains("recorded-while-loading"))
+        AgentApiTrace.clear()
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun recordsBufferedBeforeTheFirstLoadAreFlushedAfterIt() {
+        val dir = Files.createTempDirectory("conductor-trace-first-load").toFile()
+        val file = File(dir, "api-trace.json")
+        AgentApiTrace.clear()
+        AgentApiTrace.bindPersistence(file)
+        AgentApiTrace.record(traceEntry(1_700_000_002_000L, "buffered-before-load"))
+        assertFalse(file.exists())
+
+        AgentApiTrace.loadPersisted()
+
+        assertTrue(file.isFile)
+        assertEquals(1, AgentApiTrace.export().count)
+        assertTrue(file.readText().contains("buffered-before-load"))
+        AgentApiTrace.clear()
+        dir.deleteRecursively()
+    }
+
+    private fun traceEntry(
+        timestamp: Long,
+        prompt: String,
+    ) = ApiTraceEntry(
+        timestamp = timestamp,
+        method = "POST",
+        url = "https://api.deepseek.com/chat/completions",
+        requestHeaders = emptyMap(),
+        requestBody = """{"messages":[{"role":"system","content":"$prompt"}]}""",
+        status = 200,
+        responseHeaders = emptyMap(),
+        responseBody = "{}",
+        error = null,
+    )
+
+    @Test
     fun printsErrorCodeAndRequestId() {
         AgentApiTrace.clear()
         AgentApiTrace.record(
