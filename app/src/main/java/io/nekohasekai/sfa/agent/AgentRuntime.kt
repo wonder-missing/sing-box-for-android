@@ -410,6 +410,7 @@ class AgentRuntime(
             fun recordObservation(
                 call: ToolCall,
                 raw: ToolObservation,
+                confirmationMs: Long? = null,
             ) {
                 val remainingTurn = (config.maxObservationCharsPerTurn - turnObservationChars).coerceAtLeast(0)
                 val remainingRound = (config.maxObservationCharsPerRound - roundObservationChars).coerceAtLeast(0)
@@ -440,6 +441,7 @@ class AgentRuntime(
                             message = observation.message,
                             truncated = observation.truncated,
                             degraded = observation.degraded,
+                            confirmationMs = confirmationMs,
                         ),
                     ),
                 )
@@ -544,6 +546,7 @@ class AgentRuntime(
                             errorMessage = e.message ?: "tool failed",
                         )
                     }
+                var confirmationMs: Long? = null
 
                 if (result.confirmation != null) {
                     val request =
@@ -559,7 +562,8 @@ class AgentRuntime(
                     onEvent(AgentEvent.StateChanged(TurnState.AwaitingConfirmation(step, request)))
                     val confirmationStartedAt = System.currentTimeMillis()
                     val decision = withTimeoutOrNull(config.confirmationTimeoutMs) { confirm(request) }
-                    confirmationPausedMs += System.currentTimeMillis() - confirmationStartedAt
+                    confirmationMs = System.currentTimeMillis() - confirmationStartedAt
+                    confirmationPausedMs += confirmationMs
                     if (decision == null) {
                         appendCancelled(transcript, executable.drop(index), "confirmation timed out", onEvent)
                         return finish(
@@ -578,7 +582,7 @@ class AgentRuntime(
                     result = tools.invokeAgent(executed, humanApproved = true)
                 }
 
-                recordObservation(executed, result.toObservation())
+                recordObservation(executed, result.toObservation(), confirmationMs)
             }
 
             extra.forEach { call ->

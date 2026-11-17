@@ -1660,9 +1660,17 @@ class ConductorViewModel(
                     toolStartedAt.remove(event.result.callId)?.let { startedAt ->
                         SystemClock.uptimeMillis() - startedAt
                     }
+                val waitMs = event.result.confirmationMs
+                val workMs =
+                    if (elapsedMs != null && waitMs != null) {
+                        (elapsedMs - waitMs).coerceAtLeast(0L)
+                    } else {
+                        null
+                    }
                 AppLog.info(
                     "conductor tool=${event.result.name} ok=${event.result.ok} " +
-                        "code=${event.result.errorCode ?: "-"} ms=${elapsedMs ?: "-"}",
+                        "code=${event.result.errorCode ?: "-"} ms=${elapsedMs ?: "-"} " +
+                        "wait=${waitMs ?: "-"} work=${workMs ?: "-"}",
                 )
                 if (elapsedMs != null) {
                     TelemetryEventLog.recordAsync(
@@ -1671,6 +1679,8 @@ class ConductorViewModel(
                         buildMap {
                             put("tool", telemetryToolName(event.result.name))
                             put("ms", elapsedMs)
+                            waitMs?.let { put("confirmMs", it) }
+                            workMs?.let { put("workMs", it) }
                             put("ok", event.result.ok)
                             put("code", event.result.errorCode ?: "-")
                             if (!event.result.ok) {

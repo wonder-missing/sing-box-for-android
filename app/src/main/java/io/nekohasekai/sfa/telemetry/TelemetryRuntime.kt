@@ -164,7 +164,9 @@ internal object TelemetryRuntime {
             if (!TelemetryPreferences.canUpload(context)) return
             val receivedAt = System.currentTimeMillis()
             val lines = message.mapNotNull { entry ->
-                TelemetryPayload.normalizeLine(entry.message ?: return@mapNotNull null)
+                val raw = entry.message ?: return@mapNotNull null
+                if (!TelemetryLogFilter.shouldUpload(raw)) return@mapNotNull null
+                TelemetryPayload.normalizeLine(raw)
             }
             if (lines.isEmpty()) return
             // Serialize with detachAndFlushAsync: once it clears the buffer and

@@ -89,6 +89,8 @@ data class ToolResultView(
     val message: String?,
     val truncated: Boolean,
     val degraded: Boolean = false,
+    /** Time spent waiting for the user's confirmation, if one was requested. */
+    val confirmationMs: Long? = null,
 )
 
 @Serializable

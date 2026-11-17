@@ -103,6 +103,19 @@ object CrashReportManager {
     fun listReports(): List<CrashReport> =
         if (::workingDir.isInitialized) scanCrashReports() else emptyList()
 
+    /** Versions of unread reports; missing metadata simply cannot match a build. */
+    internal fun unreadVersions(): List<CrashVersion> =
+        listReports()
+            .asSequence()
+            .filterNot { it.isRead }
+            .mapNotNull { report ->
+                val metadata = File(report.directory, METADATA_FILE_NAME)
+                val json = runCatching { JSONObject(metadata.readText()) }.getOrNull() ?: return@mapNotNull null
+                val code = json.optString("appVersion").toIntOrNull()
+                val name = json.optString("appMarketingVersion").trim()
+                if (code == null && name.isEmpty()) null else CrashVersion(code, name)
+            }.toList()
+
     private fun archivePendingJvmCrashReport() {
         val crashFile = File(workingDir, PENDING_JVM_CRASH_FILE_NAME)
         val metadataFile = File(workingDir, PENDING_JVM_METADATA_FILE_NAME)

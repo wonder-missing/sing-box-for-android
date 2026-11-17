@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.bg
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.telemetry.TelemetryEventLog
@@ -13,11 +14,29 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal data class CrashVersion(
+    val code: Int?,
+    val name: String,
+)
+
 internal object ServiceRestorePolicy {
     fun shouldStart(
         startedByUser: Boolean,
         restoreAfterUpdate: Boolean,
     ): Boolean = startedByUser || restoreAfterUpdate
+
+    /**
+     * Crash-loop protection only applies to a crash from the build that is
+     * starting. An old unread report must not block every later update.
+     */
+    fun shouldBlockForCrash(
+        unreadVersions: List<CrashVersion>,
+        currentCode: Int,
+        currentName: String,
+    ): Boolean =
+        unreadVersions.any { version ->
+            version.code == currentCode || (version.name.isNotBlank() && version.name == currentName)
+        }
 }
 
 class BootReceiver : BroadcastReceiver() {
@@ -47,7 +66,13 @@ class BootReceiver : BroadcastReceiver() {
                     return@launch
                 }
                 CrashReportManager.refresh()
-                if (CrashReportManager.unreadCount.value > 0) {
+                if (
+                    ServiceRestorePolicy.shouldBlockForCrash(
+                        CrashReportManager.unreadVersions(),
+                        BuildConfig.VERSION_CODE,
+                        BuildConfig.VERSION_NAME,
+                    )
+                ) {
                     Settings.startedByUser = false
                     Settings.restoreServiceAfterUpdate = false
                     result = "blocked_crash"

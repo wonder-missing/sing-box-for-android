@@ -70,7 +70,9 @@ wonder.91 修复：
 - 重连预算耗尽时不再停在 `Backoff`，改为 `VFS_CONNECT_FAILED` Error，前台服务随之停止，避免留下永远“连接中”的通知。
 - 监测脚本只在有 online provider 时切换目标，避免把旧的离线 provider 当成新目标。
 
-待真机确认：更新 91 后重复本监测；预期路径短暂中断时在约 20–40 秒内触发重连，而不是等用户手动申请新 Link。
+第二轮监测（同一 wonder.90，改进方法）在 08:20:04–08:50:04 跑了 56 个样本，**56/56 健康**：目标 provider 始终 online/mounted/readOnly，FUSE 读 140 字节测试文件稳定，6 次真实消费者容器读取全部成功，没有 provider 或 generation 切换。期间 App 多次回到前台（CFG 可见 `vfs_lifecycle foreground`），说明前台服务在这段窗口里保住了同一 Link。注意这轮不是 91 的验证；91 的死链检测要等更新后复测。
+
+wonder.92 修复：全量 Link 的 `missingScopes` 不再错误列出 `conductor`（`workdir` 已覆盖）；VFS 活跃时记录 `background`/`screen_on`/`screen_off` 遥测。通知栏下拉没有可靠回调，仍不记录。
 
 ## 待真机验收
 
