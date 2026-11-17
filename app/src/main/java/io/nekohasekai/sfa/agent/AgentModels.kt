@@ -153,12 +153,6 @@ interface DiagnosticsSource {
     ): TraceExport
 }
 
-data class TaildropPeerInfo(
-    val name: String,
-    val online: Boolean,
-    val lastSeen: String? = null,
-)
-
 data class TaildropSendResult(
     val peer: String,
     val files: List<String>,
@@ -171,8 +165,6 @@ interface ReleaseNotesSource {
 }
 
 interface TaildropPort {
-    suspend fun peers(): List<TaildropPeerInfo>
-
     suspend fun send(
         peer: String,
         files: List<File>,
@@ -381,7 +373,9 @@ interface HttpFetchPort {
     fun fetch(
         outbound: String?,
         url: String,
+        method: String,
         headers: List<Pair<String, String>>,
+        body: String?,
         maxBytes: Int,
         cancellation: ToolCancellation? = null,
     ): HttpFetchOutcome

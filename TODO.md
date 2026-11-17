@@ -41,6 +41,7 @@
 
 ### P3 低优先 / 可选 / 阻塞
 
+- [ ] **`file_grep` 多文件/目录支持（低）**：当前只搜单个文件。需要时让 `path` 支持目录并返回文件 + 行号，不新增 `file_search`；先不动。
 - [ ] **数据面 Phase D（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍只走 typed 工具 + 确认。
 - [ ] **VFS 后续（可选）**：P6e 进程被杀后恢复最后一条 Link；按 Portal refs/consumer 生命周期自动停止；后台共享时长设置。后台 provider 与前台服务已在 wonder.90 落地，见 [`docs/vfs-connection-stability.md`](docs/vfs-connection-stability.md)。
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，`probe_many` 仍顺序执行。
@@ -55,6 +56,7 @@
 ## 下个会话接手
 
 - 当前已发布 `wonder.95`（tag `v1.15.0-alpha.13-wonder.95`，commit `de3ccb0`）。本地 540 用例绿；Test CI `44087052920`、Release `44087733400`、notify `44088910964` 均成功；arm64 APK、APK 内 95 notes 和本地 bare tag 已确认。下一次从 96 开始。
+- `dev` 已有 95 后的未发布改动：`file_read.last_lines`，删除 `file_tail`/`file_mkdir`，`tailscale_devices` 合并 `taildrop_peers`，`http_fetch` 支持 method/body。下次发版前跑全量并更新版本。
 - 真机待验：95 的 Dashboard 四列 VFS 胶囊（capsule、四列等宽、已连接 primaryContainer、320dp/大字体退让、卡片距表面 12dp）；`/tool search_tools` 和 `Run`/`Fill required` 动作；`system_snapshot` 新字段；`file_append`/`file_edit`；`http_fetch` 的 200/非 200 与出口切换。另继续验 94 的 telemetry 过滤和 Conductor 草稿恢复。
 - 下一批优先：VFS 大文件读取换 Wi-Fi 复测；长分析 continuation、进程死亡 turn 快照、`conductor/` 旧文件清理、83 core 不可达取证。VFS 后台服务已落地，不再按“只在前台”假设设计。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)、VFS 稳定性/浸泡 [`docs/vfs-connection-stability.md`](docs/vfs-connection-stability.md) / [`docs/vfs-soak-test.md`](docs/vfs-soak-test.md)；发布流程见 `AGENTS.md`。

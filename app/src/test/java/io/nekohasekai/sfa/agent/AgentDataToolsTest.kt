@@ -22,9 +22,6 @@ class AgentDataToolsTest {
     private val sentSelected = mutableListOf<Pair<String, List<String>>>()
     private val taildrop =
         object : TaildropPort {
-            override suspend fun peers(): List<TaildropPeerInfo> =
-                listOf(TaildropPeerInfo("peer-a", online = true, lastSeen = "2026-11-13 08:00"))
-
             override suspend fun send(
                 peer: String,
                 files: List<File>,

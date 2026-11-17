@@ -215,20 +215,39 @@ class AgentToolsTest {
         val result =
             registry.userExec(
                 "http_fetch",
-                """{"url":"https://example.com/data","outbound":"node-a","headers":["X-Test: 1"],"max_bytes":32}""",
+                """{"url":"https://example.com/data","method":"post","body":"payload","outbound":"node-a","headers":["X-Test: 1"],"max_bytes":32}""",
             )
 
         assertTrue(result.errorMessage ?: "", result.ok)
         val call = fetch.calls.single()
         assertEquals("node-a", call[0])
         assertEquals("https://example.com/data", call[1])
-        assertEquals(listOf("X-Test" to "1"), call[2])
-        assertEquals(32, call[3])
+        assertEquals("POST", call[2])
+        assertEquals(listOf("X-Test" to "1"), call[3])
+        assertEquals("payload", call[4])
+        assertEquals(32, call[5])
         val output = result.output!!
         assertEquals(200, output.int("statusCode"))
+        assertEquals("POST", output.string("method"))
         assertEquals("hello", output.string("text"))
         assertEquals("temporary_outbound_selection", output.string("via"))
         assertFalse(output.boolean("truncated"))
+    }
+
+    @Test
+    fun httpFetchRejectsBodyOnGetWithoutCallingThePort() {
+        val fetch = FakeHttpFetchPort()
+        val registry = buildTestRegistry(httpFetchPort = fetch)
+
+        val result =
+            registry.userExec(
+                "http_fetch",
+                """{"url":"https://example.com/","body":"payload"}""",
+            )
+
+        assertFalse(result.ok)
+        assertEquals("invalid_parameter", result.errorCode)
+        assertTrue(fetch.calls.isEmpty())
     }
 
     @Test
@@ -476,6 +495,27 @@ class AgentToolsTest {
         assertEquals(listOf("proxy" to "node-a"), selection.calls)
         assertEquals("node-b", result.output!!.string("previous"))
         assertEquals("node-a", result.output!!.string("selected"))
+    }
+
+    @Test
+    fun tailscaleDevicesCarriesTheTaildropDiscoveryAlias() {
+        val source =
+            object : TailscaleStatusSource {
+                override suspend fun status(cancellation: ToolCancellation?): AgentTailscaleSnapshot =
+                    AgentTailscaleSnapshot(emptyList())
+            }
+        val definitions =
+            AgentTools(
+                nodeSource = FakeNodeSource(),
+                deviceSource = FakeDeviceSource(),
+                probePort = FakeProbePort(),
+                tailscaleStatusSource = source,
+            ).all.map { it.definition }
+
+        val devices = definitions.first { it.name == "tailscale_devices" }
+        assertTrue(devices.core)
+        assertTrue(devices.aliases.contains("taildrop"))
+        assertTrue(definitions.none { it.name == "taildrop_peers" })
     }
 
     @Test

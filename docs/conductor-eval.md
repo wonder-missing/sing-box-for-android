@@ -21,8 +21,8 @@
 | 5 | 把「🚀 节点选择」里前 5 个节点都测一遍 | `probe_many` | 批量确认 |
 | 6 | 把出口切到「direct」 | `select_outbound` | 写操作，确认 + 回滚 |
 | 7 | 现在出口是哪个，切完有变化吗 | `list_nodes` / `system_snapshot` | 读回 |
-| 8 | Tailscale 有哪些设备在线 | `tailscale_status` | 不应出现邮箱 |
-| 9 | 哪台设备像 Mac Mini | `tailscale_status` | 只能按名称判断 |
+| 8 | Tailscale 有哪些设备在线 | `tailscale_devices` | 不应出现邮箱 |
+| 9 | 哪台设备像 Mac Mini | `tailscale_devices` | 只能按名称判断 |
 | 10 | 上传待发送的匿名遥测 | `telemetry_upload` | 确认 |
 | 11 | 帮我找一个能切换节点的工具 | `search_tools` | 弱匹配提示 |
 | 12 | 有没有改 DNS 的能力 | `search_tools` | 应返回 no-match/weak |
@@ -52,7 +52,7 @@ prompt：「你能做什么？」
 
 | prompt | 期望英文 query 命中 |
 |---|---|
-| 看看哪些设备在线 | `device online` → `tailscale_status` |
+| 看看哪些设备在线 | `device online` → `tailscale_devices` |
 | 把这段日志投递到 Mac Mini | `send file peer` → `taildrop_send` |
 | 读一下这个文件的最后几行 | `read file last lines` → `file_read`（`last_lines`） |
 | 在文件里搜一下 error | `file grep search` → `file_grep` |

@@ -27,7 +27,9 @@ class LibboxHttpFetchPort(
     override fun fetch(
         outbound: String?,
         url: String,
+        method: String,
         headers: List<Pair<String, String>>,
+        body: String?,
         maxBytes: Int,
         cancellation: ToolCancellation?,
     ): HttpFetchOutcome {
@@ -82,7 +84,16 @@ class LibboxHttpFetchPort(
         return try {
             executor
                 .submit<HttpFetchOutcome> {
-                    runFetch(group, outbound, url, headers, maxBytes.coerceIn(1, MAX_BYTES), cancellation)
+                    runFetch(
+                        group,
+                        outbound,
+                        url,
+                        method,
+                        headers,
+                        body,
+                        maxBytes.coerceIn(1, MAX_BYTES),
+                        cancellation,
+                    )
                 }.get(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (e: TimeoutException) {
             restoreSelection(group)
@@ -105,7 +116,9 @@ class LibboxHttpFetchPort(
         group: AgentGroup?,
         outbound: String?,
         url: String,
+        method: String,
         headers: List<Pair<String, String>>,
+        body: String?,
         maxBytes: Int,
         cancellation: ToolCancellation?,
     ): HttpFetchOutcome {
@@ -124,8 +137,9 @@ class LibboxHttpFetchPort(
                 val request = http.newRequest()
                 request.setURL(url)
                 request.setUserAgent(HTTPClient.userAgent)
-                request.setMethod("GET")
+                request.setMethod(method)
                 headers.forEach { (name, value) -> request.setHeader(name, value) }
+                body?.let { request.setContentString(it) }
                 val started = System.nanoTime()
                 return try {
                     val response = request.execute()

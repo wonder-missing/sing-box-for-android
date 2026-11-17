@@ -690,52 +690,6 @@ class AgentDataTools(
             }
         }
 
-    private val taildropPeers =
-        object : AgentTool {
-            override val definition =
-                AgentToolDefinition(
-                    name = "taildrop_peers",
-                    description =
-                        "List Tailscale peers that can receive files, with online state and last seen. " +
-                            "Use this before taildrop_send to find the peer name.",
-                    permission = AgentPermission.FILE_TRANSFER,
-                    parameters = emptyList(),
-                    confirmationPolicy = ConfirmationPolicy.NEVER,
-                    category = "transfer",
-                    core = true,
-                    aliases = listOf("peers", "devices", "taildrop", "deliver"),
-                )
-
-            override suspend fun execute(
-                args: JsonObject,
-                cancellation: ToolCancellation,
-            ): ToolExecution {
-                val port = taildrop ?: return unavailable()
-                return runCatching {
-                    val peers = port.peers()
-                    ToolExecution(
-                        output =
-                            buildJsonObject {
-                                put(
-                                    "peers",
-                                    buildJsonArray {
-                                        peers.forEach { peer ->
-                                            add(
-                                                buildJsonObject {
-                                                    put("name", peer.name)
-                                                    put("online", peer.online)
-                                                    peer.lastSeen?.let { put("lastSeen", it) }
-                                                },
-                                            )
-                                        }
-                                    },
-                                )
-                            },
-                    )
-                }.getOrElse { failure(it) }
-            }
-        }
-
     private val taildropSend =
         object : AgentTool {
             override val definition =
@@ -745,7 +699,7 @@ class AgentDataTools(
                         "Send files from the working directory to a Tailscale peer's Taildrop inbox. Success means " +
                             "the peer's Tailscale daemon received the file into its inbox; it does not mean the file " +
                             "was saved to the peer's disk or opened. The peer must save it from the Taildrop inbox. " +
-                            "Use taildrop_peers for the peer name; the peer must be online. Requires confirmation.",
+                            "Use tailscale_devices for the peer name; the peer must be online. Requires confirmation.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -753,7 +707,7 @@ class AgentDataTools(
                                 name = "peer",
                                 type = AgentParameterType.STRING,
                                 required = true,
-                                description = "Peer name from taildrop_peers or tailscale_status.",
+                                description = "Peer name from tailscale_devices.",
                             ),
                             AgentParameterSpec(
                                 name = "files",
@@ -971,7 +925,7 @@ class AgentDataTools(
                                 name = "peer",
                                 type = AgentParameterType.STRING,
                                 required = true,
-                                description = "Peer name from taildrop_peers or tailscale_status.",
+                                description = "Peer name from tailscale_devices.",
                             ),
                             AgentParameterSpec(
                                 name = "ids",
@@ -1143,7 +1097,6 @@ class AgentDataTools(
                 if (diagnostics != null) add(diagnosticsExport)
                 if (releaseNotes != null) add(releaseNotesTool)
                 if (taildrop != null) {
-                    add(taildropPeers)
                     add(taildropSend)
                 }
                 if (fileSelection != null) {

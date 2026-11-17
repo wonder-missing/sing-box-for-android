@@ -45,11 +45,13 @@ class FakeHttpFetchPort(
     override fun fetch(
         outbound: String?,
         url: String,
+        method: String,
         headers: List<Pair<String, String>>,
+        body: String?,
         maxBytes: Int,
         cancellation: ToolCancellation?,
     ): HttpFetchOutcome {
-        calls += listOf(outbound, url, headers, maxBytes)
+        calls += listOf(outbound, url, method, headers, body, maxBytes)
         return outcome
     }
 }

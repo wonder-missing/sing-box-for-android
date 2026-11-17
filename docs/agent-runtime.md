@@ -335,7 +335,7 @@ enum class InvocationSource {
 |---|---|---|
 | `list_nodes` | `READ_NETWORK_STATE` | `NEVER` |
 | `system_snapshot` | `READ_NETWORK_STATE` | `NEVER` |
-| `tailscale_status` | `READ_NETWORK_STATE` | `NEVER` |
+| `tailscale_devices` | `READ_NETWORK_STATE` | `NEVER` |
 | `probe_via_node` | `NETWORK_PROBE` | `ALWAYS` |
 | `probe_many` | `NETWORK_PROBE` | `ALWAYS` |
 | `http_fetch` | `DATA_EGRESS` | `AGENT_ONLY` |
@@ -347,7 +347,7 @@ enum class InvocationSource {
 
 `probe_via_node` 的 `reachable` 语义：只要收到任何 HTTP 状态码（1xx–5xx，包括 204、3xx、4xx、5xx），就表示链路可达，`reachable = true`，`statusCode` 原样回填；只有 DNS、连接失败、超时、EOF 这类没有状态码的传输错误才是 `reachable = false`。外层 `ToolObservation.ok` 仍表示工具调用本身是否成功，内层不再使用 `ok` 字段。libbox 的 HTTP 客户端对 204 等非 200 响应会抛异常，异常消息里带 `HTTP <code>`；`LibboxProbePort` 必须解析状态码并按上述规则归类，不能把异常本身当成失败。
 
-`http_fetch` 是独立的内容获取工具，权限是 `DATA_EGRESS`，不并入 probe。v1 只发 GET，一次一个 URL，可选 `outbound`、`headers` 和 `max_bytes`。200 时返回 libbox 的 body（按 `max_bytes` 截断输出）；非 200 只回 `statusCode`，没有响应体；response headers 和 content-type 不可用。指定 outbound 时和 probe 一样临时切换全局选择并在 `finally` 恢复，进程被杀仍可能停在该节点。`getContent()` 会先下载完整 body，`max_bytes` 不是下载上限。Remote Control 直接拒绝。
+`http_fetch` 是独立的内容获取工具，权限是 `DATA_EGRESS`，不并入 probe。默认 GET，支持标准 HTTP method 和 UTF-8 body；已知 method 统一大写，自定义 method 保留大小写，CONNECT/TRACE/TRACK 拒绝，GET/HEAD 带 body 拒绝，和 web fetch 语义一致。一次一个 URL，可选 `outbound`、`headers`、`body` 和 `max_bytes`。200 时返回 libbox 的 body（按 `max_bytes` 截断输出）；非 200 只回 `statusCode`，没有响应体；response headers 和 content-type 不可用。指定 outbound 时和 probe 一样临时切换全局选择并在 `finally` 恢复，进程被杀仍可能停在该节点。`getContent()` 会先下载完整 body，`max_bytes` 不是下载上限。Remote Control 直接拒绝。
 
 `file_append` 在 workspace 内创建或追加文本，`file_edit` 用 exact-match 的 `edits[]` 做原子替换；`old_text` 默认必须唯一，`replace_all=true` 才替换全部，任一 edit 失败则整次不写。`file_read` 和 `file_stat` 返回 `sha256`，`file_edit` 可带 `expected_sha256` 防止覆盖已变化的文件。不要给 `file_write` 加 create/replace/append 三种模式，保持三个工具各自单一契约。
 
@@ -396,7 +396,7 @@ interface AgentToolExecutor {
 - 注册表不再暴露 `confirmed: Boolean` 的公共入口；原始 `invoke` 只在 executor 内部使用。
 - 模型返回未注册的 tool、缺参数、类型不对、多余参数，都变成 `Tool` observation，让模型自己纠正；最多浪费一步，不抛异常。注册表目前只校验已知参数，Phase 2a 补上未知字段拒绝，和 schema 的 `additionalProperties: false` 对齐。
 - Phase 2a 串行执行一次 assistant 消息里的多个 tool call；读操作以后可以并行，写操作保持串行。
-- 现有 `/tailscale`、`/telemetry-upload` 还是 ViewModel 直连。接 Agent 前收编成 tool：`tailscale_status` 只读；`telemetry_upload` 有数据外发副作用，`AGENT_ONLY`。`/telemetry-upload` 命令仍可以直接执行，因为那是用户明确输入的动作；模型发起时必须确认。
+- 现有 `/tailscale`、`/telemetry-upload` 还是 ViewModel 直连。接 Agent 前收编成 tool：`tailscale_devices` 只读，设备名同时是 `taildrop_send` 的 peer；`telemetry_upload` 有数据外发副作用，`AGENT_ONLY`。`/telemetry-upload` 命令仍可以直接执行，因为那是用户明确输入的动作；模型发起时必须确认。
 - `AgentPermission` 增加 `DATA_EGRESS`。新增 tool 时先加权限标签和确认策略，不允许无权限标签的 tool 进入注册表。
 - `confirmationPolicy` 必填，不提供默认值；新工具忘了声明会编译失败，只读工具显式写 `NEVER`。
 - 注册表 `invoke` 用 `try/catch` 包执行，但必须 `catch (e: CancellationException) { throw e }`，不能把取消吞成 `internal_error`；其他异常再转成 sanitized observation。
@@ -687,7 +687,7 @@ MCP 客户端（wonder.44）见 [`mcp.md`](mcp.md)。用户在 Settings 里打�
 
 - `limit` 默认 5，上限 8。搜索结果按条目截断；超出字符预算时从最后一名开始丢，并标记 `truncated: true`。
 - query 精确等于注册名时走快路径，直接返回该工具，省掉二次搜索。
-- 别名只用英文关键词：`list_nodes` 保留 `nodes` / `outbounds` / `node list`，`probe_via_node` 保留 `probe` / `latency` / `url test`，`tailscale_status` 保留 `tailscale` / `devices` / `peers`。中文意图由模型翻成英文 query，不写进 alias。
+- 别名只用英文关键词：`list_nodes` 保留 `nodes` / `outbounds` / `node list`，`probe_via_node` 保留 `probe` / `latency` / `url test`，`tailscale_devices` 保留 `tailscale` / `devices` / `peers` / `taildrop` / `file transfer`。中文意图由模型翻成英文 query，不写进 alias。
 - 无匹配时返回空 `matches` 和一条「按能力换一种说法，或使用 roster 里的工具名」的提示，不要让模型凭空发明工具。
 - 搜索结果形如：
 
@@ -742,7 +742,7 @@ MCP 客户端（wonder.44）见 [`mcp.md`](mcp.md)。用户在 Settings 里打�
 
 ```text
 Registered capabilities for this app version:
-- devices: tailscale_status
+- devices: tailscale_devices
 - network: http_fetch, list_nodes, probe_via_node
 - system: system_snapshot
 - telemetry: telemetry_upload
@@ -1704,7 +1704,7 @@ wonder.83 低端机的停服重开案例（`core.running=false`、`vpnActive=tru
 - 工具级 `toolTimeoutMs`，超时回 `tool_timeout` observation；`tailscale_status` 接 `ToolCancellation`；`probe_many` 顺序批量；`select_outbound` 确认、失败回滚。
 - MCP 全部 `AGENT_ONLY`，`DATA_EGRESS` 强制；完整工具定义 SHA-256 fingerprint，定义变化时保留旧工具并提示重新启用；`tools/call` 404 不重试；token 走 Keystore；确认卡保留 URL；stale 刷新并行。
 - `maxInputTokens` 接入 token 估算与裁剪（wonder.59 起改由 `ModelLimits` 提供窗口）；会话持久化加 512KB 上限；`search_tools` 加 weak 标记；probe 内层改 `reachable`；trace 结构化 usage/finish/耗时；UI 加 Retry、usage 摘要、stick-to-bottom、回到最新、稳定 key；`/clear` 可中断活动 turn；turn/tool/confirm 写 AppLog 审计。
-- libbox 没有 per-request outbound binding、DNS query 或 route match API；`probe_many` 仍是顺序执行。`http_fetch` v1 只有 200 的 body，没有 response headers/content-type；`dns_lookup` 和阶段化错误分类仍未实现。
+- libbox 没有 per-request outbound binding、DNS query 或 route match API；`probe_many` 仍是顺序执行。`http_fetch` 支持 method/body，但 libbox 只有 200 的 body，没有 response headers/content-type，非 200 响应体也拿不到；`dns_lookup` 和阶段化错误分类仍未实现。
 
 ### wonder.48：失败 turn 保留 user 与 Retry（2026-11-13）
 

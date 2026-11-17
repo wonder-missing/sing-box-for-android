@@ -16,13 +16,13 @@ class AgentToolCatalogTest {
             listOf("probe"),
             confirmationPolicy = ConfirmationPolicy.ALWAYS,
         )
-    private val tailscale = definition("tailscale_status", "devices", listOf("devices"))
+    private val tailscale = definition("tailscale_devices", "devices", listOf("devices"))
     private val catalog = AgentToolCatalog(listOf(tailscale, probe, listNodes))
 
     @Test
     fun definitionsAreSortedByName() {
         assertEquals(
-            listOf("list_nodes", "probe_via_node", "tailscale_status"),
+            listOf("list_nodes", "probe_via_node", "tailscale_devices"),
             catalog.definitions.map { it.name },
         )
     }
@@ -31,7 +31,7 @@ class AgentToolCatalogTest {
     fun exactNameAndEnglishAliasBothWork() {
         assertEquals("probe_via_node", catalog.search("probe_via_node").first().name)
         assertEquals("list_nodes", catalog.search("nodes").first().name)
-        assertEquals("tailscale_status", catalog.search("devices").first().name)
+        assertEquals("tailscale_devices", catalog.search("devices").first().name)
     }
 
     @Test
@@ -74,7 +74,7 @@ class AgentToolCatalogTest {
     @Test
     fun promptSectionGroupsByCategoryAndMarksCoreTools() {
         val text = catalog.promptSection()
-        assertTrue(text.contains("- devices: tailscale_status"))
+        assertTrue(text.contains("- devices: tailscale_devices"))
         assertTrue(text.contains("- network: list_nodes, probe_via_node"))
         assertTrue(text.contains("Core tools."))
         assertTrue(text.contains("list_nodes()"))

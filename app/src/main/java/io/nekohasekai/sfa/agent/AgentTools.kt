@@ -7,6 +7,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import java.net.URI
+import java.util.Locale
 
 /**
  * The built-in tools. All data goes through the interfaces above so the tool
@@ -527,19 +528,30 @@ class AgentTools(
             }
         }
 
-    private val tailscaleStatus =
+    private val tailscaleDevices =
         object : AgentTool {
             override val definition =
                 AgentToolDefinition(
-                    name = "tailscale_status",
+                    name = "tailscale_devices",
                     description =
-                        "List Tailscale endpoints and peers visible to the running service. " +
+                        "List Tailscale endpoints and devices visible to the running service. " +
+                            "Device names are the peer names accepted by taildrop_send and taildrop_send_selected. " +
                             "Read-only; returns structured endpoint/peer state without account email or peer IPs.",
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "devices",
-                    aliases = listOf("tailscale", "devices", "peers"),
+                    aliases =
+                        listOf(
+                            "tailscale",
+                            "tailscale_status",
+                            "devices",
+                            "peers",
+                            "taildrop",
+                            "file transfer",
+                            "send files",
+                        ),
+                    core = true,
                 )
 
             override suspend fun execute(
@@ -566,7 +578,8 @@ class AgentTools(
                 AgentToolDefinition(
                     name = "http_fetch",
                     description =
-                        "Send one HTTP GET from this device through the running core and return text. " +
+                        "Send one HTTP request from this device through the running core and return text. " +
+                            "method defaults to GET; UTF-8 body is allowed for methods that permit one. " +
                             "With outbound, temporarily selects that node and restores the previous selection. " +
                             "Returns statusCode and text for HTTP 200; other HTTP statuses carry statusCode without " +
                             "a body because the core HTTP client throws for them. Response headers and content-type " +
@@ -590,12 +603,28 @@ class AgentTools(
                                         "A named outbound is temporarily selected and then restored.",
                             ),
                             AgentParameterSpec(
+                                name = "method",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description =
+                                    "HTTP method, default GET. Known methods are normalized to uppercase; " +
+                                        "CONNECT, TRACE and TRACK are rejected.",
+                            ),
+                            AgentParameterSpec(
                                 name = "headers",
                                 type = AgentParameterType.STRING_ARRAY,
                                 required = false,
                                 description =
                                     "Optional request headers as \"Name: value\" strings. " +
                                         "Values are not written to logs.",
+                            ),
+                            AgentParameterSpec(
+                                name = "body",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description =
+                                    "UTF-8 request body. Rejected for GET and HEAD, matching web fetch semantics.",
+                                allowBlank = true,
                             ),
                             AgentParameterSpec(
                                 name = "max_bytes",
@@ -608,7 +637,7 @@ class AgentTools(
                     category = "network",
                     aliases = listOf("fetch", "http get", "download text", "request text"),
                     confirmationReason =
-                        "This sends an HTTP GET from this device through the running core. " +
+                        "This sends an HTTP request from this device through the running core. " +
                             "A named outbound temporarily changes the core's selection; app traffic may briefly " +
                             "use that node. If the app process is killed mid-fetch, the core can stay on that " +
                             "node until it restarts.",
@@ -631,6 +660,22 @@ class AgentTools(
                 if (outbound != null && outbound.length > 256) {
                     return invalidParameter("outbound tag is too long")
                 }
+                val method =
+                    normalizeFetchMethod(AgentJson.string(args, "method") ?: "GET")
+                        ?: return invalidParameter(
+                            "method must be a valid HTTP token other than CONNECT, TRACE or TRACK",
+                        )
+                val bodyProvided = args.containsKey("body")
+                if (bodyProvided && AgentJson.string(args, "body") == null) {
+                    return invalidParameter("body must be a string")
+                }
+                val body = if (bodyProvided) AgentJson.string(args, "body") else null
+                if (body != null && (method == "GET" || method == "HEAD")) {
+                    return invalidParameter("GET and HEAD requests cannot carry a body")
+                }
+                if (body != null && body.toByteArray(Charsets.UTF_8).size > MAX_FETCH_BODY_BYTES) {
+                    return invalidParameter("body is larger than $MAX_FETCH_BODY_BYTES bytes")
+                }
                 val headers =
                     parseFetchHeaders(AgentJson.stringList(args, "headers"))
                         ?: return invalidParameter(
@@ -644,7 +689,7 @@ class AgentTools(
                 }
                 val result =
                     try {
-                        port.fetch(outbound, url, headers, maxBytes, cancellation)
+                        port.fetch(outbound, url, method, headers, body, maxBytes, cancellation)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -654,7 +699,7 @@ class AgentTools(
                     buildJsonObject {
                         put("ok", result.error == null)
                         put("url", url)
-                        put("method", "GET")
+                        put("method", method)
                         outbound?.let { put("outbound", it) }
                         result.via?.let { put("via", it) }
                         result.statusCode?.let { put("statusCode", it) }
@@ -673,6 +718,15 @@ class AgentTools(
                         errorMessage = result.error,
                     )
                 }
+            }
+
+            private fun normalizeFetchMethod(raw: String): String? {
+                val method = raw.trim()
+                if (method.isEmpty() || method.length > 32) return null
+                if (!HTTP_METHOD_TOKEN.matches(method)) return null
+                val upper = method.uppercase(Locale.US)
+                if (upper in FETCH_FORBIDDEN_METHODS) return null
+                return if (upper in FETCH_NORMALIZED_METHODS) upper else method
             }
 
             private fun parseFetchHeaders(raw: List<String>?): List<Pair<String, String>>? {
@@ -740,7 +794,7 @@ class AgentTools(
                 add(probeViaNode)
                 add(probeMany)
                 if (selectionPort != null) add(selectOutbound)
-                if (tailscaleStatusSource != null) add(tailscaleStatus)
+                if (tailscaleStatusSource != null) add(tailscaleDevices)
                 if (httpFetchPort != null) add(httpFetch)
                 if (telemetryUploadPort != null) add(telemetryUpload)
             }
@@ -800,9 +854,13 @@ private const val MAX_PROBE_MANY_MS = 90_000L
 
 private const val DEFAULT_FETCH_BYTES = 64 * 1024
 private const val MAX_FETCH_BYTES = 256 * 1024
+private const val MAX_FETCH_BODY_BYTES = 256 * 1024
 private const val MAX_FETCH_HEADERS = 16
 private const val MAX_FETCH_HEADER_CHARS = 2048
 private val HEADER_NAME = Regex("[A-Za-z0-9-]+")
+private val HTTP_METHOD_TOKEN = Regex("[A-Za-z0-9!#%&'*+.^_`|~-]+")
+private val FETCH_FORBIDDEN_METHODS = setOf("CONNECT", "TRACE", "TRACK")
+private val FETCH_NORMALIZED_METHODS = setOf("DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT")
 
 internal fun isAllowedHttpUrl(raw: String): Boolean {
     if (raw.length > 2048 || raw.any { it.isWhitespace() }) {

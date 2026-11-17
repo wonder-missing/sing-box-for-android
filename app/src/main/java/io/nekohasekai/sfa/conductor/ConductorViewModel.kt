@@ -59,7 +59,6 @@ import io.nekohasekai.sfa.agent.ReleaseNotesSource
 import io.nekohasekai.sfa.agent.SelectedFileInfo
 import io.nekohasekai.sfa.agent.SelectedFileRead
 import io.nekohasekai.sfa.agent.SelectedImage
-import io.nekohasekai.sfa.agent.TaildropPeerInfo
 import io.nekohasekai.sfa.agent.TaildropPort
 import io.nekohasekai.sfa.agent.TaildropSendResult
 import io.nekohasekai.sfa.agent.TailscaleStatusSource
@@ -255,40 +254,6 @@ class ConductorViewModel(
 
     private val taildropPort =
         object : TaildropPort {
-            override suspend fun peers(): List<TaildropPeerInfo> {
-                val update = awaitTailscaleStatus(null, "taildrop")
-                val peers = LinkedHashMap<String, TaildropPeerInfo>()
-                val endpoints = update.endpoints()
-                while (endpoints.hasNext()) {
-                    val endpoint = endpoints.next()
-                    val self = endpoint.getSelf()
-                    val groups = endpoint.userGroups()
-                    while (groups.hasNext()) {
-                        val group = groups.next()
-                        val iterator = group.peers()
-                        while (iterator.hasNext()) {
-                            val peer = iterator.next()
-                            if (self != null && peer.stableID == self.stableID) continue
-                            val name = peerName(peer)
-                            if (!peers.containsKey(name)) {
-                                peers[name] =
-                                    TaildropPeerInfo(
-                                        name = name,
-                                        online = peer.online,
-                                        lastSeen =
-                                            if (!peer.online && peer.lastSeen > 0) {
-                                                formatLastSeen(peer.lastSeen)
-                                            } else {
-                                                null
-                                            },
-                                    )
-                            }
-                        }
-                    }
-                }
-                return peers.values.toList()
-            }
-
             override suspend fun send(
                 targetPeer: String,
                 files: List<File>,
