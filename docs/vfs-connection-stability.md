@@ -76,6 +76,18 @@ wonder.92 修复：全量 Link 的 `missingScopes` 不再错误列出 `conductor
 
 wonder.93/94 实测补充：93 的新会话在 12:54–12:58 记录了 `background`、`screen_off`、`screen_on`、`foreground` 事件，期间 provider 一直没有断开；5 分钟浸泡 10/10 健康、2/2 消费者容器读取成功、0 outage/0 重连。94 不改变 VFS 行为。另一个已确认的限制是 VFS 大文件批量读取：当前蜂窝 + Tailscale 路径下 1 MB 约 25–28 秒，`stat` 只要 0.2 秒；先换 Wi-Fi 复测，见 TODO。
 
+## 2026-11-18 夜间浸泡（wonder.96）
+
+8 小时浸泡在 24 分钟后被 circuit breaker 停止，输出在 `build/vfs-soak-night-20261118-0113/`：
+
+- 35 个样本，24 健康 / 11 不健康；1 次 outage 604.4 秒；2 次消费者读取都成功（发生在掉线前）。
+- provider 最后一次心跳 01:37:16，01:38:01 `online=false`，Portal 01:38:46 记录 `code=1006`；之后没有重连。
+- App 遥测：01:18:59 进入 `background` + `screen_off`；01:35:58 后 telemetry 断档；01:59:45 以 Wi-Fi 和新 core session `service_start`，但 VFS 没有自动恢复。
+- `VfsBackoff` 只重试 10 次（1+2+4+8+16+32+60+60+60+60，约 5 分钟）；耗尽后进入 `VFS_CONNECT_FAILED`，`VfsSharingPolicy` 停止 foreground service，因此网络恢复后也没有新的 reconnect 循环。
+- vfsd 没有收到 provider disconnect，只看到 `lastSeen` stale；mount 的 `offlineSince` 未设置，导致 refs=0、离线数小时后仍 `mounted=true`，FUSE 读持续 EIO。vfsd 日志在 01:38:02 只有两条 `ENOENT ... write`，没有 `provider disconnected`。
+
+这不是 vfsd 崩溃，也不是浸泡脚本误判：vfsd `/status` 在整个故障期间都正常响应，mount 一直存在；失败点是手机侧连接断开后 App 不再重连，以及 vfsd 对 stale `lastSeen` 没有触发 detach/grace 清理。下一轮浸泡前应先决定后台断网重试策略，并修 vfsd 的 stale-link 清理。
+
 ## 待真机验收
 
 没有模拟器，以下场景需要真机确认：
