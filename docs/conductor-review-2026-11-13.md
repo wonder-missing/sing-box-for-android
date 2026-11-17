@@ -1,6 +1,7 @@
 # Conductor Agent 运行时审查（2026-11-13）
 
-状态：只读审查完成。2026-11-13 已修复 3 项确定问题，见 §5。可执行项记在 [`TODO.md`](../TODO.md) 的 `[审查]` 标记下；本文只保留分析和证据，不另开任务清单。
+状态：只读审查完成。2026-11-13 已修复 3 项确定问题，见 §5。可执行项已并入 [`TODO.md`](../TODO.md) 的 P1–P3 清单；本文只保留分析和证据，不另开任务清单。
+历史快照：本文写于 2026-11-13。「Mini 上没有 JDK」和「12 轮工具」是当时的现状；本地测试环境见 [`local-testing.md`](local-testing.md)，当前工具轮数和运行时状态见 [`agent-runtime.md`](agent-runtime.md)。
 
 审查范围：`app/src/main/java/io/nekohasekai/sfa/agent/`、`app/src/main/java/io/nekohasekai/sfa/conductor/`、相关 JVM 单测，以及 `docs/agent-runtime.md`、`docs/mcp.md`、`docs/agent-control-plane.md`。
 

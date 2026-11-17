@@ -19,9 +19,11 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 2. Read `TODO.md` and `gh issue list -R wonder-missing/sing-box-for-android`.
 3. Pick ~1–2h of scope (issues first, then TODO). Keep TODO.md updated.
 4. Features/fixes need JVM unit tests.
-5. No JDK locally: commit, `git push origin dev`, then
-   `gh run list -R wonder-missing/sing-box-for-android -w Test -L 1` and
+5. Run `./scripts/local-test.sh` for JVM compile and unit tests (setup in
+   [`docs/local-testing.md`](docs/local-testing.md)). Then commit, `git push origin dev`, and
+   `gh run list -R wonder-missing/sing-box-for-android -w Test -L 1` /
    `gh run watch <id> -R wonder-missing/sing-box-for-android --exit-status`. Red → fix and repeat until green.
+   CI remains the release gate; a green local run does not replace it.
 6. When an issue is fixed: `gh issue comment` (what changed, which version) and `gh issue close` (with `-R ...`).
 
 ## UI conventions

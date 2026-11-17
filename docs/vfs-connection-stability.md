@@ -1,6 +1,6 @@
 # VFS 连接稳定性
 
-状态：2026-11-17，wonder.92 实现。代码见 `VfsRuntime`、`VfsSharingService`、`VfsConnectionManager`、`VfsSharingPolicy`。可重复的短测/夜间浸泡流程见 [`vfs-soak-test.md`](vfs-soak-test.md)。
+状态：2026-11-17，wonder.94。VFS 行为在 90–92 实现，93/94 补充生命周期遥测、UI 和草稿/telemetry 修复。代码见 `VfsRuntime`、`VfsSharingService`、`VfsConnectionManager`、`VfsSharingPolicy`。可重复的短测/夜间浸泡流程见 [`vfs-soak-test.md`](vfs-soak-test.md)。
 
 ## 问题
 
@@ -42,7 +42,7 @@ wonder.88 测试已经复现这条路径：测试期间 provider 多次 connect/
 
 ### 观测
 
-新增 `vfs_lifecycle` 客户端事件：`foreground`、`background_grace`、`background_disconnect`、`sharing_start_failed`，字段只有 stage 和 service 状态，不包含 token、路径或文件内容。
+新增 `vfs_lifecycle` 客户端事件：`foreground`、`background`、`screen_on`、`screen_off`、`background_grace`、`background_disconnect`、`sharing_start_failed`，字段只有 stage 和 service 状态，不包含 token、路径或文件内容。通知栏下拉没有可靠的 Android 生命周期回调，因此不记录；锁屏/亮屏和前后台切换可记录。
 
 ## 不做
 
@@ -70,9 +70,11 @@ wonder.91 修复：
 - 重连预算耗尽时不再停在 `Backoff`，改为 `VFS_CONNECT_FAILED` Error，前台服务随之停止，避免留下永远“连接中”的通知。
 - 监测脚本只在有 online provider 时切换目标，避免把旧的离线 provider 当成新目标。
 
-第二轮监测（同一 wonder.90，改进方法）在 08:20:04–08:50:04 跑了 56 个样本，**56/56 健康**：目标 provider 始终 online/mounted/readOnly，FUSE 读 140 字节测试文件稳定，6 次真实消费者容器读取全部成功，没有 provider 或 generation 切换。期间 App 多次回到前台（CFG 可见 `vfs_lifecycle foreground`），说明前台服务在这段窗口里保住了同一 Link。注意这轮不是 91 的验证；91 的死链检测要等更新后复测。
+第二轮监测（同一 wonder.90，改进方法）在 08:20:04–08:50:04 跑了 56 个样本，**56/56 健康**：目标 provider 始终 online/mounted/readOnly，FUSE 读 140 字节测试文件稳定，6 次真实消费者容器读取全部成功，没有 provider 或 generation 切换。期间 App 多次回到前台（CFG 可见 `vfs_lifecycle foreground`），说明前台服务在这段窗口里保住了同一 Link。这轮是 90 的窗口；91 的死链检测到 93/94 才随版本安装，之后 93 真机短时后台/锁屏观察中 provider 一直 online。
 
 wonder.92 修复：全量 Link 的 `missingScopes` 不再错误列出 `conductor`（`workdir` 已覆盖）；VFS 活跃时记录 `background`/`screen_on`/`screen_off` 遥测。通知栏下拉没有可靠回调，仍不记录。
+
+wonder.93/94 实测补充：93 的新会话在 12:54–12:58 记录了 `background`、`screen_off`、`screen_on`、`foreground` 事件，期间 provider 一直没有断开；5 分钟浸泡 10/10 健康、2/2 消费者容器读取成功、0 outage/0 重连。94 不改变 VFS 行为。另一个已确认的限制是 VFS 大文件批量读取：当前蜂窝 + Tailscale 路径下 1 MB 约 25–28 秒，`stat` 只要 0.2 秒；先换 Wi-Fi 复测，见 TODO。
 
 ## 待真机验收
 

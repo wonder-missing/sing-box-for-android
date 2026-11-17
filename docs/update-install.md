@@ -34,7 +34,7 @@
 
 1. `stopServiceIfRunning()` 发现 `filesDir/command.sock` 存在，说明服务在跑，先写 `restore_service_after_update=true`，`Settings.dataStore.flush()` 落盘，再 `BoxService.stop()`。
 2. 安装完成后，Android 给应用发 `ACTION_MY_PACKAGE_REPLACED`，`BootReceiver` 在 `started_by_user` 或 `restore_service_after_update` 为 true 时启动服务。
-3. 启动前清掉 restore 标记，避免下一次开机重复启动；有未读 crash report 时仍然不自动启动，并清掉两个标记。
+3. 启动前清掉 restore 标记，避免下一次开机重复启动；只有未读 crash report 属于当前启动版本（`VERSION_CODE` 或 `VERSION_NAME` 相同）时才不自动启动并清掉两个标记。旧版本留下的未读报告不再阻塞后续更新（wonder.92 起）。
 4. 启动的是 `Settings.serviceClass()`，VPN 模式和代理模式都按更新前的模式恢复。
 5. 用户如果手动启动服务，`MainActivity` 也会清掉 restore 标记。
 6. wonder.86 起，`BootReceiver` 写 `service_restore` 遥测（action、两个标记、unread crash、start/skip/fail），`ApkInstaller` 写 `update_install`（prepare/install/error、socket 与 started_by_user），启动时如果 restore 标记还在，`MainActivity` 再做一次前台 fallback。这样即使 `MY_PACKAGE_REPLACED` 没到、被 Samsung 拦截或 start 被系统拒绝，下一次打开 App 也能补上或留下明确证据。restore 标记只在启动命令被接受后才清掉；启动失败会留给 fallback。
@@ -56,6 +56,6 @@
 
 ## 验证
 
-- 单元测试：`ServiceRestorePolicyTest` 覆盖 `started_by_user` 与 restore 标记的组合。
+- 单元测试：`ServiceRestorePolicyTest` 覆盖 `started_by_user` 与 restore 标记的组合，以及当前版本/旧版本 crash report 的阻塞判定。
 - 真机（2026-11-15，76→77）：76 会话里 `network_snapshot` 显示 `vpnActive=true`、`serviceMode=vpn`、core 在跑；走应用内 Update 安装 77 后，同一会话再次 `network_snapshot` 仍为 `vpnActive=true`、core 在跑，期间没有手动启动服务。恢复逻辑通过。
 - 首次 75 到 76 的更新不会恢复，因为 75 还没有写标记；以后从 76 起的更新都适用。

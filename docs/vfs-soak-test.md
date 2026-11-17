@@ -106,7 +106,7 @@ caffeinate -dimsu ./scripts/vfs-soak.py --duration 8h --interval 60s \
 - 目标 provider 的 online/mounted/readOnly 始终满足；消费者检查全部成功，或失败后有恢复记录；
 - `providerId` 只因为计划内的 scope 变更/升级而切换，且切换后自动恢复；
 - Portal 没有无法解释的 1006/4000 长连接；vfsd 没有反复 watchdog/restart；
-- `vfs_lifecycle` 能看到 `background`/`screen_off`/`screen_on`（从 wonder.92 起）。
+- `vfs_lifecycle` 能看到 `background`/`screen_off`/`screen_on`（从 wonder.92 起；93/94 已验证）。
 
 不合格或熔断时，先读 `summary.md` 的 Outages 和 Events，再看 `portal-vfs-events.log` / `vfsd-events.log`；不要直接重跑掩盖现场。
 
@@ -114,4 +114,6 @@ caffeinate -dimsu ./scripts/vfs-soak.py --duration 8h --interval 60s \
 
 - 2026-11-17 第一轮 30 分钟：前 5 次健康，08:09:42 手机到 Portal 路径 `1006`，App 未自动重连；详见 [`vfs-connection-stability.md`](vfs-connection-stability.md)。wonder.91 加入 20 秒协议 ping。
 - 2026-11-17 第二轮 30 分钟（wonder.90）：56/56 健康，6/6 消费者读取成功，无 provider 切换。该轮不包含 91 的死链修复。
-- 夜间测试应使用 wonder.92 或更新版本；它包含 91 的死链检测、92 的生命周期遥测和恢复策略修复。
+- 2026-11-17 5 分钟观察（wonder.93）：10/10 健康，2/2 消费者读取，0 outage，0 provider 重连；这是短时验证，不等于整夜结论。
+- 夜间测试应使用 wonder.94 或更新版本；它包含 91 的死链检测、92 的生命周期遥测/恢复策略、93 的 UI/启动修复和 94 的 telemetry/草稿修复。
+- 大文件批量读取（如 1 MB trace）在当前蜂窝 + Tailscale 下可能需要 25–28 秒；浸泡脚本的小文件探针不受影响，分析大文件前先看 TODO。

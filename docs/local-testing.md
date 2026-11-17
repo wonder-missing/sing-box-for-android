@@ -1,6 +1,6 @@
 # 本地单元测试（Mini）
 
-状态：2026-11-15 在 clawdy-mini（M4 / 16 GB，macOS 26.6.2）装好并跑通。
+状态：2026-11-17 在 clawdy-mini（M4 / 16 GB，macOS 26.6.2）装好并跑通。
 范围只到 JVM 编译和 `testOtherDebugUnitTest`。签名、发布、飞书通知和 `libbox` 编译仍归 CI。
 
 ## 边界
@@ -61,13 +61,13 @@ cp "$TMP/libbox.aar" app/libs/libbox.aar
 cp "$TMP/libbox.aar" app/libs/libbox-legacy.aar
 ```
 
-完成后跑一次全量，确认 433 个用例全绿：
+完成后跑一次全量，确认 529 个用例全绿：
 
 ```sh
 ./scripts/local-test.sh
 ```
 
-实测：首次全量 4 分 18 秒（含 Gradle 和依赖下载）；清构建产物后重编加全量 40 秒；没有改动时 2–3 秒；单个测试类约 2 秒。全量为 433 个用例。
+实测：首次全量 4 分 18 秒（含 Gradle 和依赖下载）；清构建产物后重编加全量 40 秒；没有改动时 2–3 秒；单个测试类约 2 秒。全量为 529 个用例。
 
 ## 日常使用
 
@@ -115,7 +115,7 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 换机器或重装系统后，按「从零重装」执行，再确认：
 
 1. `./scripts/local-test.sh --size` 能打印占用，可用空间不低于 5 GB。
-2. `./scripts/local-test.sh` 全量 433 个用例全绿。
+2. `./scripts/local-test.sh` 全量 529 个用例全绿。
 3. 失败时依次查 `JAVA_HOME`、`ANDROID_HOME` 下的 platform 37.1/36、`app/libs` 两份 AAR。
 
 本文件是本地工具链版本的落点；升级 JDK、SDK 包或 Gradle 时同步更新上面的表格和命令。
