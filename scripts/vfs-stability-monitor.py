@@ -112,6 +112,94 @@ def docker_exec(container: str, command: str) -> tuple[int, bytes, str, float]:
         return 1, b"", type(error).__name__, (time.monotonic() - started) * 1000
 
 
+def read_app_log(container: str, provider_id: str) -> dict:
+    """Optional app-side evidence; scope `conductor` alone does not expose it."""
+    command = f"cat /opt/vfsgate/mnt/{provider_id}/appfiles/logs/app.log"
+    rc, body, error, latency_ms = docker_exec(container, command)
+    if rc != 0:
+        return {"ok": False, "error": error or f"cat_exit_{rc}", "latencyMs": round(latency_ms, 1)}
+    version: str | None = None
+    last_ts: int | None = None
+    last_line: str | None = None
+    for line in body.decode("utf-8", errors="replace").splitlines()[-500:]:
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            continue
+        if parts[0].isdigit():
+            last_ts = int(parts[0])
+        last_line = parts[2][:240]
+        marker = "App started, version "
+        if marker in parts[2]:
+            version = parts[2].split(marker, 1)[1].strip()
+    return {
+        "ok": True,
+        "version": version,
+        "lastTs": last_ts,
+        "lastLine": last_line,
+        "latencyMs": round(latency_ms, 1),
+    }
+
+
+def test_stage(body: bytes) -> str | None:
+    for line in body.decode("utf-8", errors="replace").splitlines():
+        if "阶段:" in line:
+            return line.split("阶段:", 1)[1].strip()[:160]
+    return None
+
+
+def consumer_read(container: str, provider_id: str) -> dict:
+    """End-to-end bind check: a separate container mounts the FUSE path ro."""
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "-v",
+        f"/opt/vfsgate/mnt/{provider_id}:/vfs:ro",
+        "alpine",
+        "cat",
+        "/vfs/conductor/vfs-bg-test.md",
+    ]
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+            check=False,
+        )
+        body = completed.stdout
+        return {
+            "ok": completed.returncode == 0 and bool(body),
+            "bytes": len(body),
+            "sha256": hashlib.sha256(body).hexdigest() if body else None,
+            "latencyMs": round((time.monotonic() - started) * 1000, 1),
+            "error": None if completed.returncode == 0 else completed.stderr.decode("utf-8", errors="replace").strip()[:240],
+        }
+    except Exception as error:  # noqa: BLE001 - report the probe failure
+        return {
+            "ok": False,
+            "bytes": None,
+            "sha256": None,
+            "latencyMs": round((time.monotonic() - started) * 1000, 1),
+            "error": type(error).__name__,
+        }
+
+    valid = [p for p in providers if isinstance(p.get("providerId"), str) and PROVIDER_ID_RE.match(p["providerId"])]
+    ready = [
+        p
+        for p in valid
+        if p.get("online") is True and p.get("mounted") is True and p.get("readOnly") is True
+    ]
+    online = [p for p in valid if p.get("online") is True]
+    pool = ready or online
+    if not pool:
+        return None
+    return max(pool, key=lambda p: int(p.get("lastSeen") or 0))["providerId"]
+
+
 def choose_target(providers: list[dict]) -> str | None:
     valid = [p for p in providers if isinstance(p.get("providerId"), str) and PROVIDER_ID_RE.match(p["providerId"])]
     ready = [
@@ -150,12 +238,15 @@ def main() -> int:
     parser.add_argument("--interval", type=float, default=30.0, help="seconds between polls (default 30)")
     parser.add_argument("--max-failures", type=int, default=3, help="consecutive failures before stopping (default 3)")
     parser.add_argument("--container", default=os.environ.get("VFSD_VM_NAME", DEFAULT_CONTAINER))
+    parser.add_argument("--consumer-every", type=int, default=10, help="run a consumer container read every N samples (0 disables)")
     parser.add_argument("--endpoint", type=Path, default=Path(os.environ.get("VFSD_ENDPOINT_FILE", DEFAULT_ENDPOINT)).expanduser())
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
     if args.duration <= 0 or args.interval <= 0 or args.max_failures <= 0:
         parser.error("duration, interval and max-failures must be positive")
+    if args.consumer_every < 0:
+        parser.error("consumer-every must be zero or positive")
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = args.out or (Path.cwd() / "build" / f"vfs-monitor-{stamp}")
@@ -170,6 +261,10 @@ def main() -> int:
 
     target_id: str | None = None
     target_switches = 0
+    last_app_version: str | None = None
+    last_stage: str | None = None
+    consumer_checks = 0
+    consumer_failures = 0
     baseline_sha: str | None = None
     baseline_bytes: int | None = None
     last_generation: int | None = None
@@ -198,6 +293,10 @@ def main() -> int:
             "reason": reason,
             "targetProviderId": target_id,
             "targetSwitches": target_switches,
+            "lastAppVersion": last_app_version,
+            "lastStage": last_stage,
+            "consumerChecks": consumer_checks,
+            "consumerFailures": consumer_failures,
             "samples": total,
             "healthy": healthy_count,
             "unhealthy": total - healthy_count,
@@ -218,6 +317,9 @@ def main() -> int:
             f"- Reason: `{reason}`",
             f"- Target: `{target_id or 'not found'}`",
             f"- Target/provider switches: {target_switches}",
+            f"- App version: `{last_app_version or 'unknown'}`",
+            f"- Last test stage: `{last_stage or 'unknown'}`",
+            f"- Consumer checks: {consumer_checks} ({consumer_failures} failed)",
             f"- Samples: {total} ({healthy_count} healthy, {total - healthy_count} unhealthy)",
             f"- Max consecutive failures: {max_failures_seen}",
             f"- Baseline SHA-256: `{baseline_sha or 'n/a'}`",
@@ -285,6 +387,7 @@ def main() -> int:
                     write_log(f"target switched: {target_id} -> {next_id}")
                     target_id = next_id
                     target_switches += 1
+                    failures = 0
                     last_generation = None
                     last_online = None
                     target = next(
@@ -325,6 +428,40 @@ def main() -> int:
                     fuse_error = (fuse_error + "; " if fuse_error else "") + f"read: {read_err or read_rc}"
                     fuse_ms = max(fuse_ms, read_ms)
 
+            app_info = {"ok": False, "error": "no_provider"}
+            stage = None
+            if target_id and PROVIDER_ID_RE.match(target_id):
+                app_info = read_app_log(args.container, target_id)
+                app_version = app_info.get("version") if app_info.get("ok") else None
+                if app_version:
+                    if last_app_version and app_version != last_app_version:
+                        events.append(
+                            f"{local_time(ts)} app version {last_app_version} -> {app_version}"
+                        )
+                        write_log(f"app version {last_app_version} -> {app_version}")
+                        failures = 0
+                    last_app_version = app_version
+                if fuse_read_ok:
+                    stage = test_stage(read_body)
+                    if stage and stage != last_stage:
+                        events.append(f"{local_time(ts)} stage: {stage}")
+                        last_stage = stage
+
+            consumer = None
+            if (
+                args.consumer_every > 0
+                and target_id
+                and PROVIDER_ID_RE.match(target_id)
+                and total % args.consumer_every == 0
+            ):
+                consumer = consumer_read(args.container, target_id)
+                consumer_checks += 1
+                if not consumer["ok"]:
+                    consumer_failures += 1
+                    events.append(
+                        f"{local_time(ts)} consumer read failed: {consumer.get('error') or 'empty output'}"
+                    )
+
             status_ok = status_error is None and status.get("ok") is True
             status_healthy = bool(
                 snapshot
@@ -333,7 +470,8 @@ def main() -> int:
                 and snapshot["readOnly"]
             )
             fuse_healthy = fuse_list_ok and (fuse_read_ok is not False)
-            healthy = status_ok and status_healthy and fuse_healthy
+            consumer_healthy = consumer is None or consumer["ok"]
+            healthy = status_ok and status_healthy and fuse_healthy and consumer_healthy
             if healthy:
                 failures = 0
                 healthy_count += 1
@@ -347,7 +485,9 @@ def main() -> int:
                     f"online={snapshot['online'] if snapshot else None} "
                     f"mounted={snapshot['mounted'] if snapshot else None} "
                     f"readOnly={snapshot['readOnly'] if snapshot else None} "
-                    f"fuse_list={fuse_list_ok} fuse_read={fuse_read_ok} error={fuse_error or 'none'}"
+                    f"fuse_list={fuse_list_ok} fuse_read={fuse_read_ok} "
+                    f"consumer={consumer['ok'] if consumer else None} "
+                    f"error={fuse_error or (consumer or {}).get('error') or 'none'}"
                 )
 
             if snapshot:
@@ -380,6 +520,9 @@ def main() -> int:
                     ],
                 },
                 "target": snapshot,
+                "app": app_info,
+                "stage": stage,
+                "consumer": consumer,
                 "fuse": {
                     "listOk": fuse_list_ok,
                     "readOk": fuse_read_ok,
@@ -403,6 +546,7 @@ def main() -> int:
                 f"mounted={snapshot['mounted'] if snapshot else None} "
                 f"fuse={fuse_list_ok}/{fuse_read_ok} "
                 f"status={status_ms:.0f}ms fuse={fuse_ms if fuse_ms is not None else '-'}ms "
+                f"ver={last_app_version or '?'} stage={(stage or '-')[:24]} "
                 f"failures={failures}"
             )
             if failures >= args.max_failures:
