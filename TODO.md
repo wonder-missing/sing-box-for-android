@@ -59,17 +59,16 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.95`（tag `v1.15.0-alpha.13-wonder.95`，commit `de3ccb0`）。本地 540 用例绿；Test CI `44087052920`、Release `44087733400`、notify `44088910964` 均成功；arm64 APK、APK 内 95 notes 和本地 bare tag 已确认。下一次从 96 开始。
-- `dev` 已有 95 后的未发布改动：`file_read.last_lines`，删除 `file_tail`/`file_mkdir`，`tailscale_devices` 合并 `taildrop_peers`，`http_fetch` 改用 OkHttp 并支持 method/body，Conductor 草稿改为 ViewModel 持续持有并在重新进入时恢复。下次发版前跑全量并更新版本。
-- 真机待验：95 的 Dashboard 四列 VFS 胶囊（capsule、四列等宽、已连接 primaryContainer、320dp/大字体退让、卡片距表面 12dp）；`/tool search_tools` 和 `Run`/`Fill required` 动作；`system_snapshot` 新字段；`file_append`/`file_edit`；`http_fetch` 的 200/非 200 与出口切换。另继续验 94 的 telemetry 过滤和 Conductor 草稿恢复。
+- 当前已发布 `wonder.96`（tag `v1.15.0-alpha.13-wonder.96`，commit `40fbb4b`）。本地 550 用例绿；Test CI `44128770361`、Release `44129502160`、notify `44131093462` 均成功；arm64 APK、APK 内 96 notes 和本地 bare tag 已确认。下一次从 97 开始。
+- 真机待验：96 的 Conductor 消息流（思考窗两行滚动/展开 Collapse、工具行状态标记与 chevron、失败摘要、12/24dp 间距、逐条用量页脚、弱背景行内代码）；95 的 Dashboard 四列 VFS 胶囊（capsule、四列等宽、已连接 primaryContainer、320dp/大字体退让、卡片距表面 12dp）；`/tool search_tools` 和 `Run`/`Fill required`；`system_snapshot` 新字段；`file_append`/`file_edit`；`http_fetch` 的 method/body/headers/任意状态 body；Conductor 草稿离开再进入；服务重启后 CommandClient 自动重连。另继续验 94 的 telemetry 过滤。
 - 下一批优先：VFS 大文件读取换 Wi-Fi 复测；长分析 continuation、进程死亡 turn 快照、`conductor/` 旧文件清理、83 core 不可达取证。VFS 后台服务已落地，不再按“只在前台”假设设计。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)、VFS 稳定性/浸泡 [`docs/vfs-connection-stability.md`](docs/vfs-connection-stability.md) / [`docs/vfs-soak-test.md`](docs/vfs-soak-test.md)；发布流程见 `AGENTS.md`。
 
 ## 最近完成
 
+- wonder.96（2026-11-18）：Conductor 消息流与稳定性。思考窗改为固定两行内部滚动，整块展开、右上 Collapse；工具行去掉 Details 文案，左侧固定状态标记（spinner/对勾/红点），整行展开，失败保留 `Failed · …` 摘要，参数预览单行；过程链 12dp、最终回复前 24dp；行内代码改用更弱的 `surfaceContainer` 背景；回合用量从 Notice 移到最终 assistant 回复的 `In · Out · Cache` 页脚，展开显示 miss/context；底部全局工具栏不变。另含草稿持续持有与重进恢复、CommandClient 在服务重启后 5 秒健康检查重连、`tailscale_devices`、OkHttp `http_fetch`、文件工具收敛。550 用例绿；Test/Release/notify、arm64 APK、APK 内 96 notes 和本地 bare tag 已确认。
 - wonder.95（2026-11-17）：Conductor 工具与 Dashboard VFS。`network_snapshot` 改名 `system_snapshot`，core 改 `reachable`，device 增加 `serviceActive`/`vpnServiceActive`/`batterySaver`/`dozeMode`；新增 `file_append`、`file_edit`（exact match、原子多编辑、`expected_sha256`）和 `http_fetch`（GET、可选出口/headers/max_bytes、200 body、非 200 状态码）；`/tool` 可调 `search_tools` 并提供 `Run`/`Fill required`。Dashboard 按 Lyra v3 改成四列等宽 capsule、共享底表面、已连接 VFS primaryContainer、卡片距表面 12dp；窄宽/大字体先隐藏 VFS 文字，Starting/Stopping 用 spinner。540 用例绿；Test/Release/notify、arm64 APK、APK 内 95 notes 和本地 bare tag 已确认。
 - wonder.94（2026-11-17）：telemetry 队列边界过滤与草稿异步加载。`TelemetryLogBuffer` 在装载 `pending.log` 和 append 时都调用 `TelemetryLogFilter`，历史/新写入的 tailscale TRACE 不会再穿过；跳过行不计入 disk-cap dropped。Conductor 草稿随异步 session restore 在 IO 读取，`initialDraft` 只在输入未被触碰时应用，首帧不再解析 SharedPreferences。5 分钟 VFS 观察 10/10 健康、2/2 消费者读取、0 outage、0 provider 重连。529 用例绿；Test/Release/notify、arm64 APK、APK 内 94 notes 和本地 bare tag 已确认。
 - wonder.93（2026-11-17）：UI 与启动性能。Status bar 统一固定 36dp 视觉高度/48dp 触摸目标的 chip，左 Connections/Groups、右 Stop/VFS；Groups 换 Layers，VFS 换 CloudUpload + tertiary 容器/状态点 + `VFS ↑bytes`（窄屏退化为 `VFS`+点）。VFS 卡片改为 header（服务名、共享/流量、48dp 断开）+ 短 scope chips（FlowRow，4 个后 `+N`）。`VFS_HANDSHAKE_TIMEOUT` 独立错误码和模型提示；telemetry 发送前过滤历史 tailscale TRACE；Conductor trace/会话 restore 移出主线程，early submit 等待 restore，冷启动显示 spinner。527 用例绿；Test/Release/notify、arm64 APK、APK 内 93 notes 和本地 bare tag 已确认。
 - wonder.92（2026-11-17）：更新后服务恢复只被当前版本的未读 crash 阻塞；telemetry 过滤 `endpoint/tailscale` TRACE；`conductor_tool`/`app.log` 增加 `wait`/`work`；全量 Link 的 `missingScopes` 不再误列 `conductor`；记录 `background`/`screen_on`/`screen_off`。第二轮 30 分钟浸泡 56/56 健康、6/6 消费者读取。517 用例绿；Release/APK/Feishu 已确认。
-- wonder.91（2026-11-17）：VFS 死链检测。20 秒 OkHttp 协议 ping；重连预算耗尽改为 `VFS_CONNECT_FAILED` 并停服务；监测脚本支持 provider 切换。510 用例绿；Release/APK/Feishu 已确认。
 - 更早版本见 [`docs/agent-runtime.md`](docs/agent-runtime.md)、GitHub Releases 和 git history。
