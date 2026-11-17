@@ -55,8 +55,8 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.92`（tag `v1.15.0-alpha.13-wonder.92`，commit `b46953b`）。本地 517 用例绿；Test CI `43991060139` 绿；Release `43991615912` 绿；Release notify、arm64 APK、APK 内 `wonder.92` notes 和本地 bare tag 已确认。下一次从 93 开始。
-- 真机待验：更新 92 后切聊天/锁屏，`vfs_lifecycle` 应出现 `background` / `screen_off` / `screen_on`；全量 Link 的 `missingScopes` 不应再列 `conductor`；升级后服务恢复不应再被 88 的未读 OOM 阻塞。夜间浸泡脚本见 [`docs/vfs-soak-test.md`](docs/vfs-soak-test.md)。
+- 当前已发布 `wonder.93`（tag `v1.15.0-alpha.13-wonder.93`，commit `ffa5db2`）。本地 527 用例绿；Test CI `44017431988` 绿；Release `44017778496` 绿；Release notify `44018878559` 绿；arm64 APK、APK 内 `wonder.93` notes 和本地 bare tag 已确认。下一次从 94 开始。
+- 真机待验（93）：Status bar 四 chip 在 360dp/大字体/Starting 状态下不溢出；Groups/VFS 在深浅色和动态色下能区分；VFS 卡片两行结构、短 scope chip、右上角断开在横屏/矮屏不遮挡；Conductor 冷启动 restore spinner 后能正确恢复会话；`vfs_lifecycle` 出现 `background` / `screen_off` / `screen_on`；全量 Link 的 `missingScopes` 不再列 `conductor`；升级后服务恢复不被旧 crash 阻塞。夜间浸泡脚本见 [`docs/vfs-soak-test.md`](docs/vfs-soak-test.md)。
 - Mini 侧 Taildrop 收件箱不会自动落盘：Conductor 的 `taildrop_send` 只把文件送进对端 Tailscale inbox，headless Mini 需要 `tailscale file get --conflict=rename <目录>` 才搬出来。主人否决了自动 drain 的 LaunchAgent；App 只按实际能感知的状态返回 `peer_inbox` + `receiverActionRequired`，不承诺落盘时机。
 - v80 trace 复盘：`analyze_image` 空答案（模型名 `deepseek-v4-flash`，81 已改 `deepseek-flash`）；`file_grep` 误用 `pattern`（82 已加参数提示）；`diagnostics_export` 的 `overwrite` 在 v80 trace 前半段缺失是因为那几条是 v79 会话，v80 代码和 APK 已带；`taildrop_send` 成功但 inbox 未 drain。
 - v82 trace 复盘：直接图片输入成功（text+image content parts，模型读出 Portal 首页）；`analyze_image` 不再空答案，但 `max_tokens=1024` 命中 length，返回 reasoning 草稿，待 83 修；trace 脱敏（803171 chars）、参数提示、Taildrop `peer_inbox` 均验证通过；Rich 查看器打不开；`file_grep` regex/长行和对话导出含 reasoning 待处理。
@@ -66,6 +66,7 @@
 
 ## 最近完成
 
+- wonder.93（2026-11-17）：UI 与启动性能。Status bar 统一固定 36dp 视觉高度/48dp 触摸目标的 chip，左 Connections/Groups、右 Stop/VFS；Groups 换 Layers，VFS 换 CloudUpload + tertiary 容器/状态点 + `VFS ↑bytes`（窄屏退化为 `VFS`+点）。VFS 卡片改为 header（服务名、共享/流量、48dp 断开）+ 短 scope chips（FlowRow，4 个后 `+N`）。`VFS_HANDSHAKE_TIMEOUT` 独立错误码和模型提示；telemetry 发送前过滤历史 tailscale TRACE；Conductor trace/会话 restore 移出主线程，early submit 等待 restore，冷启动显示 spinner。顺手修复 `release.sh` notes 前缀已生效。527 用例绿；Test/Release/notify、arm64 APK、APK 内 93 notes 和本地 bare tag 已确认。
 - wonder.92（2026-11-17）：从浸泡数据里收口。更新后服务恢复只被“当前正在启动的版本”的未读 crash 阻塞，88 的旧 OOM 不再让之后每次更新都不恢复；telemetry 上传过滤 `endpoint/tailscale` 的 verbose TRACE（保留 INFO/WARN 的 ts_* 事件）；`conductor_tool`/`app.log` 增加 `wait`/`work`，确认等待不再冒充执行延迟；全量 Link 的 `missingScopes` 不再误列 `conductor`；VFS 活跃时记录 `background`/`screen_on`/`screen_off`。第二轮 30 分钟浸泡 56/56 健康、6/6 消费者容器读取成功。517 用例绿；Test/Release/notify、arm64 APK、APK 内 92 notes 和本地 bare tag 已确认。
 - wonder.91（2026-11-17）：VFS 死链检测。wonder.90 的首轮 30 分钟监测前 5 次健康，08:09:42 provider 以 `1006` 断开（同一秒手机 terminal 也断），App 进程和 sharing service 仍在但未重连；根因是 WebSocket `readTimeout=0`/`pingInterval=0`，黑洞路径下不会触发 `onFailure`。91 加 20 秒 OkHttp 协议 ping 做本地死链检测，应用层 ping/pong 仍是 Portal `lastSeen` 权威；重连预算耗尽改为 `VFS_CONNECT_FAILED` 并停服务。510 用例绿；Test/Release/notify、arm64 APK、APK 内 91 notes 和本地 bare tag 已确认。监测脚本同时改为在 app 版本或 provider 切换时重置失败计数、每 10 个样本跑真实消费者容器读取。
 - wonder.90（2026-11-17）：VFS 后台稳定性。新增 `VfsSharingService`（specialUse 前台服务）与常驻通知（服务端、可读 scope、累计上传、Disconnect）；连接管理器和 consent 状态移到进程级 `VfsRuntime`，返回 App/重建 Activity 不再替换连接；切后台不再立即断开，无服务时保留 90 秒可取消宽限；后台只自动重连已信任 Link；重连循环单飞；新增 `vfs_lifecycle` 遥测。508 用例绿，release/otherLegacy 编译和 R8 通过；Release、arm64 APK、APK 内 90 notes、manifest service 和 Feishu 已确认；真机验收待做。顺手修复 `release.sh` tag 注解前缀（`wonder.N`），Release workflow 现在会在前缀不符时直接失败。
