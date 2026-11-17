@@ -9,6 +9,8 @@
 
 ### P1 稳定性与隐私
 
+- [ ] **更新后服务恢复被未读 crash report 阻塞**：wonder.90 更新日志在 07:55:17 记录 `Service restore ... result=blocked_crash`。`BootReceiver` 在 `CrashReportManager.unreadCount > 0` 时清掉恢复标记；`.read` 只在用户打开 crash report 时写入，而 88 的 PerAppProxyScanner OOM 报告至今未读。结果是一次旧崩溃会让之后每次更新都不自动恢复服务。需要决定：只阻塞近期/同版本/重复 crash，telemetry ack 后自动标记已读，或至少用通知说明。证据：`crash_reports/2026-11-16T18-54-51` 无 `.read`，90 `app.log` blocked_crash。
+- [ ] **tailscale TRACE 进入 telemetry pending.log**：当前 `appfiles/telemetry/pending.log` 约 16 KB，是长度前缀的原始 sing-box 日志，含 tailscale `TRACE`、节点 IP 和 DERP 信息。w88 报告说它“不是 JSON、破坏批格式”不成立（payload 会包装），但隐私暴露仍在。把 tailscale TRACE 只写 debug sink，或上传前做字段脱敏/剔除。
 - [ ] **Conductor VFS 长分析预算**：86 的 10 分钟会话里，模型完成 VFS 挂载、日志定位和两次容器读取后，最后一条 `route_call` 收到 `step_budget_exceeded`，`app.log` 正文分析没开始。下一步给长分析一个可续跑路径（提高工具轮数、显式 continuation，或拆成异步任务），别再让用户重新解释一遍。复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 - [ ] **`conductor/` 旧诊断文件进入新会话**：新会话的 `file_list` 能看到 `vfs-failure-handoff.md`、`session-trace-w84.md`、`session-transcript-w84.md`、`w84-transcript.md` 和 `w82-*`；模型因此直接知道了 84 的事。先定保留/归档规则，或在新会话开始前把这些一次性文件移出工作目录。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
@@ -17,6 +19,9 @@
 
 ### P2 数据面与能力
 
+- [ ] **工具耗时拆分确认等待**：`conductor_tool` 和 `app.log` 的 `ms` 是端到端时长，包含用户确认、`ask_user` 作答和 VFS consent 等待。90 实测 42 秒的 `cpk_docker_run` 命令里有 `sleep 40`，14.8 秒的 `file_write` 主要是确认等待；这些数字不能当执行延迟。下一步在确认完成后单独计时，输出 `confirmMs` / `executionMs`。
+- [ ] **Conductor 短时后台后的 prompt cache**：90 trace 显示离开约 8m48s 和 6m32s 后，首轮 cache hit 从约 95% 掉到 23–24%（hit 2304 / miss 7269、7585），延迟升到 6.8s / 3.7s。缓存 TTL 是分钟级，不是 w88 报告推测的“>1h”。评估是否需要在回到前台时提示，或压缩上下文降低首轮成本。
+- [ ] **VFS 后台/锁屏遥测**：已在源码中加入 `vfs_lifecycle` 的 `background`、`screen_on`、`screen_off`（仅 VFS 活跃时记录）；前台已有。通知栏下拉没有可靠的 Android 生命周期回调，仍无法记录。随下一个版本发布。
 - [ ] **VFS 根与本地路径提示（已改描述，待验证）**：86 trace 里模型把 `workdir` 的 `**` 误判成 `conductor` 未授权，并把本地 `file_tail(".runtime/trace.md")` 和 VFS `/vfs/.runtime/trace.md` 混在一起。`vfs_connect` 描述已明确 `workdir` 覆盖 `conductor/`、`.runtime/*` 仅 VFS 可见，并要求连接后先看 `/vfs`；下次真机确认模型是否还犯。复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 - [ ] **ApplicationExitInfo 进程退出取证**：API 30+ 用 `ActivityManager.getHistoricalProcessExitReasons` 读取本进程退出原因、说明、时间戳和 ANR/native trace，写到外部 `diagnostics/exit-info.json`；API 24–29 回退到 crash report 和 `onTrimMemory` 内存快照。用于服务重启后 core 不可达、ANR、native crash。
 - [ ] **VFS 新 scope 真机验收**：按 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md) 的 P7-2b 到 P7-2f 验证 `workdir` 外部目录、`appfiles` 内部目录与 `vfs/` 排除、`all` / `conductor_session` 预设展开、`.runtime` 独立 scope；再确认 `/work` 隔离和只读写入失败不变。
