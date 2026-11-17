@@ -125,6 +125,36 @@ internal class TelemetryLogBuffer(
     }
 
     /**
+     * Removes every queued line matching [predicate] and returns how many were
+     * removed. Used on the upload path to discard lines that the current
+     * filter rejects (for example a historical `pending.log` backlog written
+     * before the filter existed). These are policy drops, not disk-cap
+     * evictions, so [droppedCount] is left alone.
+     */
+    fun discardMatching(predicate: (String) -> Boolean): Int {
+        synchronized(lock) {
+            if (lines.isEmpty()) return 0
+            val kept = ArrayList<Queued>(lines.size)
+            var removed = 0
+            for (queued in lines) {
+                if (predicate(queued.text)) {
+                    rawBytes -= queued.text.toByteArray(Charsets.UTF_8).size
+                    removed++
+                } else {
+                    kept.add(queued)
+                }
+            }
+            if (removed == 0) return 0
+            if (rawBytes < 0) rawBytes = 0
+            lines.clear()
+            lines.addAll(kept)
+            generation++
+            dirty = true
+            return removed
+        }
+    }
+
+    /**
      * Writes the current queue to disk. Never throws: IO errors are swallowed,
      * counted locally and reported through [onPersistFailure] (first failure of
      * a streak only). Returns true when the snapshot reached the main file.

@@ -293,6 +293,27 @@ class VfsConnectionManagerTest {
         }
 
     @Test
+    fun reconnectLastRetriesAfterAHandshakeTimeout() =
+        runBlocking {
+            val connector = FakeConnector()
+            val manager = manager(connector)
+
+            manager.connect(link)
+            manager.disconnect(VfsCloseCodes.BACKGROUND, "background")
+            connector.error =
+                VfsConnectException(
+                    "VFS_HANDSHAKE_TIMEOUT",
+                    "The VFS provider did not return its hello in time.",
+                )
+            manager.reconnectLast()
+
+            // Retry stayed possible: the loop used the whole backoff budget
+            // instead of stopping after the first handshake timeout.
+            assertEquals(12, connector.requests.size)
+            assertTrue(manager.state.value is VfsConnectionState.Error)
+        }
+
+    @Test
     fun reconnectLastGivesUpAfterTheRetryBudget() =
         runBlocking {
             val connector = FakeConnector()

@@ -753,6 +753,13 @@ internal object TelemetryRuntime {
         var attemptsLeftForSize = 3
         var crashToSend = crashEvents
         while (attemptsLeftForSize > 0) {
+            // pending.log may still hold lines written before the collector-side
+            // filter existed. Apply the same filter right before batching so an
+            // old verbose Tailscale TRACE line is discarded instead of uploaded.
+            val discarded = queue.discardMatching { !TelemetryLogFilter.shouldUpload(it) }
+            if (discarded > 0) {
+                Log.i(TAG, "discarded $discarded queued log lines rejected by the upload filter")
+            }
             val ts = System.currentTimeMillis()
             val pendingStamped = queue.peekStamped()
             val pending = pendingStamped.map { it.first }

@@ -153,6 +153,29 @@ class VfsConnectToolTest {
             assertFalse(called)
         }
 
+    @Test
+    fun handshakeTimeoutPassesThroughItsCodeAndMessage() =
+        runBlocking {
+            val message =
+                "The VFS provider did not return its hello in time. Retry in a moment; " +
+                    "if it keeps happening, check the Portal/vfsd side."
+            val tool =
+                VfsConnectTool(
+                    object : VfsConnectPort {
+                        override suspend fun connect(link: VfsLink): VfsConnectResult =
+                            throw VfsConnectException("VFS_HANDSHAKE_TIMEOUT", message)
+                    },
+                )
+
+            val execution = tool.execute(args(validLink()), noCancel)
+
+            assertFalse(execution.ok)
+            // The model must see the handshake code, not a consent-timeout story.
+            assertEquals("VFS_HANDSHAKE_TIMEOUT", execution.errorCode)
+            assertEquals(message, execution.errorMessage)
+            assertEquals("VFS_HANDSHAKE_TIMEOUT", execution.output?.get("error")?.jsonPrimitive?.content)
+        }
+
     private fun validLink() =
         buildJsonObject {
             put("type", "vfs-link")

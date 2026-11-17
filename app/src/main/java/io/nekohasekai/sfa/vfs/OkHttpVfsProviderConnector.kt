@@ -128,10 +128,10 @@ class OkHttpVfsProviderConnector(
         } catch (error: TimeoutCancellationException) {
             webSocket.close(1008, "hello timeout")
             scope.cancel()
-            throw VfsConnectException(
-                "VFS_CONNECT_FAILED",
-                "The VFS provider did not complete the handshake in time.",
-            )
+            // The socket opened but the provider never sent its hello. This is
+            // distinct from the 5-minute consent dialog timeout
+            // (VFS_CONFIRMATION_TIMEOUT); it points at the Portal/vfsd side.
+            throw handshakeTimeoutError()
         } catch (error: VfsConnectException) {
             webSocket.close(1008, "handshake failed")
             scope.cancel()
@@ -172,6 +172,18 @@ class OkHttpVfsProviderConnector(
                 .build()
     }
 }
+
+/**
+ * The WebSocket opened but no server hello arrived within 15 seconds.
+ * Kept separate from `VFS_CONNECT_FAILED` so the model does not read a
+ * provider-side stall as a missed consent dialog (`VFS_CONFIRMATION_TIMEOUT`).
+ */
+internal fun handshakeTimeoutError(): VfsConnectException =
+    VfsConnectException(
+        "VFS_HANDSHAKE_TIMEOUT",
+        "The VFS provider did not return its hello in time. Retry in a moment; " +
+            "if it keeps happening, check the Portal/vfsd side.",
+    )
 
 internal fun mapProviderFailure(
     status: Int?,

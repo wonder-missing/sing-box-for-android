@@ -233,6 +233,36 @@ class TelemetryLogBufferTest {
     }
 
     @Test
+    fun discardMatchingDropsAHistoricTailscaleTraceBeforeUpload() {
+        val file = pendingFile()
+        file.parentFile!!.mkdirs()
+        // A backlog written before the collector-side filter existed.
+        val trace =
+            "TRACE[0883] endpoint/tailscale[tailscale]: netcheck: [v1] report: udp=true derpdist=5v6:195ms"
+        val state = "INFO[0001] endpoint/tailscale[tailscale]: state: Running"
+        val unrelated = "TRACE[0001] inbound/tun[tun-in]: inbound connection"
+        val backlog = listOf(trace, state, unrelated)
+        file.writeText(
+            backlog.joinToString(separator = "") { line ->
+                "${line.toByteArray(Charsets.UTF_8).size}\n$line\n"
+            },
+        )
+
+        val buffer = reload(file)
+        assertEquals(3, buffer.size())
+
+        // This is the helper and predicate the send path runs before batching.
+        val discarded = buffer.discardMatching { !TelemetryLogFilter.shouldUpload(it) }
+
+        assertEquals(1, discarded)
+        assertEquals(listOf(state, unrelated), buffer.peek())
+        // Policy drops must not inflate the disk-cap eviction counter.
+        assertEquals(0, buffer.droppedCount())
+        assertTrue(buffer.persist())
+        assertEquals(listOf(state, unrelated), reload(file).peek())
+    }
+
+    @Test
     fun concurrentPersistFromTwoInstancesKeepsFileParseable() {
         val file = pendingFile()
         val first = TelemetryLogBuffer(file)
