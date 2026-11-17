@@ -14,11 +14,9 @@
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
 - [ ] **VFS 大文件批量读取吞吐**：93 新会话在当前蜂窝 + Tailscale 路径上实测：975 KB 静态文件 `wc -c` 25–26 秒、152 KB 静态文件 4.5 秒、1.04 MB `.runtime/trace.md` 27–28 秒；`stat` 只要 0.2 秒、`head -c 200` 0.37 秒，连续重复读也仍慢。说明瓶颈是 provider→Portal 的批量读取吞吐，不是 FUSE stat 或 runtime 生成；先换 Wi-Fi 复测，再决定是否做 provider 分块/压缩或继续压 trace 体积。Conductor 那次 30.5 秒的 `cpk_docker_run` 就是这个 `wc -c`。
 - [ ] **服务重启后 core 不可达（83 低端机实测）**：BIRD P50S_PRO / Android 11 上，用户停止并重开 Service 后，`network_snapshot` 连续三次（10:25 / 10:27 / 10:31）返回 `core.running=false`、`groupCount=0`、`outboundCount=0`，错误 `groups stream recv: rpc error: code = Unavailable desc = error reading from server: EOF`；同一时刻 `vpnActive=true`、`serviceMode=vpn`，未见自行恢复。下一步：用 Conductor 的文件工具读 crash/OOM reports 和 AppLog，查 CFG `service_start` / `service_stop` / `vpn_session_id`；判断是 core 进程没起来、被杀，还是 `CommandClient` 的 stream 没重连；在 .83 上复现并记录。若 core 真没起来，补一个明确的「服务已启动但核心不可达」状态和重启入口，不能只显示 VPN 已连接。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
-- [ ] **Conductor 首帧仍有 SharedPreferences 解析**：trace 和会话 JSON 的读取/解码已移出主线程；`ConductorScreen.kt` 的 `rememberSaveable { viewModel.currentDraft() }` 仍会在首次组合时访问 SharedPreferences，可能解析 ≤512 KB 的 session XML。下一步把 draft 缓存到 VM 或异步加载，并用启动阶段 `ui_jank` 对照。
 
 ### P2 数据面与能力
 
-- [ ] **93 `pending.log` 仍有新 tailscale TRACE（待确认）**：93 设备上 `appfiles/telemetry/pending.log` 在 13:00 仍持续写入 `TRACE[0731/0739/0740] endpoint/tailscale` 行，而 93 的 DEX 已包含 `TelemetryLogFilter`。需要确认是升级前 backlog 被重复持久化、另一条写入路径，还是 collector filter 在设备上未生效；下次 telemetry 上传/真机复现时对 `pending.log` 前后对比，不能只看代码测试。
 - [ ] **Conductor 短时后台后的 prompt cache**：90 trace 显示离开约 8m48s 和 6m32s 后，首轮 cache hit 从约 95% 掉到 23–24%（hit 2304 / miss 7269、7585），延迟升到 6.8s / 3.7s。缓存 TTL 是分钟级，不是 w88 报告推测的“>1h”。评估是否需要在回到前台时提示，或压缩上下文降低首轮成本。
 - [ ] **VFS 根与本地路径提示（已改描述，待验证）**：86 trace 里模型把 `workdir` 的 `**` 误判成 `conductor` 未授权，并把本地 `file_tail(".runtime/trace.md")` 和 VFS `/vfs/.runtime/trace.md` 混在一起。`vfs_connect` 描述已明确 `workdir` 覆盖 `conductor/`、`.runtime/*` 仅 VFS 可见，并要求连接后先看 `/vfs`；下次真机确认模型是否还犯。复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 - [ ] **ApplicationExitInfo 进程退出取证**：API 30+ 用 `ActivityManager.getHistoricalProcessExitReasons` 读取本进程退出原因、说明、时间戳和 ANR/native trace，写到外部 `diagnostics/exit-info.json`；API 24–29 回退到 crash report 和 `onTrimMemory` 内存快照。用于服务重启后 core 不可达、ANR、native crash。
@@ -57,8 +55,8 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.93`（tag `v1.15.0-alpha.13-wonder.93`，commit `ffa5db2`）。本地 527 用例绿；Test CI `44017431988` 绿；Release `44017778496` 绿；Release notify `44018878559` 绿；arm64 APK、APK 内 `wonder.93` notes 和本地 bare tag 已确认。下一次从 94 开始。
-- 真机待验（93）：Status bar 四 chip 在 360dp/大字体/Starting 状态下不溢出；Groups/VFS 在深浅色和动态色下能区分；VFS 卡片两行结构、短 scope chip、右上角断开在横屏/矮屏不遮挡；Conductor 冷启动 restore spinner 后能正确恢复会话；`vfs_lifecycle` 出现 `background` / `screen_off` / `screen_on`；全量 Link 的 `missingScopes` 不再列 `conductor`；升级后服务恢复不被旧 crash 阻塞。夜间浸泡脚本见 [`docs/vfs-soak-test.md`](docs/vfs-soak-test.md)。
+- 当前已发布 `wonder.94`（tag `v1.15.0-alpha.13-wonder.94`，commit `9f13b7a`）。本地 529 用例绿；Test CI `44022925942` 绿；Release `44023340190` 绿；Release notify `44024478815` 绿；arm64 APK、APK 内 `wonder.94` notes 和本地 bare tag 已确认。下一次从 95 开始。
+- 真机待验（94）：更新后 `pending.log` 不再出现新的 `endpoint/tailscale` TRACE（历史行也应在装载时被过滤）；Conductor 冷启动草稿从异步 `initialDraft` 恢复，输入不会被空状态覆盖；93 的 UI/后台/lifecycle 项继续按上一条验证。夜间浸泡脚本见 [`docs/vfs-soak-test.md`](docs/vfs-soak-test.md)。
 - Mini 侧 Taildrop 收件箱不会自动落盘：Conductor 的 `taildrop_send` 只把文件送进对端 Tailscale inbox，headless Mini 需要 `tailscale file get --conflict=rename <目录>` 才搬出来。主人否决了自动 drain 的 LaunchAgent；App 只按实际能感知的状态返回 `peer_inbox` + `receiverActionRequired`，不承诺落盘时机。
 - v80 trace 复盘：`analyze_image` 空答案（模型名 `deepseek-v4-flash`，81 已改 `deepseek-flash`）；`file_grep` 误用 `pattern`（82 已加参数提示）；`diagnostics_export` 的 `overwrite` 在 v80 trace 前半段缺失是因为那几条是 v79 会话，v80 代码和 APK 已带；`taildrop_send` 成功但 inbox 未 drain。
 - v82 trace 复盘：直接图片输入成功（text+image content parts，模型读出 Portal 首页）；`analyze_image` 不再空答案，但 `max_tokens=1024` 命中 length，返回 reasoning 草稿，待 83 修；trace 脱敏（803171 chars）、参数提示、Taildrop `peer_inbox` 均验证通过；Rich 查看器打不开；`file_grep` regex/长行和对话导出含 reasoning 待处理。
@@ -68,6 +66,7 @@
 
 ## 最近完成
 
+- wonder.94（2026-11-17）：telemetry 队列边界过滤与草稿异步加载。`TelemetryLogBuffer` 在装载 `pending.log` 和 append 时都调用 `TelemetryLogFilter`，历史/新写入的 tailscale TRACE 不会再穿过；跳过行不计入 disk-cap dropped。Conductor 草稿随异步 session restore 在 IO 读取，`initialDraft` 只在输入未被触碰时应用，首帧不再解析 SharedPreferences。5 分钟 VFS 观察 10/10 健康、2/2 消费者读取、0 outage、0 provider 重连。529 用例绿；Test/Release/notify、arm64 APK、APK 内 94 notes 和本地 bare tag 已确认。
 - wonder.93（2026-11-17）：UI 与启动性能。Status bar 统一固定 36dp 视觉高度/48dp 触摸目标的 chip，左 Connections/Groups、右 Stop/VFS；Groups 换 Layers，VFS 换 CloudUpload + tertiary 容器/状态点 + `VFS ↑bytes`（窄屏退化为 `VFS`+点）。VFS 卡片改为 header（服务名、共享/流量、48dp 断开）+ 短 scope chips（FlowRow，4 个后 `+N`）。`VFS_HANDSHAKE_TIMEOUT` 独立错误码和模型提示；telemetry 发送前过滤历史 tailscale TRACE；Conductor trace/会话 restore 移出主线程，early submit 等待 restore，冷启动显示 spinner。顺手修复 `release.sh` notes 前缀已生效。527 用例绿；Test/Release/notify、arm64 APK、APK 内 93 notes 和本地 bare tag 已确认。
 - wonder.92（2026-11-17）：从浸泡数据里收口。更新后服务恢复只被“当前正在启动的版本”的未读 crash 阻塞，88 的旧 OOM 不再让之后每次更新都不恢复；telemetry 上传过滤 `endpoint/tailscale` 的 verbose TRACE（保留 INFO/WARN 的 ts_* 事件）；`conductor_tool`/`app.log` 增加 `wait`/`work`，确认等待不再冒充执行延迟；全量 Link 的 `missingScopes` 不再误列 `conductor`；VFS 活跃时记录 `background`/`screen_on`/`screen_off`。第二轮 30 分钟浸泡 56/56 健康、6/6 消费者容器读取成功。517 用例绿；Test/Release/notify、arm64 APK、APK 内 92 notes 和本地 bare tag 已确认。
 - wonder.91（2026-11-17）：VFS 死链检测。wonder.90 的首轮 30 分钟监测前 5 次健康，08:09:42 provider 以 `1006` 断开（同一秒手机 terminal 也断），App 进程和 sharing service 仍在但未重连；根因是 WebSocket `readTimeout=0`/`pingInterval=0`，黑洞路径下不会触发 `onFailure`。91 加 20 秒 OkHttp 协议 ping 做本地死链检测，应用层 ping/pong 仍是 Portal `lastSeen` 权威；重连预算耗尽改为 `VFS_CONNECT_FAILED` 并停服务。510 用例绿；Test/Release/notify、arm64 APK、APK 内 91 notes 和本地 bare tag 已确认。监测脚本同时改为在 app 版本或 provider 切换时重置失败计数、每 10 个样本跑真实消费者容器读取。
