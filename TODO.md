@@ -15,6 +15,13 @@
 - [ ] **服务重启后 core 不可达（83 低端机实测）**：BIRD P50S_PRO / Android 11 上，用户停止并重开 Service 后，`network_snapshot` 连续三次（10:25 / 10:27 / 10:31）返回 `core.running=false`、`groupCount=0`、`outboundCount=0`，错误 `groups stream recv: rpc error: code = Unavailable desc = error reading from server: EOF`；同一时刻 `vpnActive=true`、`serviceMode=vpn`，未见自行恢复。下一步：用 Conductor 的文件工具读 crash/OOM reports 和 AppLog，查 CFG `service_start` / `service_stop` / `vpn_session_id`；判断是 core 进程没起来、被杀，还是 `CommandClient` 的 stream 没重连；在 .83 上复现并记录。若 core 真没起来，补一个明确的「服务已启动但核心不可达」状态和重启入口，不能只显示 VPN 已连接。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 - [ ] **会话加载移出主线程（写入已修）**：`persistSession()` 的 JSON encode/save 已放到单线程 `conductor-session` executor，25 个调用点不再在主线程编码；剩余 `ConductorViewModel.init` 仍在主线程 `AgentApiTrace.attachPersistence()`（本次持久化 trace 约 1.1 MB）和 `restoreSession()`（会话上限 512 KB）。下一步把 load 放后台，并用启动阶段 `ui_jank` 对照；复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 
+### P2 体验与 UI
+
+- [ ] **Status bar 四按钮对齐与 Groups/VFS 区分**：当前四个 pill 内容高度不一（VFS 连接中 spinner 16dp、图标 18dp、文本行高不同），Groups 与 VFS 都是 secondaryContainer + 文件夹图标，观感过于相似。计划抽一个固定 36dp 高、18dp 图标槽的统一 chip；左侧 Connections/Groups、右侧 Stop/VFS 两组；Groups 换 Layers/AccountTree 图标，VFS 换 CloudUpload/Swap 图标并加 `VFS` 文案（保留上传字节），开启时用 tertiaryContainer 或状态点区分。
+- [ ] **VFS 共享卡片布局**：当前单行结构是“图标 + 两行文字 + Disconnect 文字按钮”，服务名和 scope 都只能一行省略，10dp 垂直内边距偏挤。计划改成两行卡片：头部图标 + 服务名 + `共享中 · ↑ 流量`，右上角 48dp 触摸目标的断开图标；下面用 FlowRow 显示短 scope chip（工作目录/内部文件/Trace/提示词/对话），超出显示 `+N`；卡片 16dp 内边距、12dp 行距、16dp 圆角。备选是底部 sheet，但改动更大。
+- [ ] **pending.log 历史 tailscale TRACE**：92 已阻止新的 `endpoint/tailscale` TRACE 进入上传队列，但升级前 `pending.log` 里已有约 16 KB 原始行，仍可能随下一批上传。需要一次性过滤/清理或在发送时再过滤，避免旧数据泄露。
+- [ ] **VFS 握手错误区分**：w84 的失败是 `VFS_CONNECT_FAILED` + “did not complete the handshake in time”，模型误猜成未点授权；实际授权超时应是 `VFS_CONFIRMATION_TIMEOUT`。下一步给握手超时单独错误码/文案，并提示“服务器侧未回 hello，重试或检查 Portal/vfsd”，不要让模型引导用户重复点授权。
+
 ### P2 数据面与能力
 
 - [ ] **Conductor 短时后台后的 prompt cache**：90 trace 显示离开约 8m48s 和 6m32s 后，首轮 cache hit 从约 95% 掉到 23–24%（hit 2304 / miss 7269、7585），延迟升到 6.8s / 3.7s。缓存 TTL 是分钟级，不是 w88 报告推测的“>1h”。评估是否需要在回到前台时提示，或压缩上下文降低首轮成本。
