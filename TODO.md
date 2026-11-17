@@ -17,6 +17,7 @@
   - 2026-11-18 复盘（wonder.95，真机 + VFS `all`）：不是 core 死了。23:15:28-35 服务两连 stop/start，`appfiles/command.sock` mtime 23:15:35；23:46 `system_snapshot` 仍 `core.reachable=false`，但 `appfiles/telemetry/pending.log` 有持续 tun/router 流量，`app.log` 无 crash、`CrashReport-Application.log` 0 字节。数据面活着，断的是 Conductor 的 CommandClient 管控通道。
   - 代码原因：Conductor 是进程级 ViewModel，`CommandClient` 只在其首次连接后保留；服务重启时如果 Conductor 页面不在前台，`ConductorScreen` 的 `LaunchedEffect` 不会调用 `onServiceState`。旧 stream 收到 EOF 后没有重连；回到 Conductor 时 `wantConnected` 已经是 true，`onServiceState` 的 `if (previous == shouldConnect) return` 直接返回，`onConnectionError` 也只把状态置 false。所以会一直显示服务在跑、core 不可达。
   - 修法：`onServiceState` 在 `shouldConnect && !coreConnected` 时仍调用 `connect()`；Conductor 可见时加约 5 秒健康检查或带退避的重连，不要只依赖 service 状态跳变。修完在真机上验证「服务 stop/start 后不做任何操作，core 工具自行恢复」和「离开 Conductor 期间重启，回来后第一次工具调用已恢复」。
+  - 2026-11-18 已修（dev）：抽出 `CoreConnectionState`，服务仍 started 但 CommandClient 已断时按 5 秒重试重连；Conductor 可见期间每 5 秒调用一次 `onServiceState`。`CoreConnectionStateTest` 覆盖「流断后重连」「重试间隔」「服务停/启」三个场景。待真机验证。
 
 ### P2 数据面与能力
 

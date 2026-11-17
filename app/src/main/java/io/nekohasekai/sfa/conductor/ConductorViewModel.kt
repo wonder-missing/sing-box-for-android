@@ -179,7 +179,6 @@ class ConductorViewModel(
     @Volatile
     private var remoteControl: Boolean = false
 
-    private var wantConnected = false
     private val commandConfirmationIds = AtomicLong(0)
 
     private val apiKeyProvider = AgentApiKeyProviderFactory.create(application)
@@ -197,6 +196,16 @@ class ConductorViewModel(
             viewModelScope,
             listOf(CommandClient.ConnectionType.Groups, CommandClient.ConnectionType.Outbounds),
             this,
+        )
+
+    private val coreConnection =
+        CoreConnectionState(
+            connect = { commandClient.connect() },
+            disconnect = {
+                commandClient.disconnect()
+                publishNodeState(CommandNodeState())
+            },
+            isConnected = { nodeState.connected },
         )
 
     private val nodeSource =
@@ -825,19 +834,7 @@ class ConductorViewModel(
         this.remoteControl = remoteControl
         localServiceStarted = !remoteControl && serviceStatus == Status.Started
         val shouldConnect = if (remoteControl) remoteConnected else serviceStatus == Status.Started
-        val previous =
-            synchronized(stateLock) {
-                val previous = wantConnected
-                wantConnected = shouldConnect
-                previous
-            }
-        if (previous == shouldConnect) return
-        if (shouldConnect) {
-            commandClient.connect()
-        } else {
-            commandClient.disconnect()
-            publishNodeState(CommandNodeState())
-        }
+        coreConnection.onServiceState(shouldConnect)
     }
 
     fun saveDraft(text: String) {

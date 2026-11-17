@@ -249,11 +249,14 @@ fun ConductorScreen(
         }
 
     LaunchedEffect(serviceStatus, remoteServer, remoteConnected) {
-        viewModel.onServiceState(
-            serviceStatus = serviceStatus,
-            remoteControl = remoteServer != null,
-            remoteConnected = remoteConnected,
-        )
+        while (true) {
+            viewModel.onServiceState(
+                serviceStatus = serviceStatus,
+                remoteControl = remoteServer != null,
+                remoteConnected = remoteConnected,
+            )
+            delay(CoreConnectionState.DEFAULT_RETRY_INTERVAL_MS)
+        }
     }
 
     var inputField by rememberSaveable(stateSaver = InputFieldSaver) {
