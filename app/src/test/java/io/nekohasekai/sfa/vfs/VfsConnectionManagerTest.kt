@@ -64,7 +64,7 @@ class VfsConnectionManagerTest {
         trust: VfsTrustStore = VfsTrustStore(now = { now }, inactivityMs = 1_000L),
         resumes: VfsResumeTokenStore = InMemoryVfsResumeTokenStore(),
         foreground: Boolean = true,
-        backgroundSharing: Boolean = false,
+        backgroundSharing: () -> Boolean = { false },
         resolver: suspend (String) -> VfsServerTarget? = { target },
         sleeper: suspend (Long) -> Unit = {},
     ): VfsConnectionManager =
@@ -81,7 +81,7 @@ class VfsConnectionManagerTest {
                 ),
             now = { now },
             isForeground = { foreground },
-            backgroundSharing = { backgroundSharing },
+            backgroundSharing = backgroundSharing,
             sleeper = sleeper,
         )
 
@@ -253,7 +253,7 @@ class VfsConnectionManagerTest {
                     connector,
                     trust = trust,
                     foreground = false,
-                    backgroundSharing = true,
+                    backgroundSharing = { true },
                 )
             background.connect(link)
 
@@ -328,6 +328,40 @@ class VfsConnectionManagerTest {
             val state = manager.state.value
             assertTrue(state is VfsConnectionState.Error)
             assertEquals("VFS_CONNECT_FAILED", (state as VfsConnectionState.Error).code)
+        }
+
+    @Test
+    fun backgroundSharingKeepsRetryingPastTheForegroundBudget() =
+        runBlocking {
+            var sharing = true
+            var sleeps = 0
+            val connector = FakeConnector()
+            val trust = VfsTrustStore(now = { now }, inactivityMs = 1_000L)
+            val foreground = manager(connector, trust = trust)
+            foreground.connect(link)
+            foreground.disconnect(VfsCloseCodes.BACKGROUND, "background")
+
+            val background =
+                manager(
+                    connector,
+                    trust = trust,
+                    foreground = false,
+                    backgroundSharing = { sharing },
+                    sleeper = {
+                        sleeps += 1
+                        if (sleeps >= 12) sharing = false
+                    },
+                )
+            background.connect(link)
+            background.disconnect(VfsCloseCodes.BACKGROUND, "background")
+            connector.error = VfsConnectException("VFS_CONNECT_FAILED", "network down")
+
+            background.reconnectLast()
+
+            // The foreground budget is 10 attempts. Background sharing must
+            // keep trying until the network returns or the service stops.
+            assertTrue("expected more than the foreground budget", sleeps >= 12)
+            assertTrue(background.state.value is VfsConnectionState.Backoff)
         }
 
     @Test

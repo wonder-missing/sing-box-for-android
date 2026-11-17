@@ -251,9 +251,10 @@ class VfsConnectionManager(
 
     /**
      * Heals the last approved Link with the standard backoff. Foreground entry
-     * waits for the screen to settle; the sharing service keeps the same loop
-     * running while the app is backgrounded. Terminal and consent errors stop
-     * the loop.
+     * waits for the screen to settle. While the sharing service is active the
+     * loop keeps retrying with the 60s cap, so a longer network/Doze gap does
+     * not permanently end background sharing; the user-visible notification
+     * and Disconnect stay available. Terminal and consent errors stop the loop.
      */
     suspend fun reconnectLast() {
         // Foreground and service-driven heal can race. One loop is enough:
@@ -271,7 +272,10 @@ class VfsConnectionManager(
         if (!isForeground() && !backgroundSharing()) return
         if (trust.find(link.server, link.scope) == null) return
         if (isForeground()) sleeper(1_500L)
-        val backoff = VfsBackoff()
+        // A foreground-only heal is bounded so a broken Link cannot leave the
+        // app spinning forever. An active sharing service is the opposite: it
+        // must survive a network/Doze gap longer than the old 5-minute budget.
+        val backoff = VfsBackoff(maxAttempts = if (backgroundSharing()) Int.MAX_VALUE else 10)
         while (isForeground() || backgroundSharing()) {
             try {
                 connect(link)
