@@ -293,6 +293,23 @@ class VfsConnectionManagerTest {
         }
 
     @Test
+    fun reconnectLastGivesUpAfterTheRetryBudget() =
+        runBlocking {
+            val connector = FakeConnector()
+            val manager = manager(connector)
+
+            manager.connect(link)
+            manager.disconnect(VfsCloseCodes.BACKGROUND, "background")
+            connector.error = VfsConnectException("VFS_CONNECT_FAILED", "network down")
+            manager.reconnectLast()
+
+            assertEquals(12, connector.requests.size)
+            val state = manager.state.value
+            assertTrue(state is VfsConnectionState.Error)
+            assertEquals("VFS_CONNECT_FAILED", (state as VfsConnectionState.Error).code)
+        }
+
+    @Test
     fun serverClose4401ClearsResumeAndTrust() =
         runBlocking {
             val connector = FakeConnector()

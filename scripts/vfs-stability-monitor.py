@@ -120,7 +120,7 @@ def choose_target(providers: list[dict]) -> str | None:
         if p.get("online") is True and p.get("mounted") is True and p.get("readOnly") is True
     ]
     online = [p for p in valid if p.get("online") is True]
-    pool = ready or online or valid
+    pool = ready or online
     if not pool:
         return None
     return max(pool, key=lambda p: int(p.get("lastSeen") or 0))["providerId"]

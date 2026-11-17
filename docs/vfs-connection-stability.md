@@ -52,6 +52,26 @@ wonder.88 测试已经复现这条路径：测试期间 provider 多次 connect/
 - 不加 WakeLock；断网/Doze 走现有 backoff。
 - 不做进程被杀后的自动重连（P2，见 TODO）。
 
+## 2026-11-17 实测（wonder.90）
+
+第一轮 30 分钟监测在 08:06:27 启动，08:10:06 因连续 3 次不健康提前停止：
+
+- 08:06:27–08:08:33 五次健康：provider online、mounted、readOnly，FUSE 读取正常。
+- `lastSeen` 最后更新约 08:08:34；Portal 在 08:09:42 记录 provider `code=1006`（不是 `4000 background`）。
+- 同一秒，手机上的 Portal terminal WebSocket 也断开；vfsd 在 08:09:35 有一条 FUSE teardown 的 `ENOENT ... write`。
+- App 仍在运行：`app.log` 08:10:42 起继续记录，telemetry 在 08:10:47 仍成功上传；08:09:24 的 `vfs_lifecycle` 显示 `foreground` + `service=true`。没有 service stop，也没有 app crash。
+- 之后 App 没有自动重连；08:11:30 是新请求的 `all` Link 替换旧 Link，不是旧 Link 自动恢复。
+
+判断：前台服务本身撑住了约 8 分钟，失败点更像手机到 Portal 的路径被黑洞式切断（同时 terminal 也掉），而 App 的 WebSocket 配置是 `readTimeout=0`、`pingInterval=0`，没有本地死链检测，所以没有及时触发 `onFailure`/重连。不是 4000 background 断开。
+
+wonder.91 修复：
+
+- provider WebSocket 加 OkHttp 协议层 `pingInterval=20s`。它只做本地死链检测；Portal 的应用层 ping/pong 仍是 `lastSeen` 的权威。
+- 重连预算耗尽时不再停在 `Backoff`，改为 `VFS_CONNECT_FAILED` Error，前台服务随之停止，避免留下永远“连接中”的通知。
+- 监测脚本只在有 online provider 时切换目标，避免把旧的离线 provider 当成新目标。
+
+待真机确认：更新 91 后重复本监测；预期路径短暂中断时在约 20–40 秒内触发重连，而不是等用户手动申请新 Link。
+
 ## 待真机验收
 
 没有模拟器，以下场景需要真机确认：

@@ -278,7 +278,15 @@ class VfsConnectionManager(
                 return
             } catch (error: VfsConnectException) {
                 if (stopsReconnect(error.code)) return
-                val wait = backoff.nextDelayMs() ?: return
+                val wait = backoff.nextDelayMs()
+                if (wait == null) {
+                    _state.value =
+                        VfsConnectionState.Error(
+                            "VFS_CONNECT_FAILED",
+                            "Could not reconnect to the VFS provider after repeated attempts.",
+                        )
+                    return
+                }
                 _state.value =
                     VfsConnectionState.Backoff(
                         attempt = backoff.attemptCount,

@@ -27,7 +27,10 @@ data class VfsSessionClose(
 
 /**
  * Real provider transport. The app answers application-level ping frames in
- * [VfsProviderProtocol]; OkHttp's protocol-level pong is not a liveness signal.
+ * [VfsProviderProtocol]; those are the Portal's liveness signal. OkHttp's
+ * protocol-level ping is only a local dead-path detector: a black-holed
+ * Tailscale route leaves a WebSocket "open" forever because reads have no
+ * timeout, and the app would otherwise never reconnect.
  */
 class OkHttpVfsProviderConnector(
     private val sourceFactory: (Set<VfsScope>) -> VirtualDirectorySource,
@@ -160,12 +163,12 @@ class OkHttpVfsProviderConnector(
     companion object {
         private const val HELLO_TIMEOUT_MS = 15_000L
 
-        private fun defaultClient(): OkHttpClient =
+        internal fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.MILLISECONDS)
                 .writeTimeout(15, TimeUnit.SECONDS)
-                .pingInterval(0, TimeUnit.MILLISECONDS)
+                .pingInterval(20, TimeUnit.SECONDS)
                 .build()
     }
 }
