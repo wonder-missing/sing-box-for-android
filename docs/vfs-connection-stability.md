@@ -78,7 +78,7 @@ wonder.93/94 实测补充：93 的新会话在 12:54–12:58 记录了 `backgrou
 
 ## 2026-11-18 夜间浸泡（wonder.96）
 
-8 小时浸泡在 24 分钟后被 circuit breaker 停止，输出在 `build/vfs-soak-night-20261118-0113/`：
+8 小时浸泡在约 35 分钟后被 circuit breaker 停止，输出在 `build/vfs-soak-night-20261118-0113/`：
 
 - 35 个样本，24 健康 / 11 不健康；1 次 outage 604.4 秒；2 次消费者读取都成功（发生在掉线前）。
 - provider 最后一次心跳 01:37:16，01:38:01 `online=false`，Portal 01:38:46 记录 `code=1006`；之后没有重连。
