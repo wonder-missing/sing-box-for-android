@@ -709,6 +709,7 @@ class ConductorViewModel(
                 telemetryUploadPort = telemetryPort,
                 httpFetchPort = httpFetchPort,
                 webSearchPort = webSearchPort,
+                webSearchAvailable = ModelProviderSettings::supportsWebSearch,
             ).all +
                 AgentDataTools(
                     fileStore = fileStore,

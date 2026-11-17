@@ -24,6 +24,7 @@ class AgentTools(
     private val telemetryUploadPort: TelemetryUploadPort? = null,
     private val httpFetchPort: HttpFetchPort? = null,
     private val webSearchPort: WebSearchPort? = null,
+    private val webSearchAvailable: () -> Boolean = { true },
 ) {
     private val wait =
         object : AgentTool {
@@ -839,6 +840,8 @@ class AgentTools(
                         "This sends the search query to the configured DeepSeek web-search service.",
                     timeoutMs = WEB_SEARCH_TIMEOUT_MS,
                 )
+
+            override fun isAvailable(): Boolean = webSearchAvailable()
 
             override suspend fun execute(
                 args: JsonObject,

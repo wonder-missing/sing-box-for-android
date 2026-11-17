@@ -122,6 +122,7 @@ fun buildTestRegistry(
     selectionPort: NodeSelectionPort? = null,
     httpFetchPort: HttpFetchPort? = null,
     webSearchPort: WebSearchPort? = null,
+    webSearchAvailable: () -> Boolean = { true },
 ): AgentToolRegistry =
     AgentToolRegistry(
         AgentTools(
@@ -131,5 +132,6 @@ fun buildTestRegistry(
             selectionPort = selectionPort,
             httpFetchPort = httpFetchPort,
             webSearchPort = webSearchPort,
+            webSearchAvailable = webSearchAvailable,
         ).all,
     )

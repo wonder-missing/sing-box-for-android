@@ -459,6 +459,12 @@ data class ToolExecution(
 interface AgentTool {
     val definition: AgentToolDefinition
 
+    /**
+     * False hides the tool from definitions, search and dispatch. Use this for
+     * provider/build capabilities that must not be advertised at all.
+     */
+    fun isAvailable(): Boolean = true
+
     suspend fun execute(
         args: JsonObject,
         cancellation: ToolCancellation,

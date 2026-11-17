@@ -304,6 +304,25 @@ class AgentToolsTest {
     }
 
     @Test
+    fun webSearchIsHiddenWhenTheProviderDoesNotSupportIt() {
+        val search = FakeWebSearchPort()
+        val registry =
+            buildTestRegistry(
+                webSearchPort = search,
+                webSearchAvailable = { false },
+            )
+
+        assertTrue(registry.definitions().none { it.name == "web_search" })
+        assertTrue(AgentToolCatalog(registry.definitions()).search("web search").isEmpty())
+
+        val result = registry.userExec("web_search", """{"query":"anything"}""")
+
+        assertFalse(result.ok)
+        assertEquals("unknown_tool", result.errorCode)
+        assertTrue(search.calls.isEmpty())
+    }
+
+    @Test
     fun webSearchPassesQueryAndKeepsSourceUrls() {
         val search =
             FakeWebSearchPort(

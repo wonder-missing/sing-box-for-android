@@ -1,7 +1,9 @@
 package io.nekohasekai.sfa.agent
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelLimitsTest {
@@ -60,5 +62,12 @@ class ModelLimitsTest {
 
         assertEquals(128_000, limits.contextWindow)
         assertNull(limits.maxOutputTokens)
+    }
+
+    @Test
+    fun webSearchIsAdvertisedOnlyForDeepSeek() {
+        assertTrue(ModelProviders.supportsWebSearch(ModelProviders.DEEPSEEK))
+        assertFalse(ModelProviders.supportsWebSearch(ModelProviders.XAI))
+        assertFalse(ModelProviders.supportsWebSearch(ModelProviders.GENERIC))
     }
 }

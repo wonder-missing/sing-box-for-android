@@ -66,6 +66,9 @@ object ModelProviders {
         )
 
     fun byId(id: String?): ModelProviderPreset = all.firstOrNull { it.id == id } ?: all.first()
+
+    /** Server-side web_search is implemented only for DeepSeek in this build. */
+    fun supportsWebSearch(id: String?): Boolean = byId(id).id == DEEPSEEK
 }
 
 /**
@@ -90,6 +93,8 @@ object ModelProviderSettings {
     }
 
     fun endpoint(): ModelEndpoint = endpointFor(active())
+
+    fun supportsWebSearch(): Boolean = ModelProviders.supportsWebSearch(active().id)
 
     /**
      * Ceilings for the active provider. DeepSeek V4 Flash: 1M context,

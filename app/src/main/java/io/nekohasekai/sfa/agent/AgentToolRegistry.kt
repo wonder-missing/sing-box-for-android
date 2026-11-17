@@ -26,7 +26,9 @@ class AgentToolRegistry(
     private val toolsByName = tools.associateBy { it.definition.name }
     private val activeCancellations = CopyOnWriteArrayList<ToolCancellationImpl>()
 
-    override fun definitions(): List<AgentToolDefinition> = toolsByName.values.map { it.definition }
+    override fun definitions(): List<AgentToolDefinition> = availableTools().map { it.definition }
+
+    private fun availableTools(): List<AgentTool> = toolsByName.values.filter { it.isAvailable() }
 
     override suspend fun invokeUserCommand(
         name: String,
@@ -54,14 +56,17 @@ class AgentToolRegistry(
         humanApproved: Boolean,
     ): AgentInvocationResult {
         val tool =
-            toolsByName[name]
-                ?: return failure(
-                    name,
-                    "unknown_tool",
-                    "Unknown tool. Registered tools: " +
-                        toolsByName.keys.take(12).joinToString() +
-                        if (toolsByName.size > 12) ", ... (${toolsByName.size} total)." else ".",
-                )
+            toolsByName[name]?.takeIf { it.isAvailable() }
+                ?: return run {
+                    val available = availableTools()
+                    failure(
+                        name,
+                        "unknown_tool",
+                        "Unknown tool. Registered tools: " +
+                            available.map { it.definition.name }.take(12).joinToString() +
+                            if (available.size > 12) ", ... (${available.size} total)." else ".",
+                    )
+                }
         val definition = tool.definition
         val trimmed = argsJson.trim()
         val args =
