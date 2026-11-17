@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.ConfirmationRequest
+import io.nekohasekai.sfa.agent.TokenUsage
 import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
@@ -23,6 +24,9 @@ sealed interface ConductorItem {
     data class Assistant(
         val text: String,
         val streaming: Boolean = false,
+        /** Turn-level usage, shown as this reply's footer. */
+        val usage: TokenUsage? = null,
+        val contextPercent: Int? = null,
     ) : ConductorItem
 
     @Serializable

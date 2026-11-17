@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.conductor
 
+import io.nekohasekai.sfa.agent.TokenUsage
 import io.nekohasekai.sfa.conductor.ConductorItem.Assistant
 import io.nekohasekai.sfa.conductor.ConductorItem.Reasoning
 
@@ -87,6 +88,23 @@ internal fun List<ConductorItem>.withAssistantFinal(text: String): List<Conducto
         updated.add(Assistant(text))
     }
     return updated.settleStreamingAssistants()
+}
+
+/**
+ * Attaches the turn's last API usage to the final assistant reply. Usage is
+ * recorded per turn, not per assistant message, so the last reply is the only
+ * honest attachment point; do not split it across earlier tool-round replies.
+ */
+internal fun List<ConductorItem>.attachUsage(
+    usage: TokenUsage,
+    contextPercent: Int?,
+): List<ConductorItem> {
+    val index = indexOfLast { it is Assistant }
+    if (index < 0) return this
+    val updated = toMutableList()
+    val assistant = updated[index] as Assistant
+    updated[index] = assistant.copy(usage = usage, contextPercent = contextPercent)
+    return updated
 }
 
 /** Discards partial streaming output before a retried request. */

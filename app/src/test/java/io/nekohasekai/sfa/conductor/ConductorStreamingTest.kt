@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.conductor
 
+import io.nekohasekai.sfa.agent.TokenUsage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -87,6 +88,32 @@ class ConductorStreamingTest {
         assertEquals(ConductorItem.Reasoning("thought", streaming = false), updated[0])
         assertEquals(ConductorItem.Assistant("final answer", streaming = false), updated[1])
         assertEquals(2, updated.size)
+    }
+
+    @Test
+    fun usageAttachesToTheLastAssistantReplyOnly() {
+        val usage = TokenUsage(inputTokens = 100, outputTokens = 20, cacheHitTokens = 80, cacheMissTokens = 20)
+        val items =
+            listOf(
+                ConductorItem.Assistant("first"),
+                ConductorItem.Assistant("final"),
+            )
+
+        val updated = items.attachUsage(usage, contextPercent = 42)
+
+        assertEquals(ConductorItem.Assistant("first"), updated[0])
+        assertEquals(
+            ConductorItem.Assistant("final", usage = usage, contextPercent = 42),
+            updated[1],
+        )
+    }
+
+    @Test
+    fun usageWithoutAnAssistantReplyLeavesItemsUnchanged() {
+        val usage = TokenUsage(inputTokens = 100, outputTokens = 20)
+        val items = listOf(ConductorItem.Notice("tool", "done"))
+
+        assertEquals(items, items.attachUsage(usage, contextPercent = null))
     }
 
     @Test

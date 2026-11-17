@@ -90,6 +90,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -154,6 +155,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import io.nekohasekai.sfa.agent.TokenUsage
+import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.constant.Status
@@ -673,17 +676,33 @@ fun ConductorScreen(
                         count = uiState.items.size,
                         key = { index -> uiState.items[index].stableKey(index) },
                     ) { index ->
-                        ConductorItemView(
-                            item = uiState.items[index],
-                            onConfirm = viewModel::confirmConfirmation,
-                            onConfirmAll = viewModel::confirmAllAgent,
-                            onCancel = viewModel::cancelConfirmation,
-                            onAnswerQuestion = viewModel::answerAskUser,
-                            onCancelQuestion = viewModel::cancelAskUser,
-                            canRetry = uiState.canRetryLastTurn && index == uiState.items.lastIndex,
-                            onRetry = viewModel::retryLastTurn,
-                            imageFile = viewModel::imageFile,
-                        )
+                        val item = uiState.items[index]
+                        val extraTop =
+                            if (
+                                index > 0 &&
+                                item is ConductorItem.Assistant &&
+                                (
+                                    uiState.items[index - 1] is ConductorItem.Tool ||
+                                        uiState.items[index - 1] is ConductorItem.Reasoning
+                                )
+                            ) {
+                                12.dp
+                            } else {
+                                0.dp
+                            }
+                        Box(modifier = Modifier.fillMaxWidth().padding(top = extraTop)) {
+                            ConductorItemView(
+                                item = item,
+                                onConfirm = viewModel::confirmConfirmation,
+                                onConfirmAll = viewModel::confirmAllAgent,
+                                onCancel = viewModel::cancelConfirmation,
+                                onAnswerQuestion = viewModel::answerAskUser,
+                                onCancelQuestion = viewModel::cancelAskUser,
+                                canRetry = uiState.canRetryLastTurn && index == uiState.items.lastIndex,
+                                onRetry = viewModel::retryLastTurn,
+                                imageFile = viewModel::imageFile,
+                            )
+                        }
                     }
                     item(key = "conversation-actions") {
                         ConversationActions(
@@ -1406,83 +1425,87 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
     val lineHeight = 18.sp
     val miniText = remember(item.text) { item.text.replace(Regex("""\s*\r?\n\s*"""), " ").trim() }
     val viewportHeight = with(LocalDensity.current) { lineHeight.toDp() * 2 }
+    val surface = MaterialTheme.colorScheme.surfaceContainerHigh
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = if (item.streaming) "Thinking" else "Thought",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (item.text.isBlank()) {
             if (item.streaming) {
-                CircularProgressIndicator(
-                    modifier = Modifier.padding(start = 6.dp).size(10.dp),
-                    strokeWidth = 1.5.dp,
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            if (!item.streaming && item.text.isNotBlank()) {
-                TextButton(
-                    onClick = { expanded = !expanded },
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Text(
-                        text = if (expanded) "Hide" else "Show",
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-        }
-        if (item.text.isNotBlank()) {
-            if (expanded) {
-                SelectionContainer {
-                    Text(
-                        text = item.text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                    )
-                }
-            } else {
-                val surface = MaterialTheme.colorScheme.surfaceContainerHigh
                 Box(
                     modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(top = 2.dp)
                         .height(viewportHeight)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(surface)
-                        .padding(horizontal = 8.dp)
-                        .clickable { expanded = true },
+                        .background(surface),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = miniText,
-                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = lineHeight),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxSize().verticalScroll(scroll),
-                    )
-                    Box(
-                        modifier =
-                        Modifier
-                            .align(Alignment.TopCenter)
-                            .fillMaxWidth()
-                            .height(10.dp)
-                            .background(Brush.verticalGradient(listOf(surface, Color.Transparent))),
-                    )
-                    Box(
-                        modifier =
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(10.dp)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, surface))),
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.5.dp,
                     )
                 }
-                LaunchedEffect(item.text) {
-                    snapshotFlow { scroll.maxValue }.collect { maxValue ->
-                        if (maxValue > 0) scroll.scrollTo(maxValue)
-                    }
+            }
+        } else if (expanded) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = { expanded = false },
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(
+                        text = "Collapse",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+            SelectionContainer {
+                Text(
+                    text = item.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            Box(
+                modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(viewportHeight)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(surface)
+                    .padding(horizontal = 8.dp)
+                    .clickable { expanded = true },
+            ) {
+                Text(
+                    text = miniText,
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = lineHeight),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxSize().verticalScroll(scroll),
+                )
+                Box(
+                    modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .background(Brush.verticalGradient(listOf(surface, Color.Transparent))),
+                )
+                Box(
+                    modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, surface))),
+                )
+            }
+            LaunchedEffect(item.text, expanded) {
+                snapshotFlow { scroll.maxValue }.collect { maxValue ->
+                    if (maxValue > 0) scroll.scrollTo(maxValue)
                 }
             }
         }
@@ -1533,7 +1556,7 @@ private fun ConductorItemView(
                         text =
                             markdownAnnotated(
                                 item.text,
-                                codeBackground = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                codeBackground = MaterialTheme.colorScheme.surfaceContainer,
                                 codeColor = MaterialTheme.colorScheme.onSurface,
                             ),
                         style = MaterialTheme.typography.bodyMedium,
@@ -1541,6 +1564,7 @@ private fun ConductorItemView(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                AssistantUsageFooter(item.usage, item.contextPercent)
             }
 
         is ConductorItem.Reasoning -> ReasoningItem(item)
@@ -2020,27 +2044,23 @@ private fun UserMessage(
 private fun ToolItem(item: ConductorItem.Tool) {
     var expanded by remember { mutableStateOf(false) }
     val result = item.result
-    val statusColor =
-        when (item.status) {
-            ToolStatus.SUCCEEDED -> MaterialTheme.colorScheme.primary
-            ToolStatus.FAILED -> MaterialTheme.colorScheme.error
-            ToolStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
-            ToolStatus.RUNNING -> MaterialTheme.colorScheme.onSurfaceVariant
-        }
-    val degradedLabel = stringResource(R.string.conductor_tool_degraded)
-    val statusText =
-        if (result?.degraded == true) {
-            "${item.status.name.lowercase()} · $degradedLabel"
-        } else {
-            item.status.name.lowercase()
-        }
+    val statusLabel = item.status.name.lowercase() + if (result?.degraded == true) " · degraded" else ""
+    val failureSummary = result?.let(::toolFailureSummary)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(enabled = result != null) { expanded = !expanded },
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            ToolStatusMarker(
+                status = item.status,
+                label = statusLabel,
+                modifier = Modifier.size(16.dp),
+            )
             Text(
                 text = item.call.name,
                 style = MaterialTheme.typography.labelMedium,
@@ -2050,23 +2070,16 @@ private fun ToolItem(item: ConductorItem.Tool) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.labelSmall,
-                color = statusColor,
-            )
             if (result != null) {
-                TextButton(
-                    onClick = { expanded = !expanded },
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Text(
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription =
                         stringResource(
                             if (expanded) R.string.conductor_tool_hide_details else R.string.conductor_tool_details,
                         ),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
+                    modifier = Modifier.size(18.dp).rotate(if (expanded) 180f else 0f),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         if (item.call.displayArgsJson.isNotBlank() && item.call.displayArgsJson != "{}") {
@@ -2076,6 +2089,8 @@ private fun ToolItem(item: ConductorItem.Tool) {
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                 )
             }
@@ -2104,19 +2119,11 @@ private fun ToolItem(item: ConductorItem.Tool) {
                         )
                     }
                 }
-            } else {
-                val outputMessage =
-                    (result.output?.get("message") as? JsonPrimitive)?.contentOrNull
-                        ?: ((result.output?.get("core") as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
-                val summary =
-                    result.message
-                        ?: outputMessage
-                        ?: result.errorCode
-                        ?: stringResource(R.string.conductor_tool_details_hint)
+            } else if (item.status == ToolStatus.FAILED && failureSummary != null) {
                 Text(
-                    text = summary,
+                    text = "Failed · $failureSummary",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (result.ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.error,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -2124,6 +2131,123 @@ private fun ToolItem(item: ConductorItem.Tool) {
             }
         }
     }
+}
+
+@Composable
+private fun AssistantUsageFooter(
+    usage: TokenUsage?,
+    contextPercent: Int?,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    if (usage == null) return
+    val summary =
+        buildList {
+            usage.inputTokens?.let { add("In ${formatTokenCount(it)}") }
+            usage.outputTokens?.let { add("Out ${formatTokenCount(it)}") }
+            usage.cacheHitTokens?.let { add("Cache ${formatTokenCount(it)}") }
+        }
+    if (summary.isEmpty()) return
+    val details =
+        buildList {
+            usage.cacheMissTokens?.let { add("Miss ${formatTokenCount(it)}") }
+            contextPercent?.let { add("Context $it%") }
+        }
+
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(
+            modifier =
+            Modifier
+                .fillMaxWidth()
+                .then(
+                    if (details.isNotEmpty()) {
+                        Modifier.clickable { expanded = !expanded }
+                    } else {
+                        Modifier
+                    },
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = summary.joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            if (details.isNotEmpty()) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Hide usage details" else "Show usage details",
+                    modifier = Modifier.size(14.dp).rotate(if (expanded) 180f else 0f),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (expanded && details.isNotEmpty()) {
+            Text(
+                text = details.joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolStatusMarker(
+    status: ToolStatus,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    val semantics = Modifier.semantics { contentDescription = label }
+    Box(
+        modifier = modifier.then(semantics),
+        contentAlignment = Alignment.Center,
+    ) {
+        when (status) {
+            ToolStatus.RUNNING ->
+                CircularProgressIndicator(
+                    modifier = Modifier.size(12.dp),
+                    strokeWidth = 1.5.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+            ToolStatus.SUCCEEDED ->
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+
+            ToolStatus.FAILED ->
+                Box(
+                    modifier =
+                    Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error),
+                )
+
+            ToolStatus.CANCELLED ->
+                Box(
+                    modifier =
+                    Modifier
+                        .size(6.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant, CircleShape),
+                )
+        }
+    }
+}
+
+private fun toolFailureSummary(result: ToolResultView): String? {
+    val outputMessage =
+        (result.output?.get("message") as? JsonPrimitive)?.contentOrNull
+            ?: ((result.output?.get("core") as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
+    return result.message ?: outputMessage ?: result.errorCode
 }
 
 private data class McpUseRow(

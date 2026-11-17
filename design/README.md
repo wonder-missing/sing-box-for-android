@@ -62,3 +62,4 @@ Lyra 维护的设计稿与规格。每个组件一个目录，里面放：
 | `conductor/input-bar/` | Conductor 底部输入框。已实现基线见 [`SPEC.md`](conductor/input-bar/SPEC.md)（v1.2），**当前实现以 [`SPEC-v1.3.md`](conductor/input-bar/SPEC-v1.3.md) 为准**：去掉 `@`，`/` 与附件 `+` 左分组，发送/停止右侧固定，状态回到同一底栏。`three-buttons-preview.png` 仅为布局归档示意，与文稿冲突时以 SPEC-v1.3 为准 | v1.3 已实现，待真机验收 |
 | `app-icon/` | WonderSing 启动图标 SVG 原稿（A11 定稿） | 已导出，待真机看 |
 | `dashboard/vfs-controls/` | Dashboard 底部四列操作栏与展开 VFS 卡片。实现以 [`SPEC.md`](dashboard/vfs-controls/SPEC.md) 为准。`01-disconnected-v3.png` / `02-connected-v3.png` / `03-expanded-v3.png` / `preview-combined-v3.png` 仅为归档示意，与文稿冲突时以 SPEC 为准 | 已实现，待真机验收 |
+| `conductor/message-stream/` | Conductor 消息流展示优化建议（思考窗、工具行、回复间距、行内代码、逐条用量、列表底部全局工具栏）。实现以 [`PROPOSAL.md`](conductor/message-stream/PROPOSAL.md) 为方向，细节按现有状态适配 | 已实现，待真机验收 |

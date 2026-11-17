@@ -1551,21 +1551,12 @@ class ConductorViewModel(
                     }
                     if (result.messages.isNotEmpty()) {
                         AgentApiTrace.lastUsage()?.let { usage ->
-                            append(
-                                ConductorItem.Notice(
-                                    "usage",
-                                    "in=${usage.inputTokens ?: "?"} out=${usage.outputTokens ?: "?"}" +
-                                        " cache=${usage.cacheHitTokens ?: "?"}" +
-                                        " miss=${usage.cacheMissTokens ?: "?"}" +
-                                        (
-                                            if (_uiState.value.contextLimitTokens > 0) {
-                                                " ctx=${_uiState.value.contextPercent}%"
-                                            } else {
-                                                ""
-                                            }
-                                        ),
-                                ),
-                            )
+                            val contextPercent =
+                                _uiState.value.contextPercent
+                                    .takeIf { _uiState.value.contextLimitTokens > 0 }
+                            updateUi {
+                                copy(items = items.attachUsage(usage, contextPercent))
+                            }
                         }
                     }
                     persistSession()
