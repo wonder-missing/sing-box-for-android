@@ -22,6 +22,7 @@ class AgentTools(
     private val tailscaleStatusSource: TailscaleStatusSource? = null,
     private val telemetryUploadPort: TelemetryUploadPort? = null,
     private val httpFetchPort: HttpFetchPort? = null,
+    private val webSearchPort: WebSearchPort? = null,
 ) {
     private val listNodes =
         object : AgentTool {
@@ -582,9 +583,8 @@ class AgentTools(
                         "Send one standard HTTP request from this device using the Android HTTP client. " +
                             "method defaults to GET; UTF-8 body is allowed for methods that permit one. " +
                             "Returns statusCode, statusText, response headers, contentType and body text for any " +
-                            "HTTP status. max_bytes caps the body bytes read. With outbound, temporarily selects " +
-                            "that node in the running core and restores the previous selection; a named outbound " +
-                            "is local-only and Remote Control is rejected.",
+                            "HTTP status. max_bytes caps the body bytes read. The request uses the device's " +
+                            "current network; use probe_via_node when the exit node matters.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -593,14 +593,6 @@ class AgentTools(
                                 type = AgentParameterType.STRING,
                                 required = true,
                                 description = "Absolute http:// or https:// URL to fetch.",
-                            ),
-                            AgentParameterSpec(
-                                name = "outbound",
-                                type = AgentParameterType.STRING,
-                                required = false,
-                                description =
-                                    "Optional selectable outbound tag. Omit to use the current selection. " +
-                                        "A named outbound is temporarily selected and then restored.",
                             ),
                             AgentParameterSpec(
                                 name = "method",
@@ -637,9 +629,7 @@ class AgentTools(
                     category = "network",
                     aliases = listOf("fetch", "http get", "download text", "request text"),
                     confirmationReason =
-                        "This sends an HTTP request from this device. A named outbound temporarily changes the " +
-                            "core's selection; app traffic may briefly use that node. If the app process is killed " +
-                            "mid-fetch, the core can stay on that node until it restarts.",
+                        "This sends an HTTP request from this device to the URL you provide.",
                     allowedUrlParameter = "url",
                 )
 
@@ -653,11 +643,6 @@ class AgentTools(
                         ?: return invalidParameter("url is required")
                 if (!isAllowedHttpUrl(url)) {
                     return invalidParameter("url must be an absolute http(s) URL")
-                }
-                val outbound =
-                    AgentJson.string(args, "outbound")?.trim()?.takeIf { it.isNotBlank() }
-                if (outbound != null && outbound.length > 256) {
-                    return invalidParameter("outbound tag is too long")
                 }
                 val method =
                     normalizeFetchMethod(AgentJson.string(args, "method") ?: "GET")
@@ -688,7 +673,7 @@ class AgentTools(
                 }
                 val result =
                     try {
-                        port.fetch(outbound, url, method, headers, body, maxBytes, cancellation)
+                        port.fetch(url, method, headers, body, maxBytes, cancellation)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -699,8 +684,6 @@ class AgentTools(
                         put("ok", result.error == null)
                         put("url", url)
                         put("method", method)
-                        outbound?.let { put("outbound", it) }
-                        result.via?.let { put("via", it) }
                         result.statusCode?.let { put("statusCode", it) }
                         result.statusText?.let { put("statusText", it) }
                         result.contentType?.let { put("contentType", it) }
@@ -763,6 +746,163 @@ class AgentTools(
             }
         }
 
+    private val webSearch =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "web_search",
+                    description =
+                        "Search the public web through the configured DeepSeek web-search service. " +
+                            "Returns a concise answer, source URLs and cited excerpts. Use it for current " +
+                            "events, facts, documentation, prices or anything outside the device state. " +
+                            "Use http_fetch when you already know the page URL.",
+                    permission = AgentPermission.DATA_EGRESS,
+                    parameters =
+                        listOf(
+                            AgentParameterSpec(
+                                name = "query",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "Search query or question. Do not pass a URL.",
+                            ),
+                            AgentParameterSpec(
+                                name = "max_results",
+                                type = AgentParameterType.INTEGER,
+                                required = false,
+                                description = "Maximum source entries returned. Defaults to 8; capped at 20.",
+                            ),
+                        ),
+                    confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+                    category = "web",
+                    aliases =
+                        listOf(
+                            "search web",
+                            "web search",
+                            "internet search",
+                            "search the internet",
+                            "look up",
+                            "latest news",
+                            "news search",
+                            "google",
+                        ),
+                    confirmationReason =
+                        "This sends the search query to the configured DeepSeek web-search service.",
+                    timeoutMs = WEB_SEARCH_TIMEOUT_MS,
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val port = webSearchPort ?: return unavailable()
+                val query =
+                    AgentJson.string(args, "query")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return invalidParameter("query is required")
+                if (query.length > MAX_WEB_SEARCH_QUERY_CHARS) {
+                    return invalidParameter("query is longer than $MAX_WEB_SEARCH_QUERY_CHARS characters")
+                }
+                val maxResults =
+                    (AgentJson.int(args, "max_results") ?: DEFAULT_WEB_SEARCH_RESULTS)
+                        .coerceIn(1, MAX_WEB_SEARCH_RESULTS)
+                if (cancellation.isCancelled()) {
+                    return ToolExecution(errorCode = "cancelled", errorMessage = "web_search cancelled")
+                }
+                val result =
+                    try {
+                        port.search(query, maxResults, cancellation)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        return ToolExecution(errorCode = "tool_failed", errorMessage = e.message ?: e.toString())
+                    }
+                val hasContent = !result.answer.isNullOrBlank() || result.sources.isNotEmpty()
+                val error =
+                    result.error
+                        ?: result.searchErrors
+                            .takeIf { !hasContent && it.isNotEmpty() }
+                            ?.joinToString("; ")
+                val output =
+                    buildJsonObject {
+                        put("ok", error == null)
+                        put("query", query)
+                        result.answer
+                            ?.trim()
+                            ?.takeIf { it.isNotEmpty() }
+                            ?.let {
+                                put(
+                                    "answer",
+                                    AgentSanitizer.scrubForModelRead(
+                                        it.take(MAX_WEB_SEARCH_ANSWER_CHARS),
+                                    ),
+                                )
+                            }
+                        put(
+                            "sources",
+                            buildJsonArray {
+                                result.sources.forEach { source ->
+                                    add(
+                                        buildJsonObject {
+                                            put("type", "web_search_source")
+                                            put("url", source.url)
+                                            source.title
+                                                ?.trim()
+                                                ?.takeIf { it.isNotEmpty() }
+                                                ?.let { put("title", AgentSanitizer.scrubForModelRead(it)) }
+                                            source.pageAge
+                                                ?.trim()
+                                                ?.takeIf { it.isNotEmpty() }
+                                                ?.let { put("pageAge", it) }
+                                            source.citedText
+                                                ?.trim()
+                                                ?.takeIf { it.isNotEmpty() }
+                                                ?.let {
+                                                    put(
+                                                        "citedText",
+                                                        AgentSanitizer.scrubForModelRead(
+                                                            it.take(MAX_WEB_SEARCH_CITED_CHARS),
+                                                        ),
+                                                    )
+                                                }
+                                        },
+                                    )
+                                }
+                            },
+                        )
+                        if (result.searchQueries.isNotEmpty()) {
+                            put(
+                                "searchQueries",
+                                buildJsonArray {
+                                    result.searchQueries.forEach { add(it) }
+                                },
+                            )
+                        }
+                        if (result.searchErrors.isNotEmpty()) {
+                            put(
+                                "searchErrors",
+                                buildJsonArray {
+                                    result.searchErrors.forEach {
+                                        add(AgentSanitizer.scrubForModelRead(it))
+                                    }
+                                },
+                            )
+                        }
+                        result.latencyMs?.let { put("latencyMs", it) }
+                        error?.let { put("error", AgentSanitizer.scrubForModelRead(it)) }
+                    }
+                val allowedUrls = result.sources.map { it.url }.toSet()
+                return if (error == null) {
+                    ToolExecution(output = output, allowedUrls = allowedUrls)
+                } else {
+                    ToolExecution(
+                        output = output,
+                        errorCode = "tool_failed",
+                        errorMessage = error,
+                        allowedUrls = allowedUrls,
+                    )
+                }
+            }
+        }
+
     private val telemetryUpload =
         object : AgentTool {
             override val definition =
@@ -810,6 +950,7 @@ class AgentTools(
                 if (selectionPort != null) add(selectOutbound)
                 if (tailscaleStatusSource != null) add(tailscaleDevices)
                 if (httpFetchPort != null) add(httpFetch)
+                if (webSearchPort != null) add(webSearch)
                 if (telemetryUploadPort != null) add(telemetryUpload)
             }
 
@@ -871,6 +1012,12 @@ private const val MAX_FETCH_BYTES = 256 * 1024
 private const val MAX_FETCH_BODY_BYTES = 256 * 1024
 private const val MAX_FETCH_HEADERS = 16
 private const val MAX_FETCH_HEADER_CHARS = 2048
+private const val DEFAULT_WEB_SEARCH_RESULTS = 8
+private const val MAX_WEB_SEARCH_RESULTS = 20
+private const val MAX_WEB_SEARCH_QUERY_CHARS = 2000
+private const val MAX_WEB_SEARCH_ANSWER_CHARS = 16000
+private const val MAX_WEB_SEARCH_CITED_CHARS = 800
+private const val WEB_SEARCH_TIMEOUT_MS = 75_000L
 private val HEADER_NAME = Regex("[A-Za-z0-9-]+")
 private val HTTP_METHOD_TOKEN = Regex("[A-Za-z0-9!#%&'*+.^_`|~-]+")
 private val FETCH_FORBIDDEN_METHODS = setOf("CONNECT", "TRACE", "TRACK")

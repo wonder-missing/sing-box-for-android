@@ -203,12 +203,13 @@ class AgentToolRegistry(
                         tool.execute(args, cancellation)
                     }
                 }
+            val outputAllowedUrls = allowedUrls + execution.allowedUrls
             if (execution.ok) {
                 val output = execution.output ?: JsonObject(emptyMap())
                 AgentInvocationResult(
                     tool = name,
                     ok = true,
-                    output = AgentSanitizer.sanitizeElement(output, allowedUrls) as JsonObject,
+                    output = AgentSanitizer.sanitizeElement(output, outputAllowedUrls) as JsonObject,
                     degraded = execution.degraded,
                 )
             } else {
@@ -217,13 +218,13 @@ class AgentToolRegistry(
                     ok = false,
                     output =
                         execution.output?.let {
-                            AgentSanitizer.sanitizeElement(it, allowedUrls) as JsonObject
+                            AgentSanitizer.sanitizeElement(it, outputAllowedUrls) as JsonObject
                         },
                     errorCode = execution.errorCode ?: "tool_failed",
                     errorMessage =
                         AgentSanitizer.sanitizeText(
                             execution.errorMessage ?: "Tool failed.",
-                            allowedUrls,
+                            outputAllowedUrls,
                         ),
                 )
             }

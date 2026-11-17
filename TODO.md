@@ -28,7 +28,7 @@
 - [ ] **数据面 Phase C：自省与证据**：`export_log_tail`、`self_test` 固定套件、`conductor_eval` 开关；脱敏 `diagnostics_network_history`（最近 N 条 network/service/VPN 事件），报告写工作区并可用 Taildrop 交给 Mini。
 - [ ] **Provider capability 剩余**：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权；DeepSeek `none`/`max`、xAI `xhigh` 等不能三家共用的档位。现有矩阵见 `ModelLimits`。
 - [ ] **网络诊断**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`；libbox 没有 DNS/route API，先做能落地的部分。83 低端机实测：经 `CF-cf-67` 访问 Baidu 返回 200 / 304ms，`github.com`、`api.github.com`、`www.google.com` 都是 `no such host`（约 10s），`release_notes` 连续 3 次因 `github.com` 解析失败；模型只能从 probe 结果猜 DNS 故障。
-- [ ] **`http_fetch` 的阶段分类**：工具已落地（GET、可选出口/headers/max_bytes，200 有 body，非 200 只回状态码），剩余把 DNS / TCP / TLS / HTTP 阶段从 libbox 异常里拆出来。83 实测 `https://1.1.1.1/` 返回 `ok=false`，但错误是证书没有 IP SAN，TCP 和 TLS 已到对端；`speed_test` 后续。
+- [ ] **`http_fetch` 的阶段分类**：工具已落地（标准 method/body/headers/max_bytes，任意状态都有 body，始终走当前网络，没有 outbound），剩余把 DNS / TCP / TLS / HTTP 阶段从异常里拆出来。83 实测 `https://1.1.1.1/` 返回 `ok=false`，但错误是证书没有 IP SAN，TCP 和 TLS 已到对端；`speed_test` 后续。
 - [ ] **批量确认：预览与分级**：整批预检合成一张卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS`/MCP 写工具逐次确认。
 - [ ] **工具编排计划（tool_plan / DAG）**：把有依赖的多步调用压成一次提交，支持字段绑定、`when`/`retry`/`fallback`；先只读工具。目标是减少往返和 token。
 - [ ] **对话级 LLM 摘要**：现有只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要未做。
@@ -59,8 +59,8 @@
 
 ## 下个会话接手
 
-- 当前已发布 `wonder.96`（tag `v1.15.0-alpha.13-wonder.96`，commit `40fbb4b`）。本地 550 用例绿；Test CI `44128770361`、Release `44129502160`、notify `44131093462` 均成功；arm64 APK、APK 内 96 notes 和本地 bare tag 已确认。下一次从 97 开始。
-- 真机待验：96 的 Conductor 消息流（思考窗两行滚动/展开 Collapse、工具行状态标记与 chevron、失败摘要、12/24dp 间距、逐条用量页脚、弱背景行内代码）；95 的 Dashboard 四列 VFS 胶囊（capsule、四列等宽、已连接 primaryContainer、320dp/大字体退让、卡片距表面 12dp）；`/tool search_tools` 和 `Run`/`Fill required`；`system_snapshot` 新字段；`file_append`/`file_edit`；`http_fetch` 的 method/body/headers/任意状态 body；Conductor 草稿离开再进入；服务重启后 CommandClient 自动重连。另继续验 94 的 telemetry 过滤。
+- 当前已发布 `wonder.96`（tag `v1.15.0-alpha.13-wonder.96`，commit `40fbb4b`）。本地 550 用例绿；Test CI `44128770361`、Release `44129502160`、notify `44131093462` 均成功；arm64 APK、APK 内 96 notes 和本地 bare tag 已确认。下一次从 97 开始。dev 已移除 `http_fetch` 的 `outbound`，新增 `web_search`（DeepSeek Anthropic-compatible 服务端搜索）；本地 560 用例绿，待服务端真实搜索验证后随 97 发布。
+- 真机待验：96 的 Conductor 消息流（思考窗两行滚动/展开 Collapse、工具行状态标记与 chevron、失败摘要、12/24dp 间距、逐条用量页脚、弱背景行内代码）；95 的 Dashboard 四列 VFS 胶囊（capsule、四列等宽、已连接 primaryContainer、320dp/大字体退让、卡片距表面 12dp）；`/tool search_tools` 和 `Run`/`Fill required`；`system_snapshot` 新字段；`file_append`/`file_edit`；`http_fetch` 的 method/body/headers/任意状态 body；Conductor 草稿离开再进入；服务重启后 CommandClient 自动重连。另继续验 94 的 telemetry 过滤。dev 的 `web_search` 还要用真实 DeepSeek key 验正常搜索、空结果、`max_uses_exceeded`、超时/取消和 sources 链接保留；`http_fetch` 不再接受 `outbound`。
 - 下一批优先：VFS 大文件读取换 Wi-Fi 复测；长分析 continuation、进程死亡 turn 快照、`conductor/` 旧文件清理、83 core 不可达取证。VFS 后台服务已落地，不再按“只在前台”假设设计。
 - 回归文档：Conductor [`docs/conductor-eval.md`](docs/conductor-eval.md)、VFS [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)、VFS 稳定性/浸泡 [`docs/vfs-connection-stability.md`](docs/vfs-connection-stability.md) / [`docs/vfs-soak-test.md`](docs/vfs-soak-test.md)；发布流程见 `AGENTS.md`。
 

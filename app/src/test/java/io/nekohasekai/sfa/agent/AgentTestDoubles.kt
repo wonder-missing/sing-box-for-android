@@ -43,7 +43,6 @@ class FakeHttpFetchPort(
     val calls = mutableListOf<List<Any?>>()
 
     override fun fetch(
-        outbound: String?,
         url: String,
         method: String,
         headers: List<Pair<String, String>>,
@@ -51,7 +50,26 @@ class FakeHttpFetchPort(
         maxBytes: Int,
         cancellation: ToolCancellation?,
     ): HttpFetchOutcome {
-        calls += listOf(outbound, url, method, headers, body, maxBytes)
+        calls += listOf(url, method, headers, body, maxBytes)
+        return outcome
+    }
+}
+
+class FakeWebSearchPort(
+    var outcome: WebSearchOutcome =
+        WebSearchOutcome(
+            answer = "hello",
+            sources = listOf(WebSearchSource("https://example.com/source", title = "Example")),
+        ),
+) : WebSearchPort {
+    val calls = mutableListOf<Pair<String, Int>>()
+
+    override suspend fun search(
+        query: String,
+        maxResults: Int,
+        cancellation: ToolCancellation?,
+    ): WebSearchOutcome {
+        calls += query to maxResults
         return outcome
     }
 }
@@ -103,6 +121,7 @@ fun buildTestRegistry(
     probePort: ProbePort = FakeProbePort(),
     selectionPort: NodeSelectionPort? = null,
     httpFetchPort: HttpFetchPort? = null,
+    webSearchPort: WebSearchPort? = null,
 ): AgentToolRegistry =
     AgentToolRegistry(
         AgentTools(
@@ -111,5 +130,6 @@ fun buildTestRegistry(
             probePort = probePort,
             selectionPort = selectionPort,
             httpFetchPort = httpFetchPort,
+            webSearchPort = webSearchPort,
         ).all,
     )

@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回；wonder.57 补文件工具召回；wonder.58 改为英文工具元数据，补齐文件分页/tail/grep 和用户选文件链路；wonder.59 改用模型 API 的上下文/输出上限，加入上下文百分比与 80% 自动 Compact。wonder.95 把 `network_snapshot` 改成 `system_snapshot` 并调整字段，新增 `file_append`/`file_edit` 和 `http_fetch`；`/tool` 可直接运行 `search_tools` 并提供 Run/Fill 动作。wonder.96 优化 Conductor 消息流（思考窗、工具行、间距、行内代码、逐条用量页脚），并修复草稿恢复和服务重启后的 CommandClient 重连。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回；wonder.57 补文件工具召回；wonder.58 改为英文工具元数据，补齐文件分页/tail/grep 和用户选文件链路；wonder.59 改用模型 API 的上下文/输出上限，加入上下文百分比与 80% 自动 Compact。wonder.95 把 `network_snapshot` 改成 `system_snapshot` 并调整字段，新增 `file_append`/`file_edit` 和 `http_fetch`；`/tool` 可直接运行 `search_tools` 并提供 Run/Fill 动作。wonder.96 优化 Conductor 消息流（思考窗、工具行、间距、行内代码、逐条用量页脚），并修复草稿恢复和服务重启后的 CommandClient 重连。当前 dev 移除 `http_fetch` 的 `outbound`，新增 `web_search`（DeepSeek Anthropic-compatible 服务端搜索，返回 answer/sources/citations）。
 最后更新：2026-11-17
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -339,6 +339,7 @@ enum class InvocationSource {
 | `probe_via_node` | `NETWORK_PROBE` | `ALWAYS` |
 | `probe_many` | `NETWORK_PROBE` | `ALWAYS` |
 | `http_fetch` | `DATA_EGRESS` | `AGENT_ONLY` |
+| `web_search` | `DATA_EGRESS` | `AGENT_ONLY` |
 | `select_outbound` | `NETWORK_CHANGE` | `ALWAYS` |
 | `file_append` | `WRITE_FILES` | `AGENT_ONLY` |
 | `file_edit` | `WRITE_FILES` | `AGENT_ONLY` |
@@ -347,7 +348,9 @@ enum class InvocationSource {
 
 `probe_via_node` 的 `reachable` 语义：只要收到任何 HTTP 状态码（1xx–5xx，包括 204、3xx、4xx、5xx），就表示链路可达，`reachable = true`，`statusCode` 原样回填；只有 DNS、连接失败、超时、EOF 这类没有状态码的传输错误才是 `reachable = false`。外层 `ToolObservation.ok` 仍表示工具调用本身是否成功，内层不再使用 `ok` 字段。libbox 的 HTTP 客户端对 204 等非 200 响应会抛异常，异常消息里带 `HTTP <code>`；`LibboxProbePort` 必须解析状态码并按上述规则归类，不能把异常本身当成失败。
 
-`http_fetch` 是独立的标准 HTTP fetch，权限是 `DATA_EGRESS`，不并入 probe，也不走 libbox。它用 OkHttp 直接发请求，默认 GET，支持标准 HTTP method 和 UTF-8 body；已知 method 统一大写，自定义 method 保留大小写，CONNECT/TRACE/TRACK 拒绝，GET/HEAD 带 body 拒绝，和 web fetch 语义一致。一次一个 URL，可选 `outbound`、`headers`、`body` 和 `max_bytes`；返回 `statusCode`、`statusText`、response headers、`contentType` 和任意 HTTP 状态的 body，`max_bytes` 限制读取的 body 字节。指定 outbound 是 Conductor 扩展：要求本机 core 可达且 app 流量在 VPN 模式，临时切换全局选择并在 `finally` 恢复，进程被杀仍可能停在该节点；不指定 outbound 时就是普通 Android 网络请求，Remote Control 不影响。
+`http_fetch` 是独立的标准 HTTP fetch，权限是 `DATA_EGRESS`，不并入 probe，也不走 libbox。它用 OkHttp 直接发请求，默认 GET，支持标准 HTTP method 和 UTF-8 body；已知 method 统一大写，自定义 method 保留大小写，CONNECT/TRACE/TRACK 拒绝，GET/HEAD 带 body 拒绝，和 web fetch 语义一致。一次一个 URL，可选 `headers`、`body` 和 `max_bytes`；返回 `statusCode`、`statusText`、response headers、`contentType` 和任意 HTTP 状态的 body，`max_bytes` 限制读取的 body 字节。它始终走设备当前网络，没有 `outbound` 参数，也不改核心的全局选择；需要指定出口的连通性测试用 `probe_via_node`。
+
+`web_search` 是 Conductor 的工具，不是主模型的 server tool：每次调用会额外发一次 DeepSeek Anthropic-compatible Messages API 请求，让服务端模型执行 `web_search_20250305` 并返回答案/来源。它用当前 DeepSeek BYOK key，不新增 Anthropic key。请求发到 `https://api.deepseek.com/anthropic/v1/messages`（会按 base 的 `/v1` 或 `/anthropic` 结尾归一），`max_uses` 固定 3；解析 `server_tool_use.input.query`、`web_search_tool_result` 和带 citations 的 `text`，返回 `answer`、去重后的 `sources`（`url`/`title`/`pageAge`/`citedText`）、`searchQueries` 和 `searchErrors`。搜索工具的 HTTP 200 错误（如 `max_uses_exceeded`）放进 `searchErrors`，有内容时仍算成功；空结果也按成功返回空 `sources`。`encrypted_content` 不返回，因为这是一次性工具调用，不做 Messages 多轮续传。来源 URL 通过 `ToolExecution.allowedUrls` 保留，其他 URL 仍走 `AgentSanitizer`；API key 不进入工具输出、异常消息或 trace。当前实现只支持 DeepSeek provider，切换到其他 provider 时工具返回明确错误。
 
 `file_append` 在 workspace 内创建或追加文本，`file_edit` 用 exact-match 的 `edits[]` 做原子替换；`old_text` 默认必须唯一，`replace_all=true` 才替换全部，任一 edit 失败则整次不写。`file_read` 和 `file_stat` 返回 `sha256`，`file_edit` 可带 `expected_sha256` 防止覆盖已变化的文件。不要给 `file_write` 加 create/replace/append 三种模式，保持三个工具各自单一契约。
 
@@ -1704,7 +1707,7 @@ wonder.83 低端机的停服重开案例（`core.running=false`、`vpnActive=tru
 - 工具级 `toolTimeoutMs`，超时回 `tool_timeout` observation；`tailscale_status` 接 `ToolCancellation`；`probe_many` 顺序批量；`select_outbound` 确认、失败回滚。
 - MCP 全部 `AGENT_ONLY`，`DATA_EGRESS` 强制；完整工具定义 SHA-256 fingerprint，定义变化时保留旧工具并提示重新启用；`tools/call` 404 不重试；token 走 Keystore；确认卡保留 URL；stale 刷新并行。
 - `maxInputTokens` 接入 token 估算与裁剪（wonder.59 起改由 `ModelLimits` 提供窗口）；会话持久化加 512KB 上限；`search_tools` 加 weak 标记；probe 内层改 `reachable`；trace 结构化 usage/finish/耗时；UI 加 Retry、usage 摘要、stick-to-bottom、回到最新、稳定 key；`/clear` 可中断活动 turn；turn/tool/confirm 写 AppLog 审计。
-- libbox 没有 per-request outbound binding、DNS query 或 route match API；`probe_many` 仍是顺序执行。`http_fetch` 已改用 OkHttp，支持 method/body、response headers 和任意状态 body；指定 outbound 时仍走临时全局选择。`dns_lookup` 和阶段化错误分类仍未实现。
+- libbox 没有 per-request outbound binding、DNS query 或 route match API；`probe_many` 仍是顺序执行。`http_fetch` 已改用 OkHttp，支持 method/body、response headers 和任意状态 body；当前 dev 已移除它的 `outbound`，节点绑定仍只用 probe。`dns_lookup` 和阶段化错误分类仍未实现。
 
 ### wonder.48：失败 turn 保留 user 与 Retry（2026-11-13）
 

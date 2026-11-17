@@ -31,7 +31,6 @@ class OkHttpHttpFetchPortTest {
         ) { port ->
             val outcome =
                 fetchPort.fetch(
-                    outbound = null,
                     url = "http://127.0.0.1:$port/echo",
                     method = "POST",
                     headers = listOf("X-Request" to "one"),
@@ -63,7 +62,6 @@ class OkHttpHttpFetchPortTest {
         ) { port ->
             val outcome =
                 fetchPort.fetch(
-                    outbound = null,
                     url = "http://127.0.0.1:$port/missing",
                     method = "GET",
                     headers = emptyList(),
@@ -86,7 +84,6 @@ class OkHttpHttpFetchPortTest {
         ) { port ->
             val outcome =
                 fetchPort.fetch(
-                    outbound = null,
                     url = "http://127.0.0.1:$port/long",
                     method = "GET",
                     headers = emptyList(),

@@ -44,6 +44,7 @@ import io.nekohasekai.sfa.agent.CommandNodeSnapshotSource
 import io.nekohasekai.sfa.agent.CommandNodeState
 import io.nekohasekai.sfa.agent.ConfirmationRequest
 import io.nekohasekai.sfa.agent.ConductorFileStore
+import io.nekohasekai.sfa.agent.DeepSeekWebSearchPort
 import io.nekohasekai.sfa.agent.DiagnosticsSource
 import io.nekohasekai.sfa.agent.DefaultAgentInputGuard
 import io.nekohasekai.sfa.agent.FileSelectionPort
@@ -227,16 +228,12 @@ class ConductorViewModel(
             appTrafficUsesVpn = { appTrafficUsesVpn() },
         )
 
-    private val httpFetchPort =
-        OkHttpHttpFetchPort(
-            nodeSource = nodeSource,
-            appTrafficUsesVpn = { appTrafficUsesVpn() },
-            selectOutbound = { group, outbound ->
-                CommandTarget.standaloneClient().selectOutbound(group, outbound)
-            },
-            restoreSelection = { group, previous ->
-                CommandTarget.standaloneClient().selectOutbound(group, previous)
-            },
+    private val httpFetchPort = OkHttpHttpFetchPort()
+
+    private val webSearchPort =
+        DeepSeekWebSearchPort(
+            endpointProvider = ModelProviderSettings::endpoint,
+            apiKeyProvider = { apiKeyProvider.apiKey() },
         )
 
     private val selectionPort = LibboxNodeSelectionPort(nodeSource)
@@ -711,6 +708,7 @@ class ConductorViewModel(
                 tailscaleStatusSource = tailscaleSource,
                 telemetryUploadPort = telemetryPort,
                 httpFetchPort = httpFetchPort,
+                webSearchPort = webSearchPort,
             ).all +
                 AgentDataTools(
                     fileStore = fileStore,

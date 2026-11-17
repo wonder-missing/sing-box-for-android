@@ -364,18 +364,16 @@ data class HttpFetchOutcome(
     val bytes: Int = 0,
     val truncated: Boolean = false,
     val binary: Boolean = false,
-    val via: String? = null,
     val error: String? = null,
 )
 
 /**
- * Fetch text through the running core's HTTP client. The optional outbound uses
- * the same temporary global selection as ProbePort; a null outbound keeps the
- * current selection.
+ * Standard HTTP fetch over the device's current network. It deliberately has
+ * no outbound parameter: node-bound probes stay in ProbePort, and the fetch
+ * tool must not change the running core's global selection.
  */
 interface HttpFetchPort {
     fun fetch(
-        outbound: String?,
         url: String,
         method: String,
         headers: List<Pair<String, String>>,
@@ -383,6 +381,34 @@ interface HttpFetchPort {
         maxBytes: Int,
         cancellation: ToolCancellation? = null,
     ): HttpFetchOutcome
+}
+
+data class WebSearchSource(
+    val url: String,
+    val title: String? = null,
+    val pageAge: String? = null,
+    val citedText: String? = null,
+)
+
+data class WebSearchOutcome(
+    val answer: String? = null,
+    val sources: List<WebSearchSource> = emptyList(),
+    val searchQueries: List<String> = emptyList(),
+    val searchErrors: List<String> = emptyList(),
+    val latencyMs: Long? = null,
+    val error: String? = null,
+)
+
+/**
+ * One web search through a server-side search tool. Implementations own the
+ * provider request and must not expose their API key to the model.
+ */
+interface WebSearchPort {
+    suspend fun search(
+        query: String,
+        maxResults: Int,
+        cancellation: ToolCancellation? = null,
+    ): WebSearchOutcome
 }
 
 interface NodeSelectionPort {
@@ -422,6 +448,8 @@ data class ToolExecution(
     val errorCode: String? = null,
     val errorMessage: String? = null,
     val degraded: Boolean = false,
+    /** Source URLs this tool intentionally returns to the model. */
+    val allowedUrls: Set<String> = emptySet(),
 ) {
     val ok: Boolean
         get() = errorCode == null

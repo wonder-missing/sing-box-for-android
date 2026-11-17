@@ -200,14 +200,13 @@ class AgentToolsTest {
     }
 
     @Test
-    fun httpFetchPassesUrlHeadersAndOptionalOutbound() {
+    fun httpFetchPassesUrlHeadersAndBody() {
         val fetch = FakeHttpFetchPort(
             HttpFetchOutcome(
                 statusCode = 200,
                 latencyMs = 12,
                 content = "hello",
                 bytes = 5,
-                via = "temporary_outbound_selection",
             ),
         )
         val registry = buildTestRegistry(httpFetchPort = fetch)
@@ -215,22 +214,21 @@ class AgentToolsTest {
         val result =
             registry.userExec(
                 "http_fetch",
-                """{"url":"https://example.com/data","method":"post","body":"payload","outbound":"node-a","headers":["X-Test: 1"],"max_bytes":32}""",
+                """{"url":"https://example.com/data","method":"post","body":"payload","headers":["X-Test: 1"],"max_bytes":32}""",
             )
 
         assertTrue(result.errorMessage ?: "", result.ok)
         val call = fetch.calls.single()
-        assertEquals("node-a", call[0])
-        assertEquals("https://example.com/data", call[1])
-        assertEquals("POST", call[2])
-        assertEquals(listOf("X-Test" to "1"), call[3])
-        assertEquals("payload", call[4])
-        assertEquals(32, call[5])
+        assertEquals("https://example.com/data", call[0])
+        assertEquals("POST", call[1])
+        assertEquals(listOf("X-Test" to "1"), call[2])
+        assertEquals("payload", call[3])
+        assertEquals(32, call[4])
         val output = result.output!!
         assertEquals(200, output.int("statusCode"))
         assertEquals("POST", output.string("method"))
         assertEquals("hello", output.string("text"))
-        assertEquals("temporary_outbound_selection", output.string("via"))
+        assertNull(output["via"])
         assertFalse(output.boolean("truncated"))
     }
 
@@ -261,7 +259,6 @@ class AgentToolsTest {
                 contentType = "text/plain; charset=utf-8",
                 headers = mapOf("X-Test" to listOf("yes")),
                 bytes = 7,
-                via = "current_network",
             ),
         )
         val registry = buildTestRegistry(httpFetchPort = fetch)
@@ -275,7 +272,92 @@ class AgentToolsTest {
         assertEquals("missing", output.string("text"))
         assertEquals("text/plain; charset=utf-8", output.string("contentType"))
         assertEquals("yes", output.obj("headers").array("X-Test").single().let { (it as JsonPrimitive).content })
-        assertEquals("current_network", output.string("via"))
+        assertNull(output["via"])
+    }
+
+    @Test
+    fun webSearchPassesQueryAndKeepsSourceUrls() {
+        val search =
+            FakeWebSearchPort(
+                WebSearchOutcome(
+                    answer = "A concise answer",
+                    sources =
+                        listOf(
+                            WebSearchSource(
+                                url = "https://example.com/a?x=1",
+                                title = "Example result",
+                                pageAge = "1 day",
+                                citedText = "quoted text",
+                            ),
+                        ),
+                    searchQueries = listOf("kotlin release"),
+                    latencyMs = 5,
+                ),
+            )
+        val registry = buildTestRegistry(webSearchPort = search)
+
+        val result =
+            registry.userExec(
+                "web_search",
+                """{"query":"kotlin release","max_results":4}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("kotlin release" to 4, search.calls.single())
+        val output = result.output!!
+        assertEquals("A concise answer", output.string("answer"))
+        assertEquals("kotlin release", output.array("searchQueries").single().let { (it as JsonPrimitive).content })
+        val source = output.array("sources").single() as JsonObject
+        assertEquals("web_search_source", source.string("type"))
+        assertEquals("https://example.com/a?x=1", source.string("url"))
+        assertEquals("Example result", source.string("title"))
+        assertEquals("1 day", source.string("pageAge"))
+        assertEquals("quoted text", source.string("citedText"))
+    }
+
+    @Test
+    fun webSearchRequiresAgentConfirmation() {
+        val search = FakeWebSearchPort()
+        val registry = buildTestRegistry(webSearchPort = search)
+        val call = ToolCall("call-1", "web_search", """{"query":"kotlin releases"}""")
+
+        runBlocking {
+            val pending = registry.invokeAgent(call, humanApproved = false)
+            assertEquals("confirmation_required", pending.errorCode)
+            assertTrue(search.calls.isEmpty())
+
+            val confirmed = registry.invokeAgent(call, humanApproved = true)
+            assertTrue(confirmed.errorMessage ?: "", confirmed.ok)
+            assertEquals(listOf("kotlin releases" to 8), search.calls)
+        }
+    }
+
+    @Test
+    fun webSearchRejectsBlankQueryWithoutCallingThePort() {
+        val search = FakeWebSearchPort()
+        val registry = buildTestRegistry(webSearchPort = search)
+
+        val result = registry.userExec("web_search", """{"query":"  "}""")
+
+        assertFalse(result.ok)
+        assertEquals("invalid_parameter", result.errorCode)
+        assertTrue(search.calls.isEmpty())
+    }
+
+    @Test
+    fun webSearchReportsSearchErrorWhenThereIsNoContent() {
+        val search =
+            FakeWebSearchPort(
+                WebSearchOutcome(searchErrors = listOf("max_uses_exceeded")),
+            )
+        val registry = buildTestRegistry(webSearchPort = search)
+
+        val result = registry.userExec("web_search", """{"query":"anything"}""")
+
+        assertFalse(result.ok)
+        assertEquals("tool_failed", result.errorCode)
+        assertTrue(result.errorMessage.orEmpty().contains("max_uses_exceeded"))
+        assertTrue(result.output!!.string("error").contains("max_uses_exceeded"))
     }
 
     @Test
