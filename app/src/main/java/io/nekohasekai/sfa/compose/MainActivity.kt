@@ -1277,6 +1277,7 @@ class MainActivity :
                         VfsStatusBar(
                             serverName = vfsConnected.serverName ?: "VFS",
                             scope = vfsConnected.scope,
+                            uploadBytes = vfsUploadBytes,
                             onDisconnect = { VfsRuntime.disconnect() },
                             modifier =
                             Modifier

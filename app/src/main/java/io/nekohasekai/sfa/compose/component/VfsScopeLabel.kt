@@ -19,3 +19,26 @@ fun vfsScopeLabel(
             VfsScope.APPFILES -> R.string.vfs_scope_appfiles
         },
     )
+
+/** Scope chips the sharing card shows before collapsing the rest into "+N". */
+internal const val VFS_SCOPE_CHIP_LIMIT = 4
+
+internal data class VfsScopeChips(
+    val visible: List<VfsScope>,
+    val hiddenCount: Int,
+)
+
+/**
+ * Scope chips in the canonical consent order, capped at [limit] so the
+ * floating card keeps one compact row on narrow screens.
+ */
+internal fun vfsScopeChips(
+    scope: Set<VfsScope>,
+    limit: Int = VFS_SCOPE_CHIP_LIMIT,
+): VfsScopeChips {
+    val ordered = VfsScope.entries.filter { it in scope }
+    return VfsScopeChips(
+        visible = ordered.take(limit),
+        hiddenCount = (ordered.size - limit).coerceAtLeast(0),
+    )
+}

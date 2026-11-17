@@ -8,24 +8,32 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Cable
-import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -34,15 +42,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.utils.humanBytes
 import kotlinx.coroutines.delay
+
+private val STATUS_CHIP_SHAPE = RoundedCornerShape(8.dp)
+private val STATUS_CHIP_HEIGHT = 36.dp
+private val STATUS_CHIP_TOUCH_HEIGHT = 48.dp
+private val STATUS_CHIP_ICON_SIZE = 18.dp
+
+// Below this width the VFS chip keeps only its label and dot; the upload
+// total stays visible in the sharing card above the bar.
+private val VFS_CHIP_FULL_TEXT_MIN_WIDTH = 400.dp
 
 @Composable
 fun ServiceStatusBar(
@@ -72,110 +92,14 @@ fun ServiceStatusBar(
             color = MaterialTheme.colorScheme.surfaceContainer,
             tonalElevation = 3.dp,
         ) {
-            Row(
-                modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Connections button
-                if (serviceStatus == Status.Started) {
-                    Row(
-                        modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.secondaryContainer)
-                            .clickable(onClick = onConnectionsClick)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            text = connectionsCount.toString(),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Outlined.Cable,
-                            contentDescription = stringResource(R.string.title_connections),
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
+            BoxWithConstraints {
+                val compactVfs = maxWidth < VFS_CHIP_FULL_TEXT_MIN_WIDTH
+                val transitionLabel =
+                    when (serviceStatus) {
+                        Status.Starting -> stringResource(R.string.status_starting)
+                        Status.Stopping -> stringResource(R.string.status_stopping)
+                        else -> null
                     }
-                }
-
-                // Groups button (only show if hasGroups)
-                if (hasGroups) {
-                    Row(
-                        modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.secondaryContainer)
-                            .clickable(onClick = onGroupsClick)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            text = groupsCount.toString(),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Folder,
-                            contentDescription = stringResource(R.string.title_groups),
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                    }
-                }
-
-                // Stop button
-                Row(
-                    modifier =
-                    Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .clickable(onClick = onStopClick)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    val transitionLabel =
-                        when (serviceStatus) {
-                            Status.Starting -> stringResource(R.string.status_starting)
-                            Status.Stopping -> stringResource(R.string.status_stopping)
-                            else -> null
-                        }
-                    if (transitionLabel != null) {
-                        Text(
-                            text = transitionLabel,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                    } else if (startTime != null) {
-                        UptimeText(startTime = startTime)
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-                    Icon(
-                        imageVector = Icons.Default.Stop,
-                        contentDescription = stringResource(R.string.stop),
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-
-                // VFS status: same pill shape as the other counters. The number
-                // is bytes uploaded to the consumer during the current session;
-                // tapping the pill toggles the VFS sharing card.
                 val vfsDescription =
                     stringResource(
                         when {
@@ -184,59 +108,213 @@ fun ServiceStatusBar(
                             else -> R.string.vfs_status_off
                         },
                     )
+                val vfsLabel =
+                    if (compactVfs) {
+                        stringResource(R.string.vfs_status_chip_compact)
+                    } else {
+                        stringResource(R.string.vfs_status_chip, humanBytes(vfsUploadBytes))
+                    }
+                val vfsContainerColor =
+                    if (vfsOn) {
+                        MaterialTheme.colorScheme.tertiaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    }
+                val vfsContentColor =
+                    if (vfsOn) {
+                        MaterialTheme.colorScheme.onTertiaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+
                 Row(
                     modifier =
                     Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (vfsOn) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
-                            },
-                        )
-                        .clickable(enabled = vfsOn, onClick = onVfsClick)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    Text(
-                        text = humanBytes(vfsUploadBytes),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium,
-                        color =
-                        if (vfsOn) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    if (vfsConnecting) {
-                        CircularProgressIndicator(
-                            modifier =
-                                Modifier
-                                    .size(16.dp)
-                                    .semantics { contentDescription = vfsDescription },
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Outlined.FolderOpen,
-                            contentDescription = vfsDescription,
-                            modifier = Modifier.size(18.dp),
-                            tint =
+                    // Left group: live counters.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (serviceStatus == Status.Started) {
+                            StatusChip(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                onClick = onConnectionsClick,
+                            ) {
+                                Text(
+                                    text = connectionsCount.toString(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                ChipIcon(
+                                    imageVector = Icons.Outlined.Cable,
+                                    contentDescription = stringResource(R.string.title_connections),
+                                )
+                            }
+                        }
+
+                        if (hasGroups) {
+                            StatusChip(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                onClick = onGroupsClick,
+                            ) {
+                                Text(
+                                    text = groupsCount.toString(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                ChipIcon(
+                                    imageVector = Icons.Outlined.Layers,
+                                    contentDescription = stringResource(R.string.title_groups),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // Right group: session controls and sharing status.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        StatusChip(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            onClick = onStopClick,
+                        ) {
+                            if (transitionLabel != null) {
+                                Text(
+                                    text = transitionLabel,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                            } else if (startTime != null) {
+                                UptimeText(startTime = startTime)
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            ChipIcon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = stringResource(R.string.stop),
+                            )
+                        }
+
+                        // The number is bytes uploaded to the consumer during the
+                        // current session; tapping the chip toggles the sharing card.
+                        StatusChip(
+                            containerColor = vfsContainerColor,
+                            contentColor = vfsContentColor,
+                            onClick = onVfsClick,
+                            enabled = vfsOn,
+                        ) {
                             if (vfsOn) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
+                                Box(
+                                    modifier =
+                                    Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.tertiary),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            Text(
+                                text = vfsLabel,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            if (vfsConnecting) {
+                                Box(
+                                    modifier = Modifier.size(STATUS_CHIP_ICON_SIZE),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier =
+                                        Modifier
+                                            .size(16.dp)
+                                            .semantics { contentDescription = vfsDescription },
+                                        strokeWidth = 2.dp,
+                                        color = vfsContentColor,
+                                    )
+                                }
                             } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
+                                ChipIcon(
+                                    imageVector = Icons.Outlined.CloudUpload,
+                                    contentDescription = vfsDescription,
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * A pill with one fixed visual height and a larger transparent touch target.
+ * Callers supply the colors so the chip can carry different meanings without
+ * changing its geometry.
+ */
+@Composable
+internal fun StatusChip(
+    containerColor: Color,
+    contentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Box(
+        modifier =
+        modifier
+            .height(STATUS_CHIP_TOUCH_HEIGHT)
+            .defaultMinSize(minWidth = STATUS_CHIP_TOUCH_HEIGHT)
+            .clip(STATUS_CHIP_SHAPE)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            Row(
+                modifier =
+                Modifier
+                    .height(STATUS_CHIP_HEIGHT)
+                    .clip(STATUS_CHIP_SHAPE)
+                    .background(containerColor)
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChipIcon(
+    imageVector: ImageVector,
+    contentDescription: String,
+) {
+    Box(
+        modifier = Modifier.size(STATUS_CHIP_ICON_SIZE),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(STATUS_CHIP_ICON_SIZE),
+        )
     }
 }
 
