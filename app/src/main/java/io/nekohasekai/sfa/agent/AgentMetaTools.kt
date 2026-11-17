@@ -77,4 +77,31 @@ object AgentMetaTools {
     fun schemas(): List<AgentToolSchema> = listOf(routeCall, searchTools)
 
     fun isMetaTool(name: String): Boolean = name == ROUTE_CALL || name == SEARCH_TOOLS
+
+    /**
+     * Console-only definitions for `/tool`. They are deliberately kept out of
+     * the registry and the agent catalog: they describe routing primitives,
+     * not callable capabilities.
+     */
+    fun consoleDefinitions(): List<AgentToolDefinition> = listOf(searchToolsConsoleDefinition)
+
+    private val searchToolsConsoleDefinition =
+        AgentToolDefinition(
+            name = SEARCH_TOOLS,
+            description = searchTools.description,
+            permission = AgentPermission.READ_APP_STATE,
+            parameters =
+                listOf(
+                    AgentParameterSpec(
+                        name = "query",
+                        type = AgentParameterType.STRING,
+                        required = true,
+                        allowBlank = true,
+                        description = "Tool name, capability keywords, or an empty string to list the catalog.",
+                    ),
+                ),
+            confirmationPolicy = ConfirmationPolicy.NEVER,
+            category = "meta",
+            aliases = listOf("tool search", "search tools", "catalog"),
+        )
 }

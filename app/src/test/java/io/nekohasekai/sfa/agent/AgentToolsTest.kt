@@ -29,7 +29,7 @@ class AgentToolsTest {
 
         val summary = registry.userExec("list_nodes").output!!
         assertEquals("command_client", summary.string("source"))
-        assertTrue(summary.boolean("coreRunning"))
+        assertTrue(summary.boolean("coreReachable"))
         assertFalse(summary.boolean("remoteControl"))
         assertEquals("node-b", summary.string("selectedOutbound"))
         assertEquals(1, summary.int("groupCount"))
@@ -82,7 +82,7 @@ class AgentToolsTest {
     fun listNodesExplainsWhenCoreIsNotRunning() {
         val nodeSource =
             FakeNodeSource(
-                NodeSnapshot(coreRunning = false, remoteControl = false),
+                NodeSnapshot(commandClientConnected = false, remoteControl = false),
             )
         val registry = buildTestRegistry(nodeSource = nodeSource)
 
@@ -90,8 +90,8 @@ class AgentToolsTest {
 
         assertTrue(result.errorMessage ?: "", result.ok)
         val output = result.output!!
-        assertFalse(output.boolean("coreRunning"))
-        assertTrue(output.string("message").contains("not running"))
+        assertFalse(output.boolean("coreReachable"))
+        assertTrue(output.string("message").contains("not reachable"))
         assertEquals(0, output.int("groupCount"))
         assertEquals(0, output.int("outboundCount"))
         assertEquals(0, output.array("groups").size)
@@ -107,32 +107,32 @@ class AgentToolsTest {
         val output = registry.userExec("list_nodes").output!!
 
         assertTrue(output.boolean("remoteControl"))
-        assertTrue(output.boolean("coreRunning"))
+        assertTrue(output.boolean("coreReachable"))
     }
 
     @Test
-    fun networkSnapshotCombinesLocalSignalsAndCommandClientState() {
+    fun systemSnapshotCombinesDeviceSignalsAndCommandClientState() {
         val registry = buildTestRegistry()
-        val result = registry.userExec("network_snapshot")
+        val result = registry.userExec("system_snapshot")
 
         assertTrue(result.errorMessage ?: "", result.ok)
         val output = result.output!!
         assertEquals("mixed", output.string("source"))
 
-        val local = output.obj("local")
-        assertEquals("local_sense", local.string("source"))
-        assertTrue(local.boolean("deviceOnly"))
-        assertEquals("wifi", local.string("networkType"))
-        assertFalse(local.boolean("metered"))
-        assertTrue(local.boolean("vpnActive"))
-        assertEquals("vpn", local.string("serviceMode"))
-        assertTrue(local.boolean("batteryOptimizationIgnored"))
-        assertFalse(local.boolean("powerSave"))
-        assertFalse(local.boolean("doze"))
+        val device = output.obj("device")
+        assertEquals("local_sense", device.string("source"))
+        assertEquals("wifi", device.string("networkType"))
+        assertFalse(device.boolean("metered"))
+        assertTrue(device.boolean("serviceActive"))
+        assertTrue(device.boolean("vpnServiceActive"))
+        assertEquals("vpn", device.string("serviceMode"))
+        assertTrue(device.boolean("batteryOptimizationExempt"))
+        assertFalse(device.boolean("batterySaver"))
+        assertFalse(device.boolean("dozeMode"))
 
         val core = output.obj("core")
         assertEquals("command_client", core.string("source"))
-        assertTrue(core.boolean("running"))
+        assertTrue(core.boolean("reachable"))
         assertFalse(core.boolean("remoteControl"))
         assertEquals("node-b", core.obj("selectedOutbounds").string("proxy"))
         assertEquals(1, core.int("groupCount"))
@@ -141,13 +141,13 @@ class AgentToolsTest {
     }
 
     @Test
-    fun networkSnapshotLabelsLocalFieldsUnderRemoteControl() {
+    fun systemSnapshotLabelsDeviceFieldsUnderRemoteControl() {
         val registry =
             buildTestRegistry(
                 nodeSource = FakeNodeSource(sampleNodeSnapshot().copy(remoteControl = true)),
             )
 
-        val output = registry.userExec("network_snapshot").output!!
+        val output = registry.userExec("system_snapshot").output!!
 
         assertTrue(output.obj("core").boolean("remoteControl"))
         assertTrue(output.string("note").contains("not available over Remote Control"))
@@ -200,6 +200,69 @@ class AgentToolsTest {
     }
 
     @Test
+    fun httpFetchPassesUrlHeadersAndOptionalOutbound() {
+        val fetch = FakeHttpFetchPort(
+            HttpFetchOutcome(
+                statusCode = 200,
+                latencyMs = 12,
+                content = "hello",
+                bytes = 5,
+                via = "temporary_outbound_selection",
+            ),
+        )
+        val registry = buildTestRegistry(httpFetchPort = fetch)
+
+        val result =
+            registry.userExec(
+                "http_fetch",
+                """{"url":"https://example.com/data","outbound":"node-a","headers":["X-Test: 1"],"max_bytes":32}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        val call = fetch.calls.single()
+        assertEquals("node-a", call[0])
+        assertEquals("https://example.com/data", call[1])
+        assertEquals(listOf("X-Test" to "1"), call[2])
+        assertEquals(32, call[3])
+        val output = result.output!!
+        assertEquals(200, output.int("statusCode"))
+        assertEquals("hello", output.string("text"))
+        assertEquals("temporary_outbound_selection", output.string("via"))
+        assertFalse(output.boolean("truncated"))
+    }
+
+    @Test
+    fun httpFetchKeepsStatusCodeWithoutBodyForNon200() {
+        val fetch = FakeHttpFetchPort(
+            HttpFetchOutcome(statusCode = 404, latencyMs = 9, via = "current_selection"),
+        )
+        val registry = buildTestRegistry(httpFetchPort = fetch)
+
+        val result = registry.userExec("http_fetch", """{"url":"https://example.com/missing"}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals(404, result.output!!.int("statusCode"))
+        assertNull(result.output!!["text"])
+        assertEquals("current_selection", result.output!!.string("via"))
+    }
+
+    @Test
+    fun httpFetchRejectsHeaderInjectionBeforeCallingThePort() {
+        val fetch = FakeHttpFetchPort()
+        val registry = buildTestRegistry(httpFetchPort = fetch)
+
+        val result =
+            registry.userExec(
+                "http_fetch",
+                """{"url":"https://example.com/","headers":["X-Test: ok\r\nInjected: yes"]}""",
+            )
+
+        assertFalse(result.ok)
+        assertEquals("invalid_parameter", result.errorCode)
+        assertTrue(fetch.calls.isEmpty())
+    }
+
+    @Test
     fun probeErrorsAreSanitized() {
         val probe =
             FakeProbePort(
@@ -233,7 +296,7 @@ class AgentToolsTest {
     fun listNodesRedactsSubscriptionLikeTags() {
         val snapshot =
             NodeSnapshot(
-                coreRunning = true,
+                commandClientConnected = true,
                 remoteControl = false,
                 groups =
                     listOf(

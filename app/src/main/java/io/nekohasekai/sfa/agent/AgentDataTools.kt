@@ -1,11 +1,14 @@
 package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -173,6 +176,7 @@ class AgentDataTools(
                         buildJsonObject {
                             put("path", result.path)
                             put("size", result.size)
+                            put("sha256", fileStore.sha256(fileStore.resolveRead(result.path)))
                             put("offset", result.offset)
                             put("lineCount", result.lineCount)
                             put("truncated", result.truncated)
@@ -183,6 +187,7 @@ class AgentDataTools(
                         buildJsonObject {
                             put("path", result.path)
                             put("size", result.size)
+                            put("sha256", fileStore.sha256(fileStore.resolveRead(result.path)))
                             put("truncated", result.truncated)
                             put("text", AgentSanitizer.scrubForModelRead(result.text))
                         }
@@ -392,6 +397,173 @@ class AgentDataTools(
                         output =
                             buildJsonObject {
                                 put("path", entry.path)
+                                put("size", entry.size)
+                                put("sha256", fileStore.sha256(fileStore.resolveRead(entry.path)))
+                            },
+                    )
+                }.getOrElse { failure(it) }
+            }
+        }
+
+    private val fileAppend =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "file_append",
+                    description =
+                        "Append UTF-8 text to a file inside the Conductor workspace, creating it when absent. " +
+                            "Use it for logs, notes and incremental output instead of reading and rewriting the file. " +
+                            "The workspace is the only writable area.",
+                    permission = AgentPermission.WRITE_FILES,
+                    parameters =
+                        listOf(
+                            AgentParameterSpec(
+                                name = "path",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "Path relative to the working directory; it must be under conductor/.",
+                            ),
+                            AgentParameterSpec(
+                                name = "text",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "UTF-8 text to append. An empty string is allowed.",
+                                allowBlank = true,
+                            ),
+                        ),
+                    confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+                    category = "files",
+                    aliases = listOf("append file", "append text", "add to file"),
+                    confirmationReason = "This appends text to a file inside the Conductor workspace.",
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val path = AgentJson.string(args, "path") ?: return missingPath()
+                val text = AgentJson.string(args, "text") ?: ""
+                return runCatching {
+                    val existed = runCatching { fileStore.resolveRead(path).exists() }.getOrDefault(false)
+                    val entry = fileStore.appendText(path, text)
+                    ToolExecution(
+                        output =
+                            buildJsonObject {
+                                put("path", entry.path)
+                                put("created", !existed)
+                                put("appendedBytes", text.toByteArray(Charsets.UTF_8).size)
+                                put("size", entry.size)
+                                put("sha256", fileStore.sha256(fileStore.resolveRead(entry.path)))
+                            },
+                    )
+                }.getOrElse { failure(it) }
+            }
+        }
+
+    private val fileEdit =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "file_edit",
+                    description =
+                        "Apply one or more exact text edits to a UTF-8 file inside the Conductor workspace. " +
+                            "Each old_text must occur exactly once unless replace_all is true. " +
+                            "Edits apply in order and all-or-nothing; a missing or ambiguous match writes nothing. " +
+                            "Use file_read first to get the current text and sha256.",
+                    permission = AgentPermission.WRITE_FILES,
+                    parameters = emptyList(),
+                    confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+                    category = "files",
+                    aliases = listOf("patch", "edit file", "replace in file", "apply patch"),
+                    passthroughArguments = true,
+                    parametersSchemaOverride =
+                        buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") {
+                                    put("type", "string")
+                                    put("description", "Path relative to the working directory; it must be under conductor/.")
+                                }
+                                putJsonObject("edits") {
+                                    put("type", "array")
+                                    put("minItems", 1)
+                                    put("maxItems", 20)
+                                    putJsonObject("items") {
+                                        put("type", "object")
+                                        putJsonObject("properties") {
+                                            putJsonObject("old_text") {
+                                                put("type", "string")
+                                                put("description", "Exact text to find. Must not be empty.")
+                                            }
+                                            putJsonObject("new_text") {
+                                                put("type", "string")
+                                                put("description", "Replacement text. An empty string deletes the match.")
+                                            }
+                                            putJsonObject("replace_all") {
+                                                put("type", "boolean")
+                                                put("description", "Replace every occurrence instead of requiring exactly one.")
+                                            }
+                                        }
+                                        putJsonArray("required") {
+                                            add("old_text")
+                                            add("new_text")
+                                        }
+                                        put("additionalProperties", false)
+                                    }
+                                }
+                                putJsonObject("expected_sha256") {
+                                    put("type", "string")
+                                    put(
+                                        "description",
+                                        "Optional SHA-256 from file_read or file_stat. The edit is refused when the file changed.",
+                                    )
+                                }
+                            }
+                            putJsonArray("required") {
+                                add("path")
+                                add("edits")
+                            }
+                            put("additionalProperties", false)
+                        },
+                    confirmationReason = "This edits a file inside the Conductor workspace.",
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val path = AgentJson.string(args, "path") ?: return missingPath()
+                val rawEdits = args["edits"] as? JsonArray ?: return invalid("edits must be an array")
+                if (rawEdits.isEmpty() || rawEdits.size > MAX_FILE_EDITS) {
+                    return invalid("edits must contain between 1 and $MAX_FILE_EDITS edits")
+                }
+                val edits = mutableListOf<TextEditSpec>()
+                for ((index, element) in rawEdits.withIndex()) {
+                    val edit = element as? JsonObject ?: return invalid("edits[$index] must be an object")
+                    val oldText = AgentJson.string(edit, "old_text")
+                    if (oldText.isNullOrEmpty()) return invalid("edits[$index].old_text must not be empty")
+                    val newText = AgentJson.string(edit, "new_text")
+                        ?: return invalid("edits[$index].new_text is required")
+                    val replaceAll = AgentJson.boolean(edit, "replace_all") ?: false
+                    if (edit.containsKey("replace_all") && AgentJson.boolean(edit, "replace_all") == null) {
+                        return invalid("edits[$index].replace_all must be a boolean")
+                    }
+                    edits += TextEditSpec(oldText, newText, replaceAll)
+                }
+                if (args.containsKey("expected_sha256") && AgentJson.string(args, "expected_sha256") == null) {
+                    return invalid("expected_sha256 must be a string")
+                }
+                val expected = AgentJson.string(args, "expected_sha256")?.trim()?.takeIf { it.isNotEmpty() }
+                if (expected != null && !SHA256_HEX.matches(expected)) {
+                    return invalid("expected_sha256 must be 64 hex characters")
+                }
+                return runCatching {
+                    val entry = fileStore.editText(path, edits, expected)
+                    ToolExecution(
+                        output =
+                            buildJsonObject {
+                                put("path", entry.path)
+                                put("edits", edits.size)
                                 put("size", entry.size)
                                 put("sha256", fileStore.sha256(fileStore.resolveRead(entry.path)))
                             },
@@ -1034,6 +1206,8 @@ class AgentDataTools(
                 add(fileTail)
                 add(fileGrep)
                 add(fileWrite)
+                add(fileAppend)
+                add(fileEdit)
                 add(fileMkdir)
                 add(fileDelete)
                 if (diagnostics != null) add(diagnosticsExport)
@@ -1062,7 +1236,12 @@ class AgentDataTools(
         buildJsonObject {
             put("path", entry.path)
             put("type", if (entry.directory) "directory" else "file")
-            if (!entry.directory) put("size", entry.size)
+            if (!entry.directory) {
+                put("size", entry.size)
+                runCatching { fileStore.sha256(fileStore.resolveRead(entry.path)) }
+                    .getOrNull()
+                    ?.let { put("sha256", it) }
+            }
             put("modifiedAt", entry.modifiedAt)
         }
 
@@ -1138,6 +1317,8 @@ class AgentDataTools(
     companion object {
         private const val MAX_SEND_BYTES = 8L * 1024 * 1024
         private const val MAX_IMAGE_BYTES = 5 * 1024 * 1024
+        private const val MAX_FILE_EDITS = 20
+        private val SHA256_HEX = Regex("[0-9a-fA-F]{64}")
         private const val FILE_PICK_TIMEOUT_MS = 10L * 60L * 1000L
         private const val IMAGE_ANALYSIS_TIMEOUT_MS = 5L * 60L * 1000L
     }

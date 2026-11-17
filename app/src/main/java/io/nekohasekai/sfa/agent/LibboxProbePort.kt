@@ -30,8 +30,8 @@ class LibboxProbePort(
     ): ProbeOutcome {
         if (cancellation?.isCancelled() == true) return ProbeOutcome(error = "cancelled")
         val snapshot = nodeSource.snapshot()
-        if (!snapshot.coreRunning) {
-            return ProbeOutcome(error = "sing-box core is not running; start the service before probing")
+        if (!snapshot.commandClientConnected) {
+            return ProbeOutcome(error = "sing-box core is not reachable; start the service before probing")
         }
         if (snapshot.remoteControl) {
             return ProbeOutcome(

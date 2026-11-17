@@ -177,12 +177,12 @@ class McpClientTest {
     fun promptStaysTheSameWhenMcpToolsAreActivated() {
         val builtin =
             AgentToolDefinition(
-                name = "network_snapshot",
-                description = "Show the current network environment.",
+                name = "system_snapshot",
+                description = "Show the current system state.",
                 permission = AgentPermission.READ_NETWORK_STATE,
                 parameters = emptyList(),
                 confirmationPolicy = ConfirmationPolicy.NEVER,
-                category = "network",
+                category = "system",
                 core = true,
             )
         val without = AgentToolCatalog(listOf(builtin)).promptSection()
@@ -191,7 +191,7 @@ class McpClientTest {
         assertFalse(withMcp.contains("demo_echo"))
         // A static "not exhaustive" note is allowed; tool names still are not.
         assertTrue(withMcp.contains("not exhaustive"))
-        assertTrue(withMcp.contains("network_snapshot()"))
+        assertTrue(withMcp.contains("system_snapshot()"))
     }
 
     @Test

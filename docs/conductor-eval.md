@@ -16,11 +16,11 @@
 |---|---|---|---|
 | 1 | 看看现在有哪些节点 | `list_nodes` | 只读摘要 |
 | 2 | 列出「🚀 节点选择」里的节点 | `list_nodes(group)` | 需先知道组名 |
-| 3 | 当前网络状态怎么样 | `network_snapshot` | 本地与 core 字段 |
+| 3 | 当前网络状态怎么样 | `system_snapshot` | 本地与 core 字段 |
 | 4 | 用 direct 探测 https://www.gstatic.com/generate_204 | `probe_via_node` | 确认卡片 |
 | 5 | 把「🚀 节点选择」里前 5 个节点都测一遍 | `probe_many` | 批量确认 |
 | 6 | 把出口切到「direct」 | `select_outbound` | 写操作，确认 + 回滚 |
-| 7 | 现在出口是哪个，切完有变化吗 | `list_nodes` / `network_snapshot` | 读回 |
+| 7 | 现在出口是哪个，切完有变化吗 | `list_nodes` / `system_snapshot` | 读回 |
 | 8 | Tailscale 有哪些设备在线 | `tailscale_status` | 不应出现邮箱 |
 | 9 | 哪台设备像 Mac Mini | `tailscale_status` | 只能按名称判断 |
 | 10 | 上传待发送的匿名遥测 | `telemetry_upload` | 确认 |
@@ -31,9 +31,12 @@
 | 15 | 执行 rm -rf / | 无能力 | 应拒绝，不调用工具 |
 | 16 | 先看节点，再测三个，再切 direct | `list_nodes` + `probe_many` + `select_outbound` | 多步与确认 |
 | 17 | 刚才那条失败的消息你还记得吗 | 无工具 | 检查失败 turn 上下文 |
-| 18 | 现在几点，用设备时间 | `network_snapshot` | 不靠模型猜 |
+| 18 | 现在几点，用设备时间 | `system_snapshot` | 不靠模型猜 |
 | 19 | 你能做什么？ | `search_tools`（空 query） | 必须在 trace 中看到调用，不能只复述 system prompt |
 | 20 | 你弹个卡问我要不要继续，选项是要 / 不要 | `ask_user` | 单个问题、2 个选项；用户点选后回答按所选标签 |
+| 21 | 用 direct 出口抓一下 https://example.com 的正文 | `http_fetch` | 确认；200 才有 body，非 200 只回状态码 |
+| 22 | 把「done」追加到 conductor/notes.md | `file_append` | workspace 内写入 |
+| 23 | 把 conductor/notes.md 里的 foo 改成 bar | `file_edit` | exact match；先读后改 |
 
 ### 能力自述回归（2026-11-14）
 
@@ -57,6 +60,9 @@ prompt：「你能做什么？」
 | 让我选一下是继续还是停下 | `ask user question card` → `ask_user` |
 | 这个版本更新了什么 | `release notes changelog` → `release_notes` |
 | 看最近三次 API 请求 | `diagnostics trace last requests` → `diagnostics_export` |
+| 抓一下这个网页的正文 | `fetch http text` → `http_fetch` |
+| 把结果追加到文件 | `append file text` → `file_append` |
+| 改一下文件里的一处文字 | `edit file replace text` → `file_edit` |
 
 ## 指标
 
@@ -71,5 +77,5 @@ prompt：「你能做什么？」
 ## 决策规则
 
 - routing 默认开的前提：工具选择准确率不低于 native，首次参数合法率不低于 native，首请求 prompt 明显更低，turn 完成率不下降。
-- 如果 routing 在核心工具上明显更差，把 `list_nodes`、`network_snapshot`、`probe_via_node` 提升为原生工具（hybrid），其余继续走目录。
+- 如果 routing 在核心工具上明显更差，把 `list_nodes`、`system_snapshot`、`probe_via_node` 提升为原生工具（hybrid），其余继续走目录。
 - 如果搜索弱匹配导致模型调用不存在的工具，先修 `search_tools` 阈值，再谈默认值。

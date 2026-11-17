@@ -22,8 +22,10 @@ import io.nekohasekai.sfa.agent.AgentInvocationResult
 import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentMessage
+import io.nekohasekai.sfa.agent.AgentMetaTools
 import io.nekohasekai.sfa.agent.AgentRuntime
 import io.nekohasekai.sfa.agent.AgentSanitizer
+import io.nekohasekai.sfa.agent.AgentToolCatalog
 import io.nekohasekai.sfa.agent.AgentToolDefinition
 import io.nekohasekai.sfa.agent.AgentTools
 import io.nekohasekai.sfa.agent.DynamicToolExecutor
@@ -48,6 +50,7 @@ import io.nekohasekai.sfa.agent.FileSelectionPort
 import io.nekohasekai.sfa.agent.FileSelectionResult
 import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
+import io.nekohasekai.sfa.agent.LibboxHttpFetchPort
 import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.OpenAiCompatibleModelClient
@@ -212,6 +215,12 @@ class ConductorViewModel(
 
     private val probePort =
         LibboxProbePort(
+            nodeSource = nodeSource,
+            appTrafficUsesVpn = { appTrafficUsesVpn() },
+        )
+
+    private val httpFetchPort =
+        LibboxHttpFetchPort(
             nodeSource = nodeSource,
             appTrafficUsesVpn = { appTrafficUsesVpn() },
         )
@@ -721,6 +730,7 @@ class ConductorViewModel(
                 selectionPort = selectionPort,
                 tailscaleStatusSource = tailscaleSource,
                 telemetryUploadPort = telemetryPort,
+                httpFetchPort = httpFetchPort,
             ).all +
                 AgentDataTools(
                     fileStore = fileStore,
@@ -734,7 +744,10 @@ class ConductorViewModel(
             toolTimeoutMs = agentConfig.toolTimeoutMs,
         )
 
-    private val _toolDefinitions = MutableStateFlow(toolExecutor.definitions())
+    private fun consoleToolDefinitions(): List<AgentToolDefinition> =
+        toolExecutor.definitions() + AgentMetaTools.consoleDefinitions()
+
+    private val _toolDefinitions = MutableStateFlow(consoleToolDefinitions())
     val toolDefinitions: StateFlow<List<AgentToolDefinition>> = _toolDefinitions.asStateFlow()
 
     private val modelClient = OpenAiCompatibleModelClient(endpointProvider = ModelProviderSettings::endpoint)
@@ -1082,7 +1095,7 @@ class ConductorViewModel(
             }
 
             ConductorCommandKind.NODES -> runTool("list_nodes")
-            ConductorCommandKind.NETWORK -> runTool("network_snapshot")
+            ConductorCommandKind.NETWORK -> runTool("system_snapshot")
             ConductorCommandKind.TAILSCALE -> runTailscale()
             ConductorCommandKind.TELEMETRY_UPLOAD -> runTelemetryUpload()
             ConductorCommandKind.PROBE -> runProbe(parsed.args)
@@ -1659,14 +1672,14 @@ class ConductorViewModel(
         }
         if (!stopRequested) {
             toolExecutor.setExtras(mcp.tools())
-            _toolDefinitions.value = toolExecutor.definitions()
+            _toolDefinitions.value = consoleToolDefinitions()
         }
     }
 
     internal fun refreshToolCatalog() {
         viewModelScope.launch {
             refreshMcpTools()
-            _toolDefinitions.value = toolExecutor.definitions()
+            _toolDefinitions.value = consoleToolDefinitions()
         }
     }
 
@@ -1940,7 +1953,8 @@ class ConductorViewModel(
         }
         viewModelScope.launch {
             refreshMcpTools()
-            val definitions = toolExecutor.definitions()
+            val definitions = consoleToolDefinitions()
+            val agentDefinitions = toolExecutor.definitions()
             val text = tail.trim()
             val name = text.takeWhile { !it.isWhitespace() }
             val argsJson = text.drop(name.length).trim()
@@ -2005,6 +2019,16 @@ class ConductorViewModel(
                     else -> {
                         when (val resolution = resolveToolDefinition(name, definitions)) {
                             is ToolResolution.Found -> {
+                                if (resolution.definition.name == AgentMetaTools.SEARCH_TOOLS) {
+                                    val result = runSearchToolsCommand(argsJson, agentDefinitions)
+                                    updateUi { copy(isRunning = false) }
+                                    appendDirectToolResult(
+                                        AgentMetaTools.SEARCH_TOOLS,
+                                        argsJson,
+                                        result,
+                                    )
+                                    return@withContext
+                                }
                                 updateUi {
                                     copy(
                                         isRunning = true,
@@ -2076,6 +2100,45 @@ class ConductorViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * `/tool` is the developer console, so its two routing primitives are
+     * available even when routing mode is off. The catalog itself still only
+     * contains real capabilities; meta tools never enter it.
+     */
+    private fun runSearchToolsCommand(
+        argsJson: String,
+        definitions: List<AgentToolDefinition>,
+    ): AgentInvocationResult {
+        val args =
+            AgentJson.parseObject(argsJson)
+                ?: return AgentInvocationResult(
+                    tool = AgentMetaTools.SEARCH_TOOLS,
+                    ok = false,
+                    errorCode = "invalid_arguments",
+                    errorMessage = "search_tools arguments must be a JSON object.",
+                )
+        val query =
+            AgentJson.string(args, "query")
+                ?: return AgentInvocationResult(
+                    tool = AgentMetaTools.SEARCH_TOOLS,
+                    ok = false,
+                    errorCode = "missing_parameter",
+                    errorMessage = "search_tools requires a string query; use an empty string to list the catalog.",
+                )
+        val catalog = AgentToolCatalog(definitions)
+        val output =
+            if (query.isBlank()) {
+                catalog.catalogOutput(agentConfig.maxObservationChars)
+            } else {
+                catalog.searchOutput(query, agentConfig.searchLimit, agentConfig.maxObservationChars)
+            }
+        return AgentInvocationResult(
+            tool = AgentMetaTools.SEARCH_TOOLS,
+            ok = true,
+            output = output,
+        )
     }
 
     private fun resolveToolDefinition(

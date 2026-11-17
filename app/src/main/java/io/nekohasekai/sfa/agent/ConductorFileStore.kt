@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.agent
 
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -37,6 +38,12 @@ data class FileGrepResult(
     val matches: List<FileGrepMatch>,
     val scannedLines: Int,
     val truncated: Boolean,
+)
+
+data class TextEditSpec(
+    val oldText: String,
+    val newText: String,
+    val replaceAll: Boolean = false,
 )
 
 /**
@@ -254,10 +261,87 @@ class ConductorFileStore(
         )
     }
 
+    private val writeLock = Any()
+
     fun writeText(
         path: String,
         text: String,
         overwrite: Boolean = false,
+    ): StoredFile = synchronized(writeLock) { writeTextLocked(path, text, overwrite) }
+
+    fun appendText(
+        path: String,
+        text: String,
+    ): StoredFile =
+        synchronized(writeLock) {
+            val file = resolveWrite(path)
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            if (file.exists() && !file.isFile) throw IllegalArgumentException("Not a file: $path")
+            ensureWorkspace()
+            val existing = if (file.exists()) file.length() else 0L
+            if (existing + bytes.size > maxFileBytes) {
+                throw IllegalArgumentException("File is larger than ${maxFileBytes} bytes.")
+            }
+            val parent = file.parentFile ?: throw IllegalArgumentException("Invalid path: $path")
+            if (!parent.exists() && !parent.mkdirs()) throw IllegalArgumentException("Could not create $path")
+            if (!file.exists() && countFiles() >= maxFiles) {
+                prune()
+                if (countFiles() >= maxFiles) {
+                    throw IllegalArgumentException("Workspace file limit ($maxFiles) reached. Delete old files first.")
+                }
+            }
+            FileOutputStream(file, true).use { output -> output.write(bytes) }
+            storeEntry(file)
+        }
+
+    fun editText(
+        path: String,
+        edits: List<TextEditSpec>,
+        expectedSha256: String? = null,
+    ): StoredFile =
+        synchronized(writeLock) {
+            if (edits.isEmpty()) throw IllegalArgumentException("edits must contain at least one edit.")
+            val file = resolveWrite(path)
+            if (!file.isFile) throw IllegalArgumentException("Not a file: $path")
+            if (file.length() > maxFileBytes) {
+                throw IllegalArgumentException("File is larger than ${maxFileBytes} bytes.")
+            }
+            val original = file.readBytes()
+            if (original.any { it == 0.toByte() }) {
+                throw IllegalArgumentException("Binary files are not supported by file_edit.")
+            }
+            if (!expectedSha256.isNullOrBlank() && !sha256(file).equals(expectedSha256, ignoreCase = true)) {
+                throw IllegalArgumentException("File hash does not match expected_sha256; read it again before editing.")
+            }
+            var text = String(original, Charsets.UTF_8)
+            edits.forEachIndexed { index, edit ->
+                if (edit.oldText.isEmpty()) {
+                    throw IllegalArgumentException("edits[$index].old_text must not be empty.")
+                }
+                val occurrences = countOccurrences(text, edit.oldText)
+                if (occurrences == 0) {
+                    throw IllegalArgumentException("edits[$index].old_text was not found.")
+                }
+                if (!edit.replaceAll && occurrences > 1) {
+                    throw IllegalArgumentException(
+                        "edits[$index].old_text occurs $occurrences times; set replace_all=true or provide more context.",
+                    )
+                }
+                text =
+                    if (edit.replaceAll) {
+                        text.replace(edit.oldText, edit.newText)
+                    } else {
+                        val at = text.indexOf(edit.oldText)
+                        text.substring(0, at) + edit.newText + text.substring(at + edit.oldText.length)
+                    }
+            }
+            writeTextLocked(path, text, overwrite = true)
+        }
+
+    private fun writeTextLocked(
+        path: String,
+        text: String,
+        overwrite: Boolean,
     ): StoredFile {
         val file = resolveWrite(path)
         val bytes = text.toByteArray(Charsets.UTF_8)
@@ -285,6 +369,19 @@ class ConductorFileStore(
             if (temp.exists()) temp.delete()
         }
         return storeEntry(file)
+    }
+
+    private fun countOccurrences(
+        text: String,
+        needle: String,
+    ): Int {
+        var count = 0
+        var index = text.indexOf(needle)
+        while (index >= 0) {
+            count += 1
+            index = text.indexOf(needle, index + needle.length)
+        }
+        return count
     }
 
     fun mkdir(path: String): StoredFile {

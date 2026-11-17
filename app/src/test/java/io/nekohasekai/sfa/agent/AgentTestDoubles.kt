@@ -11,11 +11,12 @@ class FakeDeviceSource(
         DeviceSnapshot(
             networkType = "wifi",
             metered = false,
-            vpnActive = true,
+            serviceActive = true,
+            vpnServiceActive = true,
             serviceMode = "vpn",
-            batteryOptimizationIgnored = true,
-            powerSave = false,
-            doze = false,
+            batteryOptimizationExempt = true,
+            batterySaver = false,
+            dozeMode = false,
         ),
 ) : DeviceSnapshotSource {
     override fun snapshot(): DeviceSnapshot = snapshot
@@ -32,6 +33,23 @@ class FakeProbePort(
         cancellation: ToolCancellation?,
     ): ProbeOutcome {
         calls.add(outbound to url)
+        return outcome
+    }
+}
+
+class FakeHttpFetchPort(
+    var outcome: HttpFetchOutcome = HttpFetchOutcome(statusCode = 200, latencyMs = 12, content = "hello", bytes = 5),
+) : HttpFetchPort {
+    val calls = mutableListOf<List<Any?>>()
+
+    override fun fetch(
+        outbound: String?,
+        url: String,
+        headers: List<Pair<String, String>>,
+        maxBytes: Int,
+        cancellation: ToolCancellation?,
+    ): HttpFetchOutcome {
+        calls += listOf(outbound, url, headers, maxBytes)
         return outcome
     }
 }
@@ -53,7 +71,7 @@ class FakeNodeSelectionPort(
 
 fun sampleNodeSnapshot(): NodeSnapshot =
     NodeSnapshot(
-        coreRunning = true,
+        commandClientConnected = true,
         remoteControl = false,
         groups =
             listOf(
@@ -82,6 +100,7 @@ fun buildTestRegistry(
     deviceSource: DeviceSnapshotSource = FakeDeviceSource(),
     probePort: ProbePort = FakeProbePort(),
     selectionPort: NodeSelectionPort? = null,
+    httpFetchPort: HttpFetchPort? = null,
 ): AgentToolRegistry =
     AgentToolRegistry(
         AgentTools(
@@ -89,5 +108,6 @@ fun buildTestRegistry(
             deviceSource = deviceSource,
             probePort = probePort,
             selectionPort = selectionPort,
+            httpFetchPort = httpFetchPort,
         ).all,
     )

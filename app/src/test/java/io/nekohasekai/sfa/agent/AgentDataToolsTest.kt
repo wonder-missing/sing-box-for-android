@@ -4,6 +4,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.long
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -94,6 +97,72 @@ class AgentDataToolsTest {
         val grep = registry.exec("file_grep", """{"path":"conductor/lines.txt","query":"c","context_lines":1}""")
         assertTrue(grep.errorMessage ?: "", grep.ok)
         assertEquals(3, grep.output!!.array("matches").size)
+    }
+
+    @Test
+    fun fileAppendCreatesAndAppendsWithoutRewriting() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val first = registry.exec("file_append", """{"path":"conductor/log.txt","text":"a"}""")
+        assertTrue(first.errorMessage ?: "", first.ok)
+        assertTrue(first.output!!.boolean("created"))
+        assertEquals(1, first.output!!.long("size"))
+
+        val second = registry.exec("file_append", """{"path":"conductor/log.txt","text":"b"}""")
+        assertTrue(second.errorMessage ?: "", second.ok)
+        assertFalse(second.output!!.boolean("created"))
+        assertEquals(1, second.output!!.long("appendedBytes"))
+        assertEquals(2, second.output!!.long("size"))
+        assertEquals("ab", store.readText("conductor/log.txt").text)
+    }
+
+    @Test
+    fun fileEditAppliesExactReplacementWithExpectedHash() {
+        store.writeText("conductor/edit.txt", "alpha\nbeta\n")
+        val registry = AgentToolRegistry(tools.all)
+        val read = registry.exec("file_read", """{"path":"conductor/edit.txt"}""")
+        val sha = read.output!!.string("sha256")
+
+        val result =
+            registry.exec(
+                "file_edit",
+                """{"path":"conductor/edit.txt","expected_sha256":"$sha","edits":[{"old_text":"beta","new_text":"gamma"}]}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals(1, result.output!!.int("edits"))
+        assertEquals("alpha\ngamma\n", store.readText("conductor/edit.txt").text)
+    }
+
+    @Test
+    fun fileEditRefusesAmbiguousMatchesAndWritesNothing() {
+        store.writeText("conductor/edit.txt", "a a")
+        val registry = AgentToolRegistry(tools.all)
+
+        val result =
+            registry.exec(
+                "file_edit",
+                """{"path":"conductor/edit.txt","edits":[{"old_text":"a","new_text":"b"}]}""",
+            )
+
+        assertFalse(result.ok)
+        assertTrue(result.errorMessage.orEmpty().contains("occurs 2 times"))
+        assertEquals("a a", store.readText("conductor/edit.txt").text)
+    }
+
+    @Test
+    fun fileEditRollsBackWhenALaterEditFails() {
+        store.writeText("conductor/edit.txt", "alpha\nbeta\n")
+        val registry = AgentToolRegistry(tools.all)
+
+        val result =
+            registry.exec(
+                "file_edit",
+                """{"path":"conductor/edit.txt","edits":[{"old_text":"alpha","new_text":"ALPHA"},{"old_text":"missing","new_text":"x"}]}""",
+            )
+
+        assertFalse(result.ok)
+        assertEquals("alpha\nbeta\n", store.readText("conductor/edit.txt").text)
     }
 
     @Test
@@ -307,18 +376,23 @@ class AgentDataToolsTest {
 
     @Test
     fun fileQueryFindsAllFileTools() {
-        val names =
-            AgentToolCatalog(tools.all.map { it.definition })
-                .search("file", limit = AgentToolCatalog.MAX_LIMIT)
-                .map { it.name }
+        val catalog = AgentToolCatalog(tools.all.map { it.definition })
+        val expected =
+            listOf(
+                "file_list",
+                "file_read",
+                "file_tail",
+                "file_grep",
+                "file_stat",
+                "file_write",
+                "file_append",
+                "file_edit",
+                "file_delete",
+            )
 
-        assertTrue(names.contains("file_list"))
-        assertTrue(names.contains("file_read"))
-        assertTrue(names.contains("file_tail"))
-        assertTrue(names.contains("file_grep"))
-        assertTrue(names.contains("file_stat"))
-        assertTrue(names.contains("file_write"))
-        assertTrue(names.contains("file_delete"))
+        expected.forEach { name ->
+            assertEquals(name, catalog.search(name).firstOrNull()?.name)
+        }
     }
 
     @Test
@@ -415,6 +489,12 @@ class AgentDataToolsTest {
         }
 
     private fun JsonObject.string(key: String): String = (getValue(key) as JsonPrimitive).content
+
+    private fun JsonObject.boolean(key: String): Boolean = (getValue(key) as JsonPrimitive).boolean
+
+    private fun JsonObject.int(key: String): Int = (getValue(key) as JsonPrimitive).int
+
+    private fun JsonObject.long(key: String): Long = (getValue(key) as JsonPrimitive).long
 
     private fun JsonObject.array(key: String): JsonArray = getValue(key) as JsonArray
 }

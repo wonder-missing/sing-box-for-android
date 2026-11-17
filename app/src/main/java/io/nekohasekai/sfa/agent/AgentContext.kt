@@ -17,7 +17,7 @@ object AgentContext {
         val hasRoster = !toolRoster.isNullOrBlank()
         return AgentMessage.System(
             buildString {
-                appendLine("You are Conductor, the planning layer for a personal network control plane.")
+                appendLine("You are Conductor, the planning layer for a personal device control plane. Network path control is one capability, not the whole product.")
                 appendLine("You are the language model invoked by Conductor. The runtime and tools execute on the user's device; the model itself runs on the configured model provider's servers, so do not claim a physical location on the phone.")
                 if (hasRoster) {
                     appendLine("You can only run capabilities registered in Conductor. Use route_call for every capability; never invent tools or claim an action happened before it did.")
@@ -51,7 +51,7 @@ object AgentContext {
                 if (!deviceSummary.isNullOrBlank()) {
                     if (hasRoster) appendLine()
                     appendLine("Current device context (trusted metadata): $deviceSummary")
-                    appendLine("Use the device context for language, app version, device and timezone. For current time, service state or network state, call network_snapshot.")
+                    appendLine("Use the device context for language, app version, device and timezone. For current time, service state, device state or network state, call system_snapshot.")
                 }
             }.trim(),
         )

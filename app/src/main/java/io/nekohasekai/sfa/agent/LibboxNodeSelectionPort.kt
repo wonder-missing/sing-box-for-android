@@ -18,12 +18,12 @@ class LibboxNodeSelectionPort(
     ): NodeSelectionResult =
         withContext(Dispatchers.IO) {
             val snapshot = nodeSource.snapshot()
-            if (!snapshot.coreRunning) {
+            if (!snapshot.commandClientConnected) {
                 return@withContext NodeSelectionResult(
                     ok = false,
                     group = group,
                     selected = outbound,
-                    error = "sing-box core is not running; start the service before changing the outbound",
+                    error = "sing-box core is not reachable; start the service before changing the outbound",
                 )
             }
             if (snapshot.remoteControl) {

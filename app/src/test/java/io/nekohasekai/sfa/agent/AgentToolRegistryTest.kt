@@ -132,7 +132,7 @@ class AgentToolRegistryTest {
     fun definitionsExposeJsonSchemas() {
         val definitions = registry.definitions()
         assertEquals(
-            listOf("list_nodes", "network_snapshot", "probe_via_node", "probe_many"),
+            listOf("list_nodes", "system_snapshot", "probe_via_node", "probe_many"),
             definitions.map { it.name },
         )
 

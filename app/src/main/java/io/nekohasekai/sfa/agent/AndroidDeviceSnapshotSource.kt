@@ -12,7 +12,7 @@ import java.util.Locale
 
 /**
  * Device-local observations only. Nothing here is sent through CommandClient,
- * so network_snapshot labels these fields as local_sense.
+ * so system_snapshot labels these fields as local_sense.
  */
 class AndroidDeviceSnapshotSource(
     private val context: Context,
@@ -38,16 +38,17 @@ class AndroidDeviceSnapshotSource(
                 networkType = describeNetwork(capabilities),
                 localTime = SimpleDateFormat("yyyy-MM-dd HH:mm z", Locale.getDefault()).format(Date()),
                 metered = connectivityManager?.isActiveNetworkMetered,
-                vpnActive =
+                serviceActive = started,
+                vpnServiceActive =
                     when {
                         started == null -> null
                         !started -> false
                         else -> mode == ServiceMode.VPN
                     },
                 serviceMode = mode,
-                batteryOptimizationIgnored = power["battery_opt_exempt"] as? Boolean,
-                powerSave = power["power_save"] as? Boolean,
-                doze = power["doze"] as? Boolean,
+                batteryOptimizationExempt = power["battery_opt_exempt"] as? Boolean,
+                batterySaver = power["power_save"] as? Boolean,
+                dozeMode = power["doze"] as? Boolean,
             )
         } catch (t: Throwable) {
             DeviceSnapshot(error = t.message ?: t.toString())

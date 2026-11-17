@@ -19,6 +19,7 @@ class AgentTools(
     private val selectionPort: NodeSelectionPort? = null,
     private val tailscaleStatusSource: TailscaleStatusSource? = null,
     private val telemetryUploadPort: TelemetryUploadPort? = null,
+    private val httpFetchPort: HttpFetchPort? = null,
 ) {
     private val listNodes =
         object : AgentTool {
@@ -64,15 +65,15 @@ class AgentTools(
                         }
                     }
                 val output =
-                    if (requestedGroup == null || !snapshot.coreRunning) {
+                    if (requestedGroup == null || !snapshot.commandClientConnected) {
                         buildJsonObject {
                             put("source", "command_client")
-                            put("coreRunning", snapshot.coreRunning)
+                            put("coreReachable", snapshot.commandClientConnected)
                             put("remoteControl", snapshot.remoteControl)
-                            if (!snapshot.coreRunning) {
+                            if (!snapshot.commandClientConnected) {
                                 put(
                                     "message",
-                                    "sing-box core is not running or not reachable. " +
+                                    "sing-box core is not reachable through CommandClient. " +
                                         "Start the service (or enter Remote Control) and try again.",
                                 )
                             } else if (snapshot.groups.isEmpty() && snapshot.outbounds.isEmpty()) {
@@ -121,7 +122,7 @@ class AgentTools(
                         }
                         buildJsonObject {
                             put("source", "command_client")
-                            put("coreRunning", snapshot.coreRunning)
+                            put("coreReachable", snapshot.commandClientConnected)
                             put("remoteControl", snapshot.remoteControl)
                             put("selectedOutbound", selectedOutbound)
                             put("selectedOutbounds", selectedOutbounds)
@@ -142,24 +143,34 @@ class AgentTools(
                             snapshot.error?.let { put("error", it) }
                         }
                     }
-                return ToolExecution(output = output, degraded = !snapshot.coreRunning)
+                return ToolExecution(output = output, degraded = !snapshot.commandClientConnected)
             }
         }
 
-    private val networkSnapshot =
+    private val systemSnapshot =
         object : AgentTool {
             override val definition =
                 AgentToolDefinition(
-                    name = "network_snapshot",
+                    name = "system_snapshot",
                     description =
-                        "Show the current network environment. Core/outbound state comes from " +
-                            "CommandClient; wifi/cellular, VPN presence and battery signals are " +
-                            "device-local observations (not visible over Remote Control).",
+                        "Show the current system state. The device section is observed locally: " +
+                            "time, network type, metered state, service/VPN state and battery signals. " +
+                            "The core section comes from CommandClient: reachability, selected outbounds " +
+                            "and group/outbound counts. Device fields are not visible over Remote Control.",
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
-                    category = "network",
-                    aliases = listOf("network", "status", "snapshot"),
+                    category = "system",
+                    aliases =
+                        listOf(
+                            "network",
+                            "network_snapshot",
+                            "status",
+                            "snapshot",
+                            "system",
+                            "device state",
+                            "system state",
+                        ),
                     core = true,
                 )
 
@@ -180,31 +191,31 @@ class AgentTools(
                 val output =
                     buildJsonObject {
                         put("source", "mixed")
-                        putJsonObject("local") {
+                        putJsonObject("device") {
                             put("source", "local_sense")
-                            put("deviceOnly", true)
                             put("networkType", device.networkType)
                             device.localTime?.let { put("localTime", it) }
                             device.metered?.let { put("metered", it) }
-                            device.vpnActive?.let { put("vpnActive", it) }
+                            device.serviceActive?.let { put("serviceActive", it) }
+                            device.vpnServiceActive?.let { put("vpnServiceActive", it) }
                             device.serviceMode?.let { put("serviceMode", it) }
-                            device.batteryOptimizationIgnored?.let { put("batteryOptimizationIgnored", it) }
-                            device.powerSave?.let { put("powerSave", it) }
-                            device.doze?.let { put("doze", it) }
+                            device.batteryOptimizationExempt?.let { put("batteryOptimizationExempt", it) }
+                            device.batterySaver?.let { put("batterySaver", it) }
+                            device.dozeMode?.let { put("dozeMode", it) }
                             device.error?.let { put("error", it) }
                         }
                         putJsonObject("core") {
                             put("source", "command_client")
-                            put("running", snapshot.coreRunning)
+                            put("reachable", snapshot.commandClientConnected)
                             put("remoteControl", snapshot.remoteControl)
                             put("selectedOutbounds", selectedOutbounds)
                             put("groupCount", snapshot.groups.size)
                             put("outboundCount", snapshot.outbounds.size)
-                            if (!snapshot.coreRunning) {
+                            if (!snapshot.commandClientConnected) {
                                 put(
                                     "message",
-                                    "sing-box core is not running or not reachable; " +
-                                        "core fields are empty until the service starts.",
+                                    "sing-box core is not reachable through CommandClient; " +
+                                        "core fields are empty until the service starts or reconnects.",
                                 )
                             }
                             snapshot.error?.let { put("error", it) }
@@ -212,11 +223,11 @@ class AgentTools(
                         if (snapshot.remoteControl) {
                             put(
                                 "note",
-                                "local.* is observed on this device and is not available over Remote Control.",
+                                "device.* is observed on this device and is not available over Remote Control.",
                             )
                         }
                     }
-                return ToolExecution(output = output, degraded = !snapshot.coreRunning)
+                return ToolExecution(output = output, degraded = !snapshot.commandClientConnected)
             }
         }
 
@@ -275,7 +286,7 @@ class AgentTools(
                 if (outbound.length > 256) {
                     return invalidArgument("outbound tag is too long")
                 }
-                if (!isAllowedProbeUrl(url)) {
+                if (!isAllowedHttpUrl(url)) {
                     return invalidArgument("url must be an absolute http(s) URL")
                 }
                 if (cancellation.isCancelled()) {
@@ -367,14 +378,14 @@ class AgentTools(
                 val url =
                     AgentJson.string(args, "url")?.trim()?.takeIf { it.isNotBlank() }
                         ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "url is required")
-                if (!isAllowedProbeUrl(url)) {
+                if (!isAllowedHttpUrl(url)) {
                     return ToolExecution(errorCode = "invalid_parameter", errorMessage = "url must be an absolute http(s) URL")
                 }
                 val snapshot = nodeSource.snapshot()
-                if (!snapshot.coreRunning) {
+                if (!snapshot.commandClientConnected) {
                     return ToolExecution(
                         errorCode = "tool_unavailable",
-                        errorMessage = "sing-box core is not running; start the service before probing",
+                        errorMessage = "sing-box core is not reachable; start the service before probing",
                     )
                 }
                 if (snapshot.remoteControl) {
@@ -549,6 +560,141 @@ class AgentTools(
             }
         }
 
+    private val httpFetch =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = "http_fetch",
+                    description =
+                        "Send one HTTP GET from this device through the running core and return text. " +
+                            "With outbound, temporarily selects that node and restores the previous selection. " +
+                            "Returns statusCode and text for HTTP 200; other HTTP statuses carry statusCode without " +
+                            "a body because the core HTTP client throws for them. Response headers and content-type " +
+                            "are not available. max_bytes truncates the returned text, not the download. " +
+                            "Local-only; Remote Control is rejected.",
+                    permission = AgentPermission.DATA_EGRESS,
+                    parameters =
+                        listOf(
+                            AgentParameterSpec(
+                                name = "url",
+                                type = AgentParameterType.STRING,
+                                required = true,
+                                description = "Absolute http:// or https:// URL to fetch.",
+                            ),
+                            AgentParameterSpec(
+                                name = "outbound",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description =
+                                    "Optional selectable outbound tag. Omit to use the current selection. " +
+                                        "A named outbound is temporarily selected and then restored.",
+                            ),
+                            AgentParameterSpec(
+                                name = "headers",
+                                type = AgentParameterType.STRING_ARRAY,
+                                required = false,
+                                description =
+                                    "Optional request headers as \"Name: value\" strings. " +
+                                        "Values are not written to logs.",
+                            ),
+                            AgentParameterSpec(
+                                name = "max_bytes",
+                                type = AgentParameterType.INTEGER,
+                                required = false,
+                                description = "Maximum returned text bytes. Defaults to 65536; capped at 262144.",
+                            ),
+                        ),
+                    confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+                    category = "network",
+                    aliases = listOf("fetch", "http get", "download text", "request text"),
+                    confirmationReason =
+                        "This sends an HTTP GET from this device through the running core. " +
+                            "A named outbound temporarily changes the core's selection; app traffic may briefly " +
+                            "use that node. If the app process is killed mid-fetch, the core can stay on that " +
+                            "node until it restarts.",
+                    allowedUrlParameter = "url",
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val port = httpFetchPort ?: return unavailable()
+                val url =
+                    AgentJson.string(args, "url")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return invalidParameter("url is required")
+                if (!isAllowedHttpUrl(url)) {
+                    return invalidParameter("url must be an absolute http(s) URL")
+                }
+                val outbound =
+                    AgentJson.string(args, "outbound")?.trim()?.takeIf { it.isNotBlank() }
+                if (outbound != null && outbound.length > 256) {
+                    return invalidParameter("outbound tag is too long")
+                }
+                val headers =
+                    parseFetchHeaders(AgentJson.stringList(args, "headers"))
+                        ?: return invalidParameter(
+                            "headers must be \"Name: value\" strings without CR or LF",
+                        )
+                val maxBytes =
+                    (AgentJson.int(args, "max_bytes") ?: DEFAULT_FETCH_BYTES)
+                        .coerceIn(1, MAX_FETCH_BYTES)
+                if (cancellation.isCancelled()) {
+                    return ToolExecution(errorCode = "cancelled", errorMessage = "http_fetch cancelled")
+                }
+                val result =
+                    try {
+                        port.fetch(outbound, url, headers, maxBytes, cancellation)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        return ToolExecution(errorCode = "tool_failed", errorMessage = e.message ?: e.toString())
+                    }
+                val output =
+                    buildJsonObject {
+                        put("ok", result.error == null)
+                        put("url", url)
+                        put("method", "GET")
+                        outbound?.let { put("outbound", it) }
+                        result.via?.let { put("via", it) }
+                        result.statusCode?.let { put("statusCode", it) }
+                        put("bytes", result.bytes)
+                        put("truncated", result.truncated)
+                        result.content?.let { put("text", AgentSanitizer.scrubForModelRead(it)) }
+                        result.latencyMs?.let { put("latencyMs", it) }
+                        result.error?.let { put("error", it) }
+                    }
+                return if (result.error == null) {
+                    ToolExecution(output = output)
+                } else {
+                    ToolExecution(
+                        output = output,
+                        errorCode = "tool_failed",
+                        errorMessage = result.error,
+                    )
+                }
+            }
+
+            private fun parseFetchHeaders(raw: List<String>?): List<Pair<String, String>>? {
+                if (raw == null) return emptyList()
+                if (raw.size > MAX_FETCH_HEADERS) return null
+                val headers = mutableListOf<Pair<String, String>>()
+                for (line in raw) {
+                    if (line.length > MAX_FETCH_HEADER_CHARS) return null
+                    if (line.any { it == '\r' || it == '\n' }) return null
+                    val colon = line.indexOf(':')
+                    if (colon <= 0 || colon == line.lastIndex) return null
+                    val name = line.substring(0, colon).trim()
+                    val value = line.substring(colon + 1).trim()
+                    if (name.isEmpty() || name.length > 64) return null
+                    if (!HEADER_NAME.matches(name)) return null
+                    if (value.length > 1024) return null
+                    headers += name to value
+                }
+                return headers
+            }
+        }
+
     private val telemetryUpload =
         object : AgentTool {
             override val definition =
@@ -590,16 +736,20 @@ class AgentTools(
         get() =
             buildList {
                 add(listNodes)
-                add(networkSnapshot)
+                add(systemSnapshot)
                 add(probeViaNode)
                 add(probeMany)
                 if (selectionPort != null) add(selectOutbound)
                 if (tailscaleStatusSource != null) add(tailscaleStatus)
+                if (httpFetchPort != null) add(httpFetch)
                 if (telemetryUploadPort != null) add(telemetryUpload)
             }
 
     private fun unavailable(): ToolExecution =
         ToolExecution(errorCode = "tool_unavailable", errorMessage = "this tool is not available in the current build")
+
+    private fun invalidParameter(message: String): ToolExecution =
+        ToolExecution(errorCode = "invalid_parameter", errorMessage = message)
 
     internal fun tailscaleSnapshotJson(snapshot: AgentTailscaleSnapshot): JsonObject =
         buildJsonObject {
@@ -648,7 +798,13 @@ private const val MAX_PROBE_MANY = 20
 private const val DEFAULT_PROBE_MANY = 10
 private const val MAX_PROBE_MANY_MS = 90_000L
 
-internal fun isAllowedProbeUrl(raw: String): Boolean {
+private const val DEFAULT_FETCH_BYTES = 64 * 1024
+private const val MAX_FETCH_BYTES = 256 * 1024
+private const val MAX_FETCH_HEADERS = 16
+private const val MAX_FETCH_HEADER_CHARS = 2048
+private val HEADER_NAME = Regex("[A-Za-z0-9-]+")
+
+internal fun isAllowedHttpUrl(raw: String): Boolean {
     if (raw.length > 2048 || raw.any { it.isWhitespace() }) {
         return false
     }

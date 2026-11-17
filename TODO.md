@@ -13,7 +13,7 @@
 - [ ] **`conductor/` 旧诊断文件进入新会话**：新会话的 `file_list` 能看到 `vfs-failure-handoff.md`、`session-trace-w84.md`、`session-transcript-w84.md`、`w84-transcript.md` 和 `w82-*`；模型因此直接知道了 84 的事。先定保留/归档规则，或在新会话开始前把这些一次性文件移出工作目录。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
 - [ ] **VFS 大文件批量读取吞吐**：93 新会话在当前蜂窝 + Tailscale 路径上实测：975 KB 静态文件 `wc -c` 25–26 秒、152 KB 静态文件 4.5 秒、1.04 MB `.runtime/trace.md` 27–28 秒；`stat` 只要 0.2 秒、`head -c 200` 0.37 秒，连续重复读也仍慢。说明瓶颈是 provider→Portal 的批量读取吞吐，不是 FUSE stat 或 runtime 生成；先换 Wi-Fi 复测，再决定是否做 provider 分块/压缩或继续压 trace 体积。Conductor 那次 30.5 秒的 `cpk_docker_run` 就是这个 `wc -c`。
-- [ ] **服务重启后 core 不可达（83 低端机实测）**：BIRD P50S_PRO / Android 11 上，用户停止并重开 Service 后，`network_snapshot` 连续三次（10:25 / 10:27 / 10:31）返回 `core.running=false`、`groupCount=0`、`outboundCount=0`，错误 `groups stream recv: rpc error: code = Unavailable desc = error reading from server: EOF`；同一时刻 `vpnActive=true`、`serviceMode=vpn`，未见自行恢复。下一步：用 Conductor 的文件工具读 crash/OOM reports 和 AppLog，查 CFG `service_start` / `service_stop` / `vpn_session_id`；判断是 core 进程没起来、被杀，还是 `CommandClient` 的 stream 没重连；在 .83 上复现并记录。若 core 真没起来，补一个明确的「服务已启动但核心不可达」状态和重启入口，不能只显示 VPN 已连接。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
+- [ ] **服务重启后 core 不可达（83 低端机实测）**：BIRD P50S_PRO / Android 11 上，用户停止并重开 Service 后，`system_snapshot` 连续三次（10:25 / 10:27 / 10:31）返回 `core.reachable=false`、`groupCount=0`、`outboundCount=0`，错误 `groups stream recv: rpc error: code = Unavailable desc = error reading from server: EOF`；同一时刻 `vpnServiceActive=true`、`serviceMode=vpn`，未见自行恢复。下一步：用 Conductor 的文件工具读 crash/OOM reports 和 AppLog，查 CFG `service_start` / `service_stop` / `vpn_session_id`；判断是 core 进程没起来、被杀，还是 `CommandClient` 的 stream 没重连；在 .83 上复现并记录。若 core 真没起来，补一个明确的「服务已启动但核心不可达」状态和重启入口，不能只显示 VPN 已连接。排障见 [`docs/agent-runtime.md`](docs/agent-runtime.md)。
 
 ### P2 数据面与能力
 
@@ -24,7 +24,7 @@
 - [ ] **数据面 Phase C：自省与证据**：`export_log_tail`、`self_test` 固定套件、`conductor_eval` 开关；脱敏 `diagnostics_network_history`（最近 N 条 network/service/VPN 事件），报告写工作区并可用 Taildrop 交给 Mini。
 - [ ] **Provider capability 剩余**：`stream_options.include_usage`、`max_completion_tokens`、Azure 类鉴权；DeepSeek `none`/`max`、xAI `xhigh` 等不能三家共用的档位。现有矩阵见 `ModelLimits`。
 - [ ] **网络诊断**：`dns_lookup(domain, via=direct|outbound)`、`route_decision(domain)`；libbox 没有 DNS/route API，先做能落地的部分。83 低端机实测：经 `CF-cf-67` 访问 Baidu 返回 200 / 304ms，`github.com`、`api.github.com`、`www.google.com` 都是 `no such host`（约 10s），`release_notes` 连续 3 次因 `github.com` 解析失败；模型只能从 probe 结果猜 DNS 故障。
-- [ ] **`probe_via_node` 的结果分类**：加 `http_fetch_probe(outbound, url, max_bytes)`，把 HEAD 被拒和节点坏分开；输出区分 DNS / TCP / TLS / HTTP 阶段。83 实测 `https://1.1.1.1/` 返回 `ok=false`，但错误是证书没有 IP SAN，TCP 和 TLS 已到对端；`speed_test` 后续。
+- [ ] **`http_fetch` 的阶段分类**：工具已落地（GET、可选出口/headers/max_bytes，200 有 body，非 200 只回状态码），剩余把 DNS / TCP / TLS / HTTP 阶段从 libbox 异常里拆出来。83 实测 `https://1.1.1.1/` 返回 `ok=false`，但错误是证书没有 IP SAN，TCP 和 TLS 已到对端；`speed_test` 后续。
 - [ ] **批量确认：预览与分级**：整批预检合成一张卡；`Approve rest of turn` 只覆盖同工具或只读工具，`DATA_EGRESS`/MCP 写工具逐次确认。
 - [ ] **工具编排计划（tool_plan / DAG）**：把有依赖的多步调用压成一次提交，支持字段绑定、`when`/`retry`/`fallback`；先只读工具。目标是减少往返和 token。
 - [ ] **对话级 LLM 摘要**：现有只做旧大 tool observation 的确定性压缩；assistant/user 长文本和跨 turn 的语义摘要未做。

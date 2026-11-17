@@ -27,7 +27,7 @@ Agent 是最终形态；Phase 1 先做 Conductor 命令面板，把能力集和�
 - Remote Control：CommandClient / CommandTarget 的 Status、Groups、Outbounds、Log、ClashMode、Connections。
 - Agent POC（wonder.9）：
   - `AgentToolRegistry`：按名称分发的运行时工具注册表，JSON schema 校验、确认策略、结果 sanitizer。
-  - 工具：`list_nodes`、`network_snapshot`、`probe_via_node`。
+  - 工具：`list_nodes`、`system_snapshot`、`probe_via_node`。
   - `AgentIntentParser`：无模型时的确定性兜底。
   - `AgentViewModel` / `AgentScreen`：手动调用、确认弹窗、结果展示。
   - JVM 单测覆盖注册表、参数校验、确认、sanitizer。

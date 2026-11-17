@@ -23,7 +23,7 @@ class CommandNodeSnapshotSource(
     override fun snapshot(): NodeSnapshot {
         val current = state()
         return NodeSnapshot(
-            coreRunning = current.connected,
+            commandClientConnected = current.connected,
             remoteControl = remoteControl(),
             groups = current.groups,
             outbounds = current.outbounds,

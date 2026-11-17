@@ -9,12 +9,12 @@ class AgentPromptStabilityTest {
         AgentToolCatalog(
             listOf(
                 AgentToolDefinition(
-                    name = "network_snapshot",
-                    description = "Show the current network environment.",
+                    name = "system_snapshot",
+                    description = "Show the current system state.",
                     permission = AgentPermission.READ_NETWORK_STATE,
                     parameters = emptyList(),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
-                    category = "network",
+                    category = "system",
                     aliases = listOf("network", "network status"),
                     core = true,
                 ),
@@ -30,7 +30,7 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("route_call"))
         assertTrue(first.contains("Registered capability snapshot"))
         assertTrue(first.contains("not exhaustive"))
-        assertTrue(first.contains("network_snapshot"))
+        assertTrue(first.contains("system_snapshot"))
         assertTrue(first.contains("locale=zh"))
         assertTrue(first.contains("If you know a capability's exact name and arguments"))
         assertTrue(first.contains("Translate the user's intent into English keywords"))
@@ -54,7 +54,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("725912de6563069f446dd9c883e1211a7ea23f96c02e8c7088756c99f98f1598", digest)
+        assertEquals("3e9be045c11a653f5b49295855dcbeeeb513edbe4df2fb78237b08a7421dc45e", digest)
     }
 
     @Test

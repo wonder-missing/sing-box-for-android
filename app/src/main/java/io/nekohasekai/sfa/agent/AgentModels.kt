@@ -20,6 +20,7 @@ enum class AgentPermission(
     FILE_TRANSFER("file_transfer"),
     DATA_EGRESS("data_egress"),
     USER_INTERACTION("user_interaction"),
+    READ_APP_STATE("read_app_state"),
 }
 
 enum class ConfirmationPolicy {
@@ -305,7 +306,8 @@ data class AgentGroup(
 )
 
 data class NodeSnapshot(
-    val coreRunning: Boolean,
+    /** True when the CommandClient is connected to the core, not a process-liveness signal. */
+    val commandClientConnected: Boolean,
     val remoteControl: Boolean,
     val groups: List<AgentGroup> = emptyList(),
     val outbounds: List<AgentNode> = emptyList(),
@@ -329,11 +331,12 @@ data class DeviceSnapshot(
     val networkType: String = "unknown",
     val localTime: String? = null,
     val metered: Boolean? = null,
-    val vpnActive: Boolean? = null,
+    val serviceActive: Boolean? = null,
+    val vpnServiceActive: Boolean? = null,
     val serviceMode: String? = null,
-    val batteryOptimizationIgnored: Boolean? = null,
-    val powerSave: Boolean? = null,
-    val doze: Boolean? = null,
+    val batteryOptimizationExempt: Boolean? = null,
+    val batterySaver: Boolean? = null,
+    val dozeMode: Boolean? = null,
     val error: String? = null,
 )
 
@@ -357,6 +360,31 @@ interface ProbePort {
         url: String,
         cancellation: ToolCancellation? = null,
     ): ProbeOutcome
+}
+
+data class HttpFetchOutcome(
+    val statusCode: Int? = null,
+    val latencyMs: Long? = null,
+    val content: String? = null,
+    val bytes: Int = 0,
+    val truncated: Boolean = false,
+    val via: String? = null,
+    val error: String? = null,
+)
+
+/**
+ * Fetch text through the running core's HTTP client. The optional outbound uses
+ * the same temporary global selection as ProbePort; a null outbound keeps the
+ * current selection.
+ */
+interface HttpFetchPort {
+    fun fetch(
+        outbound: String?,
+        url: String,
+        headers: List<Pair<String, String>>,
+        maxBytes: Int,
+        cancellation: ToolCancellation? = null,
+    ): HttpFetchOutcome
 }
 
 interface NodeSelectionPort {
