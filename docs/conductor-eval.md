@@ -54,7 +54,7 @@ prompt：「你能做什么？」
 |---|---|
 | 看看哪些设备在线 | `device online` → `tailscale_status` |
 | 把这段日志投递到 Mac Mini | `send file peer` → `taildrop_send` |
-| 读一下这个文件的最后几行 | `file tail last lines` → `file_tail` |
+| 读一下这个文件的最后几行 | `read file last lines` → `file_read`（`last_lines`） |
 | 在文件里搜一下 error | `file grep search` → `file_grep` |
 | 让我挑几个文件给你 | `request files picker` → `request_files` |
 | 让我选一下是继续还是停下 | `ask user question card` → `ask_user` |

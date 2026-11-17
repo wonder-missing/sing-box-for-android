@@ -351,6 +351,8 @@ enum class InvocationSource {
 
 `file_append` 在 workspace 内创建或追加文本，`file_edit` 用 exact-match 的 `edits[]` 做原子替换；`old_text` 默认必须唯一，`replace_all=true` 才替换全部，任一 edit 失败则整次不写。`file_read` 和 `file_stat` 返回 `sha256`，`file_edit` 可带 `expected_sha256` 防止覆盖已变化的文件。不要给 `file_write` 加 create/replace/append 三种模式，保持三个工具各自单一契约。
 
+wonder.95 把 `file_tail` 合并进 `file_read` 的 `last_lines`，并删除 `file_mkdir`（`file_write` 会自动创建父目录）。历史章节里的 `file_tail` / `file_mkdir` 只代表当时的版本，不再是可调用工具；`file_stat` 保留 Unix 语义。
+
 探测会临时切换 outbound，`finally` 里恢复原选择；App 进程在探测中被杀时，运行中的 core 可能停留在探测节点，直到重启。工具描述要写清这条边界。
 
 `probe_many` 是同一语义的批处理：一次确认，按顺序探测最多 20 个节点，约 90 秒后停止并标记 `truncated`；它仍然串行切换全局选择，不是 per-request outbound binding。

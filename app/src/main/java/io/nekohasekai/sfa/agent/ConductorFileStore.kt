@@ -217,7 +217,7 @@ class ConductorFileStore(
         if (!file.isFile) throw IllegalArgumentException("Not a file: $path")
         if (file.length() > MAX_GREP_BYTES) {
             throw IllegalArgumentException(
-                "File is larger than $MAX_GREP_BYTES bytes; use file_tail or file_read with a line range.",
+                "File is larger than $MAX_GREP_BYTES bytes; use file_read with last_lines or a line range.",
             )
         }
         val pattern = if (regex) Regex(query) else null

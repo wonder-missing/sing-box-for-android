@@ -121,7 +121,8 @@ class AgentDataTools(
                     name = "file_read",
                     description =
                         "Read a UTF-8 text file under the working directory. Without offset/limit it returns " +
-                            "up to max_bytes from the start; with offset/limit it reads that 0-based line range. " +
+                            "up to max_bytes from the start; with offset/limit it reads that 0-based line range; " +
+                            "with last_lines it reads the end of the file. last_lines wins over offset/limit. " +
                             "Binary files return metadata only.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
@@ -145,6 +146,13 @@ class AgentDataTools(
                                 description = "Number of lines to read. Defaults to 200; capped at 2000.",
                             ),
                             AgentParameterSpec(
+                                name = "last_lines",
+                                type = AgentParameterType.INTEGER,
+                                required = false,
+                                description =
+                                    "Read the last N lines instead of a start/offset range. Capped at 2000.",
+                            ),
+                            AgentParameterSpec(
                                 name = "max_bytes",
                                 type = AgentParameterType.INTEGER,
                                 required = false,
@@ -164,8 +172,20 @@ class AgentDataTools(
                 val maxBytes = AgentJson.int(args, "max_bytes") ?: ConductorFileStore.DEFAULT_READ_BYTES
                 val offset = AgentJson.int(args, "offset")
                 val limit = AgentJson.int(args, "limit")
+                val lastLines = AgentJson.int(args, "last_lines")
                 return runCatching {
-                    if (offset != null || limit != null) {
+                    if (lastLines != null) {
+                        val result = fileStore.tail(path, lastLines, maxBytes)
+                        buildJsonObject {
+                            put("path", result.path)
+                            put("size", result.size)
+                            put("sha256", fileStore.sha256(fileStore.resolveRead(result.path)))
+                            put("offset", result.offset)
+                            put("lineCount", result.lineCount)
+                            put("truncated", result.truncated)
+                            put("text", AgentSanitizer.scrubForModelRead(result.text))
+                        }
+                    } else if (offset != null || limit != null) {
                         val result =
                             fileStore.readLines(
                                 path,
@@ -191,63 +211,6 @@ class AgentDataTools(
                             put("truncated", result.truncated)
                             put("text", AgentSanitizer.scrubForModelRead(result.text))
                         }
-                    }
-                }.fold(
-                    onSuccess = { ToolExecution(output = it) },
-                    onFailure = { failure(it) },
-                )
-            }
-        }
-
-    private val fileTail =
-        object : AgentTool {
-            override val definition =
-                AgentToolDefinition(
-                    name = "file_tail",
-                    description = "Read the last N lines of a UTF-8 text file under the working directory.",
-                    permission = AgentPermission.READ_FILES,
-                    parameters =
-                        listOf(
-                            AgentParameterSpec(
-                                name = "path",
-                                type = AgentParameterType.STRING,
-                                required = true,
-                                description = "Path relative to the working directory.",
-                            ),
-                            AgentParameterSpec(
-                                name = "lines",
-                                type = AgentParameterType.INTEGER,
-                                required = false,
-                                description = "Number of trailing lines. Defaults to 50; capped at 2000.",
-                            ),
-                            AgentParameterSpec(
-                                name = "max_bytes",
-                                type = AgentParameterType.INTEGER,
-                                required = false,
-                                description = "Maximum bytes to return. Defaults to 65536; capped at 262144.",
-                            ),
-                        ),
-                    confirmationPolicy = ConfirmationPolicy.NEVER,
-                    category = "files",
-                    aliases = listOf("tail file", "last lines", "end of file"),
-                )
-
-            override suspend fun execute(
-                args: JsonObject,
-                cancellation: ToolCancellation,
-            ): ToolExecution {
-                val path = AgentJson.string(args, "path") ?: return missingPath()
-                val lines = AgentJson.int(args, "lines") ?: ConductorFileStore.DEFAULT_TAIL_LINES
-                val maxBytes = AgentJson.int(args, "max_bytes") ?: ConductorFileStore.DEFAULT_READ_BYTES
-                return runCatching {
-                    val result = fileStore.tail(path, lines, maxBytes)
-                    buildJsonObject {
-                        put("path", result.path)
-                        put("size", result.size)
-                        put("offset", result.offset)
-                        put("lineCount", result.lineCount)
-                        put("truncated", result.truncated)
-                        put("text", AgentSanitizer.scrubForModelRead(result.text))
                     }
                 }.fold(
                     onSuccess = { ToolExecution(output = it) },
@@ -570,37 +533,6 @@ class AgentDataTools(
                     )
                 }.getOrElse { failure(it) }
             }
-        }
-
-    private val fileMkdir =
-        object : AgentTool {
-            override val definition =
-                AgentToolDefinition(
-                    name = "file_mkdir",
-                    description = "Create a directory inside the Conductor workspace.",
-                    permission = AgentPermission.WRITE_FILES,
-                    parameters =
-                        listOf(
-                            AgentParameterSpec(
-                                name = "path",
-                                type = AgentParameterType.STRING,
-                                required = true,
-                                description = "Directory path relative to the working directory; it must be under conductor/.",
-                            ),
-                        ),
-                    confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
-                    category = "files",
-                    aliases = listOf("mkdir", "create directory"),
-                    confirmationReason = "This creates a directory inside the Conductor workspace.",
-                )
-
-            override suspend fun execute(
-                args: JsonObject,
-                cancellation: ToolCancellation,
-            ): ToolExecution =
-                withPath(args) { path ->
-                    ToolExecution(output = fileEntryJson(fileStore.mkdir(path)))
-                }
         }
 
     private val fileDelete =
@@ -1203,12 +1135,10 @@ class AgentDataTools(
                 add(fileList)
                 add(fileStat)
                 add(fileRead)
-                add(fileTail)
                 add(fileGrep)
                 add(fileWrite)
                 add(fileAppend)
                 add(fileEdit)
-                add(fileMkdir)
                 add(fileDelete)
                 if (diagnostics != null) add(diagnosticsExport)
                 if (releaseNotes != null) add(releaseNotesTool)

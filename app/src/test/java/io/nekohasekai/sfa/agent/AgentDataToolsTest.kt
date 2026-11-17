@@ -86,11 +86,11 @@ class AgentDataToolsTest {
     }
 
     @Test
-    fun fileTailAndGrepWorkThroughTheRegistry() {
+    fun fileReadTailAndGrepWorkThroughTheRegistry() {
         store.writeText("conductor/lines.txt", "a\nb\nc\nd")
         val registry = AgentToolRegistry(tools.all)
 
-        val tail = registry.exec("file_tail", """{"path":"conductor/lines.txt","lines":1}""")
+        val tail = registry.exec("file_read", """{"path":"conductor/lines.txt","last_lines":1}""")
         assertTrue(tail.errorMessage ?: "", tail.ok)
         assertEquals("d", tail.output!!.string("text"))
 
@@ -381,7 +381,6 @@ class AgentDataToolsTest {
             listOf(
                 "file_list",
                 "file_read",
-                "file_tail",
                 "file_grep",
                 "file_stat",
                 "file_write",
