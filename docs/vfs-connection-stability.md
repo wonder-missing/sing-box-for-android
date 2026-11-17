@@ -1,6 +1,6 @@
 # VFS 连接稳定性
 
-状态：2026-11-17，wonder.90 实现。代码见 `VfsRuntime`、`VfsSharingService`、`VfsConnectionManager`、`VfsSharingPolicy`。
+状态：2026-11-17，wonder.92 实现。代码见 `VfsRuntime`、`VfsSharingService`、`VfsConnectionManager`、`VfsSharingPolicy`。可重复的短测/夜间浸泡流程见 [`vfs-soak-test.md`](vfs-soak-test.md)。
 
 ## 问题
 
