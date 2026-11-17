@@ -251,18 +251,31 @@ class AgentToolsTest {
     }
 
     @Test
-    fun httpFetchKeepsStatusCodeWithoutBodyForNon200() {
+    fun httpFetchReturnsStatusHeadersAndBodyForNon200() {
         val fetch = FakeHttpFetchPort(
-            HttpFetchOutcome(statusCode = 404, latencyMs = 9, via = "current_selection"),
+            HttpFetchOutcome(
+                statusCode = 404,
+                statusText = "Not Found",
+                latencyMs = 9,
+                content = "missing",
+                contentType = "text/plain; charset=utf-8",
+                headers = mapOf("X-Test" to listOf("yes")),
+                bytes = 7,
+                via = "current_network",
+            ),
         )
         val registry = buildTestRegistry(httpFetchPort = fetch)
 
         val result = registry.userExec("http_fetch", """{"url":"https://example.com/missing"}""")
 
         assertTrue(result.errorMessage ?: "", result.ok)
-        assertEquals(404, result.output!!.int("statusCode"))
-        assertNull(result.output!!["text"])
-        assertEquals("current_selection", result.output!!.string("via"))
+        val output = result.output!!
+        assertEquals(404, output.int("statusCode"))
+        assertEquals("Not Found", output.string("statusText"))
+        assertEquals("missing", output.string("text"))
+        assertEquals("text/plain; charset=utf-8", output.string("contentType"))
+        assertEquals("yes", output.obj("headers").array("X-Test").single().let { (it as JsonPrimitive).content })
+        assertEquals("current_network", output.string("via"))
     }
 
     @Test

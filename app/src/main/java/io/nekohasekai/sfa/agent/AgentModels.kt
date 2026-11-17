@@ -356,10 +356,14 @@ interface ProbePort {
 
 data class HttpFetchOutcome(
     val statusCode: Int? = null,
+    val statusText: String? = null,
     val latencyMs: Long? = null,
     val content: String? = null,
+    val contentType: String? = null,
+    val headers: Map<String, List<String>> = emptyMap(),
     val bytes: Int = 0,
     val truncated: Boolean = false,
+    val binary: Boolean = false,
     val via: String? = null,
     val error: String? = null,
 )

@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.agent
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -578,13 +579,12 @@ class AgentTools(
                 AgentToolDefinition(
                     name = "http_fetch",
                     description =
-                        "Send one HTTP request from this device through the running core and return text. " +
+                        "Send one standard HTTP request from this device using the Android HTTP client. " +
                             "method defaults to GET; UTF-8 body is allowed for methods that permit one. " +
-                            "With outbound, temporarily selects that node and restores the previous selection. " +
-                            "Returns statusCode and text for HTTP 200; other HTTP statuses carry statusCode without " +
-                            "a body because the core HTTP client throws for them. Response headers and content-type " +
-                            "are not available. max_bytes truncates the returned text, not the download. " +
-                            "Local-only; Remote Control is rejected.",
+                            "Returns statusCode, statusText, response headers, contentType and body text for any " +
+                            "HTTP status. max_bytes caps the body bytes read. With outbound, temporarily selects " +
+                            "that node in the running core and restores the previous selection; a named outbound " +
+                            "is local-only and Remote Control is rejected.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -630,17 +630,16 @@ class AgentTools(
                                 name = "max_bytes",
                                 type = AgentParameterType.INTEGER,
                                 required = false,
-                                description = "Maximum returned text bytes. Defaults to 65536; capped at 262144.",
+                                description = "Maximum body bytes read. Defaults to 65536; capped at 262144.",
                             ),
                         ),
                     confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
                     category = "network",
                     aliases = listOf("fetch", "http get", "download text", "request text"),
                     confirmationReason =
-                        "This sends an HTTP request from this device through the running core. " +
-                            "A named outbound temporarily changes the core's selection; app traffic may briefly " +
-                            "use that node. If the app process is killed mid-fetch, the core can stay on that " +
-                            "node until it restarts.",
+                        "This sends an HTTP request from this device. A named outbound temporarily changes the " +
+                            "core's selection; app traffic may briefly use that node. If the app process is killed " +
+                            "mid-fetch, the core can stay on that node until it restarts.",
                     allowedUrlParameter = "url",
                 )
 
@@ -703,8 +702,23 @@ class AgentTools(
                         outbound?.let { put("outbound", it) }
                         result.via?.let { put("via", it) }
                         result.statusCode?.let { put("statusCode", it) }
+                        result.statusText?.let { put("statusText", it) }
+                        result.contentType?.let { put("contentType", it) }
+                        if (result.headers.isNotEmpty()) {
+                            putJsonObject("headers") {
+                                result.headers.forEach { (name, values) ->
+                                    put(
+                                        name,
+                                        buildJsonArray {
+                                            values.forEach { add(it) }
+                                        },
+                                    )
+                                }
+                            }
+                        }
                         put("bytes", result.bytes)
                         put("truncated", result.truncated)
+                        if (result.binary) put("binary", true)
                         result.content?.let { put("text", AgentSanitizer.scrubForModelRead(it)) }
                         result.latencyMs?.let { put("latencyMs", it) }
                         result.error?.let { put("error", it) }
