@@ -209,14 +209,14 @@ class AgentRuntimeTest {
     }
 
     @Test
-    fun rapidToolFailuresStopTheTurn() {
+    fun rapidToolFailuresAskTheModelToFinish() {
         val calls = (1..10).map { index -> ToolCall("call_$index", "list_nodes", "{}") }
         val model =
             ScriptedModel(
-                calls
+                (calls
                     .map { call ->
                         AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null)
-                    }.toMutableList(),
+                    } + response("stopped after failures")).toMutableList(),
             )
         val executor =
             FakeExecutor(listOf(listNodes)) { call, _ ->
@@ -237,12 +237,14 @@ class AgentRuntimeTest {
 
         val result = runBlocking { runtime.runTurn("show nodes", emptyList(), onEvent = {}, confirm = { true }) }
 
-        assertTrue(result.outcome is TurnOutcome.Failed)
-        assertEquals(
-            AgentTurnErrorCode.TOOL_FAILURE_LOOP,
-            (result.outcome as TurnOutcome.Failed).error.code,
-        )
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals("stopped after failures", (result.outcome as TurnOutcome.Completed).answer)
         assertEquals(10, result.messages.count { it is AgentMessage.Tool })
+        assertTrue(
+            result.messages
+                .filterIsInstance<AgentMessage.System>()
+                .any { it.content.contains("tool_failure_loop") && it.content.contains("Do not call more tools") },
+        )
         assertTrue(validateTranscriptPairing(result.messages))
     }
 

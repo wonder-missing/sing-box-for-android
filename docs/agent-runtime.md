@@ -4,7 +4,7 @@
 最后更新：2026-11-18
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
-当前状态（2026-11-18，wonder.A0）：生产默认不设工具轮数上限，10 次工具失败集中在 5 秒内会中断当前 turn；工具耗时的 `wait`/`work` 已拆分（92）；trace 与会话恢复已移出主线程（93），草稿也随异步 restore 加载（94）；更新后服务恢复只被当前版本的未读 crash 阻塞（92）；`web_search` 来源已规范化，`probe_many` 结束后恢复全局选择。VFS 运行时不在本文范围，见 [`vfs-connection-stability.md`](vfs-connection-stability.md)。本文其余部分是 Phase 2a/2b 的设计记录，历史小节不代表当前行为。
+当前状态（2026-11-18，wonder.A0）：生产默认不设工具轮数上限，10 次工具失败集中在 5 秒内会注入 `tool_failure_loop` 事件、禁用工具并再调用一次模型收尾；工具耗时的 `wait`/`work` 已拆分（92）；trace 与会话恢复已移出主线程（93），草稿也随异步 restore 加载（94）；更新后服务恢复只被当前版本的未读 crash 阻塞（92）；`web_search` 来源已规范化，`probe_many` 结束后恢复全局选择。VFS 运行时不在本文范围，见 [`vfs-connection-stability.md`](vfs-connection-stability.md)。本文其余部分是 Phase 2a/2b 的设计记录，历史小节不代表当前行为。
 
 本文只定 Phase 2a / 2b 的运行时：OpenAI-compatible BYOK（DeepSeek / xAI / Custom）、自然语言入口、结构化 tool call、确认暂停与恢复、有界循环。设备注册表和跨设备能力仍留在上位文档的 Phase 2（设备注册表部分）/ 3 / 4。
 
@@ -12,7 +12,7 @@
 
 摘要：
 
-- Phase 2a 最初最多 12 轮工具调用作为防死循环 guard；当前生产默认不设轮数上限，改由 5 秒内 10 次工具失败中断和 turn 总超时兜底，Stop/取消/流式已补齐。
+- Phase 2a 最初最多 12 轮工具调用作为防死循环 guard；当前生产默认不设轮数上限，改由 5 秒内 10 次工具失败的 `tool_failure_loop` 事件、模型收尾和 turn 总超时兜底，Stop/取消/流式已补齐。
 - Phase 2b：Stop、真取消、流式回答、上下文压缩、probe/telemetry 可取消已随 wonder.36 完成；同时把工具暴露收敛为 `route_call` / `search_tools` 两个静态元工具，真实工具 schema 通过目录搜索按需注入（§7.1），并修正会打断前缀缓存的裁剪和 `tools` 置空问题。
 - 使用结构化 tool call，不解析文本 ReAct。
 - `AgentRuntime` 是手写薄层，纯 Kotlin/JVM 可测；provider key 走 App Settings 的 BYOK 入口，Android Keystore 加密。
@@ -24,7 +24,7 @@
 目标：
 
 - 非 `/` 文本进入模型，模型只能调用注册表里的 tool。
-- 当前生产默认不设 `maxToolRounds` 上限（Phase 2a 最初为 12）；防死循环改由 5 秒内 10 次工具失败中断和 turn 总超时负责，模型调工具，App 执行，结果回模型，模型继续或给最终回答。
+- 当前生产默认不设 `maxToolRounds` 上限（Phase 2a 最初为 12）；防死循环改由 5 秒内 10 次工具失败事件、模型收尾和 turn 总超时负责，模型调工具，App 执行，结果回模型，模型继续或给最终回答。
 - Phase 2b 补 Stop、真取消和流式；工具轮数仍由运行时 guard 控制。
 - Phase 2b 把工具暴露改为静态元工具 + 目录搜索：首请求只带 `route_call` / `search_tools`，真实工具 schema 通过搜索结果按需进入 transcript；system prompt 和 `tools` 参数在会话内保持逐字节稳定。
 - 所有写操作和网络状态变更必须经过 App 侧确认，模型不能绕过。
@@ -457,7 +457,7 @@ Turn 开始
   while true:
     模型调用（step += 1）
     如果没有 tool call: 完成
-    如果 5 秒内累计 10 次工具失败: 中断 turn
+    如果 5 秒内累计 10 次工具失败: 注入事件、禁用工具，让模型收尾
     对每个 tool call:
       如果 search_tools -> 本地目录查询，回填 observation，continue
       如果 route_call -> 解析 envelope，还原成内层 ToolCall
@@ -475,7 +475,7 @@ wonder.36 的 2B 运行时补充：
 - 模型调用优先走 `streamingModel`；内容 delta 发 `AssistantDelta`，最终 `AssistantMessage` 用完整文本收尾。Stop 调 `AgentRuntime.cancel()`，先置取消标志，再取消 OkHttp `Call`、probe/telemetry 的阻塞 IO。
 - 每个 turn 开始前对旧的大 tool observation 做确定性压缩，保留最近 user turn；压缩后的历史通过 `TurnResult.compactedHistory` 回传 ViewModel 并持久化。UI items 仍保留完整结果。
 
-`step` 是模型调用序号。`maxToolRounds` 仍保留给测试或显式配置；生产默认不设上限，防死循环改由 5 秒内 10 次工具失败的中断器和 30 分钟 turn 超时负责。
+`step` 是模型调用序号。`maxToolRounds` 仍保留给测试或显式配置；生产默认不设上限，防死循环改由 5 秒内 10 次工具失败的 `tool_failure_loop` 事件、模型收尾和 30 分钟 turn 超时负责。
 
 ### Turn 收尾不变量
 
@@ -932,7 +932,7 @@ Phase 2a 默认值：
 
 | 项 | 值 |
 |---|---|
-| 每 turn 模型调用 | 无默认轮数上限；5 秒内 10 次工具失败中断，另受 turn 总超时和 3 次瞬态重试控制 |
+| 每 turn 模型调用 | 无默认轮数上限；5 秒内 10 次工具失败注入事件并让模型收尾，另受 turn 总超时和 3 次瞬态重试控制 |
 | 模型调用超时 | 120s |
 | turn 总超时 | 1,800s，确认等待不计入 |
 | 单次输出 | 模型公布上限，受窗口减输入约束（DeepSeek V4 Flash 384K） |
@@ -950,7 +950,7 @@ Phase 2a 默认值：
 
 Phase 2b 增加：
 
-- 工具轮数 guard 仍可显式配置；生产默认不设上限，改为 5 秒内 10 次工具失败中断。
+- 工具轮数 guard 仍可显式配置；生产默认不设上限，改为 5 秒内 10 次工具失败注入 `tool_failure_loop` 事件并让模型收尾。
 - turn 总超时仍按 1,800 秒上限运行，确认等待不计入；不再用 `maxToolRounds` 推导默认上限。
 - 用户点 Stop 调 `AgentRuntime.cancel()`，进入 `Cancelling`，等待当前模型请求和 tool 确认取消。确认后返回 partial transcript 和 `TurnOutcome.Cancelled`，才允许下一轮输入。
 - 模型请求用 OkHttp 的 `Call.cancel()`，保证 Stop 1s 内 UI 可输入。
@@ -1154,7 +1154,7 @@ Turn 级 UI 处理：
 | `turn_cancelled` | 用户 Stop/退出 | 回到 Idle |
 | `tool_cancel_timeout` | Stop 1s 内工具未确认取消 | 保持 isRunning，提示正在停止，禁止新 turn |
 | `step_budget_exceeded` | 显式配置的 maxToolRounds 耗尽，或禁用工具后仍请求工具 | 提示任务未完成，可继续追问 |
-| `tool_failure_loop` | 5 秒内累计 10 次工具失败 | 中断当前 turn，提示工具连续失败 |
+| `tool_failure_loop` | 5 秒内累计 10 次工具失败 | 注入 `tool_failure_loop` 事件、禁用工具，再调用一次模型收尾；模型仍请求工具才失败 |
 | `content_filtered` | 模型拒绝 | 原样提示，不重试 |
 | `output_truncated` | `finish_reason=length` 且无可执行 tool call | 展示截断回答，提示可重试 |
 

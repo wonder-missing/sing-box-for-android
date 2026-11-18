@@ -195,6 +195,7 @@ class AgentRuntime(
         var toolRounds = 0
         var turnObservationChars = 0
         var toolsEnabled = true
+        var failureStorm = false
         var budgetNoticeShown = false
         val partialContent = StringBuilder()
         val toolFailureTimes = ArrayDeque<Long>()
@@ -404,7 +405,14 @@ class AgentRuntime(
                     transcript,
                     startSize,
                     TurnOutcome.Failed(
-                        AgentError(AgentTurnErrorCode.STEP_BUDGET_EXCEEDED, "The tool-step limit was reached."),
+                        if (failureStorm) {
+                            AgentError(
+                                AgentTurnErrorCode.TOOL_FAILURE_LOOP,
+                                "The model kept calling tools after the failure loop was reported.",
+                            )
+                        } else {
+                            AgentError(AgentTurnErrorCode.STEP_BUDGET_EXCEEDED, "The tool-step limit was reached.")
+                        },
                     ),
                     onEvent,
                 )
@@ -468,20 +476,42 @@ class AgentRuntime(
                 return registerToolResult(observation.ok)
             }
 
-            fun abortToolFailureStorm(remaining: List<ToolCall>): TurnResult {
-                appendCancelled(transcript, remaining, "tool failure storm", onEvent)
-                return finish(
-                    transcript,
-                    startSize,
-                    TurnOutcome.Failed(
-                        AgentError(
-                            AgentTurnErrorCode.TOOL_FAILURE_LOOP,
-                            "Too many tool failures in a short time; the turn was stopped.",
-                            retryable = true,
+            fun stopForFailureStorm(remaining: List<ToolCall>) {
+                remaining.forEach { call ->
+                    val observation =
+                        ToolObservation(
+                            ok = false,
+                            tool = call.name,
+                            errorCode = "tool_failure_loop",
+                            message = "This call was not run because tool execution stopped after repeated failures.",
+                        )
+                    transcript.add(observation.asToolMessage(call.name, call.id))
+                    onEvent(
+                        AgentEvent.ToolFinished(
+                            ToolResultView(
+                                call.id,
+                                call.name,
+                                false,
+                                null,
+                                observation.errorCode,
+                                observation.message,
+                                false,
+                            ),
                         ),
+                    )
+                }
+                transcript.add(
+                    AgentMessage.System(
+                        "[conductor:event tool_failure_loop count=${config.maxRapidToolFailures} " +
+                            "window_ms=${config.rapidToolFailureWindowMs}]\n" +
+                            "Tool execution was stopped because too many tool calls failed too quickly. " +
+                            "Do not call more tools. Explain to the user what failed and answer with the " +
+                            "information already collected.",
                     ),
-                    onEvent,
                 )
+                onEvent(AgentEvent.Notice("Tool failures repeated; stopping tool use and asking the model to summarize."))
+                toolsEnabled = false
+                failureStorm = true
             }
 
             for (index in executable.indices) {
@@ -552,7 +582,8 @@ class AgentRuntime(
                             )
                         }
                     if (recordObservation(call, observation)) {
-                        return abortToolFailureStorm(executable.drop(index + 1) + extra)
+                        stopForFailureStorm(executable.drop(index + 1) + extra)
+                        break
                     }
                     continue
                 }
@@ -562,7 +593,8 @@ class AgentRuntime(
                     onEvent(AgentEvent.ToolStarted(view))
                     onEvent(AgentEvent.StateChanged(TurnState.RunningTool(step, view)))
                     if (recordObservation(call, prepared.observation)) {
-                        return abortToolFailureStorm(executable.drop(index + 1) + extra)
+                        stopForFailureStorm(executable.drop(index + 1) + extra)
+                        break
                     }
                     continue
                 }
@@ -624,8 +656,14 @@ class AgentRuntime(
                 }
 
                 if (recordObservation(executed, result.toObservation(), confirmationMs)) {
-                    return abortToolFailureStorm(executable.drop(index + 1) + extra)
+                    stopForFailureStorm(executable.drop(index + 1) + extra)
+                    break
                 }
+            }
+
+            if (failureStorm) {
+                toolRounds += 1
+                continue
             }
 
             var extraFailureStorm = false
@@ -646,7 +684,9 @@ class AgentRuntime(
                 if (registerToolResult(false)) extraFailureStorm = true
             }
             if (extraFailureStorm) {
-                return abortToolFailureStorm(emptyList())
+                stopForFailureStorm(emptyList())
+                toolRounds += 1
+                continue
             }
 
             toolRounds += 1
