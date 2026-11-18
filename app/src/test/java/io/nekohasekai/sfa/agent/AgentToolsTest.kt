@@ -599,6 +599,22 @@ class AgentToolsTest {
     }
 
     @Test
+    fun probeManyRestoresTheBatchStartingSelection() {
+        val selection = FakeNodeSelectionPort()
+        val registry = buildTestRegistry(selectionPort = selection)
+
+        val result =
+            registry.userExec(
+                "probe_many",
+                """{"group":"proxy","url":"https://example.com/","outbounds":"node-a,node-b"}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertTrue(result.output!!.boolean("restored"))
+        assertEquals(listOf("proxy" to "node-b"), selection.calls)
+    }
+
+    @Test
     fun tailscaleSnapshotIsStructuredWithoutPersonalFields() {
         val tools =
             AgentTools(

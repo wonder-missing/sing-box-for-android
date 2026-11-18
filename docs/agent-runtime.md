@@ -368,7 +368,7 @@ wonder.95 把 `file_tail` 合并进 `file_read` 的 `last_lines`，并删除 `fi
 
 `probe_many` 是同一语义的批处理：一次确认，按顺序探测最多 20 个节点，约 90 秒后停止并标记 `truncated`；它仍然串行切换全局选择，不是 per-request outbound binding。
 
-`select_outbound` 只在本机执行，Remote Control 模式直接拒绝；确认后调用 `CommandClient.selectOutbound`，异常时恢复旧选择。它不校验选择后的实际生效状态，模型应再调 `list_nodes` 读回。
+`select_outbound` 只在本机执行，Remote Control 模式直接拒绝；确认后调用 `CommandClient.selectOutbound`，异常时恢复旧选择。它是持久变更，不是测试工具；成功后不会自动恢复。测试节点用 `probe_via_node` 或 `probe_many`。`probe_many` 在整批开始前捕获 group 的当前选择，并在 finally 里再恢复一次，避免逐次 probe 的快照滞后把最后探测节点留在全局选择里；返回 `restored`/`restoreError`。system prompt 也明确禁止用 `select_outbound` 做连通性测试，并要求临时测试后恢复旧选择。它不校验选择后的实际生效状态，模型应再调 `list_nodes` 读回。
 
 `ProbePort.probe` 和 `TelemetryUploadPort.upload` 都接受可选 `ToolCancellation`。Stop 时 probe 关闭 libbox HTTP client 和 worker executor，telemetry 关闭 socket/connection，uploader 返回 `UploadResult.Cancelled`；工具在调用返回后再检查一次取消标志，返回 `cancelled` observation。
 

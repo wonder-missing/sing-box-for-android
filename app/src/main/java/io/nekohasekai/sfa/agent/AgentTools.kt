@@ -383,7 +383,8 @@ class AgentTools(
                         "Probe one http(s) URL through several outbounds in one call. " +
                             "Use list_nodes(group=<tag>) first to get tags. If outbounds is omitted, " +
                             "probes the group's items up to limit. Probes run one at a time, each temporarily " +
-                            "changing the global selection and restoring it afterwards. The batch stops after " +
+                            "changing the global selection and restoring it afterwards; the batch captures its " +
+                            "starting selection and restores that selection again at the end. The batch stops after " +
                             "about 90 seconds and marks truncated=true. Returns per-node reachable/statusCode/latency/error.",
                     permission = AgentPermission.NETWORK_PROBE,
                     parameters =
@@ -473,37 +474,59 @@ class AgentTools(
                 if (tags.isEmpty()) {
                     return ToolExecution(errorCode = "invalid_parameter", errorMessage = "No outbounds to probe.")
                 }
+                val originalSelection = group.selected.takeIf { it.isNotBlank() }
                 val startedAt = System.nanoTime()
                 val results = mutableListOf<JsonObject>()
                 var truncated = false
-                for (tag in tags) {
-                    if (cancellation.isCancelled()) {
-                        truncated = true
-                        break
+                var restoreError: String? = null
+                try {
+                    for (tag in tags) {
+                        if (cancellation.isCancelled()) {
+                            truncated = true
+                            break
+                        }
+                        if ((System.nanoTime() - startedAt) / 1_000_000 > MAX_PROBE_MANY_MS) {
+                            truncated = true
+                            break
+                        }
+                        val outcome = probePort.probe(tag, url, cancellation)
+                        val error =
+                            outcome.error
+                                ?: if (outcome.statusCode == null) "probe returned no HTTP status" else null
+                        results.add(
+                            buildJsonObject {
+                                put("outbound", tag)
+                                put("reachable", error == null)
+                                outcome.statusCode?.let { put("statusCode", it) }
+                                outcome.latencyMs?.let { put("latencyMs", it) }
+                                error?.let { put("error", it) }
+                            },
+                        )
                     }
-                    if ((System.nanoTime() - startedAt) / 1_000_000 > MAX_PROBE_MANY_MS) {
-                        truncated = true
-                        break
+                } finally {
+                    val selection = selectionPort
+                    if (originalSelection != null && selection != null) {
+                        try {
+                            val restored = selection.select(groupTag, originalSelection)
+                            if (!restored.ok) {
+                                restoreError = restored.error ?: "could not restore the previous selection"
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            restoreError = e.message ?: e.toString()
+                        }
                     }
-                    val outcome = probePort.probe(tag, url, cancellation)
-                    val error =
-                        outcome.error
-                            ?: if (outcome.statusCode == null) "probe returned no HTTP status" else null
-                    results.add(
-                        buildJsonObject {
-                            put("outbound", tag)
-                            put("reachable", error == null)
-                            outcome.statusCode?.let { put("statusCode", it) }
-                            outcome.latencyMs?.let { put("latencyMs", it) }
-                            error?.let { put("error", it) }
-                        },
-                    )
                 }
                 val output =
                     buildJsonObject {
                         put("group", groupTag)
                         put("url", url)
                         put("truncated", truncated)
+                        if (originalSelection != null && selectionPort != null) {
+                            put("restored", restoreError == null)
+                            restoreError?.let { put("restoreError", AgentSanitizer.scrubForModelRead(it)) }
+                        }
                         put("results", buildJsonArray { results.forEach { add(it) } })
                     }
                 return ToolExecution(output = output)
@@ -517,7 +540,8 @@ class AgentTools(
                     name = "select_outbound",
                     description =
                         "Change the running core's selected outbound in a selectable selector group. " +
-                            "Local-only; Remote Control is rejected. The previous selection is restored if the change fails. " +
+                            "This is a persistent change, not a connectivity test. The previous selection is restored only if the change fails. " +
+                            "Use probe_via_node or probe_many for tests; restore the previous selection after a temporary test unless the user asked to keep it. " +
                             "Use list_nodes to find a selectable group and tag. App traffic may switch immediately.",
                     permission = AgentPermission.NETWORK_CHANGE,
                     parameters =
@@ -540,8 +564,8 @@ class AgentTools(
                     aliases = listOf("switch outbound", "select outbound", "select node"),
                     core = true,
                     confirmationReason =
-                        "This changes the running core's selected outbound. App traffic may switch immediately. " +
-                            "The previous selection is restored if the call fails.",
+                        "This changes the running core's selected outbound and keeps it changed. App traffic may switch immediately. " +
+                            "The previous selection is restored if the call fails, not after a successful change.",
                 )
 
             override suspend fun execute(
