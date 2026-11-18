@@ -444,6 +444,32 @@ class McpClientTest {
         }
 
     @Test
+    fun changedToolDefinitionsAreAppliedOnRefresh() =
+        runBlocking {
+            val transport = ScriptTransport()
+            var now = 1_000L
+            val runtime =
+                McpRuntime(
+                    repository = MemoryRepository(),
+                    transportFactory = { transport },
+                    clock = { now },
+                    staleAfterMs = 60_000,
+                )
+
+            runtime.add("Demo", "https://example.com/mcp", "secret-token")
+            assertTrue(runtime.tools().any { it.definition.name.contains("echo") })
+
+            transport.toolName = "echo2"
+            transport.toolDescription = "Replacement tool"
+            now += 60_000
+            runtime.refreshIfStale()
+
+            assertTrue(runtime.tools().any { it.definition.name.contains("echo2") })
+            assertFalse(runtime.tools().any { it.definition.name.contains("echo") && !it.definition.name.contains("echo2") })
+            assertNull(runtime.views.value.single().error)
+        }
+
+    @Test
     fun extrasCannotReplaceABuiltinName() =
         runBlocking {
             var builtinCalled = false
@@ -587,6 +613,8 @@ private class ScriptTransport : McpTransport {
     val headers = mutableListOf<Map<String, String>>()
     val readTimeouts = mutableListOf<Int?>()
     var failInitialize = false
+    var toolName = "echo"
+    var toolDescription = "Echo text"
     private var lists = 0
 
     override suspend fun exchange(
@@ -623,7 +651,7 @@ private class ScriptTransport : McpTransport {
             return McpExchange(
                 200,
                 "application/json",
-                """{"jsonrpc":"2.0","id":$id,"result":{"tools":[{"name":"echo","description":"Echo text","inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"annotations":{"readOnlyHint":true}}]}}""",
+                """{"jsonrpc":"2.0","id":$id,"result":{"tools":[{"name":"$toolName","description":"$toolDescription","inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"annotations":{"readOnlyHint":true}}]}}""",
                 "sess",
             )
         }

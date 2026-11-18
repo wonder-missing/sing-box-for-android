@@ -284,6 +284,14 @@ class DeepSeekWebSearchPortTest {
     }
 
     @Test
+    fun answerUrlsCanBeKeptWhenTheProviderOmittedThePageFromSources() {
+        assertEquals(
+            setOf("https://example.com/a?x=1"),
+            webSearchAnswerUrls("See https://example.com/a?x=1."),
+        )
+    }
+
+    @Test
     fun parseTreatsAnEmptyResultAsSuccess() {
         val outcome = parseWebSearchResponse("""{"content":[],"stop_reason":"end_turn"}""", 5)
 

@@ -968,7 +968,8 @@ class AgentTools(
                     }
                 val allowedUrls =
                     result.sources.map { it.url }.toSet() +
-                        allowedWebSearchUrls(result.answer, result.sources)
+                        allowedWebSearchUrls(result.answer, result.sources) +
+                        webSearchAnswerUrls(result.answer)
                 return if (error == null) {
                     ToolExecution(output = output, allowedUrls = allowedUrls)
                 } else {

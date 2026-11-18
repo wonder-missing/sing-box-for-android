@@ -8,7 +8,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 填写名称、可选命名空间、`http` 或 `https` URL、可选的 Bearer token，然后点「添加并连接」。命名空间留空时按 Name 生成；它是工具名前缀，建议填短词（例如 `portal`）。App 立刻做 `initialize`、`notifications/initialized`、`tools/list`。成功才算打开，行上显示工具数量和当前前缀。失败则开关回到关，错误留在这一行，不进对话。
 
-已保存的服务器可以再打开、刷新、编辑名称/命名空间或移除。编辑命名空间会改工具名，Agent 下一轮消息才看到；URL 或 token 仍要移除再加。移除会删掉保存在这台设备上的 token。旧配置没有命名空间时会回退到服务器 id，长名字会被截到 16 个字符（例如 `clawdy_portal_kn`）；升级后在 Edit 里填一个短前缀（例如 `portal`）即可。
+已保存的服务器可以再打开、刷新、编辑名称/命名空间或移除。刷新或重连以服务器当前 `tools/list` 为准，工具定义变化会直接替换本地目录；MCP 工具仍是 `AGENT_ONLY`，每次调用前照常确认。编辑命名空间会改工具名，Agent 下一轮消息才看到；URL 或 token 仍要移除再加。移除会删掉保存在这台设备上的 token。旧配置没有命名空间时会回退到服务器 id，长名字会被截到 16 个字符（例如 `clawdy_portal_kn`）；升级后在 Edit 里填一个短前缀（例如 `portal`）即可。
 
 下一句 Conductor 消息开始，Agent 能调用这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。工具名完全匹配时只返回那一个工具；搜服务器名或 `mcp` 会带出该服务器的工具。wonder.51 起 system prompt 有一条静态提示：MCP 服务器可能在运行时增加工具，结论前先 `search_tools`；`search_tools` 输出带 `categories` 计数，弱匹配也能看到 `mcp` 组存在。
 

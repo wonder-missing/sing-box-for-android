@@ -329,6 +329,20 @@ internal fun allowedWebSearchUrls(
         .toSet()
 }
 
+/**
+ * URLs written into the answer are part of the search result. Keep them
+ * readable even when the provider omitted the same page from `sources`; the
+ * sanitizer still masks userinfo and sensitive query values.
+ */
+internal fun webSearchAnswerUrls(answer: String?): Set<String> {
+    if (answer.isNullOrBlank()) return emptySet()
+    return HTTP_URL_REGEX
+        .findAll(answer)
+        .map { it.value.trimEnd { ch -> ch in URL_TRAILING_PUNCTUATION } }
+        .filter { isAllowedHttpUrl(it) }
+        .toSet()
+}
+
 private fun webSearchHost(raw: String): String? =
     runCatching { URI(raw).host?.lowercase(Locale.US) }
         .getOrNull()
