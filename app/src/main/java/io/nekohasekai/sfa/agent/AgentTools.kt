@@ -540,8 +540,8 @@ class AgentTools(
                     name = "select_outbound",
                     description =
                         "Change the running core's selected outbound in a selectable selector group. " +
-                            "This is a persistent change, not a connectivity test. The previous selection is restored only if the change fails. " +
-                            "Use probe_via_node or probe_many for tests; restore the previous selection after a temporary test unless the user asked to keep it. " +
+                            "This is a persistent change; a successful change is not automatically restored. " +
+                            "The previous selection is restored only if the change fails. For a temporary connectivity check, prefer probe_via_node or probe_many. " +
                             "Use list_nodes to find a selectable group and tag. App traffic may switch immediately.",
                     permission = AgentPermission.NETWORK_CHANGE,
                     parameters =
