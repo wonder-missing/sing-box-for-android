@@ -57,7 +57,8 @@
     <string name="title_edit_configuration">Edit Configuration</string>
     <string name="title_groups">Groups</string>
     <string name="title_conduct" translatable="false">Conduct</string>
-    <string name="conductor_input_hint">Ask anything, or type / for commands</string>
+    <string name="conductor_input_hint">Ask Conductor</string>
+    <string name="conductor_input_hint_your_turn">You Conduct...</string>
     <string name="conductor_send">Send</string>
     <string name="conductor_running">Running</string>
     <string name="conductor_expand">Expand input</string>

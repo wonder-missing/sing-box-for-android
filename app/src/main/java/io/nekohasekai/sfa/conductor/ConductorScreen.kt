@@ -340,6 +340,32 @@ fun ConductorScreen(
             lastVisible >= uiState.items.size
         }
     }
+    var wasRunning by remember { mutableStateOf(uiState.isRunning) }
+    var turnEndedWhileAway by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.isRunning, atBottom) {
+        if (uiState.isRunning) {
+            wasRunning = true
+            turnEndedWhileAway = false
+        } else if (wasRunning) {
+            if (!atBottom) turnEndedWhileAway = true
+            wasRunning = false
+        }
+    }
+    LaunchedEffect(atBottom) {
+        if (atBottom) turnEndedWhileAway = false
+    }
+    val userAttentionNeeded =
+        hasPendingUserInteraction(
+            items = uiState.items,
+            hasFileRequest = fileRequest != null,
+            hasVfsConsent = vfsConsent != null,
+        )
+    val showYourTurnHint =
+        shouldShowYourTurnHint(
+            atBottom = atBottom,
+            hasPendingUserInteraction = userAttentionNeeded,
+            turnEndedWhileAway = turnEndedWhileAway,
+        )
     val lastContentVersion = uiState.items.lastOrNull()?.contentVersion() ?: 0
     val focusManager = LocalFocusManager.current
     val clipboard = LocalClipboardManager.current
@@ -944,6 +970,14 @@ fun ConductorScreen(
             onRemoveImage = viewModel::clearPendingImage,
             imageFile = viewModel::imageFile,
             statusText = uiState.turnStatus,
+            hint =
+                stringResource(
+                    if (showYourTurnHint) {
+                        R.string.conductor_input_hint_your_turn
+                    } else {
+                        R.string.conductor_input_hint
+                    },
+                ),
             contextPercent = uiState.contextPercent,
             contextUsedTokens = uiState.contextUsedTokens,
             contextLimitTokens = uiState.contextLimitTokens,
@@ -2064,6 +2098,7 @@ private fun UserMessage(
 @Composable
 private fun ToolItem(item: ConductorItem.Tool) {
     var expanded by remember { mutableStateOf(false) }
+    val argsScroll = rememberScrollState()
     val result = item.result
     val statusLabel = item.status.name.lowercase() + if (result?.degraded == true) " · degraded" else ""
     val failureSummary = result?.let(::toolFailureSummary)
@@ -2104,16 +2139,24 @@ private fun ToolItem(item: ConductorItem.Tool) {
             }
         }
         if (item.call.displayArgsJson.isNotBlank() && item.call.displayArgsJson != "{}") {
-            SelectionContainer {
-                Text(
-                    text = item.call.displayArgsJson,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                )
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp)
+                        .horizontalScroll(argsScroll),
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = item.call.displayArgsJson,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        softWrap = false,
+                        maxLines = 1,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                }
             }
         }
         if (result != null) {
@@ -2525,6 +2568,7 @@ private fun ConductorInputBar(
     onRemoveImage: () -> Unit,
     imageFile: (String) -> File?,
     statusText: String?,
+    hint: String,
     contextPercent: Int,
     contextUsedTokens: Int,
     contextLimitTokens: Int,
@@ -2546,15 +2590,15 @@ private fun ConductorInputBar(
             // animation; a plain Text stays put.
             if (input.text.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.conductor_input_hint),
+                    text = hint,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     modifier =
-                    Modifier.padding(
-                        start = 16.dp,
-                        top = InputPanelTopPadding,
-                        end = 60.dp,
-                    ),
+                        Modifier.padding(
+                            start = 16.dp,
+                            top = InputPanelTopPadding,
+                            end = 60.dp,
+                        ),
                 )
             }
 
