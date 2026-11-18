@@ -1585,21 +1585,7 @@ private fun ConductorItemView(
                         )
                     }
                 }
-                SelectionContainer {
-                    Text(
-                        text =
-                            markdownAnnotated(
-                                item.text,
-                                // Match the web terminal's unfilled inline code: use the
-                                // theme accent instead of a fixed terminal palette.
-                                codeBackground = Color.Transparent,
-                                codeColor = conductorInlineCodeColor(),
-                            ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                AssistantMarkdownText(item.text)
                 AssistantUsageFooter(item.usage, item.contextPercent)
             }
 
