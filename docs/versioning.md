@@ -37,6 +37,14 @@ code    = base36(ordinal + 260).toUpperCase()
 scheme is exhausted; define a new one rather than using a three-character
 label.
 
+## Compatibility
+
+Builds 99 and older only parse `wonder.<digits>` in the update feed. They
+cannot discover `A0`, so that one transition needs a manual install. A0 and
+later parse both decimal and base-36 labels, so `A1` onward is discovered
+normally. Do not add a numeric alias tag for old clients; it would create a
+second release path and defeat the two-character scheme.
+
 ## Derivation
 
 ```text

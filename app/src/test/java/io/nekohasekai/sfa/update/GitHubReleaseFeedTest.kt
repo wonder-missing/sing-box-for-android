@@ -102,4 +102,14 @@ class GitHubReleaseFeedTest {
         assertEquals(0, GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13"))
         assertTrue(GitHubReleaseFeed.matchesApk("SFA-x-arm64-v8a.apk", "arm64-v8a", legacy = false))
     }
+
+    @Test
+    fun `base-36 builds sort after the last decimal build`() {
+        val legacy = GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13-wonder.99")
+        val a0 = GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13-wonder.A0")
+        val a1 = GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13-wonder.A1")
+
+        assertTrue(a0 > legacy)
+        assertTrue(a1 > a0)
+    }
 }
