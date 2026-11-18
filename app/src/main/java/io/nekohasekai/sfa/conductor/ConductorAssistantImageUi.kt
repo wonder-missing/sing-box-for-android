@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.conductor
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -35,6 +37,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.caverock.androidsvg.SVG
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,10 +45,19 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.URI
+import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 private const val MAX_IMAGE_BYTES = 8 * 1024 * 1024
 private const val MAX_IMAGE_DIMENSION = 1600
+private const val MAX_SVG_CHARS = 256 * 1024
+private val UNSAFE_SVG =
+    Regex(
+        """(?is)<\s*(script|foreignObject|image|iframe|object|embed)\b|\son[a-z]+\s*=|(?:href|xlink:href)\s*=\s*["'](?!#)|javascript:|url\s*\(\s*["']?(?:https?:|data:)|<!doctype|<!entity|@import""",
+    )
 
 private sealed interface AssistantImageState {
     data object Idle : AssistantImageState
@@ -74,7 +86,7 @@ private val assistantImageClient =
 @Composable
 internal fun AssistantMarkdownText(text: String) {
     val segments = remember(text) { assistantMarkdownSegments(text) }
-    if (segments.none { it is ConductorAssistantSegment.Image }) {
+    if (segments.none { it is ConductorAssistantSegment.Image || it is ConductorAssistantSegment.Svg }) {
         SelectionContainer {
             Text(
                 text =
@@ -114,6 +126,8 @@ internal fun AssistantMarkdownText(text: String) {
                 }
 
                 is ConductorAssistantSegment.Image -> AssistantImageBlock(segment.alt, segment.url)
+
+                is ConductorAssistantSegment.Svg -> AssistantSvgBlock(segment.source)
             }
         }
     }
@@ -216,6 +230,64 @@ private fun AssistantImageBlock(
     }
 }
 
+@Composable
+private fun AssistantSvgBlock(source: String) {
+    var state by remember(source) { mutableStateOf<AssistantImageState>(AssistantImageState.Loading) }
+    LaunchedEffect(source) {
+        state = withContext(Dispatchers.IO) { decodeSvg(source) }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            when (val current = state) {
+                is AssistantImageState.Loaded -> {
+                    Image(
+                        bitmap = current.bitmap,
+                        contentDescription = "SVG",
+                        contentScale = ContentScale.Fit,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 360.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                    )
+                }
+
+                is AssistantImageState.Loading -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = "Rendering SVG…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+
+                is AssistantImageState.Error -> {
+                    Text(
+                        text = current.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                AssistantImageState.Idle -> Unit
+            }
+        }
+    }
+}
+
 private suspend fun loadAssistantImage(url: String): AssistantImageState {
     if (url.startsWith("data:image/", ignoreCase = true)) {
         return decodeDataImage(url)
@@ -257,9 +329,20 @@ private suspend fun loadAssistantImage(url: String): AssistantImageState {
 private fun decodeDataImage(url: String): AssistantImageState {
     val comma = url.indexOf(',')
     if (comma < 0) return AssistantImageState.Error("Invalid embedded image.")
+    val header = url.substring(0, comma).lowercase()
     val encoded = url.substring(comma + 1)
     if (encoded.length > MAX_IMAGE_BYTES * 4 / 3 + 16) {
         return AssistantImageState.Error("Image is too large.")
+    }
+    if (header.contains("image/svg+xml")) {
+        val source =
+            if (header.contains(";base64")) {
+                runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull()
+                    ?.toString(Charsets.UTF_8)
+            } else {
+                runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrNull()
+            } ?: return AssistantImageState.Error("Invalid embedded SVG.")
+        return decodeSvg(source)
     }
     val bytes =
         runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull()
@@ -269,6 +352,10 @@ private fun decodeDataImage(url: String): AssistantImageState {
 }
 
 private fun decodeImage(bytes: ByteArray): AssistantImageState {
+    val text = bytes.toString(Charsets.UTF_8).trimStart('﻿', ' ', '\t', '\r', '\n')
+    if (text.startsWith("<svg", ignoreCase = true) || text.startsWith("<?xml", ignoreCase = true)) {
+        if (text.contains("<svg", ignoreCase = true)) return decodeSvg(text)
+    }
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
@@ -289,6 +376,33 @@ private fun decodeImage(bytes: ByteArray): AssistantImageState {
             BitmapFactory.Options().apply { inSampleSize = sample },
         ) ?: return AssistantImageState.Error("Unsupported image format.")
     return AssistantImageState.Loaded(bitmap.asImageBitmap())
+}
+
+private fun decodeSvg(source: String): AssistantImageState {
+    if (source.length > MAX_SVG_CHARS) {
+        return AssistantImageState.Error("SVG is too large.")
+    }
+    if (UNSAFE_SVG.containsMatchIn(source)) {
+        return AssistantImageState.Error("SVG contains unsupported content.")
+    }
+    val svg =
+        runCatching { SVG.getFromString(source) }.getOrNull()
+            ?: return AssistantImageState.Error("Invalid or unsupported SVG.")
+    var width = svg.documentWidth
+    var height = svg.documentHeight
+    if (!width.isFinite() || width <= 0f) width = 800f
+    if (!height.isFinite() || height <= 0f) height = 600f
+    val scale = min(1f, MAX_IMAGE_DIMENSION / max(width, height))
+    val pixelWidth = (width * scale).roundToInt().coerceAtLeast(1)
+    val pixelHeight = (height * scale).roundToInt().coerceAtLeast(1)
+    return runCatching {
+        val picture = svg.renderToPicture(pixelWidth, pixelHeight)
+        val bitmap = Bitmap.createBitmap(pixelWidth, pixelHeight, Bitmap.Config.ARGB_8888)
+        Canvas(bitmap).drawPicture(picture)
+        AssistantImageState.Loaded(bitmap.asImageBitmap())
+    }.getOrElse {
+        AssistantImageState.Error("Could not render SVG.")
+    }
 }
 
 private fun readLimited(input: InputStream): ByteArray? {

@@ -54,7 +54,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("8cd8e140d02a39df157894762bc625b26506db8b89e5c11ada5ed512faf35547", digest)
+        assertEquals("07fa8a12d5234f41e0304c14c677f17df0867131d02cf9e30c217bfac0ee5748", digest)
     }
 
     @Test
@@ -70,7 +70,8 @@ class AgentPromptStabilityTest {
             "Use short paragraphs or one short list. Always wrap file paths, commands, flags, " +
                 "tool names, config keys and other literal identifiers in `inline code`. " +
                 "Use **bold** sparingly for a warning or the key conclusion. " +
-                "Do not use Markdown tables, headings or code fences."
+                "Do not use Markdown tables, headings or code fences, except one ```svg block " +
+                "containing only an `<svg>` element for a diagram; the client renders it as an image."
 
         assertTrue(!normal.contains(briefLine))
         assertTrue(brief.contains(briefLine))

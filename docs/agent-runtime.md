@@ -923,7 +923,7 @@ fun interface AgentInputGuard {
 - `allowedUrls` 只按工具定义的 `allowedUrlParameter` 生效；目前只有 `probe_via_node.url`。
 - 日志用独立的 `sanitizeForLog`，所有 URL、token、Authorization、订阅字段都打码；模型请求日志、错误日志、审计日志都不能出现 API key、Authorization header、订阅 URL。
 - 模型原始响应默认不落盘。调试开关只在 debug build 生效，且必须显式打开。
-- 消息流用 Compose `Text` 渲染，认 `**bold**`、单反引号行内代码和 `![alt](https://...)` 图片；行内代码使用等宽字体和主题派生的强调色（`tertiary` 向 `onSurface` 混合），不填背景，亮暗主题按 surface 亮度调整混合比例。远端图片先显示带 alt/URL 的 `Load image` 卡片，用户点按后才通过无重定向的 HTTPS 请求加载，拒绝 localhost、私网、链路本地和 IPv4/IPv6 私网地址，单图最多 8 MiB、解码长边最多 1600；`data:image/...;base64` 自动解码但同样限 8 MiB；其余 Markdown 标记按普通文本显示。system prompt 因此要求字面量（路径、命令、flag、工具名、配置键）必须使用行内代码，并禁止表格、标题和围栏代码。不执行 HTML，不自动打开链接。
+- 消息流用 Compose `Text` 渲染，认 `**bold**`、单反引号行内代码和 `![alt](https://...)` 图片；行内代码使用等宽字体和主题派生的强调色（`tertiary` 向 `onSurface` 混合），不填背景，亮暗主题按 surface 亮度调整混合比例。远端图片先显示带 alt/URL 的 `Load image` 卡片，用户点按后才通过无重定向的 HTTPS 请求加载，拒绝 localhost、私网、链路本地和 IPv4/IPv6 私网地址，单图最多 8 MiB、解码长边最多 1600；`data:image/...;base64` 自动解码但同样限 8 MiB；SVG 可从 svg 围栏或裸 `<svg>` 块进入，用 AndroidSVG 静态渲染，不执行脚本，拒绝脚本、foreignObject、外部 href 和外部资源，最多 256K 字符、1600px；其余 Markdown 标记按普通文本显示。system prompt 因此要求字面量（路径、命令、flag、工具名、配置键）必须使用行内代码，禁止表格、标题和其他围栏代码，只额外允许 SVG 围栏。不执行 HTML，不自动打开链接。
 - Transcript / API trace 查看器的 Rich 模式另用 Markwon core，支持 CommonMark 基础块和行内元素（标题、粗斜体、列表、引用、链接、行内/围栏代码、分隔线）；未加载 `ext-tables`、`ext-strikethrough`、`ext-tasklist` 等扩展。
 
 ## 10. 预算、超时、取消、重试

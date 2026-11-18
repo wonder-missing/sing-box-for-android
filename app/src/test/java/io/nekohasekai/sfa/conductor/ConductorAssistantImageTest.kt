@@ -36,6 +36,29 @@ class ConductorAssistantImageTest {
     }
 
     @Test
+    fun `extracts a fenced svg block`() {
+        val segments =
+            assistantMarkdownSegments(
+                "before\n```svg\n<svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\"/></svg>\n```\nafter",
+            )
+
+        assertEquals(3, segments.size)
+        assertEquals("before\n", (segments[0] as ConductorAssistantSegment.Text).text)
+        assertEquals(
+            "<svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\"/></svg>",
+            (segments[1] as ConductorAssistantSegment.Svg).source,
+        )
+        assertEquals("\nafter", (segments[2] as ConductorAssistantSegment.Text).text)
+    }
+
+    @Test
+    fun `extracts a raw svg block`() {
+        val segments = assistantMarkdownSegments("<svg><rect width=\"1\" height=\"1\"/></svg>")
+
+        assertTrue(segments.single() is ConductorAssistantSegment.Svg)
+    }
+
+    @Test
     fun `accepts embedded image data`() {
         val segments = assistantMarkdownSegments("![dot](data:image/png;base64,AAAA)")
 
