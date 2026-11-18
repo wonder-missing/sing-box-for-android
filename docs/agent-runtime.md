@@ -849,10 +849,11 @@ ToolCall 需要确认
 - 运行时内部用 `callId` 保存原始 `ToolCall`；`ConfirmationRequest` 不带原始参数，ViewModel 也不需要回传原始参数。
 - 模型不能自己确认，也不能通过 tool 输出改变确认策略。
 - 用户取消一个 tool call 时，同一条 assistant 消息里尚未执行的 tool call 全部回填 `cancelled`，本 turn 结束，不让模型马上换个工具重试。
-- 一条 assistant 消息可能带多个需要确认的 tool call。`ConfirmationRequest.batchRemaining` 是当前批次里剩余调用数（含当前），由运行时计算；`allowTurnApproval = true` 表示这张卡可以批准本 turn 后续所有确认。
-- 确认卡提供 `Approve rest of turn`：ViewModel 记一个只作用于本 turn 的自动批准标记，运行时后续仍逐个发出确认事件并收到显式 `true`，但不再画新卡。这个选项对单调用响应也出现，因为模型可能把 probe 分步调用；不再依赖它在一次响应里批量返回。
-- `Approve rest of turn` 只预览当前工具的参数，不逐项预览后续工具；后续工具仍由模型逐轮声明。需要完整批前预览时，再让运行时做整批预检（见待定）。
-- 命令入口的单工具确认卡没有 `allowTurnApproval`，不会出现这个选项。
+- 一条 assistant 消息可能带多个需要确认的 tool call。`ConfirmationRequest.batchRemaining` 是当前批次里剩余调用数（含当前），`batchId` 标识这条 assistant 消息，`batchToolNames` 是剩余工具名，由运行时计算。
+- `allowTurnApproval`/`allowBatchApproval` 只对 `AGENT_ONLY`（以及被提升确认的 `DATA_EGRESS`）工具为 true；`ALWAYS` 的 `probe_*`、`select_outbound`、Taildrop 等不会出现批量或 turn 级放行，仍逐个确认。
+- 确认卡提供 `Run all N safe calls in this response`：ViewModel 记一个只作用于当前 `batchId` 的安全工具自动批准标记，运行时后续仍逐个发出确认事件并收到显式 `true`，但不再画新卡；同一批次里的 `ALWAYS` 工具仍单独出卡。
+- 确认卡同时保留 `Approve this tool for the rest of the turn`：只对同一工具生效。它只预览当前工具的参数，不逐项预览后续工具。
+- 命令入口的单工具确认卡没有 `allowTurnApproval`/`allowBatchApproval`，不会出现这些选项。
 - 确认等待不计入 turn 总超时；确认超时单独计算，默认 5 分钟。进程退到后台或进程死亡时，未完成的确认直接取消，不允许回来后静默执行。
 - 现有 `/probe` 的确认流是 Phase 1 的单工具版本。Phase 2a 保留 `AgentConfirmation` 作为 registry/executor 的内部结果，但 ViewModel 立刻映射成 `ConfirmationRequest`；`ConductorItem` 和 UI 只拿 `ConfirmationRequest`。`/probe` 命令不经过 `AgentRuntime`。
 
@@ -923,7 +924,7 @@ fun interface AgentInputGuard {
 - `allowedUrls` 只按工具定义的 `allowedUrlParameter` 生效；目前只有 `probe_via_node.url`。
 - 日志用独立的 `sanitizeForLog`，所有 URL、token、Authorization、订阅字段都打码；模型请求日志、错误日志、审计日志都不能出现 API key、Authorization header、订阅 URL。
 - 模型原始响应默认不落盘。调试开关只在 debug build 生效，且必须显式打开。
-- 消息流用 Compose `Text` 渲染，认 `**bold**`、单反引号行内代码和 `![alt](https://...)` 图片；行内代码使用等宽字体和主题派生的强调色（`tertiary` 向 `onSurface` 混合），不填背景，亮暗主题按 surface 亮度调整混合比例。远端图片先显示带 alt/URL 的 `Load image` 卡片，用户点按后才通过无重定向的 HTTPS 请求加载，拒绝 localhost、私网、链路本地和 IPv4/IPv6 私网地址，单图最多 8 MiB、解码长边最多 1600；`data:image/...;base64` 自动解码但同样限 8 MiB；Markdown 图片引用可以是 Web Search 得到的 HTTPS URL，也可以是 `conductor/resources/` 下的本地资源；本地路径只允许资源根，远端图片仍走点按加载和公开 HTTPS 限制。SVG 可从 svg 围栏或裸 `<svg>` 块进入，用 AndroidSVG 静态渲染，不执行脚本，拒绝脚本、foreignObject、外部 href 和外部资源，最多 256K 字符、1600px；其余 Markdown 标记按普通文本显示。system prompt 因此要求字面量（路径、命令、flag、工具名、配置键）必须使用行内代码，禁止表格、标题和其他围栏代码，只额外允许 SVG 围栏。不执行 HTML，不自动打开链接。
+- 消息流用 Compose `Text` 渲染，认 `**bold**`、单反引号行内代码和 `![alt](https://...)` 图片；行内代码使用等宽字体和主题派生的强调色（`tertiary` 向 `onSurface` 混合），不填背景，亮暗主题按 surface 亮度调整混合比例。远端图片先显示带 alt/URL 的 `Load image` 卡片，用户点按后才通过无重定向的 HTTPS 请求加载，拒绝 localhost、私网、链路本地和 IPv4/IPv6 私网地址，单图最多 8 MiB、解码长边最多 1600；`data:image/...;base64` 自动解码但同样限 8 MiB；Markdown 图片引用可以是 Web Search 得到的 HTTPS URL，也可以是 `conductor/resources/` 下的本地资源；本地路径只允许资源根，远端图片仍走点按加载和公开 HTTPS 限制。SVG 可从 svg 围栏或裸 `<svg>` 块进入，用 AndroidSVG 静态渲染，不执行脚本，拒绝脚本、foreignObject、外部 href 和外部资源，最多 256K 字符、1600px；图片加载后贴卡片边缘渲染，卡片只保留 12dp 圆角，不再在图片外再套一层内边距或底色形成厚边框。其余 Markdown 标记按普通文本显示。system prompt 因此要求字面量（路径、命令、flag、工具名、配置键）必须使用行内代码，禁止表格、标题和其他围栏代码，只额外允许 SVG 围栏。不执行 HTML，不自动打开链接。
 - Transcript / API trace 查看器的 Rich 模式另用 Markwon core，支持 CommonMark 基础块和行内元素（标题、粗斜体、列表、引用、链接、行内/围栏代码、分隔线）；未加载 `ext-tables`、`ext-strikethrough`、`ext-tasklist` 等扩展。
 
 ## 10. 预算、超时、取消、重试
@@ -1002,6 +1003,10 @@ data class ConfirmationRequest(
     val reason: String,
     val batchRemaining: Int = 1,
     val allowTurnApproval: Boolean = false,
+    val batchId: String? = null,
+    val allowBatchApproval: Boolean = false,
+    val batchApprovableRemaining: Int = 1,
+    val batchToolNames: List<String> = emptyList(),
 )
 ```
 
@@ -1036,7 +1041,7 @@ UI 需要新增：
 - assistant 文本。
 - tool 卡片：工具名、参数摘要、running/success/failed/cancelled、结果摘要；长结果可展开。路由模式下显示内层工具名和参数，不显示 `route_call` envelope。
 - `search_tools` 显示为一条紧凑的「查找工具」记录，可以展开看匹配数，不默认铺开 schema。
-- 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；agent 确认额外显示 `Approve rest of turn`。点它后，本 turn 后续确认在 ViewModel 内自动通过，不再连续弹卡。同一批还有未执行的调用时，提示里显示批次数量；单调用时也提示“会跳过本 turn 后续确认”。命令确认没有这个选项。
+- 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；安全的 agent 确认额外显示 `Run all N safe calls in this response` 和 `Approve this tool for the rest of the turn`。前者只对当前 assistant 批次的后继安全确认自动通过，后者只对同一工具生效；`ALWAYS` 工具不出现这两个选项。命令确认没有这些选项。
 - 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。wonder.37 起 UI 消息流追加 `Stopped.`，重复 Stop 只发一次提示；已完成但刚好在 Stop 前的工具结果保留，不再被改成 `cancelled`。这个 `Stopped.` 是 UI notice，不是模型 transcript 里的 assistant 消息；模型侧改用下一条 user 的 `[conductor:event ...]` 前缀知道中断。
 - 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。正文一开始输出就结算 Reasoning，避免 spinner 和已回答并存。
 - Reasoning：`Thinking` 块流式显示 `reasoning_content`，不进入 transcript；wonder.38 起是两行高的自动上滚视窗（上下边缘渐隐），结束后标签变 `Thought`，可 Show/Hide 查看全文。所有结算点会清理全部 streaming 项，不只最后一项。
@@ -1314,7 +1319,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 所有注册工具的取消确认 ≤1s，Stop 后 1s 内 UI 回到可输入状态；若超时，UI 保持禁用并显示「正在停止，后台操作未确认」，不允许开新 turn。
 - 流式回答逐字出现，用户上滑后不被强制拉回底部。
 - 正文开始输出、工具开始或 turn 结束时，所有 Reasoning spinner 都停止；空 Thinking 占位不出现在 UI。
-- 同一 assistant 消息的多个确认只弹一张卡时，Approve rest of turn 能一次跑完；单调用响应也可以选择它来跳过本 turn 后续确认；取消仍结束整个 turn。
+- 同一 assistant 消息里的多个安全确认可以用 `Run all N safe calls in this response` 一次跑完；`ALWAYS` 工具仍逐张确认；取消仍结束整个 turn。
 - API trace 可以通过 Save API trace to file 落盘，空 trace 不生成文件；对话也可以通过 Save conversation to file 落盘。
 - Stop、超时、流式中断后 transcript 仍然配对；未完成 turn 保留原 user，下一条 user 带 `[conductor:event ...]` 前缀，可能出现连续 user，system prompt 说明它们是独立请求。
 - 空的中断/失败 turn 保留本轮 user，UI 显示 Retry；Retry 重发最后一条 user，模型下一轮仍能看到失败消息原文。输入拦截和缺 key 不产生新事件。
@@ -1336,7 +1341,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 2B 工具暴露用静态元工具 + 目录搜索；搜索结果只进 transcript；`route_call` 是运行时 unwrap，不是 `AgentTool`。
 - `toolRoutingEnabled` 开关保留，便于回退和 A/B；核心工具是否提升为原生 tool 由真机数据决定。
 - Reasoning 流式显示在 UI，不进入 transcript，也不作为下一轮请求内容；wonder.38 起用两行 ticker 展示，结束后可展开全文。
-- 确认卡提供 `Approve rest of turn`，对单调用和批量都可用；ViewModel 自动通过本 turn 后续确认，运行时仍逐次显式确认。
+- 确认卡对安全工具提供 `Run all N safe calls in this response` 和 `Approve this tool for the rest of the turn`；ViewModel 自动通过当前批次或同一工具的后继确认，运行时仍逐次显式确认；`ALWAYS` 工具不提供这两个选项。
 
 待定：
 
@@ -1524,6 +1529,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - Plain Transcript / API Trace 查看器：Raw 模式改用 `CodeEditorSyntax.MARKDOWN`，新增 `MarkdownLanguage` 做行级高亮（标题、围栏代码、行内代码、粗体、引用、列表）；底部左侧新增 Raw/Rich 开关，默认 Raw，按钮显示目标模式，Rich 用 `MarkdownText` 渲染。发现性能问题再改为默认关闭并加设置开关。
 - 重新进入 Conductor 页面时，`ConductorViewModel` 记住 `transcriptScrollIndex` / `transcriptScrollOffset` / `transcriptStickToBottom`，列表用保存的位置初始化，不再从顶部滚到底部。
 - 新增 `analyze_image(question)`：拉起系统图片选择器，读取选中图片（5MB 上限），以 OpenAI `image_url` data URL 发到当前配置的模型，返回文本分析（12k 字符上限）；工具级超时 5 分钟。该调用 `recordTrace=false`，避免 base64 撑大 trace。`DATA_EGRESS` 走 `AGENT_ONLY`，模型调用前需要用户确认。图片分析依赖 provider 侧模型本身支持图片输入；当前设置需填视觉模型 ID（79 trace 里是 `deepseek-v4-flash`）。
+- 2026-11-19 补：`analyze_image` 增加可选 `file_id`，直接复用 `request_files` 已选中的图片，不再重复打开画廊；视觉请求 `max_tokens` 提到 4096，并在 prompt 中要求只返回结论。返回 `finishReason`、`truncated`、`reasoningFallback`，`finish_reason=length` 不再静默截断；`content` 为空时仍回退 `reasoning_content`，但标记回退来源。
 - `request_files` 的 `reason` 改为可选，缺省用通用说明，避免模型漏参数后重试一次；`file_read_selected` 的描述和错误消息都明确 handle 放在 `id` 参数、二进制文件不能按文本读、图片改用 `analyze_image`。`taildrop_peers` / `taildrop_send` 设为 core，补 deliver / send to peer / send to device alias。`diagnostics_export` 增加 `overwrite`。
 - 本地全量 453 个用例绿。GitHub release 正文已验证只有 tag 消息，没有旧 footer；arm64 APK 和 Feishu 通知正常。
 
