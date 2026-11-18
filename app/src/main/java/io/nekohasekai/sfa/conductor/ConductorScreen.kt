@@ -728,7 +728,7 @@ fun ConductorScreen(
                             ConductorItemView(
                                 item = item,
                                 onConfirm = viewModel::confirmConfirmation,
-                                onConfirmAll = viewModel::confirmAllAgent,
+                                onConfirmAll = viewModel::confirmAllSafeAgent,
                                 onConfirmBatch = viewModel::confirmBatchAgent,
                                 onCancel = viewModel::cancelConfirmation,
                                 onAnswerQuestion = viewModel::answerAskUser,

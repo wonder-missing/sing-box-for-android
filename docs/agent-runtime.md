@@ -852,7 +852,7 @@ ToolCall 需要确认
 - 一条 assistant 消息可能带多个需要确认的 tool call。`ConfirmationRequest.batchRemaining` 是当前批次里剩余调用数（含当前），`batchId` 标识这条 assistant 消息，`batchToolNames` 是剩余工具名，由运行时计算。
 - `allowTurnApproval`/`allowBatchApproval` 只对 `AGENT_ONLY`（以及被提升确认的 `DATA_EGRESS`）工具为 true；`ALWAYS` 的 `probe_*`、`select_outbound`、Taildrop 等不会出现批量或 turn 级放行，仍逐个确认。
 - 确认卡提供 `Run all N safe calls in this response`：ViewModel 记一个只作用于当前 `batchId` 的安全工具自动批准标记，运行时后续仍逐个发出确认事件并收到显式 `true`，但不再画新卡；同一批次里的 `ALWAYS` 工具仍单独出卡。
-- 确认卡同时保留 `Approve this tool for the rest of the turn`：只对同一工具生效。它只预览当前工具的参数，不逐项预览后续工具。
+- 确认卡还提供 `Allow all safe tools for this turn`：整个 turn 内安全工具不再弹卡，`ALWAYS` 工具仍逐次确认。它只预览当前工具的参数，不逐项预览后续工具。
 - 命令入口的单工具确认卡没有 `allowTurnApproval`/`allowBatchApproval`，不会出现这些选项。
 - 确认等待不计入 turn 总超时；确认超时单独计算，默认 5 分钟。进程退到后台或进程死亡时，未完成的确认直接取消，不允许回来后静默执行。
 - 现有 `/probe` 的确认流是 Phase 1 的单工具版本。Phase 2a 保留 `AgentConfirmation` 作为 registry/executor 的内部结果，但 ViewModel 立刻映射成 `ConfirmationRequest`；`ConductorItem` 和 UI 只拿 `ConfirmationRequest`。`/probe` 命令不经过 `AgentRuntime`。
@@ -1041,7 +1041,7 @@ UI 需要新增：
 - assistant 文本。
 - tool 卡片：工具名、参数摘要、running/success/failed/cancelled、结果摘要；长结果可展开。路由模式下显示内层工具名和参数，不显示 `route_call` envelope。
 - `search_tools` 显示为一条紧凑的「查找工具」记录，可以展开看匹配数，不默认铺开 schema。
-- 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；安全的 agent 确认额外显示 `Run all N safe calls in this response` 和 `Approve this tool for the rest of the turn`。前者只对当前 assistant 批次的后继安全确认自动通过，后者只对同一工具生效；`ALWAYS` 工具不出现这两个选项。命令确认没有这些选项。
+- 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；安全的 agent 确认额外显示 `Run all N safe calls in this response` 和 `Allow all safe tools for this turn`。前者只对当前 assistant 批次的后继安全确认自动通过，后者对整个 turn 的安全工具生效；`ALWAYS` 工具不出现这两个选项。命令确认没有这些选项。
 - 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。wonder.37 起 UI 消息流追加 `Stopped.`，重复 Stop 只发一次提示；已完成但刚好在 Stop 前的工具结果保留，不再被改成 `cancelled`。这个 `Stopped.` 是 UI notice，不是模型 transcript 里的 assistant 消息；模型侧改用下一条 user 的 `[conductor:event ...]` 前缀知道中断。
 - 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。正文一开始输出就结算 Reasoning，避免 spinner 和已回答并存。
 - Reasoning：`Thinking` 块流式显示 `reasoning_content`，不进入 transcript；wonder.38 起是两行高的自动上滚视窗（上下边缘渐隐），结束后标签变 `Thought`，可 Show/Hide 查看全文。所有结算点会清理全部 streaming 项，不只最后一项。
@@ -1341,7 +1341,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 2B 工具暴露用静态元工具 + 目录搜索；搜索结果只进 transcript；`route_call` 是运行时 unwrap，不是 `AgentTool`。
 - `toolRoutingEnabled` 开关保留，便于回退和 A/B；核心工具是否提升为原生 tool 由真机数据决定。
 - Reasoning 流式显示在 UI，不进入 transcript，也不作为下一轮请求内容；wonder.38 起用两行 ticker 展示，结束后可展开全文。
-- 确认卡对安全工具提供 `Run all N safe calls in this response` 和 `Approve this tool for the rest of the turn`；ViewModel 自动通过当前批次或同一工具的后继确认，运行时仍逐次显式确认；`ALWAYS` 工具不提供这两个选项。
+- 确认卡对安全工具提供 `Run all N safe calls in this response` 和 `Allow all safe tools for this turn`；ViewModel 自动通过当前批次或整个 turn 的安全确认，运行时仍逐次显式确认；`ALWAYS` 工具不提供这两个选项。
 
 待定：
 

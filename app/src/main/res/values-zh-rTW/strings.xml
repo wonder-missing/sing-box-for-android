@@ -692,9 +692,9 @@
     <string name="agent_probe_run">探測</string>
     <string name="agent_confirm_title">確認工具呼叫</string>
     <string name="agent_confirm_run">執行</string>
-    <string name="agent_confirm_run_all">本輪內不再詢問這個工具</string>
-    <string name="agent_confirm_batch">這則回覆有 %1$d 個工具呼叫。批次執行只跳過本輪中同一工具的後續確認。</string>
-    <string name="agent_confirm_turn">同一工具本輪不再詢問；其他工具仍會確認。</string>
+    <string name="agent_confirm_run_all">本輪允許所有安全工具</string>
+    <string name="agent_confirm_batch">這則回覆有 %1$d 個工具呼叫。安全呼叫可一起執行；probe、網路變更和 Taildrop 仍會確認。</string>
+    <string name="agent_confirm_turn">安全工具本輪不再詢問；probe、網路變更和 Taildrop 仍會確認。</string>
     <string name="agent_confirm_batch_run">執行這則回覆裡剩餘 %1$d 個安全呼叫</string>
     <string name="agent_confirm_batch_tools">這則回覆包含：%1$s</string>
     <string name="conductor_reasoning_effort_title">推理強度</string>

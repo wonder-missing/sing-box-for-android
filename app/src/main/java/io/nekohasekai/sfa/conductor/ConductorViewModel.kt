@@ -762,7 +762,7 @@ class ConductorViewModel(
     private var pendingAgentConfirmation: CompletableDeferred<Boolean>? = null
 
     @Volatile
-    private var autoApproveAgentToolName: String? = null
+    private var autoApproveAgentSafeTools: Boolean = false
 
     @Volatile
     private var autoApproveAgentBatchId: String? = null
@@ -1089,20 +1089,23 @@ class ConductorViewModel(
     }
 
     /**
-     * Approve this tool for the rest of the turn. The runtime still asks once
-     * per call; the ViewModel answers prompts for the same tool without drawing
-     * another card. A different tool asks again.
+     * Approve all safe tools for the rest of the turn. The runtime still asks
+     * for ALWAYS tools (probes, network changes, Taildrop); ViewModel answers
+     * later safe confirmations without drawing another card.
      */
-    fun confirmAllAgent() {
+    fun confirmAllSafeAgent() {
         if (pendingAgentConfirmation == null) return
-        val toolName =
+        val request =
             _uiState.value.items
                 .filterIsInstance<ConductorItem.Confirmation>()
                 .lastOrNull()
                 ?.request
-                ?.toolName
                 ?: return
-        autoApproveAgentToolName = toolName
+        if (!request.allowTurnApproval) {
+            confirmAgent()
+            return
+        }
+        autoApproveAgentSafeTools = true
         confirmAgent()
     }
 
@@ -1128,7 +1131,7 @@ class ConductorViewModel(
     }
 
     fun cancelAgent() {
-        autoApproveAgentToolName = null
+        autoApproveAgentSafeTools = false
         autoApproveAgentBatchId = null
         val pending = pendingAgentConfirmation ?: return
         removeConfirmationItems()
@@ -1138,7 +1141,7 @@ class ConductorViewModel(
     fun stopAgent() {
         if (!_uiState.value.isRunning || stopRequested) return
         stopRequested = true
-        autoApproveAgentToolName = null
+        autoApproveAgentSafeTools = false
         autoApproveAgentBatchId = null
         cancelPendingFileRequest("The turn was stopped.")
         cancelPendingAskUser("The turn was stopped.")
@@ -1417,7 +1420,7 @@ class ConductorViewModel(
         agentJob = null
         stopRequested = false
         runtime.resetCancel()
-        autoApproveAgentToolName = null
+        autoApproveAgentSafeTools = false
         autoApproveAgentBatchId = null
         pendingAgentConfirmation = null
         pendingTurnEvent = null
@@ -1474,7 +1477,7 @@ class ConductorViewModel(
         }
         stopRequested = false
         runtime.resetCancel()
-        autoApproveAgentToolName = null
+        autoApproveAgentSafeTools = false
         autoApproveAgentBatchId = null
         updateUi {
             copy(
@@ -1552,7 +1555,7 @@ class ConductorViewModel(
                     }
                     pendingAgentConfirmation = null
                     stopRequested = false
-                    autoApproveAgentToolName = null
+                    autoApproveAgentSafeTools = false
                     autoApproveAgentBatchId = null
                     ModelProviderSettings.unpin()
                     if (outcome is TurnOutcome.Failed) {
@@ -1751,7 +1754,7 @@ class ConductorViewModel(
                     event.request.allowBatchApproval &&
                         autoApproveAgentBatchId != null &&
                         event.request.batchId == autoApproveAgentBatchId
-                if (autoApproveAgentToolName == event.request.toolName || batchApproved) {
+                if ((autoApproveAgentSafeTools && event.request.allowTurnApproval) || batchApproved) {
                     pendingAgentConfirmation =
                         CompletableDeferred<Boolean>().apply { complete(true) }
                 } else {
