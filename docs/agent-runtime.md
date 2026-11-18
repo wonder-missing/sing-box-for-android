@@ -850,7 +850,7 @@ ToolCall 需要确认
 - 模型不能自己确认，也不能通过 tool 输出改变确认策略。
 - 用户取消一个 tool call 时，同一条 assistant 消息里尚未执行的 tool call 全部回填 `cancelled`，本 turn 结束，不让模型马上换个工具重试。
 - 一条 assistant 消息可能带多个需要确认的 tool call。`ConfirmationRequest.batchRemaining` 是当前批次里剩余调用数（含当前），`batchId` 标识这条 assistant 消息，`batchToolNames` 是剩余工具名，由运行时计算。
-- `allowTurnApproval`/`allowBatchApproval` 只对 `AGENT_ONLY`（以及被提升确认的 `DATA_EGRESS`）工具为 true；`ALWAYS` 的 `probe_*`、`select_outbound`、Taildrop 等不会出现批量或 turn 级放行，仍逐个确认。
+- `allowTurnApproval`/`allowBatchApproval` 只对 `AGENT_ONLY`（以及被提升确认的 `DATA_EGRESS`）工具为 true；`ALWAYS` 的 `probe_*`、`select_outbound`、Taildrop 等不会出现批量或 turn 级放行，仍逐个确认。MCP 工具和 `file_delete` 也被排除在批量/整轮安全放行之外。
 - 确认卡提供 `Run all N safe calls in this response`：ViewModel 记一个只作用于当前 `batchId` 的安全工具自动批准标记，运行时后续仍逐个发出确认事件并收到显式 `true`，但不再画新卡；同一批次里的 `ALWAYS` 工具仍单独出卡。
 - 确认卡还提供 `Allow all safe tools for this turn`：整个 turn 内安全工具不再弹卡，`ALWAYS` 工具仍逐次确认。它只预览当前工具的参数，不逐项预览后续工具。
 - 命令入口的单工具确认卡没有 `allowTurnApproval`/`allowBatchApproval`，不会出现这些选项。
