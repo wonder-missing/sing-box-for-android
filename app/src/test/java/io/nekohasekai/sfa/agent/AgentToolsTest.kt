@@ -363,6 +363,26 @@ class AgentToolsTest {
     }
 
     @Test
+    fun webSearchKeepsAnswerCitationsWhenTheyMatchASource() {
+        val search =
+            FakeWebSearchPort(
+                WebSearchOutcome(
+                    answer = "See https://example.com/a?hl=zh-cn for details.",
+                    sources = listOf(WebSearchSource("https://example.com/a")),
+                ),
+            )
+        val registry = buildTestRegistry(webSearchPort = search)
+
+        val result = registry.userExec("web_search", """{"query":"example"}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals(
+            "See https://example.com/a?hl=zh-cn for details.",
+            result.output!!.string("answer"),
+        )
+    }
+
+    @Test
     fun webSearchRequiresAgentConfirmation() {
         val search = FakeWebSearchPort()
         val registry = buildTestRegistry(webSearchPort = search)

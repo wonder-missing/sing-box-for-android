@@ -140,6 +140,73 @@ class DeepSeekWebSearchPortTest {
     }
 
     @Test
+    fun canonicalizesLocaleMirrorAndTrackingParameters() {
+        assertEquals(
+            "https://developer.android.com/about/versions/15/summary",
+            canonicalWebSearchUrl("https://developer.android.google.cn/about/versions/15/summary?hl=ar#1"),
+        )
+        assertEquals(
+            "https://developer.android.com/about/versions/15/features",
+            canonicalWebSearchUrl(
+                "https://developer.android.com/about/versions/15/features?source=post_page&hl=zh-cn#3",
+            ),
+        )
+        assertEquals(
+            "https://developer.android.com/work/versions",
+            canonicalWebSearchUrl("https://android-dot-devsite-v2-prod.appspot.com/work/versions?hl=vi#1"),
+        )
+        assertEquals(
+            "https://example.com/a?x=1",
+            canonicalWebSearchUrl("https://example.com/a?x=1&utm_source=test"),
+        )
+        assertNull(canonicalWebSearchUrl("file:///tmp/page"))
+    }
+
+    @Test
+    fun parseDeduplicatesLocaleAndMirrorSources() {
+        val outcome =
+            parseWebSearchResponse(
+                """
+                {
+                  "content": [
+                    {
+                      "type": "web_search_tool_result",
+                      "content": [
+                        {"url": "https://developer.android.google.cn/about/versions/15/summary?hl=ar#1", "title": "A"},
+                        {"url": "https://developer.android.google.cn/about/versions/15/summary?hl=he#2", "title": "B"},
+                        {"url": "https://android-dot-devsite-v2-prod.appspot.com/about/versions/15/summary?hl=hi#1", "title": "C"}
+                      ]
+                    }
+                  ]
+                }
+                """.trimIndent(),
+                5,
+            )
+
+        assertEquals(1, outcome.sources.size)
+        assertEquals(
+            "https://developer.android.com/about/versions/15/summary",
+            outcome.sources.single().url,
+        )
+    }
+
+    @Test
+    fun allowedAnswerUrlsMustMatchACanonicalSource() {
+        val sources =
+            listOf(
+                WebSearchSource("https://developer.android.com/about/versions/15/features"),
+            )
+        val answer =
+            "见 [功能](https://developer.android.com/about/versions/15/features?hl=zh-cn#3)，" +
+                "忽略 [杂项](https://evil.example/other)。"
+
+        assertEquals(
+            setOf("https://developer.android.com/about/versions/15/features?hl=zh-cn#3"),
+            allowedWebSearchUrls(answer, sources),
+        )
+    }
+
+    @Test
     fun parseTreatsAnEmptyResultAsSuccess() {
         val outcome = parseWebSearchResponse("""{"content":[],"stop_reason":"end_turn"}""", 5)
 

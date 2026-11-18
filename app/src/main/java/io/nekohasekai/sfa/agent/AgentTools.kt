@@ -942,7 +942,9 @@ class AgentTools(
                         result.latencyMs?.let { put("latencyMs", it) }
                         error?.let { put("error", AgentSanitizer.scrubForModelRead(it)) }
                     }
-                val allowedUrls = result.sources.map { it.url }.toSet()
+                val allowedUrls =
+                    result.sources.map { it.url }.toSet() +
+                        allowedWebSearchUrls(result.answer, result.sources)
                 return if (error == null) {
                     ToolExecution(output = output, allowedUrls = allowedUrls)
                 } else {

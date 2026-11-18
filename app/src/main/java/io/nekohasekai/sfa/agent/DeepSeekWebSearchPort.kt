@@ -15,6 +15,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -268,13 +269,70 @@ private fun webSearchResultError(element: Any?): String? {
         .ifBlank { "web search failed" }
 }
 
+/**
+ * Canonical form for result deduplication. It removes locale/tracking
+ * parameters and maps known developer.android.com mirrors to the canonical
+ * host. The fragment is dropped because it is a section anchor, not a
+ * different source.
+ */
+internal fun canonicalWebSearchUrl(raw: String): String? {
+    val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return null
+    val scheme = uri.scheme?.lowercase(Locale.US) ?: return null
+    if (scheme != "http" && scheme != "https") return null
+    if (uri.userInfo != null) return null
+    val rawHost = uri.host?.lowercase(Locale.US)?.takeIf { it.isNotBlank() } ?: return null
+    val host = WEB_SEARCH_HOST_ALIASES[rawHost] ?: rawHost
+    val defaultPort = if (scheme == "https") 443 else 80
+    val authority = if (uri.port > 0 && uri.port != defaultPort) "$host:${uri.port}" else host
+    val path = uri.rawPath?.ifBlank { "/" } ?: "/"
+    val query =
+        uri.rawQuery
+            ?.split('&')
+            ?.filterNot { part ->
+                val key = part.substringBefore('=').lowercase(Locale.US)
+                key.isBlank() || key in WEB_SEARCH_TRACKING_PARAMS || key.startsWith("utm_")
+            }?.joinToString("&")
+            ?.takeIf { it.isNotEmpty() }
+    return buildString {
+        append(scheme)
+        append("://")
+        append(authority)
+        append(path)
+        query?.let {
+            append('?')
+            append(it)
+        }
+    }
+}
+
+/**
+ * URLs in the server answer may use the same source with tracking or locale
+ * parameters. Allow those exact strings through the sanitizer so citations
+ * remain readable, but only when their canonical form is a returned source.
+ */
+internal fun allowedWebSearchUrls(
+    answer: String?,
+    sources: List<WebSearchSource>,
+): Set<String> {
+    if (answer.isNullOrBlank() || sources.isEmpty()) return emptySet()
+    val canonicalSources = sources.mapNotNull { canonicalWebSearchUrl(it.url) }.toSet()
+    if (canonicalSources.isEmpty()) return emptySet()
+    return HTTP_URL_REGEX
+        .findAll(answer)
+        .map { it.value.trimEnd { ch -> ch in URL_TRAILING_PUNCTUATION } }
+        .filter { isAllowedHttpUrl(it) }
+        .filter { canonicalWebSearchUrl(it) in canonicalSources }
+        .toSet()
+}
+
 private fun addSource(
     element: Any?,
     sources: MutableMap<String, SourceBuilder>,
 ) {
     val obj = element as? JsonObject ?: return
-    val url = (obj["url"] as? JsonPrimitive)?.contentOrNull?.trim()
-    if (url.isNullOrEmpty() || !isAllowedHttpUrl(url)) return
+    val rawUrl = (obj["url"] as? JsonPrimitive)?.contentOrNull?.trim()
+    if (rawUrl.isNullOrEmpty() || !isAllowedHttpUrl(rawUrl)) return
+    val url = canonicalWebSearchUrl(rawUrl) ?: rawUrl
     val source = sources.getOrPut(url) { SourceBuilder(url) }
     val title = (obj["title"] as? JsonPrimitive)?.contentOrNull?.trim()
     if (!title.isNullOrEmpty()) source.title = title
@@ -283,6 +341,29 @@ private fun addSource(
     val citedText = (obj["cited_text"] as? JsonPrimitive)?.contentOrNull?.trim()
     if (!citedText.isNullOrEmpty()) source.citedText = citedText
 }
+
+private val WEB_SEARCH_HOST_ALIASES =
+    mapOf(
+        "developer.android.google.cn" to "developer.android.com",
+        "android-dot-devsite-v2-prod.appspot.com" to "developer.android.com",
+        "source.android.google.cn" to "source.android.com",
+    )
+
+private val WEB_SEARCH_TRACKING_PARAMS =
+    setOf(
+        "hl",
+        "authuser",
+        "skip_cache",
+        "source",
+        "gclid",
+        "fbclid",
+        "ref",
+        "ref_src",
+        "si",
+    )
+
+private val HTTP_URL_REGEX = Regex("""(?i)https?://[^\s<>"'`)\]}，。；：！？、）】》]+""")
+private const val URL_TRAILING_PUNCTUATION = ").,;:!?]}'\"，。；：！？、）】》"
 
 private class SourceBuilder(
     private val url: String,

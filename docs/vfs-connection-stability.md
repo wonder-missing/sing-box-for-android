@@ -1,6 +1,6 @@
 # VFS 连接稳定性
 
-状态：2026-11-18，wonder.98。VFS 行为在 90–92 实现，93/94 补充生命周期遥测、UI 和草稿/telemetry 修复；96 的夜间浸泡暴露了后台断网重试预算和 vfsd stale-link 清理问题，98 已把 sharing service 活跃时的重连改为持续退避，vfsd stale-link 清理仍待修。代码见 `VfsRuntime`、`VfsSharingService`、`VfsConnectionManager`、`VfsSharingPolicy`。可重复的短测/夜间浸泡流程见 [`vfs-soak-test.md`](vfs-soak-test.md)。
+状态：2026-11-18，wonder.98。VFS 行为在 90–92 实现，93/94 补充生命周期遥测、UI 和草稿/telemetry 修复；96 的夜间浸泡暴露了后台断网重试预算，98 已把 sharing service 活跃时的重连改为持续退避。vfsd stale-link 清理目前只是待更多实证的现象，不下结论。代码见 `VfsRuntime`、`VfsSharingService`、`VfsConnectionManager`、`VfsSharingPolicy`。可重复的短测/夜间浸泡流程见 [`vfs-soak-test.md`](vfs-soak-test.md)。
 
 ## 问题
 
@@ -86,7 +86,7 @@ wonder.93/94 实测补充：93 的新会话在 12:54–12:58 记录了 `backgrou
 - 旧实现里 `VfsBackoff` 只重试 10 次（1+2+4+8+16+32+60+60+60+60，约 5 分钟）；耗尽后进入 `VFS_CONNECT_FAILED`，`VfsSharingPolicy` 停止 foreground service，因此网络恢复后也没有新的 reconnect 循环。wonder.98 已改：前台仍保留 10 次上限，sharing service 活跃时按 60 秒上限持续重试，直到网络恢复或用户断开。
 - vfsd 没有收到 provider disconnect，只看到 `lastSeen` stale；mount 的 `offlineSince` 未设置，导致 refs=0、离线数小时后仍 `mounted=true`，FUSE 读持续 EIO。vfsd 日志在 01:38:02 只有两条 `ENOENT ... write`，没有 `provider disconnected`。
 
-这不是 vfsd 崩溃，也不是浸泡脚本误判：vfsd `/status` 在整个故障期间都正常响应，mount 一直存在；失败点是手机侧连接断开后 App 不再重连，以及 vfsd 对 stale `lastSeen` 没有触发 detach/grace 清理。下一轮浸泡前应先决定后台断网重试策略，并修 vfsd 的 stale-link 清理。
+这不是 vfsd 崩溃，也不是浸泡脚本误判：vfsd `/status` 在整个故障期间都正常响应，mount 一直存在；已确认的直接失败点是手机侧连接断开后 App 不再重连，wonder.98 已修后台重连预算。vfsd 在 stale `lastSeen` 时未 detach/grace 清理目前只是现场现象，还不能区分是 vfsd 逻辑、Portal 没有传 close、sweep 失败或其他锁存；需要更短的可控复现和 Portal→vfsd 链路日志，确认后再写问题反馈。
 
 ## 待真机验收
 
