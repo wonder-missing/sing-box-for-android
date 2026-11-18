@@ -48,6 +48,7 @@
 ### P3 低优先 / 可选 / 阻塞
 
 - [ ] **`file_grep` 多文件/目录支持（低）**：当前只搜单个文件。需要时让 `path` 支持目录并返回文件 + 行号，不新增 `file_search`；先不动。
+- [ ] **Skill 经验集（暂不实现 skill）**：把 2026-11-18 的出口验证方法留作未来 skill 素材：多域名对照、core 日志里的 sniff/route 命中、强制新连接避免 OkHttp 复用、`pending.log` 是有界待上传队列不能当完整日志、节点绑定用 `probe_via_node`。当前只记录，不实现 skill 支持。
 - [ ] **数据面 Phase D（以后）**：短消息、通知、定时检查、收件箱监听、A → B 中继；仍只走 typed 工具 + 确认。
 - [ ] **VFS 后续（可选）**：P6e 进程被杀后恢复最后一条 Link；按 Portal refs/consumer 生命周期自动停止；后台共享时长设置。后台 provider 与前台服务已在 wonder.90 落地，见 [`docs/vfs-connection-stability.md`](docs/vfs-connection-stability.md)。
 - [ ] **probe 真正并发（阻塞）**：libbox 没有 per-request outbound binding，`probe_many` 仍顺序执行。
