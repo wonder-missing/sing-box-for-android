@@ -57,6 +57,28 @@ fun getVersionProps(propName: String): String {
     return ""
 }
 
+fun wonderBuildOrdinal(raw: String): Int {
+    val value = raw.trim()
+    require(value.isNotEmpty()) {
+        "WONDER_BUILD must be set in version.properties; see docs/versioning.md"
+    }
+    if (value.all { it.isDigit() }) {
+        val ordinal = value.toIntOrNull()
+        require(value.length <= 2 && ordinal != null && ordinal in 1..99) {
+            "WONDER_BUILD decimals are limited to 1..99; use a two-character code such as A1 after 99 (docs/versioning.md)"
+        }
+        return ordinal
+    }
+    require(value.length == 2 && value.all { it.isLetterOrDigit() }) {
+        "WONDER_BUILD must be a two-character base-36 code such as A1 (docs/versioning.md)"
+    }
+    val ordinal = value.toIntOrNull(36)?.minus(261) ?: 0
+    require(ordinal >= 100) {
+        "WONDER_BUILD code $value is outside the A1..ZZ range (docs/versioning.md)"
+    }
+    return ordinal
+}
+
 android {
     namespace = "io.nekohasekai.sfa"
     compileSdk = 37
@@ -77,13 +99,14 @@ android {
         minSdk = 24
         targetSdk = 37
         // Keep 11404000 in sync with GitHubReleaseFeed.WONDER_VERSION_CODE_BASE;
-        // WonderVersionTest guards the pair.
-        val wonderBuild = getVersionProps("WONDER_BUILD").toIntOrNull() ?: 0
-        require(wonderBuild > 0) { "WONDER_BUILD must be set in version.properties" }
+        // WonderVersionTest guards the pair. WONDER_BUILD is a two-character
+        // label after 99; docs/versioning.md defines the base-36 offset.
+        val wonderBuildCode = getVersionProps("WONDER_BUILD").trim()
+        val wonderBuildOrdinalValue = wonderBuildOrdinal(wonderBuildCode)
         val coreVersion = getVersionProps("CORE_VERSION")
         require(coreVersion.isNotBlank()) { "CORE_VERSION must be set in version.properties" }
-        versionCode = 11_404_000 + wonderBuild
-        versionName = "$coreVersion-wonder.$wonderBuild"
+        versionCode = 11_404_000 + wonderBuildOrdinalValue
+        versionName = "$coreVersion-wonder.$wonderBuildCode"
         base.archivesName.set("SFA-${versionName}")
     }
 

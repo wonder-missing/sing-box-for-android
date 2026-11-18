@@ -9,13 +9,13 @@ class WonderVersionTest {
     @Test
     fun `version code matches update checker base`() {
         val build =
-            Regex("""wonder\.(\d+)""")
+            Regex("""wonder\.([0-9A-Za-z]+)""")
                 .find(BuildConfig.VERSION_NAME)
                 ?.groupValues
                 ?.get(1)
-                ?.toIntOrNull()
+                ?.let(WonderBuild::ordinalOf)
 
-        assertNotNull("VERSION_NAME must contain wonder.N: ${BuildConfig.VERSION_NAME}", build)
+        assertNotNull("VERSION_NAME must contain a wonder build label: ${BuildConfig.VERSION_NAME}", build)
         assertEquals(
             BuildConfig.VERSION_CODE,
             GitHubReleaseFeed.WONDER_VERSION_CODE_BASE + build!!,

@@ -225,8 +225,8 @@ jobs:
           git for-each-ref --format='%(contents)' "refs/tags/${GITHUB_REF_NAME}" > "$NOTES_FILE"
           test -s "$NOTES_FILE"
           # BundledReleaseNotes rejects notes whose first line is not the
-          # current wonder.N. Fail here so a bad tag never ships an APK that
-          # silently falls back to network release notes.
+          # current wonder.<label>. Fail here so a bad tag never ships an APK
+          # that silently falls back to network release notes.
           test "$(head -n 1 "$NOTES_FILE")" = "wonder.${WONDER_BUILD}" || {
             echo "Tag annotation must start with wonder.${WONDER_BUILD}" >&2
             exit 1

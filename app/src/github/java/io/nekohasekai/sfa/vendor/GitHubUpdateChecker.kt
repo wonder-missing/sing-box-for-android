@@ -17,8 +17,9 @@ import javax.net.ssl.HttpsURLConnection
  * Uses the public release Atom feed and asset pages, not the REST API, so an
  * exhausted unauthenticated GitHub API quota (HTTP 403) cannot block updates.
  *
- * versionCode is [GitHubReleaseFeed.WONDER_VERSION_CODE_BASE] plus the `wonder.N`
- * build in the tag. Keep that base in sync with app/build.gradle.kts.
+ * versionCode is [GitHubReleaseFeed.WONDER_VERSION_CODE_BASE] plus the ordinal
+ * encoded by the `wonder.<build>` label in the tag. Keep that base in sync with
+ * app/build.gradle.kts.
  */
 class GitHubUpdateChecker : Closeable {
     companion object {

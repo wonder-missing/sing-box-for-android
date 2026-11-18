@@ -23,7 +23,7 @@ object GitHubReleaseFeed {
         val size: Long,
     )
 
-    private val WONDER_BUILD = Regex("""wonder\.(\d+)""")
+    private val WONDER_BUILD = Regex("""wonder\.([0-9A-Za-z]+)""")
     private val ABI_SUFFIXES = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
     private val ENTRY = Regex("""<entry(?:\s[^>]*)?>(.*?)</entry>""", RegexOption.DOT_MATCHES_ALL)
     private val TAG_LINK = Regex("""href="([^"]*/releases/tag/[^"]+)"""")
@@ -45,7 +45,12 @@ object GitHubReleaseFeed {
             "nbsp" to " ",
         )
 
-    fun wonderBuild(tagOrName: String): Int? = WONDER_BUILD.find(tagOrName)?.groupValues?.get(1)?.toIntOrNull()
+    fun wonderBuild(tagOrName: String): Int? =
+        WONDER_BUILD
+            .find(tagOrName)
+            ?.groupValues
+            ?.get(1)
+            ?.let(WonderBuild::ordinalOf)
 
     fun versionCodeOf(tagOrName: String): Int {
         val build = wonderBuild(tagOrName) ?: return 0
