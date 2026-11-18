@@ -90,7 +90,6 @@
     <string name="vfs_scope_short_conversation">Chat</string>
     <string name="vfs_scope_short_workdir">Workdir</string>
     <string name="vfs_scope_short_appfiles">Files</string>
-    <string name="vfs_scope_more">+%1$d</string>
     <string name="vfs_consent_conversation">The conversation scope includes the full chat and other MCP tool output.</string>
     <string name="vfs_consent_detail">It can pass these files to containers it starts. You can revoke access in Settings &gt; Security.</string>
     <string name="vfs_consent_deny">Deny</string>

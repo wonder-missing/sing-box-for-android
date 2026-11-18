@@ -1,11 +1,11 @@
 package io.nekohasekai.sfa.compose.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,7 +33,6 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.utils.humanBytes
 import io.nekohasekai.sfa.vfs.VfsScope
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VfsStatusBar(
     serverName: String,
@@ -42,7 +41,8 @@ fun VfsStatusBar(
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val chips = vfsScopeChips(scope)
+    val scopes = vfsOrderedScopes(scope)
+    val scopeScrollState = rememberScrollState()
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -98,15 +98,15 @@ fun VfsStatusBar(
                 }
             }
 
-            FlowRow(
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(scopeScrollState),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                for (item in chips.visible) {
+                for (item in scopes) {
                     ScopeChip(stringResource(vfsScopeShortLabel(item)))
-                }
-                if (chips.hiddenCount > 0) {
-                    ScopeChip(stringResource(R.string.vfs_scope_more, chips.hiddenCount))
                 }
             }
         }
