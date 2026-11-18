@@ -730,6 +730,7 @@ fun ConductorScreen(
                                 canRetry = uiState.canRetryLastTurn && index == uiState.items.lastIndex,
                                 onRetry = viewModel::retryLastTurn,
                                 imageFile = viewModel::imageFile,
+                                resourceFile = viewModel::resourceFile,
                             )
                         }
                     }
@@ -1557,6 +1558,7 @@ private fun ConductorItemView(
     canRetry: Boolean,
     onRetry: () -> Unit,
     imageFile: (String) -> File?,
+    resourceFile: (String) -> File?,
 ) {
     when (item) {
         is ConductorItem.User ->
@@ -1585,7 +1587,7 @@ private fun ConductorItemView(
                         )
                     }
                 }
-                AssistantMarkdownText(item.text)
+                AssistantMarkdownText(item.text, resourceFile)
                 AssistantUsageFooter(item.usage, item.contextPercent)
             }
 

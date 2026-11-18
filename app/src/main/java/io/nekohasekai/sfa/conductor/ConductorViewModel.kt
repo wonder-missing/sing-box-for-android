@@ -708,6 +708,7 @@ class ConductorViewModel(
                 tailscaleStatusSource = tailscaleSource,
                 telemetryUploadPort = telemetryPort,
                 httpFetchPort = httpFetchPort,
+                fileStore = fileStore,
                 webSearchPort = webSearchPort,
                 webSearchAvailable = ModelProviderSettings::supportsWebSearch,
             ).all +
@@ -890,6 +891,8 @@ class ConductorViewModel(
     }
 
     fun imageFile(id: String): File? = imageStore.file(id)
+
+    fun resourceFile(path: String): File? = runCatching { fileStore.resolveResource(path) }.getOrNull()
 
     private fun submitInternal(
         raw: String,

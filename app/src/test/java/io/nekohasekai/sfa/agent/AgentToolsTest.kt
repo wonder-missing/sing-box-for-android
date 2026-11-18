@@ -15,6 +15,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.nio.file.Files
 
 private fun AgentToolRegistry.userExec(
     name: String,
@@ -258,6 +259,42 @@ class AgentToolsTest {
         assertEquals("hello", output.string("text"))
         assertNull(output["via"])
         assertFalse(output.boolean("truncated"))
+    }
+
+    @Test
+    fun httpFetchCanSaveAnImageResourceWithoutReturningItsBody() {
+        val root = Files.createTempDirectory("conductor-fetch-test").toFile()
+        try {
+            val store = ConductorFileStore(root)
+            val body = "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"1\" height=\"1\"/></svg>"
+            val fetch =
+                FakeHttpFetchPort(
+                    downloadOutcome =
+                        HttpDownloadOutcome(
+                            statusCode = 200,
+                            contentType = "image/svg+xml",
+                            bytes = body.toByteArray(),
+                        ),
+                )
+            val registry = buildTestRegistry(httpFetchPort = fetch, fileStore = store)
+
+            val result =
+                registry.userExec(
+                    "http_fetch",
+                    """{"url":"https://example.com/icon.svg","output_path":"conductor/resources/icon.svg"}""",
+                )
+
+            assertTrue(result.errorMessage ?: "", result.ok)
+            val output = result.output!!
+            assertEquals("conductor/resources/icon.svg", output.string("path"))
+            assertEquals("image/svg+xml", output.string("contentType"))
+            assertNull(output["text"])
+            assertEquals(body, store.resolveResource("conductor/resources/icon.svg").readText())
+            assertEquals(1, fetch.downloadCalls.size)
+            assertEquals(8 * 1024 * 1024, fetch.downloadCalls.single()[4])
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     @Test

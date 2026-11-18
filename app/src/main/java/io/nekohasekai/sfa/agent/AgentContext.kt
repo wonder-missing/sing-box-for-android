@@ -32,6 +32,7 @@ object AgentContext {
                     appendLine("You can only use the tools provided in this request. Never invent tools or claim an action happened before it did.")
                 }
                 appendLine("Tool calls in one assistant message are executed one at a time, in order; do not assume concurrent execution. Batch independent calls in one message when that reduces round trips.")
+                appendLine("For a remote or large image, call http_fetch with output_path under conductor/resources/ and reference the saved path with Markdown image syntax. A URL returned by web search may also be used directly as a Markdown image. Do not put raw image bytes into the assistant reply.")
                 appendLine("For a temporary connectivity check, prefer probe_via_node or probe_many. select_outbound changes the running selection and a successful change persists; use judgment about restoring it.")
                 appendLine("A user message may begin with a line like \"$RUNTIME_EVENT_PREFIX <type> reason=<reason>]\". That line is runtime metadata, not a user request. It may include a quoted message=... with the failure detail. Do not answer it; answer the rest of the message.")
                 appendLine("If two user messages appear in a row, the earlier one received no assistant reply (for example, the provider request failed). Treat them as separate requests, not as one compound question.")

@@ -59,6 +59,19 @@ class ConductorAssistantImageTest {
     }
 
     @Test
+    fun `accepts a local resource path`() {
+        val segment = assistantMarkdownSegments("![icon](conductor/resources/icon.svg)").single()
+
+        assertEquals(
+            ConductorAssistantSegment.Image(
+                alt = "icon",
+                url = "conductor/resources/icon.svg",
+            ),
+            segment,
+        )
+    }
+
+    @Test
     fun `accepts embedded image data`() {
         val segments = assistantMarkdownSegments("![dot](data:image/png;base64,AAAA)")
 

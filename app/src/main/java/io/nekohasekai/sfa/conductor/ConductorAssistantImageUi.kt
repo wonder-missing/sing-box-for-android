@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.URI
@@ -84,7 +85,7 @@ private val assistantImageClient =
         .build()
 
 @Composable
-internal fun AssistantMarkdownText(text: String) {
+internal fun AssistantMarkdownText(text: String, resourceFile: (String) -> File?) {
     val segments = remember(text) { assistantMarkdownSegments(text) }
     if (segments.none { it is ConductorAssistantSegment.Image || it is ConductorAssistantSegment.Svg }) {
         SelectionContainer {
@@ -125,7 +126,7 @@ internal fun AssistantMarkdownText(text: String) {
                     }
                 }
 
-                is ConductorAssistantSegment.Image -> AssistantImageBlock(segment.alt, segment.url)
+                is ConductorAssistantSegment.Image -> AssistantImageBlock(segment.alt, segment.url, resourceFile)
 
                 is ConductorAssistantSegment.Svg -> AssistantSvgBlock(segment.source)
             }
@@ -137,6 +138,7 @@ internal fun AssistantMarkdownText(text: String) {
 private fun AssistantImageBlock(
     alt: String,
     url: String,
+    resourceFile: (String) -> File?,
 ) {
     var state by remember(url) { mutableStateOf<AssistantImageState>(AssistantImageState.Idle) }
     val scope = rememberCoroutineScope()
@@ -145,12 +147,15 @@ private fun AssistantImageBlock(
         if (state is AssistantImageState.Loading) return
         scope.launch {
             state = AssistantImageState.Loading
-            state = withContext(Dispatchers.IO) { loadAssistantImage(url) }
+            state = withContext(Dispatchers.IO) { loadAssistantImage(url, resourceFile) }
         }
     }
 
-    LaunchedEffect(url) {
-        if (url.startsWith("data:image/", ignoreCase = true)) load()
+    val localResource = !url.startsWith("http://", ignoreCase = true) &&
+        !url.startsWith("https://", ignoreCase = true) &&
+        !url.startsWith("data:", ignoreCase = true)
+    LaunchedEffect(url, localResource) {
+        if (url.startsWith("data:image/", ignoreCase = true) || localResource) load()
     }
 
     Surface(
@@ -288,9 +293,17 @@ private fun AssistantSvgBlock(source: String) {
     }
 }
 
-private suspend fun loadAssistantImage(url: String): AssistantImageState {
+private suspend fun loadAssistantImage(
+    url: String,
+    resourceFile: (String) -> File?,
+): AssistantImageState {
     if (url.startsWith("data:image/", ignoreCase = true)) {
         return decodeDataImage(url)
+    }
+    if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
+        val file = resourceFile(url) ?: return AssistantImageState.Error("Resource not found.")
+        if (file.length() > MAX_IMAGE_BYTES) return AssistantImageState.Error("Image is too large.")
+        return decodeImage(file.readBytes())
     }
     val uri =
         runCatching { URI(url) }.getOrNull()

@@ -23,6 +23,7 @@ class AgentTools(
     private val tailscaleStatusSource: TailscaleStatusSource? = null,
     private val telemetryUploadPort: TelemetryUploadPort? = null,
     private val httpFetchPort: HttpFetchPort? = null,
+    private val fileStore: ConductorFileStore? = null,
     private val webSearchPort: WebSearchPort? = null,
     private val webSearchAvailable: () -> Boolean = { true },
 ) {
@@ -697,12 +698,37 @@ class AgentTools(
                                 name = "max_bytes",
                                 type = AgentParameterType.INTEGER,
                                 required = false,
-                                description = "Maximum body bytes read. Defaults to 65536; capped at 262144.",
+                                description =
+                                    "Maximum body bytes read. Defaults to 65536; capped at 262144 for " +
+                                        "text fetch and 8 MiB when output_path is set.",
+                            ),
+                            AgentParameterSpec(
+                                name = "output_path",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description =
+                                    "Optional path under conductor/resources/. Saves an image/SVG response " +
+                                        "to the workspace and returns path metadata instead of the body.",
+                            ),
+                            AgentParameterSpec(
+                                name = "overwrite",
+                                type = AgentParameterType.BOOLEAN,
+                                required = false,
+                                description = "Allow replacing an existing output_path resource. Defaults to false.",
                             ),
                         ),
                     confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
                     category = "network",
-                    aliases = listOf("fetch", "http get", "download text", "request text"),
+                    aliases =
+                        listOf(
+                            "fetch",
+                            "http get",
+                            "download text",
+                            "download image",
+                            "download svg",
+                            "save image",
+                            "request text",
+                        ),
                     confirmationReason =
                         "This sends an HTTP request from this device to the URL you provide.",
                     allowedUrlParameter = "url",
@@ -740,11 +766,85 @@ class AgentTools(
                         ?: return invalidParameter(
                             "headers must be \"Name: value\" strings without CR or LF",
                         )
+                val outputPath =
+                    AgentJson.string(args, "output_path")
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                val overwrite = AgentJson.boolean(args, "overwrite") ?: false
+                if (outputPath != null) {
+                    if (method != "GET") {
+                        return invalidParameter("output_path is only supported for GET")
+                    }
+                    if (!isImageResourcePath(outputPath)) {
+                        return invalidParameter(
+                            "output_path must end with .svg, .png, .jpg, .jpeg, .gif or .webp",
+                        )
+                    }
+                }
                 val maxBytes =
-                    (AgentJson.int(args, "max_bytes") ?: DEFAULT_FETCH_BYTES)
-                        .coerceIn(1, MAX_FETCH_BYTES)
+                    (AgentJson.int(args, "max_bytes") ?: if (outputPath == null) DEFAULT_FETCH_BYTES else MAX_RESOURCE_BYTES)
+                        .coerceIn(1, if (outputPath == null) MAX_FETCH_BYTES else MAX_RESOURCE_BYTES)
                 if (cancellation.isCancelled()) {
                     return ToolExecution(errorCode = "cancelled", errorMessage = "http_fetch cancelled")
+                }
+                if (outputPath != null) {
+                    val store = fileStore ?: return unavailable("Resource storage is unavailable.")
+                    val result =
+                        try {
+                            port.download(url, method, headers, body, maxBytes, cancellation)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            return ToolExecution(
+                                errorCode = "tool_failed",
+                                errorMessage = e.message ?: e.toString(),
+                            )
+                        }
+                    val contentType = result.contentType?.substringBefore(';')?.trim()?.lowercase()
+                    val failure =
+                        when {
+                            result.error != null -> result.error
+                            result.statusCode == null -> "The server returned no HTTP status."
+                            result.statusCode !in 200..299 -> "HTTP ${result.statusCode} ${result.statusText.orEmpty()}".trim()
+                            result.truncated -> "Response exceeded max_bytes."
+                            result.bytes.isEmpty() -> "Response body is empty."
+                            contentType != null && !contentType.startsWith("image/") ->
+                                "Response is not an image (${result.contentType})."
+                            else -> null
+                        }
+                    if (failure != null) {
+                        return ToolExecution(
+                            output =
+                                buildJsonObject {
+                                    put("ok", false)
+                                    put("url", url)
+                                    result.statusCode?.let { put("statusCode", it) }
+                                    result.contentType?.let { put("contentType", it) }
+                                    put("bytes", result.bytes.size)
+                                    put("error", failure)
+                                },
+                            errorCode = "tool_failed",
+                            errorMessage = failure,
+                        )
+                    }
+                    val entry =
+                        try {
+                            store.writeResourceBytes(outputPath, result.bytes, overwrite)
+                        } catch (e: Exception) {
+                            return invalidParameter(e.message ?: "Could not write output_path.")
+                        }
+                    val output =
+                        buildJsonObject {
+                            put("ok", true)
+                            put("url", url)
+                            put("statusCode", result.statusCode)
+                            put("contentType", result.contentType)
+                            put("bytes", result.bytes.size)
+                            put("path", entry.path)
+                            put("sha256", store.sha256(store.resolveResource(entry.path)))
+                            result.latencyMs?.let { put("latencyMs", it) }
+                        }
+                    return ToolExecution(output = output)
                 }
                 val result =
                     try {
@@ -790,6 +890,11 @@ class AgentTools(
                         errorMessage = result.error,
                     )
                 }
+            }
+
+            private fun isImageResourcePath(path: String): Boolean {
+                val extension = path.substringAfterLast('.', "").lowercase(Locale.US)
+                return extension in RESOURCE_IMAGE_EXTENSIONS
             }
 
             private fun normalizeFetchMethod(raw: String): String? {
@@ -1035,8 +1140,8 @@ class AgentTools(
                 if (telemetryUploadPort != null) add(telemetryUpload)
             }
 
-    private fun unavailable(): ToolExecution =
-        ToolExecution(errorCode = "tool_unavailable", errorMessage = "this tool is not available in the current build")
+    private fun unavailable(message: String = "this tool is not available in the current build"): ToolExecution =
+        ToolExecution(errorCode = "tool_unavailable", errorMessage = message)
 
     private fun invalidParameter(message: String): ToolExecution =
         ToolExecution(errorCode = "invalid_parameter", errorMessage = message)
@@ -1092,7 +1197,9 @@ private const val WAIT_TIMEOUT_MS = 15_000L
 
 private const val DEFAULT_FETCH_BYTES = 64 * 1024
 private const val MAX_FETCH_BYTES = 256 * 1024
+private const val MAX_RESOURCE_BYTES = 8 * 1024 * 1024
 private const val MAX_FETCH_BODY_BYTES = 256 * 1024
+private val RESOURCE_IMAGE_EXTENSIONS = setOf("svg", "png", "jpg", "jpeg", "gif", "webp")
 private const val MAX_FETCH_HEADERS = 16
 private const val MAX_FETCH_HEADER_CHARS = 2048
 private const val DEFAULT_WEB_SEARCH_RESULTS = 8

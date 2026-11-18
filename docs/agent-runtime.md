@@ -350,7 +350,7 @@ enum class InvocationSource {
 
 `probe_via_node` 的 `reachable` 语义：只要收到任何 HTTP 状态码（1xx–5xx，包括 204、3xx、4xx、5xx），就表示链路可达，`reachable = true`，`statusCode` 原样回填；只有 DNS、连接失败、超时、EOF 这类没有状态码的传输错误才是 `reachable = false`。外层 `ToolObservation.ok` 仍表示工具调用本身是否成功，内层不再使用 `ok` 字段。libbox 的 HTTP 客户端对 204 等非 200 响应会抛异常，异常消息里带 `HTTP <code>`；`LibboxProbePort` 必须解析状态码并按上述规则归类，不能把异常本身当成失败。
 
-`http_fetch` 是独立的标准 HTTP fetch，权限是 `DATA_EGRESS`，不并入 probe，也不走 libbox。它用 OkHttp 直接发请求，默认 GET，支持标准 HTTP method 和 UTF-8 body；已知 method 统一大写，自定义 method 保留大小写，CONNECT/TRACE/TRACK 拒绝，GET/HEAD 带 body 拒绝，和 web fetch 语义一致。一次一个 URL，可选 `headers`、`body` 和 `max_bytes`；返回 `statusCode`、`statusText`、response headers、`contentType` 和任意 HTTP 状态的 body，`max_bytes` 限制读取的 body 字节。它始终走设备当前网络，没有 `outbound` 参数，也不改核心的全局选择。
+`http_fetch` 是独立的标准 HTTP fetch，权限是 `DATA_EGRESS`，不并入 probe，也不走 libbox。它用 OkHttp 直接发请求，默认 GET，支持标准 HTTP method 和 UTF-8 body；已知 method 统一大写，自定义 method 保留大小写，CONNECT/TRACE/TRACK 拒绝，GET/HEAD 带 body 拒绝，和 web fetch 语义一致。一次一个 URL，可选 `headers`、`body` 和 `max_bytes`；返回 `statusCode`、`statusText`、response headers、`contentType` 和任意 HTTP 状态的 body，`max_bytes` 限制读取的 body 字节。可选 `output_path` 只接受 GET 和图片/SVG 扩展名，把响应写到 `conductor/resources/`，返回 path、bytes、contentType 和 sha256，不把 body 回给模型；单文件上限 8 MiB，默认不覆盖。这样下载的图片/SVG 不会进入 transcript，消息流可以用 `![alt](conductor/resources/...)` 引用。它始终走设备当前网络，没有 `outbound` 参数，也不改核心的全局选择。
 
 `http_fetch` 和模型 API 一样走 App 的 Android 网络路径；正常运行时进入 TUN，再按 active profile 的 `route.rules` 选择出口。它不是绕过 VPN 的旁路，但也不是节点绑定工具：不同域名可以命中不同规则并拿到不同出口 IP，改 `🚀 节点选择` 只影响命中该组的域名。显式 `VpnService.protect` 的 socket 是例外，例如 telemetry uploader，不能拿它代表所有 App 请求。验证某个节点用 `probe_via_node`；验证路由规则要选已知规则的域名并看新的 core 日志。
 
@@ -923,7 +923,7 @@ fun interface AgentInputGuard {
 - `allowedUrls` 只按工具定义的 `allowedUrlParameter` 生效；目前只有 `probe_via_node.url`。
 - 日志用独立的 `sanitizeForLog`，所有 URL、token、Authorization、订阅字段都打码；模型请求日志、错误日志、审计日志都不能出现 API key、Authorization header、订阅 URL。
 - 模型原始响应默认不落盘。调试开关只在 debug build 生效，且必须显式打开。
-- 消息流用 Compose `Text` 渲染，认 `**bold**`、单反引号行内代码和 `![alt](https://...)` 图片；行内代码使用等宽字体和主题派生的强调色（`tertiary` 向 `onSurface` 混合），不填背景，亮暗主题按 surface 亮度调整混合比例。远端图片先显示带 alt/URL 的 `Load image` 卡片，用户点按后才通过无重定向的 HTTPS 请求加载，拒绝 localhost、私网、链路本地和 IPv4/IPv6 私网地址，单图最多 8 MiB、解码长边最多 1600；`data:image/...;base64` 自动解码但同样限 8 MiB；SVG 可从 svg 围栏或裸 `<svg>` 块进入，用 AndroidSVG 静态渲染，不执行脚本，拒绝脚本、foreignObject、外部 href 和外部资源，最多 256K 字符、1600px；其余 Markdown 标记按普通文本显示。system prompt 因此要求字面量（路径、命令、flag、工具名、配置键）必须使用行内代码，禁止表格、标题和其他围栏代码，只额外允许 SVG 围栏。不执行 HTML，不自动打开链接。
+- 消息流用 Compose `Text` 渲染，认 `**bold**`、单反引号行内代码和 `![alt](https://...)` 图片；行内代码使用等宽字体和主题派生的强调色（`tertiary` 向 `onSurface` 混合），不填背景，亮暗主题按 surface 亮度调整混合比例。远端图片先显示带 alt/URL 的 `Load image` 卡片，用户点按后才通过无重定向的 HTTPS 请求加载，拒绝 localhost、私网、链路本地和 IPv4/IPv6 私网地址，单图最多 8 MiB、解码长边最多 1600；`data:image/...;base64` 自动解码但同样限 8 MiB；Markdown 图片引用可以是 Web Search 得到的 HTTPS URL，也可以是 `conductor/resources/` 下的本地资源；本地路径只允许资源根，远端图片仍走点按加载和公开 HTTPS 限制。SVG 可从 svg 围栏或裸 `<svg>` 块进入，用 AndroidSVG 静态渲染，不执行脚本，拒绝脚本、foreignObject、外部 href 和外部资源，最多 256K 字符、1600px；其余 Markdown 标记按普通文本显示。system prompt 因此要求字面量（路径、命令、flag、工具名、配置键）必须使用行内代码，禁止表格、标题和其他围栏代码，只额外允许 SVG 围栏。不执行 HTML，不自动打开链接。
 - Transcript / API trace 查看器的 Rich 模式另用 Markwon core，支持 CommonMark 基础块和行内元素（标题、粗斜体、列表、引用、链接、行内/围栏代码、分隔线）；未加载 `ext-tables`、`ext-strikethrough`、`ext-tasklist` 等扩展。
 
 ## 10. 预算、超时、取消、重试

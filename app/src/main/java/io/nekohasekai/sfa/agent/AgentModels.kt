@@ -368,6 +368,16 @@ data class HttpFetchOutcome(
     val error: String? = null,
 )
 
+data class HttpDownloadOutcome(
+    val statusCode: Int? = null,
+    val statusText: String? = null,
+    val latencyMs: Long? = null,
+    val contentType: String? = null,
+    val bytes: ByteArray = ByteArray(0),
+    val truncated: Boolean = false,
+    val error: String? = null,
+)
+
 /**
  * Standard HTTP fetch over the device's current network. It deliberately has
  * no outbound parameter: node-bound probes stay in ProbePort, and the fetch
@@ -382,6 +392,15 @@ interface HttpFetchPort {
         maxBytes: Int,
         cancellation: ToolCancellation? = null,
     ): HttpFetchOutcome
+
+    fun download(
+        url: String,
+        method: String,
+        headers: List<Pair<String, String>>,
+        body: String?,
+        maxBytes: Int,
+        cancellation: ToolCancellation? = null,
+    ): HttpDownloadOutcome = HttpDownloadOutcome(error = "download is not supported by this HttpFetchPort")
 }
 
 data class WebSearchSource(

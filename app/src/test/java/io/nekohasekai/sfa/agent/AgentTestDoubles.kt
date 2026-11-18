@@ -39,8 +39,10 @@ class FakeProbePort(
 
 class FakeHttpFetchPort(
     var outcome: HttpFetchOutcome = HttpFetchOutcome(statusCode = 200, latencyMs = 12, content = "hello", bytes = 5),
+    var downloadOutcome: HttpDownloadOutcome = HttpDownloadOutcome(statusCode = 200),
 ) : HttpFetchPort {
     val calls = mutableListOf<List<Any?>>()
+    val downloadCalls = mutableListOf<List<Any?>>()
 
     override fun fetch(
         url: String,
@@ -52,6 +54,18 @@ class FakeHttpFetchPort(
     ): HttpFetchOutcome {
         calls += listOf(url, method, headers, body, maxBytes)
         return outcome
+    }
+
+    override fun download(
+        url: String,
+        method: String,
+        headers: List<Pair<String, String>>,
+        body: String?,
+        maxBytes: Int,
+        cancellation: ToolCancellation?,
+    ): HttpDownloadOutcome {
+        downloadCalls += listOf(url, method, headers, body, maxBytes)
+        return downloadOutcome
     }
 }
 
@@ -121,6 +135,7 @@ fun buildTestRegistry(
     probePort: ProbePort = FakeProbePort(),
     selectionPort: NodeSelectionPort? = null,
     httpFetchPort: HttpFetchPort? = null,
+    fileStore: ConductorFileStore? = null,
     webSearchPort: WebSearchPort? = null,
     webSearchAvailable: () -> Boolean = { true },
 ): AgentToolRegistry =
@@ -131,6 +146,7 @@ fun buildTestRegistry(
             probePort = probePort,
             selectionPort = selectionPort,
             httpFetchPort = httpFetchPort,
+            fileStore = fileStore,
             webSearchPort = webSearchPort,
             webSearchAvailable = webSearchAvailable,
         ).all,

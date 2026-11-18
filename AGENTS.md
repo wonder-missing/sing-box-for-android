@@ -12,6 +12,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 - Local JVM unit tests and compile checks run on the Mini; setup, versions and disk cleanup are in [`docs/local-testing.md`](docs/local-testing.md). CI remains the release gate. There is no emulator; UI changes need a device check.
 - Update install path, the system scan prompt, and post-update service restore: [`docs/update-install.md`](docs/update-install.md).
 - `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `WONDER_BUILD` stays a two-character label; 99 was followed by `A0`; the next label is `A1`; see [`docs/versioning.md`](docs/versioning.md). `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
+- Capability scenarios live in [`docs/conductor-scenarios.md`](docs/conductor-scenarios.md). Before removing or merging a tool, or changing a tool parameter, check the scenarios that name it and preserve or explicitly retire them.
 - **The user's "Groups page" is the Dashboard Groups bottom sheet** (`showGroupsSheet`, `GroupsCard(asSheet = true)`); its title/actions row is the `listHeaderContent` in `MainActivity`. `Screen.Groups` is a wide-screen `NavigationRail` destination with no phone entry; do not treat it as the Groups page in UI discussions.
 
 ## Work loop

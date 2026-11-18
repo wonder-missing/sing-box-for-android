@@ -62,9 +62,11 @@ class ConductorFileStore(
     private val ttlMs: Long = 24L * 60 * 60 * 1000,
 ) {
     val workspaceDir: File = File(workingDir, workspaceName)
+    val resourcesDir: File = File(workspaceDir, "resources")
 
     fun ensureWorkspace(): File {
         workspaceDir.mkdirs()
+        resourcesDir.mkdirs()
         prune()
         return workspaceDir
     }
@@ -391,6 +393,43 @@ class ConductorFileStore(
         return storeEntry(dir)
     }
 
+    fun resolveResource(path: String): File {
+        val normalized = normalizeResourcePath(path)
+        val file = resolve(resourcesDir, normalized, allowRoot = false)
+        if (!file.isFile) throw IllegalArgumentException("Not a file: $path")
+        return file
+    }
+
+    fun writeResourceBytes(
+        path: String,
+        bytes: ByteArray,
+        overwrite: Boolean = false,
+    ): StoredFile =
+        synchronized(writeLock) {
+            if (bytes.size.toLong() > MAX_RESOURCE_BYTES) {
+                throw IllegalArgumentException("Resource is larger than $MAX_RESOURCE_BYTES bytes.")
+            }
+            val file = resolve(resourcesDir, normalizeResourcePath(path), allowRoot = false)
+            ensureWorkspace()
+            if (file.exists() && !overwrite) {
+                throw IllegalArgumentException("Resource already exists: $path. Set overwrite=true to replace it.")
+            }
+            val parent = file.parentFile ?: throw IllegalArgumentException("Invalid path: $path")
+            if (!parent.exists() && !parent.mkdirs()) throw IllegalArgumentException("Could not create $path")
+            if (!file.exists() && countResourceFiles() >= MAX_RESOURCE_FILES) {
+                throw IllegalArgumentException("Resource file limit ($MAX_RESOURCE_FILES) reached. Delete old resources first.")
+            }
+            val temp = File(parent, ".tmp-${UUID.randomUUID()}")
+            try {
+                temp.writeBytes(bytes)
+                if (file.exists() && !file.delete()) throw IllegalArgumentException("Could not replace $path")
+                if (!temp.renameTo(file)) throw IllegalArgumentException("Could not write $path")
+            } finally {
+                if (temp.exists()) temp.delete()
+            }
+            storeEntry(file)
+        }
+
     fun delete(path: String): StoredFile {
         val file = resolveWrite(path)
         val entry = storeEntry(file)
@@ -429,6 +468,15 @@ class ConductorFileStore(
         return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
+    private fun normalizeResourcePath(path: String): String {
+        val normalized = path.trim().replace('\\', '/')
+        return when {
+            normalized.startsWith("conductor/resources/") -> normalized.removePrefix("conductor/resources/")
+            normalized.startsWith("resources/") -> normalized.removePrefix("resources/")
+            else -> throw IllegalArgumentException("Resource path must be under conductor/resources/.")
+        }
+    }
+
     private fun resolve(
         root: File,
         path: String,
@@ -462,13 +510,20 @@ class ConductorFileStore(
             .walkTopDown()
             .count { it.isFile && !it.name.startsWith(".tmp-") }
 
+    private fun countResourceFiles(): Int =
+        resourcesDir
+            .walkTopDown()
+            .count { it.isFile && !it.name.startsWith(".tmp-") }
+
     private fun prune() {
         if (!workspaceDir.isDirectory) return
         val cutoff = System.currentTimeMillis() - ttlMs
+        val resourcesRoot = resourcesDir.canonicalFile
         val files =
             workspaceDir
                 .walkTopDown()
                 .filter { it.isFile && !it.name.startsWith(".tmp-") }
+                .filter { !it.canonicalFile.path.startsWith(resourcesRoot.path + File.separator) }
                 .sortedBy { it.lastModified() }
                 .toList()
         files.filter { it.lastModified() < cutoff }.forEach { runCatching { it.delete() } }
@@ -489,5 +544,7 @@ class ConductorFileStore(
         private const val MAX_GREP_BYTES = 8L * 1024 * 1024
         private const val MAX_LIST_ENTRIES = 200
         private const val MAX_PATH_CHARS = 512
+        private const val MAX_RESOURCE_BYTES = 8L * 1024 * 1024
+        private const val MAX_RESOURCE_FILES = 64
     }
 }

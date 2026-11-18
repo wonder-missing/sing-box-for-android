@@ -58,6 +58,40 @@ class OkHttpHttpFetchPort(
         }
     }
 
+    override fun download(
+        url: String,
+        method: String,
+        headers: List<Pair<String, String>>,
+        body: String?,
+        maxBytes: Int,
+        cancellation: ToolCancellation?,
+    ): HttpDownloadOutcome {
+        if (cancellation?.isCancelled() == true) return HttpDownloadOutcome(error = "cancelled")
+        return try {
+            val request = buildRequest(url, method, headers, body)
+            val call = client.newCall(request)
+            cancellation?.onCancel { call.cancel() }
+            val started = System.nanoTime()
+            call.execute().use { result ->
+                val bodyResult = readBody(result.body, maxBytes.coerceAtLeast(1))
+                HttpDownloadOutcome(
+                    statusCode = result.code,
+                    statusText = result.message.takeIf { it.isNotBlank() },
+                    latencyMs = elapsedMs(started),
+                    contentType = result.body?.contentType()?.toString(),
+                    bytes = bodyResult.bytes,
+                    truncated = bodyResult.truncated,
+                )
+            }
+        } catch (e: Exception) {
+            if (cancellation?.isCancelled() == true) {
+                HttpDownloadOutcome(error = "cancelled")
+            } else {
+                HttpDownloadOutcome(error = e.message ?: e.toString())
+            }
+        }
+    }
+
     private fun buildRequest(
         url: String,
         method: String,
