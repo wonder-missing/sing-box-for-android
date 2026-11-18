@@ -13,13 +13,19 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.util.ArrayDeque
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 data class AgentConfig(
-    val maxToolRounds: Int = 20,
+    // No per-turn tool-round cap by default. Tests can set a small value to
+    // exercise the budget path; production relies on the failure circuit
+    // breaker and the 30-minute turn timeout.
+    val maxToolRounds: Int = Int.MAX_VALUE,
     val maxToolCallsPerRound: Int = 8,
+    val maxRapidToolFailures: Int = 10,
+    val rapidToolFailureWindowMs: Long = 5_000,
     val modelTimeoutMs: Long = 120_000,
     val turnTimeoutMs: Long = 1_800_000,
     val toolTimeoutMs: Long = 120_000,
@@ -191,7 +197,21 @@ class AgentRuntime(
         var toolsEnabled = true
         var budgetNoticeShown = false
         val partialContent = StringBuilder()
+        val toolFailureTimes = ArrayDeque<Long>()
         lastPromptTokens = 0
+
+        fun registerToolResult(ok: Boolean): Boolean {
+            if (config.maxRapidToolFailures <= 0 || config.rapidToolFailureWindowMs <= 0) return false
+            val now = System.currentTimeMillis()
+            while (
+                toolFailureTimes.isNotEmpty() &&
+                now - toolFailureTimes.first() > config.rapidToolFailureWindowMs
+            ) {
+                toolFailureTimes.removeFirst()
+            }
+            if (!ok) toolFailureTimes.addLast(now)
+            return toolFailureTimes.size >= config.maxRapidToolFailures
+        }
 
         while (true) {
             if (cancelRequested) {
@@ -411,7 +431,7 @@ class AgentRuntime(
                 call: ToolCall,
                 raw: ToolObservation,
                 confirmationMs: Long? = null,
-            ) {
+            ): Boolean {
                 val remainingTurn = (config.maxObservationCharsPerTurn - turnObservationChars).coerceAtLeast(0)
                 val remainingRound = (config.maxObservationCharsPerRound - roundObservationChars).coerceAtLeast(0)
                 val budget = minOf(config.maxObservationChars, remainingTurn, remainingRound)
@@ -444,6 +464,23 @@ class AgentRuntime(
                             confirmationMs = confirmationMs,
                         ),
                     ),
+                )
+                return registerToolResult(observation.ok)
+            }
+
+            fun abortToolFailureStorm(remaining: List<ToolCall>): TurnResult {
+                appendCancelled(transcript, remaining, "tool failure storm", onEvent)
+                return finish(
+                    transcript,
+                    startSize,
+                    TurnOutcome.Failed(
+                        AgentError(
+                            AgentTurnErrorCode.TOOL_FAILURE_LOOP,
+                            "Too many tool failures in a short time; the turn was stopped.",
+                            retryable = true,
+                        ),
+                    ),
+                    onEvent,
                 )
             }
 
@@ -514,7 +551,9 @@ class AgentRuntime(
                                     },
                             )
                         }
-                    recordObservation(call, observation)
+                    if (recordObservation(call, observation)) {
+                        return abortToolFailureStorm(executable.drop(index + 1) + extra)
+                    }
                     continue
                 }
 
@@ -522,7 +561,9 @@ class AgentRuntime(
                     val view = ToolCallView(call.id, call.name, displayArgs(call, catalog.definitions))
                     onEvent(AgentEvent.ToolStarted(view))
                     onEvent(AgentEvent.StateChanged(TurnState.RunningTool(step, view)))
-                    recordObservation(call, prepared.observation)
+                    if (recordObservation(call, prepared.observation)) {
+                        return abortToolFailureStorm(executable.drop(index + 1) + extra)
+                    }
                     continue
                 }
 
@@ -582,9 +623,12 @@ class AgentRuntime(
                     result = tools.invokeAgent(executed, humanApproved = true)
                 }
 
-                recordObservation(executed, result.toObservation(), confirmationMs)
+                if (recordObservation(executed, result.toObservation(), confirmationMs)) {
+                    return abortToolFailureStorm(executable.drop(index + 1) + extra)
+                }
             }
 
+            var extraFailureStorm = false
             extra.forEach { call ->
                 val observation =
                     ToolObservation(
@@ -599,6 +643,10 @@ class AgentRuntime(
                         ToolResultView(call.id, call.name, false, null, observation.errorCode, observation.message, false),
                     ),
                 )
+                if (registerToolResult(false)) extraFailureStorm = true
+            }
+            if (extraFailureStorm) {
+                return abortToolFailureStorm(emptyList())
             }
 
             toolRounds += 1

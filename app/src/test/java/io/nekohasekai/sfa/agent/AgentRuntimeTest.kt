@@ -209,6 +209,44 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun rapidToolFailuresStopTheTurn() {
+        val calls = (1..10).map { index -> ToolCall("call_$index", "list_nodes", "{}") }
+        val model =
+            ScriptedModel(
+                calls
+                    .map { call ->
+                        AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null)
+                    }.toMutableList(),
+            )
+        val executor =
+            FakeExecutor(listOf(listNodes)) { call, _ ->
+                AgentInvocationResult(
+                    tool = call.name,
+                    ok = false,
+                    errorCode = "tool_failed",
+                    errorMessage = "temporary failure",
+                )
+            }
+        val runtime =
+            runtime(
+                model,
+                executor,
+                key = "sk-test",
+                config = AgentConfig(maxToolRounds = 20, maxRapidToolFailures = 10),
+            )
+
+        val result = runBlocking { runtime.runTurn("show nodes", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Failed)
+        assertEquals(
+            AgentTurnErrorCode.TOOL_FAILURE_LOOP,
+            (result.outcome as TurnOutcome.Failed).error.code,
+        )
+        assertEquals(10, result.messages.count { it is AgentMessage.Tool })
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
     fun cancellationAfterConfirmationLeavesPairedTranscript() {
         val call = ToolCall("call_1", "probe_via_node", """{"url":"https://example.com/"}""")
         val model = ScriptedModel(mutableListOf(AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null)))
