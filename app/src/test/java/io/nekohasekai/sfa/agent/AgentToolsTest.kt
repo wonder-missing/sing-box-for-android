@@ -298,6 +298,43 @@ class AgentToolsTest {
     }
 
     @Test
+    fun httpFetchCanSaveANonImageResourceWithAnyMethod() {
+        val root = Files.createTempDirectory("conductor-fetch-test").toFile()
+        try {
+            val store = ConductorFileStore(root)
+            val bytes = byteArrayOf(0, 1, 2, 3, 10, -1)
+            val fetch =
+                FakeHttpFetchPort(
+                    downloadOutcome =
+                        HttpDownloadOutcome(
+                            statusCode = 200,
+                            contentType = "application/octet-stream",
+                            bytes = bytes,
+                        ),
+                )
+            val registry = buildTestRegistry(httpFetchPort = fetch, fileStore = store)
+
+            val result =
+                registry.userExec(
+                    "http_fetch",
+                    """{"url":"https://example.com/data.bin","method":"POST","body":"payload","output_path":"conductor/resources/data.bin"}""",
+                )
+
+            assertTrue(result.errorMessage ?: "", result.ok)
+            val output = result.output!!
+            assertEquals("conductor/resources/data.bin", output.string("path"))
+            assertEquals("application/octet-stream", output.string("contentType"))
+            assertEquals(bytes.size, output.int("bytes"))
+            assertNull(output["text"])
+            assertTrue(store.resolveResource("conductor/resources/data.bin").readBytes().contentEquals(bytes))
+            assertEquals(1, fetch.downloadCalls.size)
+            assertEquals("POST", fetch.downloadCalls.single()[1])
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun httpFetchRejectsBodyOnGetWithoutCallingThePort() {
         val fetch = FakeHttpFetchPort()
         val registry = buildTestRegistry(httpFetchPort = fetch)

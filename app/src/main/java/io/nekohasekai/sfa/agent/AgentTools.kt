@@ -707,7 +707,7 @@ class AgentTools(
                                 type = AgentParameterType.STRING,
                                 required = false,
                                 description =
-                                    "Optional path under conductor/resources/. Saves an image/SVG response " +
+                                    "Optional path under conductor/resources/. Saves the response body " +
                                         "to the workspace and returns path metadata instead of the body.",
                             ),
                             AgentParameterSpec(
@@ -726,7 +726,8 @@ class AgentTools(
                             "download text",
                             "download image",
                             "download svg",
-                            "save image",
+                            "download file",
+                            "save file",
                             "request text",
                         ),
                     confirmationReason =
@@ -771,16 +772,6 @@ class AgentTools(
                         ?.trim()
                         ?.takeIf { it.isNotEmpty() }
                 val overwrite = AgentJson.boolean(args, "overwrite") ?: false
-                if (outputPath != null) {
-                    if (method != "GET") {
-                        return invalidParameter("output_path is only supported for GET")
-                    }
-                    if (!isImageResourcePath(outputPath)) {
-                        return invalidParameter(
-                            "output_path must end with .svg, .png, .jpg, .jpeg, .gif or .webp",
-                        )
-                    }
-                }
                 val maxBytes =
                     (AgentJson.int(args, "max_bytes") ?: if (outputPath == null) DEFAULT_FETCH_BYTES else MAX_RESOURCE_BYTES)
                         .coerceIn(1, if (outputPath == null) MAX_FETCH_BYTES else MAX_RESOURCE_BYTES)
@@ -800,16 +791,12 @@ class AgentTools(
                                 errorMessage = e.message ?: e.toString(),
                             )
                         }
-                    val contentType = result.contentType?.substringBefore(';')?.trim()?.lowercase()
                     val failure =
                         when {
                             result.error != null -> result.error
                             result.statusCode == null -> "The server returned no HTTP status."
                             result.statusCode !in 200..299 -> "HTTP ${result.statusCode} ${result.statusText.orEmpty()}".trim()
                             result.truncated -> "Response exceeded max_bytes."
-                            result.bytes.isEmpty() -> "Response body is empty."
-                            contentType != null && !contentType.startsWith("image/") ->
-                                "Response is not an image (${result.contentType})."
                             else -> null
                         }
                     if (failure != null) {
@@ -890,11 +877,6 @@ class AgentTools(
                         errorMessage = result.error,
                     )
                 }
-            }
-
-            private fun isImageResourcePath(path: String): Boolean {
-                val extension = path.substringAfterLast('.', "").lowercase(Locale.US)
-                return extension in RESOURCE_IMAGE_EXTENSIONS
             }
 
             private fun normalizeFetchMethod(raw: String): String? {
@@ -1199,7 +1181,6 @@ private const val DEFAULT_FETCH_BYTES = 64 * 1024
 private const val MAX_FETCH_BYTES = 256 * 1024
 private const val MAX_RESOURCE_BYTES = 8 * 1024 * 1024
 private const val MAX_FETCH_BODY_BYTES = 256 * 1024
-private val RESOURCE_IMAGE_EXTENSIONS = setOf("svg", "png", "jpg", "jpeg", "gif", "webp")
 private const val MAX_FETCH_HEADERS = 16
 private const val MAX_FETCH_HEADER_CHARS = 2048
 private const val DEFAULT_WEB_SEARCH_RESULTS = 8
