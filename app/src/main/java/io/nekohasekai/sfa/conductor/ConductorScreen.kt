@@ -1483,28 +1483,25 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
                 }
             }
         } else if (expanded) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                SelectionContainer {
+                    Text(
+                        text = item.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 64.dp),
+                    )
+                }
                 TextButton(
                     onClick = { expanded = false },
                     contentPadding = PaddingValues(horizontal = 8.dp),
+                    modifier = Modifier.align(Alignment.TopEnd),
                 ) {
                     Text(
                         text = "Collapse",
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }
-            }
-            SelectionContainer {
-                Text(
-                    text = item.text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         } else {
             Box(
@@ -2108,7 +2105,11 @@ private fun ToolItem(item: ConductorItem.Tool) {
             modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable(enabled = result != null) { expanded = !expanded },
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    enabled = result != null,
+                ) { expanded = !expanded },
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
