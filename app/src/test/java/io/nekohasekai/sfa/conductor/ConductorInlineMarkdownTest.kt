@@ -1,9 +1,13 @@
 package io.nekohasekai.sfa.conductor
 
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConductorInlineMarkdownTest {
@@ -32,5 +36,33 @@ class ConductorInlineMarkdownTest {
         val rendered = markdownAnnotated("a `open and **bold", Color.White, Color.Black)
 
         assertEquals("a `open and **bold", rendered.text)
+    }
+
+    @Test
+    fun `inline code accent stays readable on light and dark surfaces`() {
+        val dark =
+            darkColorScheme(
+                tertiary = Color(0xFF3498DB),
+                onSurface = Color(0xFFE6E0E9),
+                surface = Color(0xFF141218),
+            )
+        val light =
+            lightColorScheme(
+                tertiary = Color(0xFF3498DB),
+                onSurface = Color(0xFF1D1B20),
+                surface = Color(0xFFFFFBFE),
+            )
+
+        assertTrue(contrastRatio(conductorInlineCodeColor(dark), dark.surface) >= 4.5f)
+        assertTrue(contrastRatio(conductorInlineCodeColor(light), light.surface) >= 4.5f)
+    }
+
+    private fun contrastRatio(
+        foreground: Color,
+        background: Color,
+    ): Float {
+        val lighter = maxOf(foreground.luminance(), background.luminance())
+        val darker = minOf(foreground.luminance(), background.luminance())
+        return (lighter + 0.05f) / (darker + 0.05f)
     }
 }

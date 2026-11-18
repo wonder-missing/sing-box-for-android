@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SmallFloatingActionButton
@@ -98,6 +99,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -1556,8 +1559,10 @@ private fun ConductorItemView(
                         text =
                             markdownAnnotated(
                                 item.text,
-                                codeBackground = MaterialTheme.colorScheme.surfaceContainer,
-                                codeColor = MaterialTheme.colorScheme.onSurface,
+                                // Match the web terminal's unfilled inline code: use the
+                                // theme accent instead of a fixed terminal palette.
+                                codeBackground = Color.Transparent,
+                                codeColor = conductorInlineCodeColor(),
                             ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1879,6 +1884,22 @@ private fun ConductorItem.stableKey(index: Int): String =
         is ConductorItem.Confirmation -> "confirm:${request.id}"
         is ConductorItem.Question -> "question:${id}"
     }
+
+@Composable
+private fun conductorInlineCodeColor(): Color = conductorInlineCodeColor(MaterialTheme.colorScheme)
+
+/**
+ * The web terminal renders inline code as an accent tint without a filled
+ * capsule. Derive the tint from the active Material scheme instead of storing a
+ * terminal palette here, so dynamic and light themes keep working.
+ */
+internal fun conductorInlineCodeColor(scheme: ColorScheme): Color {
+    return if (scheme.surface.luminance() < 0.5f) {
+        lerp(scheme.tertiary, scheme.onSurface, 0.45f)
+    } else {
+        lerp(scheme.tertiary, scheme.onSurface, 0.35f)
+    }
+}
 
 internal fun markdownAnnotated(
     text: String,
