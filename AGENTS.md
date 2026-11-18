@@ -11,7 +11,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 - Local bare backup: remote `wondersing` at `~/repos/WonderSing`; after each daily commit, push `dev` there, and push tags when releasing.
 - Local JVM unit tests and compile checks run on the Mini; setup, versions and disk cleanup are in [`docs/local-testing.md`](docs/local-testing.md). CI remains the release gate. There is no emulator; UI changes need a device check.
 - Update install path, the system scan prompt, and post-update service restore: [`docs/update-install.md`](docs/update-install.md).
-- `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `WONDER_BUILD` stays a two-character label; 99 is followed by `A1`, see [`docs/versioning.md`](docs/versioning.md). `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
+- `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `WONDER_BUILD` stays a two-character label; 99 is followed by `A0`, see [`docs/versioning.md`](docs/versioning.md). `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
 - **The user's "Groups page" is the Dashboard Groups bottom sheet** (`showGroupsSheet`, `GroupsCard(asSheet = true)`); its title/actions row is the `listHeaderContent` in `MainActivity`. `Screen.Groups` is a wide-screen `NavigationRail` destination with no phone entry; do not treat it as the Groups page in UI discussions.
 
 ## Work loop
@@ -44,7 +44,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work, then release", clo
 
 ## Release flow
 Deterministic steps live in [`scripts/release.sh`](scripts/release.sh): `--check` prints the plan, `--watch <tag>` rechecks a published release. It never force-pushes and never moves or deletes a tag.
-1. Set `WONDER_BUILD` to the next label in `version.properties` (see [`docs/versioning.md`](docs/versioning.md); 99 is followed by `A1`). `VERSION_CODE` and `VERSION_NAME` are derived from `CORE_VERSION` and `WONDER_BUILD`; only change `CORE_VERSION` when moving to a new upstream core.
+1. Set `WONDER_BUILD` to the next label in `version.properties` (see [`docs/versioning.md`](docs/versioning.md); 99 is followed by `A0`). `VERSION_CODE` and `VERSION_NAME` are derived from `CORE_VERSION` and `WONDER_BUILD`; only change `CORE_VERSION` when moving to a new upstream core.
 2. Commit, `git push origin dev`, wait for green Test CI.
 3. Create an annotated tag `v<CORE_VERSION>-wonder.<label>` on the tested SHA and push only that tag. The first annotation line must be `wonder.<label>`. The annotation may include `Agent-Time: 2h15m` and `Agent-Loops: 4` for the work since the previous release tag. `Agent-Time` is wall time spent by coding agents, written as `Nh`, `Nm`, or `NhNm`. `Agent-Loops` is the number of work-loop passes (pick work, implement, test), not individual tool calls. Leave a line out when you cannot account for it. Do not write 0, and do not guess. A lightweight tag, or an annotation without these lines, still releases; the notice omits the missing rows. Do not move a tag later to fix the annotation.
 4. `gh run watch` the Release workflow; then `gh release view <tag> -R wonder-missing/sing-box-for-android`

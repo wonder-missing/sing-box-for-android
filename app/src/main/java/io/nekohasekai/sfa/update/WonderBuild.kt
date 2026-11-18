@@ -6,18 +6,18 @@ package io.nekohasekai.sfa.update
  * Legacy builds 1..99 keep their decimal spelling. From 100, the label is a
  * two-character base-36 value with a one-time offset:
  *
- *   ordinal = code.toInt(36) - 261
- *   code = (ordinal + 261).toString(36).uppercase()
+ *   ordinal = code.toInt(36) - 260
+ *   code = (ordinal + 260).toString(36).uppercase()
  *
- * A0 (base-36 360) would be 99, but 99 remains the legacy spelling. The next
- * label is therefore A1 = 100. The range A1..ZZ covers 100..1034.
+ * A0 is the first new label (100), followed by A1 (101). The range A0..ZZ
+ * covers 100..1035.
  *
  * `WONDER_BUILD` stores the label; `VERSION_CODE` still uses the integer
  * ordinal so Android updates remain monotonic.
  */
 object WonderBuild {
     const val FIRST_ENCODED = 100
-    const val CODE_OFFSET = 261
+    const val CODE_OFFSET = 260
     private val LEGACY = Regex("""\d{1,2}""")
     private val CODE = Regex("""[0-9A-Za-z]{2}""")
 

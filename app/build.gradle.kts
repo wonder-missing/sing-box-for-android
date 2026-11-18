@@ -65,16 +65,16 @@ fun wonderBuildOrdinal(raw: String): Int {
     if (value.all { it.isDigit() }) {
         val ordinal = value.toIntOrNull()
         require(value.length <= 2 && ordinal != null && ordinal in 1..99) {
-            "WONDER_BUILD decimals are limited to 1..99; use a two-character code such as A1 after 99 (docs/versioning.md)"
+            "WONDER_BUILD decimals are limited to 1..99; use a two-character code such as A0 after 99 (docs/versioning.md)"
         }
         return ordinal
     }
     require(value.length == 2 && value.all { it.isLetterOrDigit() }) {
-        "WONDER_BUILD must be a two-character base-36 code such as A1 (docs/versioning.md)"
+        "WONDER_BUILD must be a two-character base-36 code such as A0 or A1 (docs/versioning.md)"
     }
-    val ordinal = value.toIntOrNull(36)?.minus(261) ?: 0
+    val ordinal = value.toIntOrNull(36)?.minus(260) ?: 0
     require(ordinal >= 100) {
-        "WONDER_BUILD code $value is outside the A1..ZZ range (docs/versioning.md)"
+        "WONDER_BUILD code $value is outside the A0..ZZ range (docs/versioning.md)"
     }
     return ordinal
 }

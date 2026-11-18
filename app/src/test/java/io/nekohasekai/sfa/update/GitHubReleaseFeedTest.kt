@@ -95,9 +95,10 @@ class GitHubReleaseFeedTest {
     fun `computes wonder version codes`() {
         assertEquals(10, GitHubReleaseFeed.wonderBuild("v1.15.0-alpha.13-wonder.10"))
         assertEquals(11_404_010, GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13-wonder.10"))
-        assertEquals(100, GitHubReleaseFeed.wonderBuild("v1.15.0-alpha.13-wonder.A1"))
-        assertEquals(11_404_100, GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13-wonder.A1"))
-        assertEquals(0, GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13-wonder.A0"))
+        assertEquals(100, GitHubReleaseFeed.wonderBuild("v1.15.0-alpha.13-wonder.A0"))
+        assertEquals(11_404_100, GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13-wonder.A0"))
+        assertEquals(101, GitHubReleaseFeed.wonderBuild("v1.15.0-alpha.13-wonder.A1"))
+        assertEquals(11_404_101, GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13-wonder.A1"))
         assertEquals(0, GitHubReleaseFeed.versionCodeOf("v1.15.0-alpha.13"))
         assertTrue(GitHubReleaseFeed.matchesApk("SFA-x-arm64-v8a.apk", "arm64-v8a", legacy = false))
     }

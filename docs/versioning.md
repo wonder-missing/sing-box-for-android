@@ -14,27 +14,26 @@ Builds 1 through 99 keep their decimal spelling, so old tags such as
 From 100, the label is base-36 with a one-time offset:
 
 ```text
-ordinal = parseInt(code, 36) - 261
-code    = base36(ordinal + 261).toUpperCase()
+ordinal = parseInt(code, 36) - 260
+code    = base36(ordinal + 260).toUpperCase()
 ```
 
-`261` is `base36("A0") - 99`. `A0` would be 99, but 99 already uses the legacy
-spelling, so the first new label is `A1`:
+`260` makes `A0` the first new label, followed by `A1`:
 
 | ordinal | label |
 | ------- | ----- |
 | 98 | 98 |
 | 99 | 99 |
-| 100 | A1 |
-| 101 | A2 |
-| 108 | A9 |
-| 109 | AA |
-| 110 | AB |
-| 134 | AZ |
-| 135 | B0 |
-| 1034 | ZZ |
+| 100 | A0 |
+| 101 | A1 |
+| 109 | A9 |
+| 110 | AA |
+| 111 | AB |
+| 135 | AZ |
+| 136 | B0 |
+| 1035 | ZZ |
 
-`A1` through `ZZ` covers 935 labels. When the next ordinal would be 1035, this
+`A0` through `ZZ` covers 936 labels. When the next ordinal would be 1036, this
 scheme is exhausted; define a new one rather than using a three-character
 label.
 
@@ -51,12 +50,12 @@ checker parses both legacy decimal tags and the new labels through
 
 ## Add and subtract
 
-- Next after `99`: ordinal 99 + 1 = 100, label `A1`.
-- Next after `A1`: 100 + 1 = 101, label `A2`.
-- Next after `A9`: 108 + 1 = 109, label `AA`.
-- Next after `AZ`: 134 + 1 = 135, label `B0`.
-- Previous before `A1`: 100 - 1 = 99, label `99`.
-- Previous before `AA`: 109 - 1 = 108, label `A9`.
+- Next after `99`: ordinal 99 + 1 = 100, label `A0`.
+- Next after `A0`: 100 + 1 = 101, label `A1`.
+- Next after `A9`: 109 + 1 = 110, label `AA`.
+- Next after `AZ`: 135 + 1 = 136, label `B0`.
+- Previous before `A0`: 100 - 1 = 99, label `99`.
+- Previous before `AA`: 110 - 1 = 109, label `A9`.
 
 To bump a release, set `WONDER_BUILD` to the next label. Use the same label in
 the annotated tag and its first annotation line:
