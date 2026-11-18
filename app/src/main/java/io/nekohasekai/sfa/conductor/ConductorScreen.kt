@@ -324,6 +324,11 @@ fun ConductorScreen(
     LaunchedEffect(stickToBottom) {
         viewModel.transcriptStickToBottom = stickToBottom
     }
+    LaunchedEffect(fileRequest?.id) {
+        if (fileRequest != null && stickToBottom && uiState.items.isNotEmpty()) {
+            listState.animateScrollToItem(uiState.items.size)
+        }
+    }
     DisposableEffect(listState) {
         onDispose {
             viewModel.transcriptScrollIndex = listState.firstVisibleItemIndex
@@ -886,26 +891,28 @@ fun ConductorScreen(
                     },
                 )
             }
-        }
 
-        fileRequest?.let { request ->
-            FileRequestCard(
-                request = request,
-                onChoose = {
-                    pendingFilePickId = request.id
-                    val mimeTypes = request.mimeTypes.ifEmpty { listOf("*/*") }.toTypedArray()
-                    if (request.multiple) {
-                        multiFilePicker.launch(mimeTypes)
-                    } else {
-                        singleFilePicker.launch(mimeTypes)
-                    }
-                },
-                onCancel = { viewModel.cancelFileRequest(request.id) },
-                modifier =
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(start = 16.dp, end = 16.dp, bottom = panelHeight + 8.dp),
-            )
+            // Keep the request in the layout, not floating over the transcript:
+            // the conversation shrinks above it instead of losing its last message.
+            fileRequest?.let { request ->
+                FileRequestCard(
+                    request = request,
+                    onChoose = {
+                        pendingFilePickId = request.id
+                        val mimeTypes = request.mimeTypes.ifEmpty { listOf("*/*") }.toTypedArray()
+                        if (request.multiple) {
+                            multiFilePicker.launch(mimeTypes)
+                        } else {
+                            singleFilePicker.launch(mimeTypes)
+                        }
+                    },
+                    onCancel = { viewModel.cancelFileRequest(request.id) },
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
         }
 
         vfsConsent?.let { request ->
