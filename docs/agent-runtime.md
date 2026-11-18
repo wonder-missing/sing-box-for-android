@@ -350,7 +350,11 @@ enum class InvocationSource {
 
 `probe_via_node` 的 `reachable` 语义：只要收到任何 HTTP 状态码（1xx–5xx，包括 204、3xx、4xx、5xx），就表示链路可达，`reachable = true`，`statusCode` 原样回填；只有 DNS、连接失败、超时、EOF 这类没有状态码的传输错误才是 `reachable = false`。外层 `ToolObservation.ok` 仍表示工具调用本身是否成功，内层不再使用 `ok` 字段。libbox 的 HTTP 客户端对 204 等非 200 响应会抛异常，异常消息里带 `HTTP <code>`；`LibboxProbePort` 必须解析状态码并按上述规则归类，不能把异常本身当成失败。
 
-`http_fetch` 是独立的标准 HTTP fetch，权限是 `DATA_EGRESS`，不并入 probe，也不走 libbox。它用 OkHttp 直接发请求，默认 GET，支持标准 HTTP method 和 UTF-8 body；已知 method 统一大写，自定义 method 保留大小写，CONNECT/TRACE/TRACK 拒绝，GET/HEAD 带 body 拒绝，和 web fetch 语义一致。一次一个 URL，可选 `headers`、`body` 和 `max_bytes`；返回 `statusCode`、`statusText`、response headers、`contentType` 和任意 HTTP 状态的 body，`max_bytes` 限制读取的 body 字节。它始终走设备当前网络，没有 `outbound` 参数，也不改核心的全局选择；需要指定出口的连通性测试用 `probe_via_node`。
+`http_fetch` 是独立的标准 HTTP fetch，权限是 `DATA_EGRESS`，不并入 probe，也不走 libbox。它用 OkHttp 直接发请求，默认 GET，支持标准 HTTP method 和 UTF-8 body；已知 method 统一大写，自定义 method 保留大小写，CONNECT/TRACE/TRACK 拒绝，GET/HEAD 带 body 拒绝，和 web fetch 语义一致。一次一个 URL，可选 `headers`、`body` 和 `max_bytes`；返回 `statusCode`、`statusText`、response headers、`contentType` 和任意 HTTP 状态的 body，`max_bytes` 限制读取的 body 字节。它始终走设备当前网络，没有 `outbound` 参数，也不改核心的全局选择。
+
+`http_fetch` 和模型 API 一样走 App 的 Android 网络路径；正常运行时进入 TUN，再按 active profile 的 `route.rules` 选择出口。它不是绕过 VPN 的旁路，但也不是节点绑定工具：不同域名可以命中不同规则并拿到不同出口 IP，改 `🚀 节点选择` 只影响命中该组的域名。显式 `VpnService.protect` 的 socket 是例外，例如 telemetry uploader，不能拿它代表所有 App 请求。验证某个节点用 `probe_via_node`；验证路由规则要选已知规则的域名并看新的 core 日志。
+
+2026-11-18 的证据：`www.cloudflare.com` 和 `example.com` 在 core 日志里都 sniff 到域名并走 `outbound/hysteria2[M-新加坡SG-HY2]`，返回出口 IP 分别 `13.229.248.255` 和 `172.66.147.243`；`api.github.com` 命中 `route(GitHub)`，出口 `66.90.98.146`，返回 GitHub 匿名配额 403。不同域名得到不同出口 IP，证明 App 请求经过 core 且按规则分流；`httpbin.org` 命中与 `🚀 节点选择` 无关的规则，所以切换该组不改变它的 IP。`pending.log` 是待上传的有界遥测队列，不是完整 core 日志，`grep` 为空不能证明请求没经过 TUN；当时文件从约 3KB 增长到 20KB，早期行已被刷掉。不要用一个 URL 的出口推断整个工具或整个 App 的网络行为。
 
 `wait` 是给没有 shell 的 Conductor 用的有界等待工具：`seconds` 默认 1，范围 0–10，0 是显式的 no-op；执行期间每 100ms 检查一次取消，Stop 不会等满。它用于 `select_outbound` 后等核心状态生效、或在重试异步操作前留一个安全间隔，但只是盲等；能从 `list_nodes` 读回状态时，优先读回再决定是否继续。主流做法并不统一：Claude Code / Codex 这类编码 Agent 通常直接用 shell 的 `sleep`，不单独提供 wait 工具；computer-use / browser Agent 常把 `WAIT` 作为动作空间的一部分，CrewAI 也有独立的 Wait Tool。Conductor 明确不注册 shell，所以这里补一个受限的 typed 工具，而不是开放任意命令。
 
