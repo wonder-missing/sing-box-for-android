@@ -750,6 +750,11 @@
     <string name="agent_probe_run">探测</string>
     <string name="agent_confirm_title">确认工具调用</string>
     <string name="agent_confirm_run">执行</string>
+    <string name="agent_confirm_run_all">本轮内不再询问这个工具</string>
+    <string name="agent_confirm_batch">这条回复有 %1$d 个工具调用。批量执行只跳过本轮中同一工具的后继确认。</string>
+    <string name="agent_confirm_turn">同一工具本轮不再询问；其他工具仍会确认。</string>
+    <string name="agent_confirm_batch_run">执行这条回复里剩余 %1$d 个安全调用</string>
+    <string name="agent_confirm_batch_tools">这条回复包含：%1$s</string>
     <string name="shortcut_start_service">启动服务</string>
     <string name="shortcut_stop_service">停止服务</string>
     <string name="shortcut_tailscale">Tailscale</string>

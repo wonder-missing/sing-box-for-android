@@ -432,6 +432,15 @@ class AgentRuntime(
             val calls = response.toolCalls
             val executable = calls.take(config.maxToolCallsPerRound)
             val extra = calls.drop(config.maxToolCallsPerRound)
+            val batchId = UUID.randomUUID().toString()
+            fun isRepeatable(name: String): Boolean {
+                val definition = catalog.definitions.firstOrNull { it.name == name } ?: return false
+                return definition.confirmationPolicy == ConfirmationPolicy.AGENT_ONLY ||
+                    (
+                        definition.permission == AgentPermission.DATA_EGRESS &&
+                            definition.confirmationPolicy == ConfirmationPolicy.NEVER
+                    )
+            }
             var roundObservationChars = 0
             var searchesThisRound = 0
 
@@ -622,6 +631,7 @@ class AgentRuntime(
                 var confirmationMs: Long? = null
 
                 if (result.confirmation != null) {
+                    val repeatable = isRepeatable(executed.name)
                     val request =
                         ConfirmationRequest(
                             id = confirmationIds.incrementAndGet(),
@@ -629,7 +639,13 @@ class AgentRuntime(
                             displayArgsJson = result.confirmation!!.displayArgsJson,
                             reason = result.confirmation!!.reason,
                             batchRemaining = executable.size - index,
-                            allowTurnApproval = true,
+                            allowTurnApproval = repeatable,
+                            batchId = batchId,
+                            allowBatchApproval = repeatable,
+                            batchApprovableRemaining =
+                                executable.drop(index).count { isRepeatable(it.name) },
+                            batchToolNames =
+                                executable.drop(index).map { it.name }.distinct().take(8),
                         )
                     onEvent(AgentEvent.ConfirmationRequested(request))
                     onEvent(AgentEvent.StateChanged(TurnState.AwaitingConfirmation(step, request)))

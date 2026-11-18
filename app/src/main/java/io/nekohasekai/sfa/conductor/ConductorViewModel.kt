@@ -69,6 +69,7 @@ import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.agent.TraceExport
+import io.nekohasekai.sfa.agent.VisionAnalysis
 import io.nekohasekai.sfa.agent.markdownFence
 import io.nekohasekai.sfa.agent.TurnEvent
 import io.nekohasekai.sfa.agent.TurnOutcome
@@ -489,7 +490,7 @@ class ConductorViewModel(
                         val bytes = collected.toByteArray()
                         if (bytes.any { byte -> byte.toInt() == 0 }) {
                             throw IllegalArgumentException(
-                                "The selected file is binary. Use analyze_image for images; file_read_selected only reads text.",
+                                "The selected file is binary. Use analyze_image with file_id for images; file_read_selected only reads text.",
                             )
                         }
                         SelectedFileRead(
@@ -689,7 +690,7 @@ class ConductorViewModel(
                 image: ByteArray,
                 mimeType: String,
                 question: String,
-            ): String {
+            ): VisionAnalysis {
                 val key =
                     apiKeyProvider.apiKey()
                         ?: throw IllegalStateException("API key is not configured for the selected provider.")
@@ -762,6 +763,9 @@ class ConductorViewModel(
 
     @Volatile
     private var autoApproveAgentToolName: String? = null
+
+    @Volatile
+    private var autoApproveAgentBatchId: String? = null
 
     private var pendingCommandConfirmation: Pair<String, String>? = null
     private var pendingCommandAsTool = false
@@ -1102,8 +1106,30 @@ class ConductorViewModel(
         confirmAgent()
     }
 
+    /**
+     * Approve the safe calls remaining in this assistant batch. Destructive
+     * ALWAYS tools are marked non-approvable by the runtime and still draw an
+     * individual card.
+     */
+    fun confirmBatchAgent() {
+        if (pendingAgentConfirmation == null) return
+        val request =
+            _uiState.value.items
+                .filterIsInstance<ConductorItem.Confirmation>()
+                .lastOrNull()
+                ?.request
+                ?: return
+        if (!request.allowBatchApproval || request.batchApprovableRemaining <= 1) {
+            confirmAgent()
+            return
+        }
+        autoApproveAgentBatchId = request.batchId
+        confirmAgent()
+    }
+
     fun cancelAgent() {
         autoApproveAgentToolName = null
+        autoApproveAgentBatchId = null
         val pending = pendingAgentConfirmation ?: return
         removeConfirmationItems()
         pending.complete(false)
@@ -1113,6 +1139,7 @@ class ConductorViewModel(
         if (!_uiState.value.isRunning || stopRequested) return
         stopRequested = true
         autoApproveAgentToolName = null
+        autoApproveAgentBatchId = null
         cancelPendingFileRequest("The turn was stopped.")
         cancelPendingAskUser("The turn was stopped.")
         pendingAgentConfirmation?.complete(false)
@@ -1391,6 +1418,7 @@ class ConductorViewModel(
         stopRequested = false
         runtime.resetCancel()
         autoApproveAgentToolName = null
+        autoApproveAgentBatchId = null
         pendingAgentConfirmation = null
         pendingTurnEvent = null
         pendingCommandConfirmation = null
@@ -1447,6 +1475,7 @@ class ConductorViewModel(
         stopRequested = false
         runtime.resetCancel()
         autoApproveAgentToolName = null
+        autoApproveAgentBatchId = null
         updateUi {
             copy(
                 isRunning = true,
@@ -1524,6 +1553,7 @@ class ConductorViewModel(
                     pendingAgentConfirmation = null
                     stopRequested = false
                     autoApproveAgentToolName = null
+                    autoApproveAgentBatchId = null
                     ModelProviderSettings.unpin()
                     if (outcome is TurnOutcome.Failed) {
                         TelemetryEventLog.recordAsync(
@@ -1717,7 +1747,11 @@ class ConductorViewModel(
             }
             is AgentEvent.ConfirmationRequested -> {
                 AppLog.info("conductor confirm=${event.request.toolName}")
-                if (autoApproveAgentToolName == event.request.toolName) {
+                val batchApproved =
+                    event.request.allowBatchApproval &&
+                        autoApproveAgentBatchId != null &&
+                        event.request.batchId == autoApproveAgentBatchId
+                if (autoApproveAgentToolName == event.request.toolName || batchApproved) {
                     pendingAgentConfirmation =
                         CompletableDeferred<Boolean>().apply { complete(true) }
                 } else {

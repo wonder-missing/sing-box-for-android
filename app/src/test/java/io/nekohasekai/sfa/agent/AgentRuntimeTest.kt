@@ -37,6 +37,16 @@ class AgentRuntimeTest {
             category = "network",
         )
 
+    private val write =
+        AgentToolDefinition(
+            name = "file_write",
+            description = "Write a file",
+            permission = AgentPermission.WRITE_FILES,
+            parameters = emptyList(),
+            confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+            category = "files",
+        )
+
     @Test
     fun directAnswerDoesNotCallTools() {
         val model = ScriptedModel(mutableListOf(response("hello")))
@@ -489,12 +499,82 @@ class AgentRuntimeTest {
 
     @Test
     fun confirmationRequestReportsRemainingCallsInTheBatch() {
-        val first = ToolCall("call_1", "probe_via_node", """{"url":"https://example.com/1"}""")
-        val second = ToolCall("call_2", "probe_via_node", """{"url":"https://example.com/2"}""")
+        val first = ToolCall("call_1", "file_write", """{"path":"conductor/a.txt","text":"a"}""")
+        val second = ToolCall("call_2", "file_write", """{"path":"conductor/b.txt","text":"b"}""")
         val model =
             ScriptedModel(
                 mutableListOf(
                     AgentModelResponse(null, listOf(first, second), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor =
+            FakeExecutor(listOf(write)) { call, humanApproved ->
+                if (humanApproved) {
+                    ok(call.name)
+                } else {
+                    AgentInvocationResult(
+                        tool = call.name,
+                        ok = false,
+                        errorCode = "confirmation_required",
+                        confirmation =
+                            AgentConfirmation(
+                                tool = call.name,
+                                argsJson = call.argumentsJson,
+                                displayArgsJson = call.argumentsJson,
+                                reason = "file write",
+                            ),
+                    )
+                }
+            }
+        val runtime = runtime(model, executor, key = "sk-test")
+        val remaining = mutableListOf<Int>()
+        val turnApprovals = mutableListOf<Boolean>()
+        val batchApprovals = mutableListOf<Boolean>()
+        val batchApprovable = mutableListOf<Int>()
+        val batchIds = mutableListOf<String?>()
+        val batchTools = mutableListOf<List<String>>()
+        val finished = mutableListOf<ToolResultView>()
+
+        val result =
+            runBlocking {
+                runtime.runTurn(
+                    "write twice",
+                    emptyList(),
+                    onEvent = { event ->
+                        if (event is AgentEvent.ConfirmationRequested) {
+                            remaining += event.request.batchRemaining
+                            turnApprovals += event.request.allowTurnApproval
+                            batchApprovals += event.request.allowBatchApproval
+                            batchApprovable += event.request.batchApprovableRemaining
+                            batchIds += event.request.batchId
+                            batchTools += event.request.batchToolNames
+                        }
+                        if (event is AgentEvent.ToolFinished) finished += event.result
+                    },
+                    confirm = { true },
+                )
+            }
+
+        assertEquals(listOf(2, 1), remaining)
+        assertTrue(turnApprovals.all { it })
+        assertTrue(batchApprovals.all { it })
+        assertEquals(listOf(2, 1), batchApprovable)
+        assertEquals(1, batchIds.filterNotNull().distinct().size)
+        assertEquals(listOf(listOf("file_write"), listOf("file_write")), batchTools)
+        assertEquals(2, finished.size)
+        assertTrue(finished.all { it.confirmationMs != null && it.confirmationMs!! >= 0L })
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun alwaysToolsDoNotOfferBatchApproval() {
+        val call = ToolCall("call_1", "probe_via_node", """{"outbound":"node-a","url":"https://example.com/"}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null),
                     response("done"),
                 ),
             )
@@ -517,33 +597,23 @@ class AgentRuntimeTest {
                     )
                 }
             }
+        val requests = mutableListOf<ConfirmationRequest>()
         val runtime = runtime(model, executor, key = "sk-test")
-        val remaining = mutableListOf<Int>()
-        val turnApprovals = mutableListOf<Boolean>()
-        val finished = mutableListOf<ToolResultView>()
+        runBlocking {
+            runtime.runTurn(
+                "probe once",
+                emptyList(),
+                onEvent = { event ->
+                    if (event is AgentEvent.ConfirmationRequested) requests += event.request
+                },
+                confirm = { true },
+            )
+        }
 
-        val result =
-            runBlocking {
-                runtime.runTurn(
-                    "probe twice",
-                    emptyList(),
-                    onEvent = { event ->
-                        if (event is AgentEvent.ConfirmationRequested) {
-                            remaining += event.request.batchRemaining
-                            turnApprovals += event.request.allowTurnApproval
-                        }
-                        if (event is AgentEvent.ToolFinished) finished += event.result
-                    },
-                    confirm = { true },
-                )
-            }
-
-        assertEquals(listOf(2, 1), remaining)
-        assertTrue(turnApprovals.all { it })
-        assertEquals(2, finished.size)
-        assertTrue(finished.all { it.confirmationMs != null && it.confirmationMs!! >= 0L })
-        assertTrue(result.outcome is TurnOutcome.Completed)
-        assertTrue(validateTranscriptPairing(result.messages))
+        assertEquals(1, requests.size)
+        assertFalse(requests.single().allowTurnApproval)
+        assertFalse(requests.single().allowBatchApproval)
+        assertEquals(0, requests.single().batchApprovableRemaining)
     }
 
     @Test

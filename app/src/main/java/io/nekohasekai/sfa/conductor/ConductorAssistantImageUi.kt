@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.util.Base64
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -163,7 +162,7 @@ private fun AssistantImageBlock(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = if (state is AssistantImageState.Loaded) Modifier else Modifier.padding(12.dp)) {
             when (val current = state) {
                 is AssistantImageState.Loaded -> {
                     Image(
@@ -174,8 +173,7 @@ private fun AssistantImageBlock(
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 360.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                                .clip(RoundedCornerShape(12.dp)),
                     )
                 }
 
@@ -247,7 +245,7 @@ private fun AssistantSvgBlock(source: String) {
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = if (state is AssistantImageState.Loaded) Modifier else Modifier.padding(12.dp)) {
             when (val current = state) {
                 is AssistantImageState.Loaded -> {
                     Image(
@@ -258,8 +256,7 @@ private fun AssistantSvgBlock(source: String) {
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 360.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+                                .clip(RoundedCornerShape(12.dp)),
                     )
                 }
 

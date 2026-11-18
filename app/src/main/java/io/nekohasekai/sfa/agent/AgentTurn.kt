@@ -104,6 +104,14 @@ data class ConfirmationRequest(
     val batchRemaining: Int = 1,
     /** Agent confirmations can opt into approving later prompts in this turn. */
     val allowTurnApproval: Boolean = false,
+    /** Stable id for the current assistant tool batch. */
+    val batchId: String? = null,
+    /** Safe calls in this batch can be approved together. Destructive tools stay false. */
+    val allowBatchApproval: Boolean = false,
+    /** Remaining calls in this batch that this approval would cover, including the current one. */
+    val batchApprovableRemaining: Int = 1,
+    /** Remaining tool names in this batch, for the batch confirmation card. */
+    val batchToolNames: List<String> = emptyList(),
 )
 
 sealed interface AgentEvent {

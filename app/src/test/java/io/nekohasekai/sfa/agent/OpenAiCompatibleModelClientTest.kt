@@ -154,10 +154,14 @@ class OpenAiCompatibleModelClientTest {
                 )
             }
 
-        assertEquals("a cat", answer)
+        assertEquals("a cat", answer.text)
+        assertEquals("stop", answer.finishReason)
+        assertFalse(answer.truncated)
         assertTrue(requestBody.contains("\"model\":\"deepseek-flash\""))
         assertTrue(requestBody.contains("\"type\":\"image_url\""))
         assertTrue(requestBody.contains("\"detail\":\"auto\""))
+        assertTrue(requestBody.contains("Return only the final answer."))
+        assertTrue(requestBody.contains("\"max_tokens\":4096"))
         assertTrue(requestBody.contains("data:image/jpeg;base64,AQID"))
     }
 
@@ -179,7 +183,30 @@ class OpenAiCompatibleModelClientTest {
                 )
             }
 
-        assertEquals("a cat", answer)
+        assertEquals("a cat", answer.text)
+        assertTrue(answer.reasoningFallback)
+    }
+
+    @Test
+    fun analyzeImageMarksLengthFinishAsTruncated() {
+        responseBody =
+            """
+            {"choices": [{"message": {"content": "partial"}, "finish_reason": "length"}]}
+            """.trimIndent()
+
+        val client = clientFor("http://127.0.0.1:${server.localPort}", "deepseek-flash")
+        val answer =
+            runBlocking {
+                client.analyzeImage(
+                    image = byteArrayOf(1, 2, 3),
+                    mimeType = "image/jpeg",
+                    question = "what is shown?",
+                    apiKey = "sk-test",
+                )
+            }
+
+        assertEquals("partial", answer.text)
+        assertTrue(answer.truncated)
     }
 
     @Test

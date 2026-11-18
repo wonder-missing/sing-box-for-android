@@ -830,6 +830,8 @@
     <string name="agent_confirm_run_all">Approve this tool for the rest of the turn</string>
     <string name="agent_confirm_batch">This response has %1$d tool calls. Approving skips later prompts for the same tool in this turn.</string>
     <string name="agent_confirm_turn">The same tool will not ask again in this turn; other tools still ask.</string>
+    <string name="agent_confirm_batch_run">Run all %1$d safe calls in this response</string>
+    <string name="agent_confirm_batch_tools">This response includes: %1$s</string>
     <string name="shortcut_start_service">Start Service</string>
     <string name="shortcut_stop_service">Stop Service</string>
     <string name="shortcut_tailscale">Tailscale</string>

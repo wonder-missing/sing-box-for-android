@@ -129,7 +129,7 @@ class OpenAiCompatibleModelClient(
         question: String,
         apiKey: String,
         timeoutMs: Long = 60_000,
-    ): String =
+    ): VisionAnalysis =
         withContext(Dispatchers.IO) {
             val endpoint = currentEndpoint()
             if (apiKey.isBlank()) {
@@ -156,7 +156,11 @@ class OpenAiCompatibleModelClient(
                                             add(
                                                 buildJsonObject {
                                                     put("type", "text")
-                                                    put("text", question)
+                                                    put(
+                                                        "text",
+                                                        "Return only the final answer. Do not include analysis steps, " +
+                                                            "headings or internal reasoning.\n\n$question",
+                                                    )
                                                 },
                                             )
                                             add(
@@ -177,7 +181,7 @@ class OpenAiCompatibleModelClient(
                             )
                         },
                     )
-                    put("max_tokens", 1024)
+                    put("max_tokens", VISION_MAX_TOKENS)
                     put("temperature", 0.2)
                     put("stream", false)
                 }.toString()
@@ -209,13 +213,18 @@ class OpenAiCompatibleModelClient(
                         }
                     else -> null
                 }
-            content?.trim()?.takeIf { it.isNotBlank() }?.let { return@withContext it }
             val finish = (choice?.get("finish_reason") as? JsonPrimitive)?.contentOrNull
+            val truncated = finish == "length"
             val reasoning = (message?.get("reasoning_content") as? JsonPrimitive)?.contentOrNull?.trim()
+            content?.trim()?.takeIf { it.isNotBlank() }?.let {
+                return@withContext VisionAnalysis(it, finish, truncated)
+            }
             // Some multimodal models put the whole answer in reasoning_content
             // and leave content empty. Returning that text is more useful than
-            // reporting an empty answer.
-            reasoning?.takeIf { it.isNotBlank() }?.let { return@withContext it }
+            // reporting an empty answer; flag it so callers can label it.
+            reasoning?.takeIf { it.isNotBlank() }?.let {
+                return@withContext VisionAnalysis(it, finish, truncated, reasoningFallback = true)
+            }
             val providerError = ((root["error"] as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull
             val detail =
                 listOfNotNull(
@@ -794,5 +803,6 @@ class OpenAiCompatibleModelClient(
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val MAX_RESPONSE_BYTES = 2 * 1024 * 1024
         private const val MAX_ERROR_BYTES = 4 * 1024
+        private const val VISION_MAX_TOKENS = 4096
     }
 }

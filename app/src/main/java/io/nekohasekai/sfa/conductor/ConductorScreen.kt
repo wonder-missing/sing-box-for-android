@@ -729,6 +729,7 @@ fun ConductorScreen(
                                 item = item,
                                 onConfirm = viewModel::confirmConfirmation,
                                 onConfirmAll = viewModel::confirmAllAgent,
+                                onConfirmBatch = viewModel::confirmBatchAgent,
                                 onCancel = viewModel::cancelConfirmation,
                                 onAnswerQuestion = viewModel::answerAskUser,
                                 onCancelQuestion = viewModel::cancelAskUser,
@@ -1559,6 +1560,7 @@ private fun ConductorItemView(
     item: ConductorItem,
     onConfirm: () -> Unit,
     onConfirmAll: () -> Unit,
+    onConfirmBatch: () -> Unit,
     onCancel: () -> Unit,
     onAnswerQuestion: (String, List<String>) -> Unit,
     onCancelQuestion: (String) -> Unit,
@@ -1686,6 +1688,31 @@ private fun ConductorItemView(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp),
                     )
+                    if (item.request.allowBatchApproval && item.request.batchApprovableRemaining > 1) {
+                        if (item.request.batchToolNames.isNotEmpty()) {
+                            Text(
+                                text =
+                                    stringResource(
+                                        R.string.agent_confirm_batch_tools,
+                                        item.request.batchToolNames.joinToString(", "),
+                                    ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            onClick = onConfirmBatch,
+                        ) {
+                            Text(
+                                stringResource(
+                                    R.string.agent_confirm_batch_run,
+                                    item.request.batchApprovableRemaining,
+                                ),
+                            )
+                        }
+                    }
                     if (item.request.allowTurnApproval) {
                         Text(
                             text =

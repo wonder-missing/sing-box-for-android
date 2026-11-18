@@ -863,7 +863,7 @@ class AgentDataTools(
                     description =
                         "Read a UTF-8 text file the user selected in this session. " +
                             "The handle comes from request_files and goes in the `id` parameter. Images, PDFs and " +
-                            "other binary files are rejected; use analyze_image for images.",
+                            "other binary files are rejected; use analyze_image with the same handle as file_id.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
                         listOf(
@@ -978,9 +978,10 @@ class AgentDataTools(
                 AgentToolDefinition(
                     name = "analyze_image",
                     description =
-                        "Ask the user to pick one image from the gallery, send it to the configured vision-capable " +
-                            "model, and return the text analysis. Use this for screenshots or photos. The image leaves " +
-                            "the device for the provider; file_read_selected cannot read images.",
+                        "Analyze one image with the configured vision-capable model and return text. The image " +
+                            "leaves the device for the provider. With file_id, reuse a file selected by " +
+                            "request_files; otherwise the user is asked to pick one from the gallery. " +
+                            "file_read_selected cannot read images; pass the handle to analyze_image as file_id.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -989,6 +990,13 @@ class AgentDataTools(
                                 type = AgentParameterType.STRING,
                                 required = true,
                                 description = "What to ask about the image. Be specific.",
+                            ),
+                            AgentParameterSpec(
+                                name = "file_id",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description =
+                                    "Optional image handle returned by request_files. Omit to open the gallery picker.",
                             ),
                         ),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
@@ -1007,7 +1015,14 @@ class AgentDataTools(
                 val analyzer = vision ?: return unavailable()
                 val question = AgentJson.string(args, "question")?.trim()
                 if (question.isNullOrEmpty()) return invalid("question is required")
+                val fileId =
+                    AgentJson.string(args, "file_id")
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
                 return try {
+                    if (fileId != null) {
+                        return analyzeSelectedImage(picker, analyzer, fileId, question)
+                    }
                     val selection =
                         picker.request(
                             reason = "Pick one image to analyze. It will be sent to the configured model provider.",
@@ -1024,17 +1039,7 @@ class AgentDataTools(
                                 },
                         )
                     }
-                    val file = selection.files.first()
-                    val image = picker.readBytes(file.id, MAX_IMAGE_BYTES)
-                    val analysis = analyzer.analyze(image.bytes, image.mimeType, question)
-                    ToolExecution(
-                        output =
-                            buildJsonObject {
-                                put("file", file.name)
-                                put("mime", image.mimeType)
-                                put("analysis", analysis.take(12_000))
-                            },
-                    )
+                    analyzeSelectedImage(picker, analyzer, selection.files.first().id, question)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -1042,6 +1047,32 @@ class AgentDataTools(
                 }
             }
         }
+
+    private suspend fun analyzeSelectedImage(
+        picker: FileSelectionPort,
+        analyzer: VisionPort,
+        fileId: String,
+        question: String,
+    ): ToolExecution {
+        val image = picker.readBytes(fileId, MAX_IMAGE_BYTES)
+        if (!image.mimeType.startsWith("image/", ignoreCase = true)) {
+            return invalid("file_id must reference an image.")
+        }
+        val analysis = analyzer.analyze(image.bytes, image.mimeType, question)
+        val text = analysis.text
+        val truncated = analysis.truncated || text.length > MAX_ANALYSIS_CHARS
+        return ToolExecution(
+            output =
+                buildJsonObject {
+                    put("file", image.name)
+                    put("mime", image.mimeType)
+                    put("analysis", text.take(MAX_ANALYSIS_CHARS))
+                    put("truncated", truncated)
+                    analysis.finishReason?.let { put("finishReason", it) }
+                    if (analysis.reasoningFallback) put("reasoningFallback", true)
+                },
+        )
+    }
 
     private val releaseNotesTool =
         object : AgentTool {
@@ -1200,6 +1231,7 @@ class AgentDataTools(
     companion object {
         private const val MAX_SEND_BYTES = 8L * 1024 * 1024
         private const val MAX_IMAGE_BYTES = 5 * 1024 * 1024
+        private const val MAX_ANALYSIS_CHARS = 12_000
         private const val MAX_FILE_EDITS = 20
         private val SHA256_HEX = Regex("[0-9a-fA-F]{64}")
         private const val FILE_PICK_TIMEOUT_MS = 10L * 60L * 1000L

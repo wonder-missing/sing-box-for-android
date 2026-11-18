@@ -205,11 +205,11 @@ class AgentDataToolsTest {
                     image: ByteArray,
                     mimeType: String,
                     question: String,
-                ): String {
+                ): VisionAnalysis {
                     seenMime = mimeType
                     seenQuestion = question
                     seenBytes = image.size
-                    return "A settings screen."
+                    return VisionAnalysis("A settings screen.", "stop")
                 }
             }
         val registry =
@@ -224,6 +224,32 @@ class AgentDataToolsTest {
         assertEquals("image/png", seenMime)
         assertEquals("What is shown?", seenQuestion)
         assertEquals(4, seenBytes)
+    }
+
+    @Test
+    fun analyzeImageReusesARequestFilesHandleWithoutOpeningThePicker() {
+        val selection = FakeSelection(listOf(SelectedFileInfo("img1", "shot.png", 4, "image/png")))
+        val vision =
+            object : VisionPort {
+                override suspend fun analyze(
+                    image: ByteArray,
+                    mimeType: String,
+                    question: String,
+                ): VisionAnalysis = VisionAnalysis("A settings screen.", "stop")
+            }
+        val registry =
+            AgentToolRegistry(
+                AgentDataTools(store, diagnostics, taildrop, selection, vision = vision).all,
+            )
+
+        val result = registry.exec("analyze_image", """{"question":"What is shown?","file_id":"img1"}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("picked.png", result.output!!.string("file"))
+        assertEquals("A settings screen.", result.output!!.string("analysis"))
+        assertFalse(result.output!!.boolean("truncated"))
+        assertEquals(0, selection.requestCalls)
+        assertEquals(listOf("img1"), selection.readIds)
     }
 
     @Test
@@ -446,6 +472,7 @@ class AgentDataToolsTest {
         var reason: String? = null
         var multiple: Boolean? = null
         var mimeTypes: List<String>? = null
+        var requestCalls = 0
         val readIds = mutableListOf<String>()
 
         override suspend fun request(
@@ -454,6 +481,7 @@ class AgentDataToolsTest {
             mimeTypes: List<String>?,
             cancellation: ToolCancellation?,
         ): FileSelectionResult {
+            requestCalls += 1
             this.reason = reason
             this.multiple = multiple
             this.mimeTypes = mimeTypes
@@ -471,8 +499,10 @@ class AgentDataToolsTest {
         override suspend fun readBytes(
             id: String,
             maxBytes: Int,
-        ): SelectedImage =
-            SelectedImage(id, "picked.png", "image/png", byteArrayOf(1, 2, 3, 4))
+        ): SelectedImage {
+            readIds += id
+            return SelectedImage(id, "picked.png", "image/png", byteArrayOf(1, 2, 3, 4))
+        }
     }
 
     private fun AgentToolRegistry.exec(

@@ -244,13 +244,21 @@ interface FileSelectionPort {
     ): SelectedImage = throw UnsupportedOperationException("Binary selection is not supported.")
 }
 
+/** One vision answer, retaining the provider's completion signal for the caller. */
+data class VisionAnalysis(
+    val text: String,
+    val finishReason: String? = null,
+    val truncated: Boolean = false,
+    val reasoningFallback: Boolean = false,
+)
+
 /** Sends one selected image to the configured model provider and returns text. */
 interface VisionPort {
     suspend fun analyze(
         image: ByteArray,
         mimeType: String,
         question: String,
-    ): String
+    ): VisionAnalysis
 }
 
 /**
