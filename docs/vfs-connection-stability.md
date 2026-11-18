@@ -1,6 +1,6 @@
 # VFS 连接稳定性
 
-状态：2026-11-18，wonder.98。VFS 行为在 90–92 实现，93/94 补充生命周期遥测、UI 和草稿/telemetry 修复；96 的夜间浸泡暴露了后台断网重试预算，98 已把 sharing service 活跃时的重连改为持续退避。vfsd stale-link 清理目前只是待更多实证的现象，不下结论。代码见 `VfsRuntime`、`VfsSharingService`、`VfsConnectionManager`、`VfsSharingPolicy`。可重复的短测/夜间浸泡流程见 [`vfs-soak-test.md`](vfs-soak-test.md)。
+状态：2026-11-18，wonder.99。VFS 行为在 90–92 实现，93/94 补充生命周期遥测、UI 和草稿/telemetry 修复；96 的夜间浸泡暴露了后台断网重试预算，98 已把 sharing service 活跃时的重连改为持续退避，99 不改变 VFS 行为。vfsd stale-link 清理目前只是待更多实证的现象，不下结论。代码见 `VfsRuntime`、`VfsSharingService`、`VfsConnectionManager`、`VfsSharingPolicy`。可重复的短测/夜间浸泡流程见 [`vfs-soak-test.md`](vfs-soak-test.md)。
 
 ## 问题
 
