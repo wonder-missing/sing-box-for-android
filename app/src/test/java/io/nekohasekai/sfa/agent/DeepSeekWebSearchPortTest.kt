@@ -159,7 +159,73 @@ class DeepSeekWebSearchPortTest {
             "https://example.com/a?x=1",
             canonicalWebSearchUrl("https://example.com/a?x=1&utm_source=test"),
         )
+        assertEquals(
+            "https://kotlinlang.org/docs/whatsnew2120.html",
+            canonicalWebSearchUrl(
+                "https://kotlinlang.org/docs/whatsnew2120.html?adobe_mc=MCMID%3d123%7cTS%3d1",
+            ),
+        )
         assertNull(canonicalWebSearchUrl("file:///tmp/page"))
+    }
+
+    @Test
+    fun parseCleansMarkdownTitlesAndDropsCodeMirrorsWhenACanonicalSourceExists() {
+        val outcome =
+            parseWebSearchResponse(
+                """
+                {
+                  "content": [
+                    {
+                      "type": "web_search_tool_result",
+                      "content": [
+                        {
+                          "url": "https://kotlinlang.org/docs/whatsnew21.html",
+                          "title": "What's new in Kotlin 2.1.0 | Kotlin"
+                        },
+                        {
+                          "url": "https://raw.githubusercontent.com/example/docs/main/whatsnew21.md",
+                          "title": "[//]: # (title: Kotlin 2.1.0)"
+                        },
+                        {
+                          "url": "https://github.com/example/docs/blob/main/whatsnew21.md",
+                          "title": "<web-summary>Kotlin notes"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.trimIndent(),
+                5,
+            )
+
+        assertEquals(1, outcome.sources.size)
+        assertEquals("https://kotlinlang.org/docs/whatsnew21.html", outcome.sources.single().url)
+    }
+
+    @Test
+    fun parseCleansTitlesWhenOnlyAMirrorIsAvailable() {
+        val outcome =
+            parseWebSearchResponse(
+                """
+                {
+                  "content": [
+                    {
+                      "type": "web_search_tool_result",
+                      "content": [
+                        {
+                          "url": "https://raw.githubusercontent.com/example/docs/main/whatsnew21.md",
+                          "title": "[//]: # (title: Kotlin 2.1.0) - [//]: # (title: Kotlin 2.1.0)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.trimIndent(),
+                5,
+            )
+
+        assertEquals(1, outcome.sources.size)
+        assertNull(outcome.sources.single().title)
     }
 
     @Test
@@ -202,6 +268,17 @@ class DeepSeekWebSearchPortTest {
 
         assertEquals(
             setOf("https://developer.android.com/about/versions/15/features?hl=zh-cn#3"),
+            allowedWebSearchUrls(answer, sources),
+        )
+    }
+
+    @Test
+    fun allowedAnswerUrlsAcceptAnotherPathOnACitedHost() {
+        val sources = listOf(WebSearchSource("https://kotlinlang.org/docs/whatsnew21.html"))
+        val answer = "另见 https://kotlinlang.org/docs/whatsnew2120.html。"
+
+        assertEquals(
+            setOf("https://kotlinlang.org/docs/whatsnew2120.html"),
             allowedWebSearchUrls(answer, sources),
         )
     }

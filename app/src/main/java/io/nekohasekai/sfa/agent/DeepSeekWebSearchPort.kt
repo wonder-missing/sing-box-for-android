@@ -249,7 +249,10 @@ internal fun parseWebSearchResponse(
         }
     }
 
-    val limitedSources = sources.values.take(maxResults.coerceAtLeast(1)).map { it.build() }
+    val allSources = sources.values.toList()
+    val hasNonMirror = allSources.any { !isCodeMirrorUrl(it.url) }
+    val usableSources = if (hasNonMirror) allSources.filterNot { isCodeMirrorUrl(it.url) } else allSources
+    val limitedSources = usableSources.take(maxResults.coerceAtLeast(1)).map { it.build() }
     val answerText = answer.toString().trim().takeIf { it.isNotEmpty() }
     return WebSearchOutcome(
         answer = answerText,
@@ -316,13 +319,38 @@ internal fun allowedWebSearchUrls(
 ): Set<String> {
     if (answer.isNullOrBlank() || sources.isEmpty()) return emptySet()
     val canonicalSources = sources.mapNotNull { canonicalWebSearchUrl(it.url) }.toSet()
+    val sourceHosts = sources.mapNotNull { webSearchHost(it.url) }.toSet()
     if (canonicalSources.isEmpty()) return emptySet()
     return HTTP_URL_REGEX
         .findAll(answer)
         .map { it.value.trimEnd { ch -> ch in URL_TRAILING_PUNCTUATION } }
         .filter { isAllowedHttpUrl(it) }
-        .filter { canonicalWebSearchUrl(it) in canonicalSources }
+        .filter { canonicalWebSearchUrl(it) in canonicalSources || webSearchHost(it) in sourceHosts }
         .toSet()
+}
+
+private fun webSearchHost(raw: String): String? =
+    runCatching { URI(raw).host?.lowercase(Locale.US) }
+        .getOrNull()
+        ?.takeIf { it.isNotBlank() }
+
+private fun isCodeMirrorUrl(raw: String): Boolean {
+    val uri = runCatching { URI(raw) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase(Locale.US) ?: return false
+    if (host == "raw.githubusercontent.com") return true
+    return host == "github.com" && uri.rawPath.orEmpty().contains("/blob/")
+}
+
+private fun cleanWebSearchTitle(raw: String): String? {
+    val cleaned =
+        raw
+            .replace(Regex("""\[//\]:\s*#?\s*\([^)]*\)"""), " ")
+            .replace(Regex("""<[^>]+>"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .trim('-', ':', '|')
+            .trim()
+    return cleaned.takeIf { it.isNotEmpty() }
 }
 
 private fun addSource(
@@ -335,7 +363,7 @@ private fun addSource(
     val url = canonicalWebSearchUrl(rawUrl) ?: rawUrl
     val source = sources.getOrPut(url) { SourceBuilder(url) }
     val title = (obj["title"] as? JsonPrimitive)?.contentOrNull?.trim()
-    if (!title.isNullOrEmpty()) source.title = title
+    cleanWebSearchTitle(title.orEmpty())?.let { source.title = it }
     val pageAge = (obj["page_age"] as? JsonPrimitive)?.contentOrNull?.trim()
     if (!pageAge.isNullOrEmpty()) source.pageAge = pageAge
     val citedText = (obj["cited_text"] as? JsonPrimitive)?.contentOrNull?.trim()
@@ -357,6 +385,12 @@ private val WEB_SEARCH_TRACKING_PARAMS =
         "source",
         "gclid",
         "fbclid",
+        "adobe_mc",
+        "mc_cid",
+        "mc_eid",
+        "_ga",
+        "_gl",
+        "spm",
         "ref",
         "ref_src",
         "si",
@@ -366,7 +400,7 @@ private val HTTP_URL_REGEX = Regex("""(?i)https?://[^\s<>"'`)\]}，。；：！�
 private const val URL_TRAILING_PUNCTUATION = ").,;:!?]}'\"，。；：！？、）】》"
 
 private class SourceBuilder(
-    private val url: String,
+    val url: String,
 ) {
     var title: String? = null
     var pageAge: String? = null
