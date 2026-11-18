@@ -433,8 +433,9 @@ class AgentRuntime(
             val executable = calls.take(config.maxToolCallsPerRound)
             val extra = calls.drop(config.maxToolCallsPerRound)
             val batchId = UUID.randomUUID().toString()
-            fun isRepeatable(name: String): Boolean {
+            fun isBulkApprovable(name: String): Boolean {
                 val definition = catalog.definitions.firstOrNull { it.name == name } ?: return false
+                if (definition.category == "mcp" || definition.name == "file_delete") return false
                 return definition.confirmationPolicy == ConfirmationPolicy.AGENT_ONLY ||
                     (
                         definition.permission == AgentPermission.DATA_EGRESS &&
@@ -631,7 +632,7 @@ class AgentRuntime(
                 var confirmationMs: Long? = null
 
                 if (result.confirmation != null) {
-                    val repeatable = isRepeatable(executed.name)
+                    val repeatable = isBulkApprovable(executed.name)
                     val request =
                         ConfirmationRequest(
                             id = confirmationIds.incrementAndGet(),
@@ -643,7 +644,7 @@ class AgentRuntime(
                             batchId = batchId,
                             allowBatchApproval = repeatable,
                             batchApprovableRemaining =
-                                executable.drop(index).count { isRepeatable(it.name) },
+                                executable.drop(index).count { isBulkApprovable(it.name) },
                             batchToolNames =
                                 executable.drop(index).map { it.name }.distinct().take(8),
                         )
