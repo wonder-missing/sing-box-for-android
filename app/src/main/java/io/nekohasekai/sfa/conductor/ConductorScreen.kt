@@ -1499,33 +1499,30 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
                 }
             }
         } else if (expanded) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(16.dp),
             ) {
-                SelectionContainer {
-                    Text(
-                        text = item.text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f).padding(start = 8.dp),
-                    )
-                }
-                Box(
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Collapse",
                     modifier =
                         Modifier
-                            .size(16.dp)
-                            .padding(top = 2.dp)
+                            .align(Alignment.CenterEnd)
+                            .size(14.dp)
                             .clickable { expanded = false },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Collapse",
-                        modifier = Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            SelectionContainer {
+                Text(
+                    text = item.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+                )
             }
         } else {
             Box(
