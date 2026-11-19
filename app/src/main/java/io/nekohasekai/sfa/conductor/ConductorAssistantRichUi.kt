@@ -26,8 +26,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun AssistantCodeBlock(segment: ConductorAssistantSegment.Code) {
@@ -38,13 +41,29 @@ internal fun AssistantCodeBlock(segment: ConductorAssistantSegment.Code) {
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Column {
             if (segment.language.isNotBlank()) {
-                Text(
-                    text = segment.language,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = segment.language,
+                        style =
+                            MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = 0.6.sp,
+                            ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                    )
+                }
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    thickness = 1.dp,
                 )
             }
             Box(
@@ -52,7 +71,8 @@ internal fun AssistantCodeBlock(segment: ConductorAssistantSegment.Code) {
                     Modifier
                         .fillMaxWidth()
                         .heightIn(max = 360.dp)
-                        .verticalScroll(vertical),
+                        .verticalScroll(vertical)
+                        .padding(vertical = 8.dp),
             ) {
                 SelectionContainer {
                     Text(
@@ -106,10 +126,11 @@ internal fun AssistantTableBlock(segment: ConductorAssistantSegment.Table) {
                 TableRow(
                     cells = segment.header,
                     widths = widths,
+                    alignments = segment.alignments,
                     header = true,
                     background = headerColor,
                 )
-                segment.rows.forEachIndexed { index, row ->
+                segment.rows.forEach { row ->
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.outlineVariant,
                         thickness = 1.dp,
@@ -117,6 +138,7 @@ internal fun AssistantTableBlock(segment: ConductorAssistantSegment.Table) {
                     TableRow(
                         cells = row,
                         widths = widths,
+                        alignments = segment.alignments,
                         header = false,
                         background = rowColor,
                     )
@@ -130,6 +152,7 @@ internal fun AssistantTableBlock(segment: ConductorAssistantSegment.Table) {
 private fun TableRow(
     cells: List<String>,
     widths: List<Dp>,
+    alignments: List<AssistantTableAlignment>,
     header: Boolean,
     background: Color,
 ) {
@@ -160,6 +183,13 @@ private fun TableRow(
                             MaterialTheme.typography.bodySmall
                         },
                     color = MaterialTheme.colorScheme.onSurface,
+                    textAlign =
+                        when (alignments.getOrElse(index) { AssistantTableAlignment.LEFT }) {
+                            AssistantTableAlignment.LEFT -> TextAlign.Start
+                            AssistantTableAlignment.CENTER -> TextAlign.Center
+                            AssistantTableAlignment.RIGHT -> TextAlign.End
+                        },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }

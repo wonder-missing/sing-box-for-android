@@ -100,10 +100,33 @@ class ConductorAssistantImageTest {
             ConductorAssistantSegment.Table(
                 header = listOf("Step", "Tool"),
                 rows = listOf(listOf("1", "job_run"), listOf("2", "job_file")),
+                alignments = listOf(AssistantTableAlignment.LEFT, AssistantTableAlignment.LEFT),
             ),
             segments[1],
         )
         assertEquals("\nafter", (segments[2] as ConductorAssistantSegment.Text).text)
+    }
+
+    @Test
+    fun `accepts short alignment separators`() {
+        val segments =
+            assistantMarkdownSegments(
+                "| Left | Center | Right |\n| :- | :-: | -: |\n| a | b | c |",
+            )
+
+        assertEquals(
+            ConductorAssistantSegment.Table(
+                header = listOf("Left", "Center", "Right"),
+                rows = listOf(listOf("a", "b", "c")),
+                alignments =
+                    listOf(
+                        AssistantTableAlignment.LEFT,
+                        AssistantTableAlignment.CENTER,
+                        AssistantTableAlignment.RIGHT,
+                    ),
+            ),
+            segments.single(),
+        )
     }
 
     @Test

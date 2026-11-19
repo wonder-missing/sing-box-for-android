@@ -22,7 +22,14 @@ internal sealed interface ConductorAssistantSegment {
     data class Table(
         val header: List<String>,
         val rows: List<List<String>>,
+        val alignments: List<AssistantTableAlignment> = emptyList(),
     ) : ConductorAssistantSegment
+}
+
+internal enum class AssistantTableAlignment {
+    LEFT,
+    CENTER,
+    RIGHT,
 }
 
 private val MARKDOWN_IMAGE = Regex("""!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)""")
@@ -31,7 +38,8 @@ private val SVG_TILDE_FENCE = Regex("""(?is)~~~[ \t]*svg[ \t]*\r?\n(.*?)\r?\n~~~
 private val CODE_FENCE = Regex("""(?is)```[ \t]*([\w+#.-]*)[ \t]*\r?\n(.*?)\r?\n```""")
 private val CODE_TILDE_FENCE = Regex("""(?is)~~~[ \t]*([\w+#.-]*)[ \t]*\r?\n(.*?)\r?\n~~~""")
 private val RAW_SVG = Regex("""(?is)<svg\b.*?</svg>""")
-private val TABLE_SEPARATOR = Regex("""^:?-{3,}:?$""")
+// GitHub requires three dashes, but models commonly emit one or two.
+private val TABLE_SEPARATOR = Regex("""^:?-+:?$""")
 
 private data class MarkdownMatch(
     val start: Int,
@@ -175,6 +183,14 @@ private fun addTables(
             continue
         }
         val padded = cells.map { row -> List(columns) { row.getOrElse(it) { "" } } }
+        val alignments =
+            splitTableRow(separator.text).map { cell ->
+                when {
+                    cell.startsWith(":") && cell.endsWith(":") -> AssistantTableAlignment.CENTER
+                    cell.endsWith(":") -> AssistantTableAlignment.RIGHT
+                    else -> AssistantTableAlignment.LEFT
+                }
+            }.let { values -> List(columns) { values.getOrElse(it) { AssistantTableAlignment.LEFT } } }
         val range = header.start until lines[next - 1].end
         candidates +=
             MarkdownMatch(
@@ -184,6 +200,7 @@ private fun addTables(
                     ConductorAssistantSegment.Table(
                         header = padded.first(),
                         rows = padded.drop(1),
+                        alignments = alignments,
                     ),
             )
         occupied += range
