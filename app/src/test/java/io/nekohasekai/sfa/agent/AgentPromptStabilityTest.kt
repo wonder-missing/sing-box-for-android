@@ -41,6 +41,9 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("[conductor:event"))
         assertTrue(first.contains("job_run(vfs=true)"))
         assertFalse(first.contains("docker_run(vfs=true)"))
+        assertTrue(first.contains("Markdown tables"))
+        assertTrue(first.contains("fenced code blocks"))
+        assertFalse(first.contains("Do not use Markdown tables"))
     }
 
     /**
@@ -57,7 +60,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("a2a17812532eff4263e952d942c463a4e367070beef8ce383e84c1ac2f0f97f3", digest)
+        assertEquals("cf0fef5b320c65cd38c4f1f270716ef24a85363aeebd445575b397f7bca35d2b", digest)
     }
 
     @Test
@@ -73,8 +76,9 @@ class AgentPromptStabilityTest {
             "Use short paragraphs or one short list. Always wrap file paths, commands, flags, " +
                 "tool names, config keys and other literal identifiers in `inline code`. " +
                 "Use **bold** sparingly for a warning or the key conclusion. " +
-                "Do not use Markdown tables, headings or code fences, except one ```svg block " +
-                "containing only an `<svg>` element for a diagram; the client renders it as an image."
+                "Use Markdown tables for tabular data and fenced code blocks for code or command " +
+                "output; tables render with horizontal scroll. Use one ```svg block containing only " +
+                "an `<svg>` element only for a real diagram, never for tabular data. Do not use headings."
 
         assertTrue(!normal.contains(briefLine))
         assertTrue(brief.contains(briefLine))

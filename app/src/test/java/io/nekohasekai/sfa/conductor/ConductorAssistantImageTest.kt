@@ -72,6 +72,57 @@ class ConductorAssistantImageTest {
     }
 
     @Test
+    fun `extracts a fenced code block`() {
+        val segments =
+            assistantMarkdownSegments(
+                "before\n```kotlin\nval answer = 42\n```\nafter",
+            )
+
+        assertEquals(3, segments.size)
+        assertEquals("before\n", (segments[0] as ConductorAssistantSegment.Text).text)
+        assertEquals(
+            ConductorAssistantSegment.Code(language = "kotlin", code = "val answer = 42"),
+            segments[1],
+        )
+        assertEquals("\nafter", (segments[2] as ConductorAssistantSegment.Text).text)
+    }
+
+    @Test
+    fun `extracts a markdown table outside code fences`() {
+        val segments =
+            assistantMarkdownSegments(
+                "before\n| Step | Tool |\n| --- | --- |\n| 1 | job_run |\n| 2 | job_file |\nafter",
+            )
+
+        assertEquals(3, segments.size)
+        assertEquals("before\n", (segments[0] as ConductorAssistantSegment.Text).text)
+        assertEquals(
+            ConductorAssistantSegment.Table(
+                header = listOf("Step", "Tool"),
+                rows = listOf(listOf("1", "job_run"), listOf("2", "job_file")),
+            ),
+            segments[1],
+        )
+        assertEquals("\nafter", (segments[2] as ConductorAssistantSegment.Text).text)
+    }
+
+    @Test
+    fun `does not parse table syntax inside a code fence`() {
+        val segments =
+            assistantMarkdownSegments(
+                "```text\n| Step | Tool |\n| --- | --- |\n```",
+            )
+
+        assertEquals(
+            ConductorAssistantSegment.Code(
+                language = "text",
+                code = "| Step | Tool |\n| --- | --- |",
+            ),
+            segments.single(),
+        )
+    }
+
+    @Test
     fun `accepts embedded image data`() {
         val segments = assistantMarkdownSegments("![dot](data:image/png;base64,AAAA)")
 

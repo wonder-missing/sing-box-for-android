@@ -5,15 +5,26 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.util.Base64
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,15 +39,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.caverock.androidsvg.SVG
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import com.caverock.androidsvg.SVG
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -86,7 +101,14 @@ private val assistantImageClient =
 @Composable
 internal fun AssistantMarkdownText(text: String, resourceFile: (String) -> File?) {
     val segments = remember(text) { assistantMarkdownSegments(text) }
-    if (segments.none { it is ConductorAssistantSegment.Image || it is ConductorAssistantSegment.Svg }) {
+    if (
+        segments.none {
+            it is ConductorAssistantSegment.Image ||
+                it is ConductorAssistantSegment.Svg ||
+                it is ConductorAssistantSegment.Code ||
+                it is ConductorAssistantSegment.Table
+        }
+    ) {
         SelectionContainer {
             Text(
                 text =
@@ -128,6 +150,10 @@ internal fun AssistantMarkdownText(text: String, resourceFile: (String) -> File?
                 is ConductorAssistantSegment.Image -> AssistantImageBlock(segment.alt, segment.url, resourceFile)
 
                 is ConductorAssistantSegment.Svg -> AssistantSvgBlock(segment.source)
+
+                is ConductorAssistantSegment.Code -> AssistantCodeBlock(segment)
+
+                is ConductorAssistantSegment.Table -> AssistantTableBlock(segment)
             }
         }
     }
@@ -236,8 +262,33 @@ private fun AssistantImageBlock(
 @Composable
 private fun AssistantSvgBlock(source: String) {
     var state by remember(source) { mutableStateOf<AssistantImageState>(AssistantImageState.Loading) }
+    var fullscreen by remember { mutableStateOf(false) }
     LaunchedEffect(source) {
         state = withContext(Dispatchers.IO) { decodeSvg(source) }
+    }
+
+    val loaded = state as? AssistantImageState.Loaded
+    if (loaded != null) {
+        Image(
+            bitmap = loaded.bitmap,
+            contentDescription = "SVG",
+            contentScale = ContentScale.Fit,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(max = 360.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { fullscreen = true },
+        )
+        if (fullscreen) {
+            FullscreenImageDialog(
+                bitmap = loaded.bitmap,
+                contentDescription = "SVG",
+                onDismiss = { fullscreen = false },
+            )
+        }
+        return
     }
 
     Surface(
@@ -245,21 +296,8 @@ private fun AssistantSvgBlock(source: String) {
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Column(modifier = if (state is AssistantImageState.Loaded) Modifier else Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             when (val current = state) {
-                is AssistantImageState.Loaded -> {
-                    Image(
-                        bitmap = current.bitmap,
-                        contentDescription = "SVG",
-                        contentScale = ContentScale.Fit,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 360.dp)
-                                .clip(RoundedCornerShape(12.dp)),
-                    )
-                }
-
                 is AssistantImageState.Loading -> {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -284,7 +322,57 @@ private fun AssistantSvgBlock(source: String) {
                     )
                 }
 
-                AssistantImageState.Idle -> Unit
+                AssistantImageState.Idle, is AssistantImageState.Loaded -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullscreenImageDialog(
+    bitmap: ImageBitmap,
+    contentDescription: String,
+    onDismiss: () -> Unit,
+) {
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val transform =
+        rememberTransformableState { zoomChange, panChange, _ ->
+            scale = (scale * zoomChange).coerceIn(1f, 5f)
+            offset = if (scale <= 1f) Offset.Zero else offset + panChange
+        }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Fit,
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = offset.x
+                            translationY = offset.y
+                        }
+                        .transformable(transform),
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close",
+                    tint = Color.White,
+                )
             }
         }
     }

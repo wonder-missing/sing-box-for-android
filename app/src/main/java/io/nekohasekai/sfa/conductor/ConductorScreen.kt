@@ -1505,17 +1505,17 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
                         text = item.text,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 64.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 40.dp),
                     )
                 }
-                TextButton(
+                IconButton(
                     onClick = { expanded = false },
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    modifier = Modifier.align(Alignment.TopEnd),
+                    modifier = Modifier.align(Alignment.TopEnd).size(32.dp),
                 ) {
-                    Text(
-                        text = "Collapse",
-                        style = MaterialTheme.typography.labelSmall,
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Collapse",
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
@@ -2257,7 +2257,10 @@ private fun AssistantUsageFooter(
                 .fillMaxWidth()
                 .then(
                     if (details.isNotEmpty()) {
-                        Modifier.clickable { expanded = !expanded }
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { expanded = !expanded }
                     } else {
                         Modifier
                     },
