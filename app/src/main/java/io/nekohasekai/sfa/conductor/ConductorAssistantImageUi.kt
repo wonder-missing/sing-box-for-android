@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
@@ -109,19 +108,7 @@ internal fun AssistantMarkdownText(text: String, resourceFile: (String) -> File?
                 it is ConductorAssistantSegment.Table
         }
     ) {
-        SelectionContainer {
-            Text(
-                text =
-                    markdownAnnotated(
-                        text,
-                        codeBackground = androidx.compose.ui.graphics.Color.Transparent,
-                        codeColor = conductorInlineCodeColor(MaterialTheme.colorScheme),
-                    ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        ConductorRichMarkdownText(text, Modifier.fillMaxWidth())
         return
     }
 
@@ -131,19 +118,7 @@ internal fun AssistantMarkdownText(text: String, resourceFile: (String) -> File?
                 is ConductorAssistantSegment.Text -> {
                     val chunk = segment.text.trim()
                     if (chunk.isNotEmpty()) {
-                        SelectionContainer {
-                            Text(
-                                text =
-                                    markdownAnnotated(
-                                        chunk,
-                                        codeBackground = androidx.compose.ui.graphics.Color.Transparent,
-                                        codeColor = conductorInlineCodeColor(MaterialTheme.colorScheme),
-                                    ),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
+                        ConductorRichMarkdownText(chunk, Modifier.fillMaxWidth())
                     }
                 }
 

@@ -42,7 +42,7 @@ object AgentContext {
                 appendLine("Do not ask for or repeat subscription URLs, tokens, passwords, full logs or file contents.")
                 appendLine("If no tool fits after that check, say so plainly and name what you tried. Keep answers concise and match the user's language.")
                 appendLine("Do not expose internal reasoning; give the conclusion and the necessary details.")
-                appendLine("Use short paragraphs or one short list. Always wrap file paths, commands, flags, tool names, config keys and other literal identifiers in `inline code`. Use **bold** sparingly for a warning or the key conclusion. Use Markdown tables for tabular data and fenced code blocks for code or command output; tables render with horizontal scroll. Use one ```svg block containing only an `<svg>` element only for a real diagram, never for tabular data. Do not use headings.")
+                appendLine("Use short paragraphs. Always wrap file paths, commands, flags, tool names, config keys and other literal identifiers in `inline code`. Use **bold** sparingly for a warning or the key conclusion. Use Markdown headings sparingly (H1–H3), lists, blockquotes, links, tables and fenced code blocks when they help; tables render with horizontal scroll. Use one ```svg block containing only an `<svg>` element only for a real diagram, never for tabular data.")
                 if (brief) {
                     appendLine("Brief mode is on. Answer in at most three short paragraphs or one short list. Do not restate the question, do not open with a preamble, and omit optional background. Keep exact values, required warnings and the next step.")
                 }

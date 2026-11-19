@@ -41,7 +41,8 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("[conductor:event"))
         assertTrue(first.contains("job_run(vfs=true)"))
         assertFalse(first.contains("docker_run(vfs=true)"))
-        assertTrue(first.contains("Markdown tables"))
+        assertTrue(first.contains("headings sparingly"))
+        assertTrue(first.contains("tables render with horizontal scroll"))
         assertTrue(first.contains("fenced code blocks"))
         assertFalse(first.contains("Do not use Markdown tables"))
     }
@@ -60,7 +61,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("cf0fef5b320c65cd38c4f1f270716ef24a85363aeebd445575b397f7bca35d2b", digest)
+        assertEquals("effe7b8dba75fe0f22f6247eacd95c68f130d39595c4a97231a47ee412ba7c29", digest)
     }
 
     @Test
@@ -73,12 +74,12 @@ class AgentPromptStabilityTest {
                 "Do not restate the question, do not open with a preamble, and omit optional background. " +
                 "Keep exact values, required warnings and the next step."
         val styleLine =
-            "Use short paragraphs or one short list. Always wrap file paths, commands, flags, " +
+            "Use short paragraphs. Always wrap file paths, commands, flags, " +
                 "tool names, config keys and other literal identifiers in `inline code`. " +
                 "Use **bold** sparingly for a warning or the key conclusion. " +
-                "Use Markdown tables for tabular data and fenced code blocks for code or command " +
-                "output; tables render with horizontal scroll. Use one ```svg block containing only " +
-                "an `<svg>` element only for a real diagram, never for tabular data. Do not use headings."
+                "Use Markdown headings sparingly (H1–H3), lists, blockquotes, links, tables and " +
+                "fenced code blocks when they help; tables render with horizontal scroll. Use one " +
+                "```svg block containing only an `<svg>` element only for a real diagram, never for tabular data."
 
         assertTrue(!normal.contains(briefLine))
         assertTrue(brief.contains(briefLine))
