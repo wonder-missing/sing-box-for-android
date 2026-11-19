@@ -697,6 +697,9 @@
     <string name="agent_confirm_turn">安全工具本輪不再詢問；probe、網路變更和 Taildrop 仍會確認。</string>
     <string name="agent_confirm_batch_run">執行這則回覆裡剩餘 %1$d 個安全呼叫</string>
     <string name="agent_confirm_batch_tools">這則回覆包含：%1$s</string>
+    <string name="conductor_reasoning_title">思考</string>
+    <string name="conductor_reasoning_expand">展開思考</string>
+    <string name="conductor_reasoning_collapse">收起思考</string>
     <string name="conductor_reasoning_effort_title">推理強度</string>
     <string name="conductor_retry">重試</string>
     <string name="conductor_back_to_latest">回到最新</string>

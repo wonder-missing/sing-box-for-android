@@ -60,10 +60,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -1478,89 +1480,121 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
     val lineHeight = 18.sp
     val miniText = remember(item.text) { item.text.replace(Regex("""\s*\r?\n\s*"""), " ").trim() }
     val viewportHeight = with(LocalDensity.current) { lineHeight.toDp() * 2 }
+    val bodyPadding = 8.dp
+    val bodyHeight = viewportHeight + bodyPadding * 2
     val surface = MaterialTheme.colorScheme.surfaceContainerHigh
+    val canToggle = item.text.isNotBlank()
+    val toggleLabel =
+        stringResource(
+            if (expanded) {
+                R.string.conductor_reasoning_collapse
+            } else {
+                R.string.conductor_reasoning_expand
+            },
+        )
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        if (item.text.isBlank()) {
-            if (item.streaming) {
-                Box(
-                    modifier =
+    if (item.text.isBlank() && !item.streaming) return
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = surface,
+    ) {
+        Column {
+            Row(
+                modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(viewportHeight)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(surface),
-                    contentAlignment = Alignment.Center,
-                ) {
+                        .heightIn(min = 32.dp)
+                        .clickable(enabled = canToggle, onClickLabel = toggleLabel) {
+                            expanded = !expanded
+                        }
+                        .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.conductor_reasoning_title),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                )
+                Spacer(Modifier.weight(1f))
+                if (item.text.isBlank()) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(12.dp),
                         strokeWidth = 1.5.dp,
                     )
+                } else {
+                    Icon(
+                        imageVector =
+                            if (expanded) {
+                                Icons.Default.KeyboardArrowUp
+                            } else {
+                                Icons.Default.KeyboardArrowDown
+                            },
+                        contentDescription = toggleLabel,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-        } else if (expanded) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(16.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Collapse",
-                    modifier =
-                        Modifier
-                            .align(Alignment.CenterEnd)
-                            .size(14.dp)
-                            .clickable { expanded = false },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            if (item.text.isNotBlank()) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    thickness = 1.dp,
                 )
-            }
-            SelectionContainer {
-                Text(
-                    text = item.text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
-                )
-            }
-        } else {
-            Box(
-                modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(viewportHeight)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(surface)
-                    .padding(horizontal = 8.dp)
-                    .clickable { expanded = true },
-            ) {
-                Text(
-                    text = miniText,
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = lineHeight),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxSize().verticalScroll(scroll),
-                )
-                Box(
-                    modifier =
-                    Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .background(Brush.verticalGradient(listOf(surface, Color.Transparent))),
-                )
-                Box(
-                    modifier =
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, surface))),
-                )
-            }
-            LaunchedEffect(item.text, expanded) {
-                snapshotFlow { scroll.maxValue }.collect { maxValue ->
-                    if (maxValue > 0) scroll.scrollTo(maxValue)
+                if (expanded) {
+                    SelectionContainer {
+                        Text(
+                            text = item.text,
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = lineHeight),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = bodyPadding),
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(bodyHeight)
+                                .clickable { expanded = true },
+                    ) {
+                        Text(
+                            text = miniText,
+                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = lineHeight),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(scroll)
+                                    .padding(horizontal = 12.dp, vertical = bodyPadding),
+                        )
+                        Box(
+                            modifier =
+                                Modifier
+                                    .align(Alignment.TopCenter)
+                                    .fillMaxWidth()
+                                    .height(10.dp)
+                                    .background(Brush.verticalGradient(listOf(surface, Color.Transparent))),
+                        )
+                        Box(
+                            modifier =
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .height(10.dp)
+                                    .background(Brush.verticalGradient(listOf(Color.Transparent, surface))),
+                        )
+                    }
+                    LaunchedEffect(item.text, expanded) {
+                        snapshotFlow { scroll.maxValue }.collect { maxValue ->
+                            if (maxValue > 0) scroll.scrollTo(maxValue)
+                        }
+                    }
                 }
             }
         }

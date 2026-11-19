@@ -772,6 +772,9 @@
     <string name="shortcut_tailscale_timeout">无法加载 Tailscale 状态</string>
     <string name="last_fetched_icon">上次拉取</string>
     <string name="source_updated_icon">源端更新</string>
+    <string name="conductor_reasoning_title">思考</string>
+    <string name="conductor_reasoning_expand">展开思考</string>
+    <string name="conductor_reasoning_collapse">收起思考</string>
     <string name="conductor_reasoning_effort_title">推理强度</string>
     <string name="conductor_reasoning_effort_default">默认</string>
     <string name="conductor_reasoning_effort_low">低</string>
