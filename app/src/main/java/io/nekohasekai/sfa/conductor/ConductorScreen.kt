@@ -1509,7 +1509,11 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
                         Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
-                            .clickable(onClickLabel = collapseLabel) { expanded = false }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClickLabel = collapseLabel,
+                            ) { expanded = false }
                             .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
