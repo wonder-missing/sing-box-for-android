@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.agent
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,6 +39,8 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("snapshot, not the full set"))
         assertTrue(first.contains("Do not answer a capability question from the snapshot alone"))
         assertTrue(first.contains("[conductor:event"))
+        assertTrue(first.contains("job_run(vfs=true)"))
+        assertFalse(first.contains("docker_run(vfs=true)"))
     }
 
     /**
@@ -54,7 +57,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("3598264dede343b97e4462d2d1c794f07ea2d97ef9b5ea2ac1dfb80ca714538b", digest)
+        assertEquals("a2a17812532eff4263e952d942c463a4e367070beef8ce383e84c1ac2f0f97f3", digest)
     }
 
     @Test

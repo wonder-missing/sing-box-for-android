@@ -30,8 +30,8 @@ class VfsConnectTool(
                     "list of VFS-visible paths; the local app working directory is not the VFS root. " +
                     "The `workdir` root (`**`) includes the app working directory and its `conductor/` " +
                     "subdirectory; `.runtime/*` is visible only through the VFS root, not through local file " +
-                    "tools. After connecting, inspect `/vfs` with docker_run(vfs=true) before concluding that " +
-                    "a path is missing. expiresInSeconds is the remaining Link lifetime; do not estimate days from expiresAt. " +
+                    "tools. After connecting, inspect `/vfs` with a VFS-capable job tool (Portal: `job_run(vfs=true)`) " +
+                    "before concluding that a path is missing. expiresInSeconds is the remaining Link lifetime; do not estimate days from expiresAt. " +
                     "VFS container reads may be cached for up to 30 seconds; a stale read is not a Link snapshot. " +
                     "A VFS_HANDSHAKE_TIMEOUT means the provider accepted the connection but did not return " +
                     "its hello in time: retry, or check the Portal/vfsd side. It is not a consent dialog " +

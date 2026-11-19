@@ -24,6 +24,21 @@ class VfsConnectToolTest {
         }
 
     @Test
+    fun descriptionPointsAtTheCurrentJobTool() {
+        val tool =
+            VfsConnectTool(
+                object : VfsConnectPort {
+                    override suspend fun connect(link: VfsLink) =
+                        VfsConnectResult(server = link.server, scope = link.scope, expiresAt = 5_000L)
+                },
+            )
+
+        val description = tool.definition.description
+        assertTrue(description.contains("job_run(vfs=true)"))
+        assertFalse(description.contains("docker_run(vfs=true)"))
+    }
+
+    @Test
     fun successReturnsTheConnectedScopeAndExpiry() =
         runBlocking {
             val tool =
