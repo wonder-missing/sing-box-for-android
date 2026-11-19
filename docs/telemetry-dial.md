@@ -1,6 +1,6 @@
 # 拨号与上传遥测（2026-11-12）
 
-CFG 要回答的三件事，对应三组字段。URLTest 是第四件事，不进健康度。
+CFG 要回答的三件事，对应三组字段。URLTest 是第四件事，单列策略观测，不混进拨号健康度。
 
 1. 这一批有没有送到。批次带上当时的上行网络，以及日志的墙上时钟范围。
 2. 手机有没有拨到代理入口。内核每次入口拨号记一条 `dial_attempt`，成功和失败都记。
@@ -56,3 +56,16 @@ Socks 的 UDP associate，以及 UoT，包装连接的 `RemoteAddr` 是用户目
 - `conductor_tool`：Conductor 工具调用一条，字段 `tool`（MCP 工具统一记 `mcp`）、`ms`、`ok`、`code`。不含参数和结果正文。
 
 `network_change` 的口径同时收紧：只在当前 default uplink（`currentUplink`，排除 VPN）变化时记一条，不再把 Wi-Fi 和蜂窝并存的各自 capabilities 变化都记成事件。`network_lost` 只在没有可用物理 uplink 时记。
+
+## URLTest 策略观测（2026-11-19 起）
+
+目标不是给节点打分，而是量自动策略的反应：坏节点被选中后多久切走、切走后多久切回、切换是否落到当时最快的可用节点。数据全部来自已有的 Groups 快照和日志，不额外发探测请求。
+
+- `outbound_selected` 增加 `available`、`total`、`fastest`、`fastest_ms`（仅 URLTest 组）。`from` / `to` / `reason` / `ms` 不变。
+- `urltest_health`：选中的 URLTest 节点在快照里从可用变不可用（`state=down`）或反过来（`state=up`）时记一条；字段 `group`、`outbound`、`state`、`delay_ms`（up 时）、`available`、`total`、`root`。只在状态变化时记，不按快照刷。
+- `urltest_manual`：用户点分组或节点的测速按钮时记一条，字段 `group` 或 `outbound`。用来把人工动作和核心自动测速分开；`outbound_selected.reason` 仍是 `urltest`。
+- 日志派生的 `urltest_ok` / `urltest_fail` 增加 `ts0`、`ts1`（墙上时钟毫秒，来自内存里的日志时间戳）。`t0`、`t1` 仍是内核开机秒数；磁盘恢复的旧行没有墙上时间，不输出这两个字段。
+
+性能边界：普通 Groups 快照只读选中项的 `urlTestDelay`；只有选中项切换或健康状态翻转、需要写事件时，才为该组再读一遍所有节点算 `available` / `fastest`。`urltest_health` 只对选中节点做差分，节点数不增加事件量；Groups 回调在 `uploadReady=false` 时直接返回；事件走后台队列，不占 CommandClient 回调线程。没有新增定时器、网络请求或每快照落盘。
+
+已知边界：`urlTestDelay=0` 可能表示失败，也可能表示尚未测过；当前只在选中节点从正延迟变 0 时当作 down。`urltest_health` 的时间是收到 Groups 快照的时间，不是内核完成健康检查的精确时刻；需要精确检测耗时时仍以 `urltest_ok/fail` 的 `ts0/ts1` 为准。

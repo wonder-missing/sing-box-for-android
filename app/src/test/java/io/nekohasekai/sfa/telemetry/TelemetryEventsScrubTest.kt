@@ -37,6 +37,32 @@ class TelemetryEventsScrubTest {
     }
 
     @Test
+    fun urltestEventsCarryWallClockRange() {
+        val json = TelemetryEvents.toJson(
+            listOf(
+                "DEBUG[10] outbound/urltest[YouTube]: outbound node-a unavailable: context deadline exceeded",
+                "DEBUG[10] outbound/urltest[YouTube]: outbound node-a unavailable: context deadline exceeded",
+            ),
+            listOf(1_700_000_000_000L, 1_700_000_060_000L),
+        )
+
+        assertTrue(json, json.contains("\"type\":\"urltest_fail\""))
+        assertTrue(json, json.contains("\"ts0\":1700000000000"))
+        assertTrue(json, json.contains("\"ts1\":1700000060000"))
+    }
+
+    @Test
+    fun urltestEventsWithoutStampsKeepTheExistingShape() {
+        val json = TelemetryEvents.toJson(
+            listOf("DEBUG[10] outbound/urltest[YouTube]: outbound node-a available: 120ms"),
+        )
+
+        assertTrue(json, json.contains("\"type\":\"urltest_ok\""))
+        assertFalse(json, json.contains("\"ts0\""))
+        assertFalse(json, json.contains("\"ts1\""))
+    }
+
+    @Test
     fun aggregatedErrorEventsDoNotLeakSubscriptionPathsOrTokens() {
         val subscription = "https://sub.example.com/api/v1/client/subscribe?token=SECRET"
         val json = TelemetryEvents.toJson(

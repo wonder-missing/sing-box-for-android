@@ -22,6 +22,8 @@ internal object TelemetryEvents {
     private class Agg(val first: Event) {
         var n = 0
         var t1: Int? = null
+        var wall0: Long? = null
+        var wall1: Long? = null
         var msSum = 0L
         var msMax = 0
         var msCount = 0
@@ -113,15 +115,28 @@ internal object TelemetryEvents {
         return outbound to reasonOf(match.groupValues[3])
     }
 
-    /** Returns a JSON array of aggregated events for [lines]. */
-    fun toJson(lines: List<String>): String {
+    /**
+     * Returns a JSON array of aggregated events for [lines]. [stamps] is
+     * positionally aligned with [lines] and holds wall-clock milliseconds for
+     * URLTest lines; it is absent for lines restored from disk.
+     */
+    fun toJson(
+        lines: List<String>,
+        stamps: List<Long?>? = null,
+    ): String {
         val aggs = LinkedHashMap<String, Agg>()
-        for (line in lines) {
-            val event = classify(line) ?: continue
+        lines.forEachIndexed { index, line ->
+            val event = classify(line) ?: return@forEachIndexed
             val k = listOf(event.type, event.group.orEmpty(), event.outbound.orEmpty(), event.key.orEmpty()).joinToString("|")
-            val agg = aggs[k] ?: if (aggs.size >= MAX_EVENTS) continue else Agg(event).also { aggs[k] = it }
+            val agg = aggs[k] ?: if (aggs.size >= MAX_EVENTS) return@forEachIndexed else Agg(event).also { aggs[k] = it }
             agg.n++
             if (event.t != null) agg.t1 = event.t
+            if (event.type == "urltest_ok" || event.type == "urltest_fail") {
+                stamps?.getOrNull(index)?.let { stamp ->
+                    if (agg.wall0 == null) agg.wall0 = stamp
+                    agg.wall1 = stamp
+                }
+            }
             if (event.ms != null) {
                 agg.msSum += event.ms
                 agg.msCount++
@@ -141,6 +156,8 @@ internal object TelemetryEvents {
             e.sample?.let { out.append(",\"sample\":").append(TelemetryPayload.quote(it)) }
             e.t?.let { out.append(",\"t0\":").append(it) }
             agg.t1?.let { out.append(",\"t1\":").append(it) }
+            agg.wall0?.let { out.append(",\"ts0\":").append(it) }
+            agg.wall1?.let { out.append(",\"ts1\":").append(it) }
             if (agg.msCount > 0) out.append(",\"ms_sum\":").append(agg.msSum).append(",\"ms_max\":").append(agg.msMax)
             out.append('}')
         }

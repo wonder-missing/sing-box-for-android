@@ -11,7 +11,19 @@ internal data class OutboundGroupSelection(
     val selected: String,
     val selectedDelayMs: Int? = null,
     val itemTags: List<String> = emptyList(),
-)
+    /** Number of tested/known items; zero for non-URLTest groups. */
+    val itemCount: Int = 0,
+    /** Items whose last URLTest returned a positive delay. */
+    val availableCount: Int = 0,
+    /** Fastest item at the last snapshot, when it is a URLTest group. */
+    val fastestTag: String? = null,
+    val fastestDelayMs: Int? = null,
+    /** null when the selected item was not found or the group is not URLTest. */
+    val selectedAvailable: Boolean? = null,
+) {
+    val isUrlTest: Boolean
+        get() = type.contains("urltest", ignoreCase = true)
+}
 
 internal enum class SwitchReason(
     val wireValue: String,
@@ -35,6 +47,30 @@ internal data class SelectionChange(
     val reason: SwitchReason,
     val root: Boolean,
     val ms: Int? = null,
+    val availableCount: Int = 0,
+    val itemCount: Int = 0,
+    val fastestTag: String? = null,
+    val fastestDelayMs: Int? = null,
+)
+
+/**
+ * A change in whether the selected URLTest item is currently passing its
+ * health check. Emitted only on transitions so a periodic Groups snapshot
+ * cannot flood the client-event ring.
+ */
+internal data class SelectedHealthChange(
+    val group: String,
+    val outbound: String,
+    val up: Boolean,
+    val delayMs: Int?,
+    val availableCount: Int,
+    val itemCount: Int,
+    val root: Boolean,
+)
+
+internal data class SelectionUpdate(
+    val changes: List<SelectionChange>,
+    val healthChanges: List<SelectedHealthChange> = emptyList(),
 )
 
 /**
@@ -52,36 +88,66 @@ internal data class SelectionChange(
  */
 internal class OutboundSelectionTracker {
     private val lastSelected = LinkedHashMap<String, String>()
+    private val lastSelectedUp = HashMap<String, Boolean?>()
 
-    fun update(groups: List<OutboundGroupSelection>): List<SelectionChange> {
+    fun update(groups: List<OutboundGroupSelection>): SelectionUpdate {
         val childTags = HashSet<String>()
         for (group in groups) childTags.addAll(group.itemTags)
         val changes = ArrayList<SelectionChange>(groups.size)
+        val healthChanges = ArrayList<SelectedHealthChange>(0)
         for (group in groups) {
             val selected = group.selected
             if (selected.isBlank()) continue
-            val previous = lastSelected[group.tag]
-            if (previous == selected) continue
-            lastSelected[group.tag] = selected
             val root = group.tag !in childTags
-            val reason = if (previous == null) SwitchReason.START else reasonFor(group)
-            changes.add(
-                SelectionChange(
-                    group = group.tag,
-                    from = previous,
-                    to = selected,
-                    reason = reason,
-                    root = root,
-                    ms = group.selectedDelayMs,
-                ),
-            )
+            val previous = lastSelected[group.tag]
+            if (previous != selected) {
+                lastSelected[group.tag] = selected
+                lastSelectedUp[group.tag] = group.selectedAvailable
+                val reason = if (previous == null) SwitchReason.START else reasonFor(group)
+                changes.add(
+                    SelectionChange(
+                        group = group.tag,
+                        from = previous,
+                        to = selected,
+                        reason = reason,
+                        root = root,
+                        ms = group.selectedDelayMs,
+                        availableCount = group.availableCount,
+                        itemCount = group.itemCount,
+                        fastestTag = group.fastestTag,
+                        fastestDelayMs = group.fastestDelayMs,
+                    ),
+                )
+                continue
+            }
+            if (!group.isUrlTest) continue
+            val wasUp = lastSelectedUp[group.tag]
+            val nowUp = group.selectedAvailable
+            if (wasUp != null && nowUp != null && wasUp != nowUp) {
+                healthChanges.add(
+                    SelectedHealthChange(
+                        group = group.tag,
+                        outbound = selected,
+                        up = nowUp,
+                        delayMs = group.selectedDelayMs,
+                        availableCount = group.availableCount,
+                        itemCount = group.itemCount,
+                        root = root,
+                    ),
+                )
+            }
+            if (nowUp != null) lastSelectedUp[group.tag] = nowUp
         }
-        return changes
+        return SelectionUpdate(changes, healthChanges)
     }
+
+    /** Last selection seen for a group, or null before its first snapshot. */
+    fun selected(tag: String): String? = lastSelected[tag]
 
     /** Called when a new VPN session starts so the next snapshot speaks again. */
     fun reset() {
         lastSelected.clear()
+        lastSelectedUp.clear()
     }
 
     private fun reasonFor(group: OutboundGroupSelection): SwitchReason = when {

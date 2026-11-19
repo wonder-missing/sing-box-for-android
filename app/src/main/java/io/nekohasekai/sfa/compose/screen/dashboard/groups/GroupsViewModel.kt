@@ -8,6 +8,7 @@ import io.nekohasekai.sfa.compose.model.Group
 import io.nekohasekai.sfa.compose.model.GroupItem
 import io.nekohasekai.sfa.compose.model.toList
 import io.nekohasekai.sfa.constant.Status
+import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.AppLifecycleObserver
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
@@ -224,6 +225,7 @@ class GroupsViewModel(private val sharedCommandClient: CommandClient? = null) :
     }
 
     fun urlTest(outboundTag: String) {
+        TelemetryRuntime.noteManualUrlTest(outbound = outboundTag)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 CommandTarget.standaloneClient().urlTest(outboundTag)
@@ -234,6 +236,7 @@ class GroupsViewModel(private val sharedCommandClient: CommandClient? = null) :
     }
 
     fun urlTestGroup(groupTag: String) {
+        TelemetryRuntime.noteManualUrlTest(group = groupTag)
         updateState { copy(testingGroups = testingGroups + groupTag) }
         viewModelScope.launch(Dispatchers.IO) {
             try {

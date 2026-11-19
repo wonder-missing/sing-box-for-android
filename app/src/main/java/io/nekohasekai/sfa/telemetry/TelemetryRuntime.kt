@@ -26,25 +26,57 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import kotlin.concurrent.thread
 
-/** Reads the libbox group exactly once: its items iterator is single-use. */
-private fun OutboundGroup.toSelection(): OutboundGroupSelection {
+/**
+ * Reads the libbox group exactly once: its items iterator is single-use.
+ * [withSummary] reads every item's delay for an event; keep it false on
+ * ordinary snapshots so stable groups pay only one selected-item JNI read.
+ */
+private fun OutboundGroup.toSelection(
+    selectedTag: String,
+    withSummary: Boolean,
+): OutboundGroupSelection {
     val itemTags = ArrayList<String>()
     var selectedDelay: Int? = null
+    var selectedAvailable: Boolean? = null
+    val urlTest = type.contains("urltest", ignoreCase = true)
+    var availableCount = 0
+    var fastestTag: String? = null
+    var fastestDelay = Int.MAX_VALUE
     val iterator = items
     while (iterator.hasNext()) {
         val item = iterator.next()
         itemTags.add(item.tag)
-        if (item.tag == selected) {
-            selectedDelay = item.urlTestDelay.takeIf { it > 0 }
+        if (urlTest && withSummary) {
+            val delay = item.urlTestDelay
+            if (delay > 0) {
+                availableCount++
+                if (delay < fastestDelay) {
+                    fastestDelay = delay
+                    fastestTag = item.tag
+                }
+            }
+            if (item.tag == selectedTag) {
+                selectedDelay = delay.takeIf { it > 0 }
+                selectedAvailable = delay > 0
+            }
+        } else if (item.tag == selectedTag) {
+            val delay = item.urlTestDelay
+            selectedDelay = delay.takeIf { it > 0 }
+            selectedAvailable = if (urlTest) delay > 0 else null
         }
     }
     return OutboundGroupSelection(
         tag = tag,
         type = type,
         selectable = selectable,
-        selected = selected,
+        selected = selectedTag,
         selectedDelayMs = selectedDelay,
         itemTags = itemTags,
+        itemCount = if (urlTest) itemTags.size else 0,
+        availableCount = availableCount,
+        fastestTag = fastestTag,
+        fastestDelayMs = fastestDelay.takeIf { it != Int.MAX_VALUE },
+        selectedAvailable = selectedAvailable,
     )
 }
 
@@ -74,6 +106,10 @@ internal object TelemetryRuntime {
 
     @Volatile
     private var attached = false
+
+    /** Cached `canUpload` result; refreshed on attach and settings changes. */
+    @Volatile
+    private var uploadReady = false
 
     @Volatile
     private var attachedAtElapsed = 0L
@@ -107,6 +143,28 @@ internal object TelemetryRuntime {
     private val minutes = ConnectionMinuteAggregator()
 
     internal fun currentSessionId(): String? = session.current
+
+    /**
+     * Marks a user-triggered URLTest. The resulting switch is still a normal
+     * `outbound_selected` event; this side event lets analysis tell it apart
+     * from the core's periodic test without changing the selection reason.
+     */
+    fun noteManualUrlTest(
+        group: String? = null,
+        outbound: String? = null,
+    ) {
+        if (group == null && outbound == null) return
+        val context = appContext ?: return
+        if (!uploadReady) return
+        TelemetryEventLog.recordAsync(
+            context,
+            "urltest_manual",
+            buildMap {
+                group?.let { put("group", it) }
+                outbound?.let { put("outbound", it) }
+            },
+        )
+    }
 
     @Volatile
     private var flushRequested = false
@@ -161,7 +219,7 @@ internal object TelemetryRuntime {
         override fun appendLogs(message: List<LogEntry>) {
             if (!attached) return
             val context = appContext ?: return
-            if (!TelemetryPreferences.canUpload(context)) return
+            if (!uploadReady) return
             val receivedAt = System.currentTimeMillis()
             val lines = message.mapNotNull { entry ->
                 val raw = entry.message ?: return@mapNotNull null
@@ -200,26 +258,74 @@ internal object TelemetryRuntime {
             // query channel. Any conversion error is telemetry's problem only.
             if (!attached) return
             val context = appContext ?: return
-            val groups = runCatching { newGroups.map { it.toSelection() } }.getOrDefault(emptyList())
-            if (groups.isEmpty()) return
-            val changes = runCatching { outboundTracker.update(groups) }.getOrDefault(emptyList())
-            for (change in changes) {
-                runCatching {
-                    TelemetryEventLog.record(
-                        context,
-                        "outbound_selected",
-                        buildMap {
-                            put("group", change.group)
-                            change.from?.let { put("from", it) }
-                            put("to", change.to)
-                            put("reason", change.reason.wireValue)
-                            put("root", change.root)
-                            change.ms?.let { put("ms", it) }
-                        },
+            // The Groups stream is hot; skip conversion and diffs entirely when
+            // telemetry cannot upload.
+            if (!uploadReady) return
+            val groups = runCatching {
+                newGroups.map { group ->
+                    val selected = group.selected
+                    group.toSelection(
+                        selectedTag = selected,
+                        // Full item summary is only needed when the selection
+                        // changes; health checks need only the selected item.
+                        withSummary = outboundTracker.selected(group.tag) != selected,
                     )
-                }.onFailure {
-                    Log.w(TAG, "outbound selection event failed", it)
                 }
+            }.getOrDefault(emptyList())
+            if (groups.isEmpty()) return
+            val update =
+                runCatching { outboundTracker.update(groups) }
+                    .getOrDefault(SelectionUpdate(emptyList()))
+            val healthSummaries: Map<String, OutboundGroupSelection> =
+                if (update.healthChanges.isEmpty()) {
+                    emptyMap()
+                } else {
+                    val tags = update.healthChanges.mapTo(HashSet()) { it.group }
+                    runCatching {
+                        newGroups.asSequence()
+                            .filter { it.tag in tags }
+                            .associate { group ->
+                                group.tag to group.toSelection(group.selected, withSummary = true)
+                            }
+                    }.getOrDefault(emptyMap())
+                }
+            for (change in update.changes) {
+                TelemetryEventLog.recordAsync(
+                    context,
+                    "outbound_selected",
+                    buildMap {
+                        put("group", change.group)
+                        change.from?.let { put("from", it) }
+                        put("to", change.to)
+                        put("reason", change.reason.wireValue)
+                        put("root", change.root)
+                        change.ms?.let { put("ms", it) }
+                        if (change.itemCount > 0) {
+                            put("available", change.availableCount)
+                            put("total", change.itemCount)
+                            change.fastestTag?.let { put("fastest", it) }
+                            change.fastestDelayMs?.let { put("fastest_ms", it) }
+                        }
+                    },
+                )
+            }
+            for (health in update.healthChanges) {
+                val summary = healthSummaries[health.group]
+                TelemetryEventLog.recordAsync(
+                    context,
+                    "urltest_health",
+                    buildMap {
+                        put("group", health.group)
+                        put("outbound", health.outbound)
+                        put("state", if (health.up) "up" else "down")
+                        health.delayMs?.let { put("delay_ms", it) }
+                        summary?.let {
+                            put("available", it.availableCount)
+                            put("total", it.itemCount)
+                        }
+                        put("root", health.root)
+                    },
+                )
             }
         }
 
@@ -246,6 +352,7 @@ internal object TelemetryRuntime {
             attachedAtElapsed = SystemClock.elapsedRealtime()
             val context = vpn.applicationContext
             appContext = context
+            uploadReady = TelemetryPreferences.canUpload(context)
             // New VPN session: new id, and the first Groups snapshot speaks again
             // even if the previous session had the same selection.
             session.start()
@@ -308,6 +415,7 @@ internal object TelemetryRuntime {
     }
 
     fun onSettingsChanged(context: Context) {
+        uploadReady = TelemetryPreferences.canUpload(context)
         if (!attached) {
             val vpn = io.nekohasekai.sfa.bg.BoxService.runningVpn
             if (vpn != null) {
@@ -374,6 +482,7 @@ internal object TelemetryRuntime {
         val detached = synchronized(stateLock) {
             if (!attached) return
             attached = false
+            uploadReady = false
             val client = commandClient
             commandClient = null
             collectorConnected = false
@@ -798,7 +907,8 @@ internal object TelemetryRuntime {
                 Log.i(TAG, "skipped ${batch.size} already-uploaded lines")
                 return SendOutcome(true, batch.size)
             }
-            val chosenStamps = pendingStamped.take(batch.size).map { it.second }.filterNotNull()
+            val alignedStamps = pendingStamped.take(batch.size).map { it.second }
+            val chosenStamps = alignedStamps.filterNotNull()
             val uplink = TelemetrySignals.currentUplink(context)
             val body = TelemetryPayload.build(
                 device = device,
@@ -809,7 +919,7 @@ internal object TelemetryRuntime {
                 batchId = batchId,
                 droppedLines = queue.droppedCount(),
                 more = (pending.size - batch.size).coerceAtLeast(0),
-                eventsJson = eventsJsonFor(batch, crashToSend),
+                eventsJson = eventsJsonFor(batch, crashToSend, alignedStamps),
                 clientEventsJson = clientEvents?.second,
                 batch = BatchMeta(
                     uploadTs = ts,
@@ -893,8 +1003,9 @@ internal object TelemetryRuntime {
     private fun eventsJsonFor(
         batch: List<String>,
         crashEvents: List<CrashReportTelemetry.PendingEvent>,
+        stamps: List<Long?>? = null,
     ): String {
-        val lineEvents = TelemetryEvents.toJson(batch)
+        val lineEvents = TelemetryEvents.toJson(batch, stamps)
         if (crashEvents.isEmpty()) return lineEvents
         val hasLineEvents = lineEvents.length > 2 // more than "[]"
         val out = StringBuilder(lineEvents.length + crashEvents.sumOf { it.json.length } + 8)
