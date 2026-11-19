@@ -1499,23 +1499,31 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
                 }
             }
         } else if (expanded) {
-            Box(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+            ) {
                 SelectionContainer {
                     Text(
                         text = item.text,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 40.dp),
+                        modifier = Modifier.weight(1f).padding(start = 8.dp),
                     )
                 }
-                IconButton(
-                    onClick = { expanded = false },
-                    modifier = Modifier.align(Alignment.TopEnd).size(32.dp),
+                Box(
+                    modifier =
+                        Modifier
+                            .size(16.dp)
+                            .padding(top = 2.dp)
+                            .clickable { expanded = false },
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "Collapse",
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
