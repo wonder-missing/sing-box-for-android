@@ -40,6 +40,9 @@
 
 2026-11-15 v2 实测：P7-4b 通过（01:33:16 provider connect，01:33:35 Link reuse，01:33:47 / 01:35:18 两次 docker 读，间隔 91 秒；provider 01:36:41 才退后台，`.71` 无错误）。P7-5 未验：两个 `/work` 目录为空，没有 `out.txt`；`/vfs` 只读和 `/work` 写由 vfsd e2e 覆盖，本轮不要求补跑。
 
+
+2026-11-19：VFS 共享卡的 scope 胶囊改为单行横向滑动，不再折叠成 `+N`；同意框在 scope 含 `appfiles` 时明确提示内部文件包含配置、节点凭据和 Tailscale 状态。
+
 2026-11-16 起 App 把 VFS 可见范围分成两层。根有 6 个：`conductor`、`trace`、`system_prompt`、`conversation`、`workdir`、`appfiles`；预设有 2 个：`all`（workdir + appfiles + 三个 runtime scope，conductor 由 workdir 覆盖）和 `conductor_session`（conductor + 三个 runtime scope）。`workdir` 在 `/vfs` 根只读暴露外部工作目录，`appfiles` 在 `/vfs/appfiles` 暴露内部 `filesDir` 并排除 `vfs/`，`.runtime` 仍由三个独立 scope 控制。预设只在 App 解析 Link 时展开成根，信任记录和确认框看到的都是展开后的根；Portal 把 scope 当不透明字符串集合，只做类型、长度和去重校验，不需要改 VFS 协议或 Portal 代码。
 
 P7 导出摩擦（2026-11-14 真机）：`diagnostics_export(kind=trace, name=api-trace.json)` 写入的是 Markdown 文本，先改用 `.md` 名称。App 侧待做：按 kind 自动纠正扩展名，或名称与内容不符时提示。

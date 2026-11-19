@@ -1100,6 +1100,13 @@ private fun VfsConsentDialog(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+                if (request.scope.contains(VfsScope.APPFILES)) {
+                    Text(
+                        text = stringResource(R.string.vfs_consent_appfiles),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Text(
                     text = stringResource(R.string.vfs_consent_detail),
                     style = MaterialTheme.typography.bodySmall,
