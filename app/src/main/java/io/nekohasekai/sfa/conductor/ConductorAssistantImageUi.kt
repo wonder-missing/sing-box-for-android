@@ -98,7 +98,11 @@ private val assistantImageClient =
         .build()
 
 @Composable
-internal fun AssistantMarkdownText(text: String, resourceFile: (String) -> File?) {
+internal fun AssistantMarkdownText(
+    text: String,
+    resourceFile: (String) -> File?,
+    onLocalFile: (String) -> Unit,
+) {
     val segments = remember(text) { assistantMarkdownSegments(text) }
     if (
         segments.none {
@@ -108,7 +112,7 @@ internal fun AssistantMarkdownText(text: String, resourceFile: (String) -> File?
                 it is ConductorAssistantSegment.Table
         }
     ) {
-        ConductorRichMarkdownText(text, Modifier.fillMaxWidth())
+        ConductorRichMarkdownText(text, Modifier.fillMaxWidth(), onLocalFile)
         return
     }
 
@@ -118,7 +122,7 @@ internal fun AssistantMarkdownText(text: String, resourceFile: (String) -> File?
                 is ConductorAssistantSegment.Text -> {
                     val chunk = segment.text.trim()
                     if (chunk.isNotEmpty()) {
-                        ConductorRichMarkdownText(chunk, Modifier.fillMaxWidth())
+                        ConductorRichMarkdownText(chunk, Modifier.fillMaxWidth(), onLocalFile)
                     }
                 }
 

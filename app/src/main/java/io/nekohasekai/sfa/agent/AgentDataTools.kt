@@ -267,6 +267,12 @@ class AgentDataTools(
                                 required = false,
                                 description = "Maximum bytes to return. Defaults to 65536; capped at 262144.",
                             ),
+                            AgentParameterSpec(
+                                name = "max_line_chars",
+                                type = AgentParameterType.INTEGER,
+                                required = false,
+                                description = "Maximum characters returned per matching line. Defaults to 400; capped at 2000.",
+                            ),
                         ),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
                     category = "files",
@@ -283,8 +289,19 @@ class AgentDataTools(
                 val context = AgentJson.int(args, "context_lines") ?: 0
                 val maxMatches = AgentJson.int(args, "max_matches") ?: ConductorFileStore.DEFAULT_GREP_MATCHES
                 val maxBytes = AgentJson.int(args, "max_bytes") ?: ConductorFileStore.DEFAULT_READ_BYTES
+                val maxLineChars =
+                    AgentJson.int(args, "max_line_chars") ?: ConductorFileStore.DEFAULT_GREP_LINE_CHARS
                 return runCatching {
-                    val result = fileStore.grep(path, query, regex, context, maxMatches, maxBytes)
+                    val result =
+                        fileStore.grep(
+                            path = path,
+                            query = query,
+                            regex = regex,
+                            contextLines = context,
+                            maxMatches = maxMatches,
+                            maxBytes = maxBytes,
+                            maxLineChars = maxLineChars,
+                        )
                     buildJsonObject {
                         put("path", result.path)
                         put("scannedLines", result.scannedLines)
@@ -297,11 +314,19 @@ class AgentDataTools(
                                         buildJsonObject {
                                             put("line", match.line)
                                             put("text", AgentSanitizer.scrubForModelRead(match.text))
+                                            if (match.truncated) put("lineTruncated", true)
                                         },
                                     )
                                 }
                             },
                         )
+                        if (result.matches.isEmpty() && !regex && hasRegexMeta(query)) {
+                            put(
+                                "hint",
+                                "No literal match. The query contains regex metacharacters; " +
+                                    "pass regex=true to treat it as a regex.",
+                            )
+                        }
                     }
                 }.fold(
                     onSuccess = { ToolExecution(output = it) },
@@ -1227,6 +1252,13 @@ class AgentDataTools(
             errorCode = "tool_failed",
             errorMessage = error.message ?: error.toString(),
         )
+
+    private fun hasRegexMeta(query: String): Boolean =
+        query.any {
+            it == '\\' || it == '.' || it == '^' || it == '$' || it == '*' || it == '+' ||
+                it == '?' || it == '(' || it == ')' || it == '[' || it == ']' || it == '{' ||
+                it == '}' || it == '|'
+        }
 
     companion object {
         private const val MAX_SEND_BYTES = 8L * 1024 * 1024

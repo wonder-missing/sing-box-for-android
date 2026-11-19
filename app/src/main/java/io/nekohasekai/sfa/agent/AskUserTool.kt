@@ -22,8 +22,8 @@ class AskUserTool(
                 "Show the user a question card with tappable answers, then wait. Use this instead of " +
                     "asking a yes/no or small-choice question in a normal message. Ask one question per call " +
                     "with 2-6 short option labels; set multiple=true only when more than one option may apply. " +
-                    "Returns the selected labels, or cancelled=true when the user dismissed the card or did not " +
-                    "answer in time. Use normal text for open-ended questions.",
+                    "Returns the selected labels, or cancelled=true with reason=dismissed, timeout, stopped or " +
+                    "busy when the card was not answered. Use normal text for open-ended questions.",
             permission = AgentPermission.USER_INTERACTION,
             parameters =
                 listOf(
@@ -104,6 +104,7 @@ class AskUserTool(
                         put("answered", !result.cancelled)
                         put("cancelled", result.cancelled)
                         result.message?.let { put("message", it) }
+                        result.reason?.let { put("reason", it) }
                         put(
                             "selected",
                             buildJsonArray {

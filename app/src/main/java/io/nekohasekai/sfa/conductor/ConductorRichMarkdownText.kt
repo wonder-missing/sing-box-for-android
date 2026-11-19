@@ -1,8 +1,16 @@
 package io.nekohasekai.sfa.conductor
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.text.Layout
 import android.text.Spannable
+import android.text.Spanned
+import android.text.TextPaint
+import android.text.style.ClickableSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.TypefaceSpan
+import android.view.View
+import android.widget.Toast
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberUpdatedState
@@ -10,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalUriHandler
 import dev.jeziellago.compose.markdowntext.MarkdownText
+import io.nekohasekai.sfa.R
 import io.noties.markwon.core.spans.CodeSpan
 
 /**
@@ -20,13 +29,25 @@ import io.noties.markwon.core.spans.CodeSpan
 internal fun ConductorRichMarkdownText(
     text: String,
     modifier: Modifier = Modifier,
+    onLocalFile: ((String) -> Unit)? = null,
 ) {
     val uriHandler = LocalUriHandler.current
     // MarkdownText remembers its Markwon instance without keys, so the first
     // beforeSetMarkdown lambda stays alive for this composition. Read the
     // colour through a State so a theme or dynamic-colour change still applies
-    // on the next setMarkdown call.
+    // on the next setMarkdown call. The link handler gets the same treatment
+    // because the activity or callback can change without a new Markwon.
     val codeColor = rememberUpdatedState(conductorInlineCodeColor(MaterialTheme.colorScheme).toArgb())
+    val linkHandler =
+        rememberUpdatedState<(String) -> Unit> { url ->
+            if (url.startsWith("https://", ignoreCase = true) ||
+                url.startsWith("http://", ignoreCase = true)
+            ) {
+                runCatching { uriHandler.openUri(url) }
+            } else if (conductorLocalResourcePath(url) != null) {
+                onLocalFile?.invoke(url)
+            }
+        }
     MarkdownText(
         markdown = text,
         modifier = modifier,
@@ -45,18 +66,38 @@ internal fun ConductorRichMarkdownText(
                     val flags = spannable.getSpanFlags(span)
                     spannable.removeSpan(span)
                     if (start >= 0 && end > start) {
+                        val code = spannable.subSequence(start, end).toString()
                         spannable.setSpan(TypefaceSpan("monospace"), start, end, flags)
                         spannable.setSpan(ForegroundColorSpan(codeColor.value), start, end, flags)
+                        spannable.setSpan(
+                            object : ClickableSpan() {
+                                override fun onClick(widget: View) {
+                                    val clipboard =
+                                        widget.context.getSystemService(ClipboardManager::class.java)
+                                    clipboard?.setPrimaryClip(ClipData.newPlainText("inline code", code))
+                                    Toast.makeText(
+                                        widget.context,
+                                        widget.context.getString(R.string.conductor_inline_code_copied),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+
+                                override fun updateDrawState(ds: TextPaint) = Unit
+                            },
+                            start,
+                            end,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                        )
                     }
                 }
             }
         },
-        onLinkClicked = { url ->
-            if (url.startsWith("https://", ignoreCase = true) ||
-                url.startsWith("http://", ignoreCase = true)
-            ) {
-                runCatching { uriHandler.openUri(url) }
-            }
+        afterSetMarkdown = { textView ->
+            // Prefer breaking at word boundaries. Identifiers wider than one
+            // line still have to break at a character.
+            textView.breakStrategy = Layout.BREAK_STRATEGY_SIMPLE
+            textView.hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
         },
+        onLinkClicked = { url -> linkHandler.value(url) },
     )
 }

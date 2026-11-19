@@ -97,6 +97,43 @@ class AgentDataToolsTest {
     }
 
     @Test
+    fun fileGrepHintsWhenRegexMetacharactersAreLiteral() {
+        store.writeText("conductor/patterns.txt", "alpha\nbeta")
+        val registry = AgentToolRegistry(tools.all)
+
+        val literal = registry.exec("file_grep", """{"path":"conductor/patterns.txt","query":"alpha|beta"}""")
+        assertTrue(literal.errorMessage ?: "", literal.ok)
+        assertEquals(0, literal.output!!.array("matches").size)
+        assertTrue(literal.output!!.string("hint").contains("regex=true"))
+
+        val regex =
+            registry.exec(
+                "file_grep",
+                """{"path":"conductor/patterns.txt","query":"alpha|beta","regex":true}""",
+            )
+        assertTrue(regex.errorMessage ?: "", regex.ok)
+        assertEquals(2, regex.output!!.array("matches").size)
+    }
+
+    @Test
+    fun fileGrepCapsLongMatchLines() {
+        store.writeText("conductor/long-line.txt", "match " + "z".repeat(1000))
+        val registry = AgentToolRegistry(tools.all)
+
+        val result =
+            registry.exec(
+                "file_grep",
+                """{"path":"conductor/long-line.txt","query":"match","max_line_chars":12}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        val match = result.output!!.array("matches").single() as JsonObject
+        assertEquals(12, (match["text"] as JsonPrimitive).content.length)
+        assertEquals("true", (match["lineTruncated"] as JsonPrimitive).content)
+        assertEquals("true", (result.output!!["truncated"] as JsonPrimitive).content)
+    }
+
+    @Test
     fun fileAppendCreatesAndAppendsWithoutRewriting() {
         val registry = AgentToolRegistry(tools.all)
 

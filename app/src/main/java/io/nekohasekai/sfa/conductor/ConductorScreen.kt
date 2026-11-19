@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -242,6 +243,7 @@ fun ConductorScreen(
 
     var pendingFilePickId by rememberSaveable { mutableStateOf<String?>(null) }
     var textViewer by remember { mutableStateOf<ConductorViewer?>(null) }
+    var localFilePreview by remember { mutableStateOf<LocalFilePreview?>(null) }
     fun deliverPickedFiles(uris: List<Uri>) {
         val requestId = pendingFilePickId
         pendingFilePickId = null
@@ -379,6 +381,20 @@ fun ConductorScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var importingImage by remember { mutableStateOf(false) }
+    fun openLocalFile(path: String) {
+        coroutineScope.launch {
+            val preview = withContext(Dispatchers.IO) { viewModel.previewLocalFile(path) }
+            if (preview == null) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.conductor_local_file_unavailable),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } else {
+                localFilePreview = preview
+            }
+        }
+    }
     fun reportImagePicker(
         stage: String,
         error: Throwable? = null,
@@ -739,6 +755,7 @@ fun ConductorScreen(
                                 onRetry = viewModel::retryLastTurn,
                                 imageFile = viewModel::imageFile,
                                 resourceFile = viewModel::resourceFile,
+                                onLocalFile = ::openLocalFile,
                             )
                         }
                     }
@@ -931,6 +948,13 @@ fun ConductorScreen(
                 viewer = viewer,
                 onDismiss = { textViewer = null },
                 onSave = { export(viewer.kind, viewer.fileName) },
+            )
+        }
+
+        localFilePreview?.let { preview ->
+            LocalFilePreviewDialog(
+                preview = preview,
+                onDismiss = { localFilePreview = null },
             )
         }
 
@@ -1285,6 +1309,114 @@ private fun ToolConsoleDialog(
 }
 
 @Composable
+private fun LocalFilePreviewDialog(
+    preview: LocalFilePreview,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val scroll = rememberScrollState()
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .heightIn(max = 560.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = preview.path.substringAfterLast('/'),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = preview.path,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.close),
+                        )
+                    }
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                if (preview.error != null) {
+                    Text(
+                        text = preview.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false)
+                                .verticalScroll(scroll),
+                    ) {
+                        SelectionContainer {
+                            Text(
+                                text = preview.text,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            )
+                        }
+                    }
+                    if (preview.truncated) {
+                        Text(
+                            text = stringResource(R.string.conductor_local_file_truncated),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    if (preview.error == null) {
+                        TextButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(preview.text))
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.conductor_text_copied),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                        ) {
+                            Text(stringResource(R.string.conductor_copy_text))
+                        }
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.close))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ConductorTextViewerDialog(
     viewer: ConductorViewer,
     onDismiss: () -> Unit,
@@ -1488,7 +1620,12 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
     if (item.text.isBlank() && !item.streaming) return
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                // Expand/collapse glides instead of snapping the list. While
+                // the model is still streaming, keep up with the text.
+                .animateContentSize(animationSpec = if (item.streaming) snap() else tween(180)),
         shape = RoundedCornerShape(12.dp),
         color = surface,
     ) {
@@ -1604,6 +1741,7 @@ private fun ConductorItemView(
     onRetry: () -> Unit,
     imageFile: (String) -> File?,
     resourceFile: (String) -> File?,
+    onLocalFile: (String) -> Unit,
 ) {
     when (item) {
         is ConductorItem.User ->
@@ -1632,7 +1770,7 @@ private fun ConductorItemView(
                         )
                     }
                 }
-                AssistantMarkdownText(item.text, resourceFile)
+                AssistantMarkdownText(item.text, resourceFile, onLocalFile)
                 AssistantUsageFooter(item.usage, item.contextPercent)
             }
 

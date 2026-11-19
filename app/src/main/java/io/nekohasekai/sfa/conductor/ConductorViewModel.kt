@@ -566,6 +566,7 @@ class ConductorViewModel(
                         return AskUserResult(
                             cancelled = true,
                             message = "Another question is already waiting for the user.",
+                            reason = "busy",
                         )
                     }
                     pendingAskUser = pending
@@ -583,13 +584,17 @@ class ConductorViewModel(
                 cancellation?.onCancel {
                     completeAskUser(
                         pending,
-                        AskUserResult(cancelled = true, message = "The request was cancelled."),
+                        AskUserResult(cancelled = true, message = "The request was cancelled.", reason = "stopped"),
                     )
                 }
                 return try {
                     val result =
                         withTimeoutOrNull(AskUserTool.ASK_USER_TIMEOUT_MS) { pending.deferred.await() }
-                            ?: AskUserResult(cancelled = true, message = "The user did not answer in time.")
+                            ?: AskUserResult(
+                                cancelled = true,
+                                message = "The user did not answer in time.",
+                                reason = "timeout",
+                            )
                     settleQuestion(pending.id, result)
                     result
                 } finally {
@@ -625,7 +630,14 @@ class ConductorViewModel(
 
     fun cancelAskUser(id: String) {
         val pending = synchronized(askUserLock) { pendingAskUser?.takeIf { it.id == id } } ?: return
-        completeAskUser(pending, AskUserResult(cancelled = true, message = "The user dismissed the question."))
+        completeAskUser(
+            pending,
+            AskUserResult(
+                cancelled = true,
+                message = "The user dismissed the question.",
+                reason = "dismissed",
+            ),
+        )
     }
 
     private fun completeAskUser(
@@ -639,9 +651,12 @@ class ConductorViewModel(
         pending.deferred.complete(result)
     }
 
-    private fun cancelPendingAskUser(message: String) {
+    private fun cancelPendingAskUser(
+        message: String,
+        reason: String = "stopped",
+    ) {
         val pending = synchronized(askUserLock) { pendingAskUser } ?: return
-        completeAskUser(pending, AskUserResult(cancelled = true, message = message))
+        completeAskUser(pending, AskUserResult(cancelled = true, message = message, reason = reason))
     }
 
     /** Marks the card answered or cancelled; later calls cannot overwrite a settled card. */
@@ -897,6 +912,22 @@ class ConductorViewModel(
     fun imageFile(id: String): File? = imageStore.file(id)
 
     fun resourceFile(path: String): File? = runCatching { fileStore.resolveResource(path) }.getOrNull()
+
+    /** Reads a Markdown local link without executing it; link paths stay inside conductor/resources/. */
+    fun previewLocalFile(path: String): LocalFilePreview? {
+        val normalized = conductorLocalResourcePath(path) ?: return null
+        return runCatching {
+            val result = fileStore.readText(normalized, maxBytes = 256 * 1024)
+            LocalFilePreview(path = result.path, text = result.text, truncated = result.truncated)
+        }.getOrElse { error ->
+            LocalFilePreview(
+                path = normalized,
+                text = "",
+                truncated = false,
+                error = error.message ?: "Could not read the file.",
+            )
+        }
+    }
 
     private fun submitInternal(
         raw: String,

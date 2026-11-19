@@ -276,6 +276,8 @@ data class AskUserResult(
     val selected: List<String> = emptyList(),
     val cancelled: Boolean = false,
     val message: String? = null,
+    /** Machine-readable cancel reason: dismissed, timeout, stopped or busy. */
+    val reason: String? = null,
 )
 
 interface AskUserPort {

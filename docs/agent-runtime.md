@@ -1492,7 +1492,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - 视觉脱敏 trace 生效：请求可见 `image_url`/`detail`，base64 被替换成 `[redacted 803171 chars]`，没有原图数据进入 trace。
 - 参数提示生效：`file_tail` 传 `bogus_field`、`file_grep` 缺 `path` 时都返回 `Accepted parameters: ...`。
 - Taildrop 措辞生效：`taildrop_send` 输出 `delivery=peer_inbox`、`receiverActionRequired=true` 和接收方需 `tailscale file get` 的 note；probe 文件已到达 Mini。
-- `file_grep` 仍有使用问题：默认 literal，query 里的 `|` 不开 `regex` 时零匹配，模型因此误判 trace 没有 vision 请求；匹配到超长 JSON 行时输出体积过大。无匹配提示和行截断见 TODO。
+- `file_grep` 默认 literal，query 里的 `|` 不开 `regex` 时零匹配，模型因此误判 trace 没有 vision 请求；匹配到超长 JSON 行时输出体积过大。wonder.A6 已补：literal 零匹配且 query 含正则元字符时输出 `hint` 提示 `regex=true`；每行默认截到 400 字符（`max_line_chars`，上限 2000），被截行带 `lineTruncated=true`。
 - 对话导出含 `## Thinking`：`ConductorTranscript` 有意包含推理段落，Copy/Save conversation 和 Plain Transcript 都会带出；需要决定默认排除还是保留。
 - 82 Rich 查看器打不开（真机），Raw 正常；已记 P1 TODO，等 logcat/stack。
 - 模型有一次把 `route_call` 写成带 `<｜｜DSML｜｜>` 的畸形串，运行时按 `file_grep` 缺参返回，模型随后恢复；先记录，复现再查流式 tool-call 解析。
@@ -1588,7 +1588,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 
 - `/brief on|off` 只改 system prompt 的一行风格约束，不传 temperature。温度影响用词随机性，不能让模型少说背景或省掉复述；`AgentPromptStabilityTest` 锁定默认 prompt 不变，brief 只在默认 prompt 的风格行后插入一行。
 - 新增 `ask_user(question, options, multiple, header)`：普通工具调用，权限 `user_interaction`，无确认卡；选项 2–6 个、标签唯一。App 在会话里插入 `ConductorItem.Question` 卡片，单选/多选由 `multiple` 决定；答案以所选标签返回，卡片保留在会话里。
-- 题目等待走 `AskUserPort`：10 分钟超时、Stop、`/clear`、activity 结束、进程结束都收口为 `cancelled=true`；恢复会话时未答的卡片标记为 Dismissed。`ask_user` 与 `request_files` 一样受工具级超时保护。
+- 题目等待走 `AskUserPort`：10 分钟超时、Stop、`/clear`、activity 结束、进程结束都收口为 `cancelled=true`；恢复会话时未答的卡片标记为 Dismissed。`ask_user` 与 `request_files` 一样受工具级超时保护。wonder.A6 起取消结果带结构化 `reason`：`dismissed`（用户划掉）、`timeout`（超时）、`stopped`（Stop/清空/关闭/进程结束）、`busy`（已有另一题在等）。
 - 同一批 UI：用户气泡点按显示发送时间；迷你 Reasoning 去掉换行后展示、点按整条展开（Show/Hide 保留）；工具 Details/Hide details 固定在表头右侧。
 
 ### wonder.33 真机 trace 复盘（2026-11-10）

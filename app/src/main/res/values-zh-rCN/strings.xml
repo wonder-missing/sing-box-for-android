@@ -773,6 +773,9 @@
     <string name="last_fetched_icon">上次拉取</string>
     <string name="source_updated_icon">源端更新</string>
     <string name="conductor_reasoning_title">思考</string>
+    <string name="conductor_inline_code_copied">行内代码已复制</string>
+    <string name="conductor_local_file_unavailable">无法打开文件。</string>
+    <string name="conductor_local_file_truncated">只显示前 256 KB。</string>
     <string name="conductor_reasoning_expand">展开思考</string>
     <string name="conductor_reasoning_collapse">收起思考</string>
     <string name="conductor_reasoning_effort_title">推理强度</string>

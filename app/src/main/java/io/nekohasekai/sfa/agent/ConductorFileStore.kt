@@ -31,6 +31,7 @@ data class FileLinesResult(
 data class FileGrepMatch(
     val line: Int,
     val text: String,
+    val truncated: Boolean = false,
 )
 
 data class FileGrepResult(
@@ -213,6 +214,7 @@ class ConductorFileStore(
         contextLines: Int = 0,
         maxMatches: Int = DEFAULT_GREP_MATCHES,
         maxBytes: Int = DEFAULT_READ_BYTES,
+        maxLineChars: Int = DEFAULT_GREP_LINE_CHARS,
     ): FileGrepResult {
         if (query.isBlank()) throw IllegalArgumentException("query must not be blank")
         val file = resolve(workingDir, path, allowRoot = false)
@@ -226,6 +228,7 @@ class ConductorFileStore(
         val context = contextLines.coerceIn(0, MAX_GREP_CONTEXT)
         val matchCap = maxMatches.coerceIn(1, MAX_GREP_MATCHES)
         val byteCap = maxBytes.coerceIn(1, MAX_READ_BYTES)
+        val lineCap = maxLineChars.coerceIn(1, MAX_GREP_LINE_CHARS)
         val lines = file.useLines { it.take(MAX_GREP_LINES).toList() }
         val selected = sortedSetOf<Int>()
         var matches = 0
@@ -243,12 +246,14 @@ class ConductorFileStore(
         }
         val out = mutableListOf<FileGrepMatch>()
         var bytes = 0
+        var lineTruncated = false
         for (index in selected) {
             val line = lines[index]
-            val piece = if (line.length > byteCap) line.take(byteCap) else line
+            val piece = if (line.length > lineCap) line.take(lineCap) else line
+            if (piece.length < line.length) lineTruncated = true
             val lineBytes = piece.toByteArray(Charsets.UTF_8).size + 1
             if (bytes + lineBytes > byteCap) break
-            out += FileGrepMatch(index + 1, piece)
+            out += FileGrepMatch(index + 1, piece, truncated = piece.length < line.length)
             bytes += lineBytes
         }
         return FileGrepResult(
@@ -259,7 +264,8 @@ class ConductorFileStore(
                 matches >= matchCap ||
                     selected.size > out.size ||
                     lines.size >= MAX_GREP_LINES ||
-                    bytes >= byteCap,
+                    bytes >= byteCap ||
+                    lineTruncated,
         )
     }
 
@@ -534,6 +540,8 @@ class ConductorFileStore(
     companion object {
         internal const val DEFAULT_READ_BYTES = 64 * 1024
         internal const val MAX_READ_BYTES = 256 * 1024
+        internal const val DEFAULT_GREP_LINE_CHARS = 400
+        private const val MAX_GREP_LINE_CHARS = 2000
         internal const val DEFAULT_PAGE_LINES = 200
         internal const val DEFAULT_TAIL_LINES = 50
         internal const val DEFAULT_GREP_MATCHES = 20

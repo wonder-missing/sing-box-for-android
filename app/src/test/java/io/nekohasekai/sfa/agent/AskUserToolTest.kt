@@ -72,7 +72,14 @@ class AskUserToolTest {
 
     @Test
     fun cancelledReportKeepsTheMessage() {
-        val tool = tool(AskUserResult(cancelled = true, message = "The user dismissed the question."))
+        val tool =
+            tool(
+                AskUserResult(
+                    cancelled = true,
+                    message = "The user dismissed the question.",
+                    reason = "dismissed",
+                ),
+            )
 
         val result = ask(tool, """{"question":"Continue?","options":["Yes","No"]}""")
 
@@ -80,7 +87,25 @@ class AskUserToolTest {
         val output = result.output!!
         assertEquals("false", (output["answered"] as JsonPrimitive).content)
         assertEquals("true", (output["cancelled"] as JsonPrimitive).content)
+        assertEquals("dismissed", (output["reason"] as JsonPrimitive).content)
         assertTrue(output["message"].toString().contains("dismissed"))
+    }
+
+    @Test
+    fun timeoutReasonIsStructured() {
+        val tool =
+            tool(
+                AskUserResult(
+                    cancelled = true,
+                    message = "The user did not answer in time.",
+                    reason = "timeout",
+                ),
+            )
+
+        val result = ask(tool, """{"question":"Continue?","options":["Yes","No"]}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("timeout", ((result.output!!["reason"]) as JsonPrimitive).content)
     }
 
     @Test

@@ -75,6 +75,18 @@ class ConductorFileStoreTest {
     }
 
     @Test
+    fun grepCapsLongLines() {
+        store.writeText("conductor/long.txt", "prefix " + "x".repeat(1000) + " suffix")
+
+        val result = store.grep("conductor/long.txt", "prefix", maxLineChars = 20)
+
+        val match = result.matches.single()
+        assertEquals(20, match.text.length)
+        assertTrue(match.truncated)
+        assertTrue(result.truncated)
+    }
+
+    @Test
     fun listsAndDeletesInsideTheWorkspace() {
         store.writeText("conductor/a.txt", "a")
         store.mkdir("conductor/sub")
