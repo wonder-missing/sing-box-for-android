@@ -82,7 +82,8 @@ class McpClientTest {
                 )
             }.exceptionOrNull()
         assertTrue(thrown is McpException)
-        assertFalse(thrown!!.message!!.contains("secret-token"))
+        assertEquals(-1, (thrown as McpException).rpcCode)
+        assertFalse(thrown.message!!.contains("secret-token"))
     }
 
     @Test

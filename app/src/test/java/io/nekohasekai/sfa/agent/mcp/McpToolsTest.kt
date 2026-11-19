@@ -2,9 +2,12 @@ package io.nekohasekai.sfa.agent.mcp
 
 import io.nekohasekai.sfa.agent.ToolCancellation
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
@@ -272,5 +275,63 @@ class McpToolsTest {
 
         assertTrue(execution.ok)
         assertEquals("42", (execution.output!!["text"] as JsonPrimitive).content)
+    }
+
+    @Test
+    fun jsonRpcErrorCodeIsPreserved() =
+        runBlocking {
+            val tool =
+                mcpAgentTools(
+                    serverName = "Demo",
+                    serverPrefix = "demo",
+                    remote =
+                        listOf(
+                            McpRemoteTool(
+                                name = "job_file",
+                                description = "Read a job file",
+                                inputSchema = buildJsonObject { put("type", "object") },
+                                readOnly = true,
+                            ),
+                        ),
+                    session = McpSession(RpcErrorTransport()),
+                ).single()
+            val execution =
+                tool.execute(
+                    buildJsonObject { put("path", "../jobs.json") },
+                    object : ToolCancellation {
+                        override fun isCancelled(): Boolean = false
+
+                        override fun onCancel(action: () -> Unit) = Unit
+                    },
+                )
+
+            assertFalse(execution.ok)
+            assertEquals("mcp_failed", execution.errorCode)
+            assertEquals("-32602", (execution.output!!["jsonrpc_code"] as JsonPrimitive).content)
+            assertTrue(execution.errorMessage.orEmpty().contains("JSON-RPC -32602"))
+        }
+
+    private class RpcErrorTransport : McpTransport {
+        override suspend fun exchange(
+            body: String,
+            sessionId: String?,
+            cancellation: ToolCancellation?,
+            extraHeaders: Map<String, String>,
+            readTimeoutMs: Int?,
+        ): McpExchange {
+            val request = Json.parseToJsonElement(body).jsonObject
+            val method = request["method"]?.jsonPrimitive?.content
+            val id = request["id"]?.jsonPrimitive?.content.orEmpty()
+            val response =
+                when (method) {
+                    "initialize" ->
+                        """{"jsonrpc":"2.0","id":$id,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"demo","version":"1"}}}"""
+                    "notifications/initialized" -> ""
+                    "tools/call" ->
+                        """{"jsonrpc":"2.0","id":$id,"error":{"code":-32602,"message":"Invalid path"}}"""
+                    else -> """{"jsonrpc":"2.0","id":$id,"result":{}}"""
+                }
+            return McpExchange(200, "application/json", response, sessionId = null)
+        }
     }
 }

@@ -148,9 +148,15 @@ private class McpBoundTool(
                 throw e
             } catch (e: Exception) {
                 if (cancellation.isCancelled()) throw CancellationException("cancelled")
+                val rpcCode = (e as? McpException)?.rpcCode
+                val message = e.message ?: "MCP call failed."
                 return ToolExecution(
+                    output = rpcCode?.let {
+                        buildJsonObject { put("jsonrpc_code", it) }
+                    },
                     errorCode = "mcp_failed",
-                    errorMessage = (e.message ?: "MCP call failed.").take(300),
+                    errorMessage =
+                        (rpcCode?.let { "JSON-RPC $it: " }.orEmpty() + message).take(300),
                 )
             }
         return mcpToolExecution(result)

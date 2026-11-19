@@ -133,6 +133,22 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun multipleExactNamesAreNotWeak() {
+        val jobFile = definition("cpk_job_file", "mcp", listOf("job_file"))
+        val vfsExport = definition("cpk_vfs_export", "mcp", listOf("vfs_export"))
+        val scoped = AgentToolCatalog(listOf(jobFile, vfsExport))
+
+        val output = scoped.searchOutput("job_file vfs_export", limit = 5)
+
+        assertEquals("false", (output["weak"] as JsonPrimitive).content)
+        val names =
+            (output["matches"] as JsonArray)
+                .map { ((it as JsonObject)["name"] as JsonPrimitive).content }
+        assertTrue(names.contains("cpk_job_file"))
+        assertTrue(names.contains("cpk_vfs_export"))
+    }
+
+    @Test
     fun searchOutputMarksWeakMatches() {
         val weak = catalog.searchOutput("something unrelated", limit = 5)
         assertEquals("true", (weak["weak"] as JsonPrimitive).content)

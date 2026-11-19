@@ -30,6 +30,7 @@ private const val MCP_MAX_PAGES = 8
 class McpException(
     message: String,
     val status: Int = 0,
+    val rpcCode: Int? = null,
 ) : Exception(message)
 
 data class McpExchange(
@@ -83,12 +84,14 @@ internal object McpMessages {
         if (id == null) {
             if (exchange.body.isBlank()) return null
             val payload = parsePayload(exchange.body, id = null)
-            if (payload is RpcError) throw McpException(redact(payload.message, token), exchange.status)
+            if (payload is RpcError) {
+                throw McpException(redact(payload.message, token), exchange.status, payload.code)
+            }
             return null
         }
         return when (val payload = parsePayload(exchange.body, id)) {
             is RpcResult -> payload.result
-            is RpcError -> throw McpException(redact(payload.message, token), exchange.status)
+            is RpcError -> throw McpException(redact(payload.message, token), exchange.status, payload.code)
             null -> throw McpException("MCP response did not include a result.", exchange.status)
         }
     }
@@ -184,7 +187,8 @@ internal object McpMessages {
         val error = obj["error"] as? JsonObject
         if (error != null) {
             val message = (error["message"] as? JsonPrimitive)?.contentOrNull ?: "MCP request failed."
-            return RpcError(message.take(200))
+            val code = (error["code"] as? JsonPrimitive)?.intOrNull
+            return RpcError(message.take(200), code)
         }
         if (id != null && !obj.containsKey("result")) return null
         return RpcResult(obj["result"] ?: JsonObject(emptyMap()))
@@ -211,6 +215,7 @@ private data class RpcResult(
 
 private data class RpcError(
     val message: String,
+    val code: Int? = null,
 ) : RpcPayload
 
 class McpSession(

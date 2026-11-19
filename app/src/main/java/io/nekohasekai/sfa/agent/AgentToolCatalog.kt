@@ -87,9 +87,22 @@ class AgentToolCatalog(
     ): JsonObject {
         val matches = search(query, limit)
         val normalized = query.trim().lowercase(Locale.US)
+        val tokens = tokens(normalized)
         val categoryMatch = definitions.any { it.category.equals(normalized, ignoreCase = true) }
+        // A query that is just several exact tool names/aliases (for example
+        // "job_file vfs_export") is a schema lookup, not a fuzzy discovery
+        // query. Full-string matching alone would mark it weak.
+        val exactTokenQuery =
+            tokens.isNotEmpty() &&
+                tokens.all { token ->
+                    definitions.any { tool ->
+                        tool.name.equals(token, ignoreCase = true) ||
+                            tool.aliases.any { it.equals(token, ignoreCase = true) }
+                    }
+                }
         val weak =
             !categoryMatch &&
+                !exactTokenQuery &&
                 (
                     matches.isEmpty() ||
                         matches.none { tool ->
@@ -255,7 +268,7 @@ class AgentToolCatalog(
         if (aliases.any { it.contains(query) }) score = maxOf(score, 500)
         if (description.contains(query)) score = maxOf(score, 300)
         if (category.contains(query)) score = maxOf(score, 250)
-        val tokens = query.split(TOKEN_SEPARATOR).filter { it.isNotBlank() }
+        val tokens = tokens(query)
         if (tokens.isNotEmpty()) {
             val haystack = "$name ${aliases.joinToString(" ")} $description $category"
             val matched = tokens.count { haystack.contains(it) }
@@ -263,6 +276,9 @@ class AgentToolCatalog(
         }
         return score
     }
+
+    private fun tokens(query: String): List<String> =
+        query.split(TOKEN_SEPARATOR).filter { it.isNotBlank() }
 
     private fun editDistance(
         left: String,
@@ -293,6 +309,6 @@ class AgentToolCatalog(
         private const val MAX_SUGGESTION_DISTANCE = 3
         private const val WEAK_MATCH_SCORE = 600
         private const val DEFAULT_MAX_CHARS = 12_000
-        private val TOKEN_SEPARATOR = Regex("[^\\p{L}\\p{N}]+")
+        private val TOKEN_SEPARATOR = Regex("[^\\p{L}\\p{N}_]+")
     }
 }

@@ -10,7 +10,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 已保存的服务器可以再打开、刷新、编辑名称/命名空间或移除。刷新或重连以服务器当前 `tools/list` 为准，工具定义变化会直接替换本地目录；MCP 工具仍是 `AGENT_ONLY`，每次调用前照常确认。编辑命名空间会改工具名，Agent 下一轮消息才看到；URL 或 token 仍要移除再加。移除会删掉保存在这台设备上的 token。旧配置没有命名空间时会回退到服务器 id，长名字会被截到 16 个字符（例如 `clawdy_portal_kn`）；升级后在 Edit 里填一个短前缀（例如 `portal`）即可。
 
-下一句 Conductor 消息开始，Agent 能调用这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。工具名完全匹配时只返回那一个工具；搜服务器名或 `mcp` 会带出该服务器的工具。wonder.51 起 system prompt 有一条静态提示：MCP 服务器可能在运行时增加工具，结论前先 `search_tools`；`search_tools` 输出带 `categories` 计数，弱匹配也能看到 `mcp` 组存在。
+下一句 Conductor 消息开始，Agent 能调用这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。工具名完全匹配时只返回那一个工具；搜服务器名或 `mcp` 会带出该服务器的工具。多个 exact 名用空格分隔一起搜（例如 `job_file vfs_export`）也按强匹配处理，不标 `weak`。wonder.51 起 system prompt 有一条静态提示：MCP 服务器可能在运行时增加工具，结论前先 `search_tools`；`search_tools` 输出带 `categories` 计数，弱匹配也能看到 `mcp` 组存在。
 
 系统提示不写 MCP 服务器名，也不写 MCP 工具名。添加、关掉或换一套服务器，都不改变 system prompt，前缀缓存因此不受影响。人看清单用 `/mcp`。要让下一句优先用某个工具，输入 `/mcp use orb_status`（或点补全）。这会把一句普通文字放进输入框，光标留在后面，你补上要做的事再发送。这句话是 user 消息，不是 system message。Claude Code 的 slash、Cursor 的 `@` 也是把引用放进输入框。系统提示不罗列你连了哪些服务器。
 
@@ -22,7 +22,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 请求带 `Accept: application/json, text/event-stream`、`MCP-Protocol-Version`，以及服务器返回的 `Mcp-Session-Id`。有 token 时加 `Authorization: Bearer`。两种响应都认：单个 JSON，或 SSE 里按 JSON-RPC id 匹配的 `data:`。
 
-`404` 对 `initialize` / `tools/list` 会重新 `initialize` 一次；`tools/call` 不自动重试，避免写操作重复执行。响应超过 512KB 直接失败。连接超时 15 秒，读取超时 30 秒。不跟随重定向，避免把 token 送到别的主机。
+`404` 对 `initialize` / `tools/list` 会重新 `initialize` 一次；`tools/call` 不自动重试，避免写操作重复执行。响应超过 512KB 直接失败。连接超时 15 秒，读取超时 30 秒。不跟随重定向，避免把 token 送到别的主机。JSON-RPC error 的 `code` 会保留在异常里，工具观察输出 `jsonrpc_code`（例如 `-32602`），错误码仍是兼容的 `mcp_failed`；服务器返回的 `isError` 结果仍走 `mcp_error`。
 
 这一版只读这一次 POST 的响应（JSON 或响应体里的 SSE）。不另开 GET SSE 流。服务器需要在 POST 里直接返回结果。
 
