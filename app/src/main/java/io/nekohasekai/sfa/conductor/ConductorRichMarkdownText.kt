@@ -5,6 +5,7 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.TypefaceSpan
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalUriHandler
@@ -21,7 +22,11 @@ internal fun ConductorRichMarkdownText(
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
-    val codeColor = conductorInlineCodeColor(MaterialTheme.colorScheme).toArgb()
+    // MarkdownText remembers its Markwon instance without keys, so the first
+    // beforeSetMarkdown lambda stays alive for this composition. Read the
+    // colour through a State so a theme or dynamic-colour change still applies
+    // on the next setMarkdown call.
+    val codeColor = rememberUpdatedState(conductorInlineCodeColor(MaterialTheme.colorScheme).toArgb())
     MarkdownText(
         markdown = text,
         modifier = modifier,
@@ -41,7 +46,7 @@ internal fun ConductorRichMarkdownText(
                     spannable.removeSpan(span)
                     if (start >= 0 && end > start) {
                         spannable.setSpan(TypefaceSpan("monospace"), start, end, flags)
-                        spannable.setSpan(ForegroundColorSpan(codeColor), start, end, flags)
+                        spannable.setSpan(ForegroundColorSpan(codeColor.value), start, end, flags)
                     }
                 }
             }

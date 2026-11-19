@@ -75,7 +75,7 @@
 
 ## 最近完成
 
-- wonder.A5 反馈修复（2026-11-20）：思考块按选定的飞书中间方案改成卡片式（Thinking/思考 控制行、内缩分隔线、两行预览与全文共用一张 12dp 圆角卡）；行内代码移除 Markwon 胶囊，恢复透明底、主题强调色和等宽。607 用例绿；待真机验收。
+- wonder.A5 反馈修复（2026-11-20）：思考块按选定的飞书中间方案改成卡片式（收起态仍是两行、无标题小卡；展开后出现 Thinking/思考 控制行和内缩分隔线，与全文共用一张 12dp 圆角卡）；行内代码移除 Markwon 胶囊，恢复透明底、主题强调色和等宽。607 用例绿；待真机验收。
 - wonder.A5（2026-11-20）：Conductor 消息流完整 Markdown。普通文本段改用 CommonMark（标题、列表、引用、链接、粗斜体、行内代码、换行）；图片/SVG/围栏代码/表格继续走专用块，表格支持 1–2 dash 分隔和左/中/右对齐，代码块语言标签低对比表头并加复制，SVG 全屏缩放，思考小屏收起控制移到文字上方。支持矩阵、单条测试提示和验收清单见 [`docs/message-markdown.md`](docs/message-markdown.md)。607 用例绿；Test CI `44563566270`、Release `44564330793`、notify `44565886985` 均成功；arm64 APK 和本地 bare tag 已确认。
 - wonder.A4（2026-11-19）：Conductor 富文本与 MCP 观测。消息流支持 GitHub 风格 Markdown 表格和围栏代码块；表格横向滚动、单元格可选中，代码块等宽且可横向/纵向滚动；SVG 加载后去掉容器底色和左右厚边，点击全屏并支持双指缩放/拖动；用量详情行点击不再高亮；思考小屏 Collapse 改为 32dp 小箭头。MCP 多 exact 名搜索不再标 weak，JSON-RPC error code 保留到 `jsonrpc_code`。system prompt 允许表格/代码，黄金 hash 更新。606 用例绿；Test CI `44548781908`、Release `44549524313`、notify `44550899337` 均成功；arm64 APK 和本地 bare tag 已确认。
 - wonder.A3（2026-11-19）：URLTest 策略观测与 VFS 提示词修正。`outbound_selected` 增加 `available`/`total`/`fastest`/`fastest_ms`，选中节点健康翻转记 `urltest_health`，手动测速记 `urltest_manual`，日志派生 `urltest_ok/fail` 带墙上时钟 `ts0/ts1`；普通 Groups 快照只读选中项，事件才汇总全组，不新增探测。`vfs_connect` 和 system prompt 的 `/vfs` 检查从已移除的 `docker_run(vfs=true)` 改为 `job_run(vfs=true)`。601 用例绿；Test CI `44512740601`、Release `44513436528`、notify `44514939716` 均成功；arm64 APK 和本地 bare tag 已确认。
