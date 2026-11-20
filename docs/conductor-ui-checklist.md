@@ -1,6 +1,6 @@
 # Conductor 消息流验收清单
 
-2026-11-20。覆盖 `wonder.A9` 及之后的 UI 修正；每条都可以在真机上直接对照。
+2026-11-20。覆盖 `wonder.AA` 及之前的 UI 修正；每条都可以在真机上直接对照。
 
 ## 思考块
 
@@ -74,8 +74,8 @@
 
 ## Release notes
 
-- [ ] 让 Conductor 调 `release_notes`：返回的 `notes` 不能只有 `wonder.A9`，应包含 A9 正文和 `Changes since v1.15.0-alpha.13-wonder.A8`。
-- [ ] GitHub Release 正文与 APK 内置 `assets/release-notes-1.15.0-alpha.13-wonder.A9.txt` 一致。
+- [ ] 让 Conductor 调 `release_notes`：返回的 `notes` 不能只有 `wonder.AA`，应包含 AA 正文和 `Changes since v1.15.0-alpha.13-wonder.A9`。
+- [ ] GitHub Release 正文与 APK 内置 `assets/release-notes-1.15.0-alpha.13-wonder.AA.txt` 一致。
 - [ ] 只有 `wonder.<label>` 一行、没有正文的 tag 注解应被 Release workflow 拒绝。
 
 ## 回归抽查

@@ -37,6 +37,11 @@ code    = base36(ordinal + 260).toUpperCase()
 scheme is exhausted; define a new one rather than using a three-character
 label.
 
+> The label is a base-36 value, not a decimal ordinal with an `A` prefix.
+> After `A9` the next label is **`AA`**, not `A10`; `A10` is three characters
+> and is rejected by `WonderBuild.ordinalOf`. Do not spell the ordinal as a
+> suffix.
+
 ## Compatibility
 
 Builds 99 and older only parse `wonder.<digits>` in the update feed. They
