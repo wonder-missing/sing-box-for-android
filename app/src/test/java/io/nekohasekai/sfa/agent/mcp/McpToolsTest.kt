@@ -217,6 +217,39 @@ class McpToolsTest {
     }
 
     @Test
+    fun vfsJobIsRejectedBeforeTheServerWhenVfsIsOffline() =
+        runBlocking {
+            val tool =
+                McpRemoteTool(
+                    name = JOB_RUN_TOOL,
+                    description = "Run a job",
+                    inputSchema = buildJsonObject { put("type", "object") },
+                    readOnly = false,
+                )
+            val bound =
+                mcpAgentTools(
+                    serverName = "Demo",
+                    serverPrefix = "demo",
+                    remote = listOf(tool),
+                    session = unusedSession(),
+                    vfsConnected = { false },
+                ).single()
+
+            val result =
+                bound.execute(
+                    buildJsonObject { put("vfs", true) },
+                    object : ToolCancellation {
+                        override fun isCancelled() = false
+
+                        override fun onCancel(action: () -> Unit) = Unit
+                    },
+                )
+
+            assertEquals("vfs_not_connected", result.errorCode)
+            assertTrue(result.errorMessage.orEmpty().contains("cpk_vfs_link_request"))
+        }
+
+    @Test
     fun structuredSuccessIsNotWrappedInText() {
         val execution =
             mcpToolExecution(

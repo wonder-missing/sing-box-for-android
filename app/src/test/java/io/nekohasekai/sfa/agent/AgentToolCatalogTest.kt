@@ -133,6 +133,22 @@ class AgentToolCatalogTest {
     }
 
     @Test
+    fun catalogStaysBelowTheHistoryCompactionThreshold() {
+        val tools =
+            (1..40).map { index ->
+                definition("tool_$index", "mcp", listOf("tool_$index"))
+                    .copy(
+                        description = "x".repeat(80),
+                        serverName = "Clawdy Portal Knocks",
+                        namespace = "cpk",
+                    )
+            }
+        val scoped = AgentToolCatalog(tools)
+
+        assertTrue(scoped.catalogOutput().toString().length < 8_000)
+    }
+
+    @Test
     fun multipleExactNamesAreNotWeak() {
         val jobFile = definition("cpk_job_file", "mcp", listOf("job_file"))
         val vfsExport = definition("cpk_vfs_export", "mcp", listOf("vfs_export"))

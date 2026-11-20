@@ -101,7 +101,13 @@ class FileMcpArtifactSink(
         name: String,
         mimeType: String,
     ): String {
-        val safeRun = InboxPaths.fileName(runId, "text/plain")
+        val safeRun =
+            runId
+                .map { ch -> if (ch.isLetterOrDigit() || ch == '.' || ch == '_' || ch == '-') ch else '_' }
+                .joinToString("")
+                .trim('.', '_', '-')
+                .take(80)
+                .ifBlank { "run" }
         val safeName = InboxPaths.fileName(name, mimeType)
         return "conductor/resources/artifacts/$safeRun/$safeName"
     }

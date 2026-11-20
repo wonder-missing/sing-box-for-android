@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.agent.mcp
 
 import io.nekohasekai.sfa.agent.ConductorFileStore
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -13,6 +14,23 @@ class McpArtifactSinkTest {
 
     private fun sink(): FileMcpArtifactSink =
         FileMcpArtifactSink(ConductorFileStore(temp.root))
+
+    @Test
+    fun binaryArtifactsUseTheRunIdAsADirectoryWithoutAddingAnExtension() =
+        runBlocking {
+            val artifact =
+                sink().saveBinary(
+                    bytes = byteArrayOf(1, 2, 3),
+                    name = "head.jpg",
+                    mimeType = "image/jpeg",
+                    runId = "job_file-1795193031527",
+                )
+
+            assertEquals(
+                "conductor/resources/artifacts/job_file-1795193031527/head.jpg",
+                artifact.path,
+            )
+        }
 
     @Test
     fun rejectsPlainHttpResourceLinks() =

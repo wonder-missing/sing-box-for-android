@@ -126,7 +126,7 @@
 
 物化规则：
 
-- 目标路径：`conductor/resources/artifacts/<tool>-<timestamp>/<name>`；如果结果 JSON 含 `jobId`，使用 `artifacts/<jobId>/<name>`。同一 run 的重名 artifact 追加 `-2`、`-3`。
+- 目标路径：`conductor/resources/artifacts/<run>/<name>`；如果结果 JSON 含 `jobId`，`<run>` 使用 jobId，否则使用 `<tool>-<timestamp>`。`<run>` 只做路径 sanitize，不追加文件扩展名。同一 run 的重名 artifact 追加 `-2`、`-3`。
 - 原子写：临时文件 + rename；大小、MIME/魔数校验；替换时不先删除目标，优先直接 rename，失败再回退。
 - `resource_link` 校验：HTTPS、与配置的 MCP server URL 同 origin、不跟随重定向、不带 Authorization header、流式下载上限 64 MiB、可取消。
 - 模型看到的 observation：
@@ -142,12 +142,13 @@
 
 - 本地 `file_*` 可直接读写 artifacts 下的真实文件。
 - `analyze_image` 增加 `path=`，支持 `conductor/` 下的 workspace/artifacts 路径。
-- UI 使用现有 `conductor/resources/` 解析器渲染 artifacts。
+- UI 的本地图片和链接共用 `conductorLocalResourcePath`：接受 `conductor/resources/...`、`resources/...`、`/conductor/resources/...`、`/resources/...`、`./conductor/resources/...`。`resourceFile` 必须先经过该归一化，不能把原始 URL 直接交给 `ConductorFileStore`。
+- `ensureWorkspace()` 预先创建 `conductor/resources/artifacts/`，本地 `file_list` 在第一个产物前返回空目录而不是 `Not a directory`。
 
 ## 5. 工具结果契约
 
 - 输出由契约负责有界；旧的历史 compaction 保留为极端兜底，不作为日常机制。
-- 空查询 `search_tools` 返回紧凑目录：名字 + 分类 + 一行说明，目标 < 8k；详细 schema 按名字查。
+- 空查询 `search_tools` 返回紧凑目录：名字 + 分类 + server/namespace + 80 字符以内的一行说明，不带 `parameters` 和 `requiresConfirmation`，目标 < 8k；详细 schema 和确认信息按名字查。
 - 非本地文件工具（排除 `file_*`）的 observation 超过 24k 字符时，完整 JSON 写入
   `conductor/resources/artifacts/tool-output-<tool>-<timestamp>.txt`，模型收到路径、字节数和 1,000 字符预览。
 - 二进制结果按第 4 节物化。
@@ -166,7 +167,8 @@ System Prompt 增加资源约定：
 
 - `request_files`：返回逻辑路径，不复制，不强制挂 VFS。
 - `vfs_connect`：`conductor` scope 包含 inbox/artifacts，只读。
-- `analyze_image`：`file_id` 支持聊天附件和选中文件；`path` 支持 workspace/artifacts。
+- `analyze_image`：`file_id` 支持聊天附件和选中文件；`path` 支持 workspace/artifacts，并接受 `/conductor/...`、`/resources/...`、`./...` 根相对写法。
+- MCP `job_run`/`docker_run` 带 `vfs=true` 且当前没有 `VfsConnectionState.Connected` 时，App 在发往服务器前返回 `vfs_not_connected`，提示先 `cpk_vfs_link_request` + `vfs_connect`，避免一次无效 job。
 
 Consent：
 

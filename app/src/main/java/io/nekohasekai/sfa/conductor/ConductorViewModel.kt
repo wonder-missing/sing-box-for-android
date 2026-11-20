@@ -938,7 +938,11 @@ class ConductorViewModel(
 
     fun imageFile(id: String): File? = imageStore.file(id)
 
-    fun resourceFile(path: String): File? = runCatching { fileStore.resolveResource(path) }.getOrNull()
+    fun resourceFile(path: String): File? =
+        runCatching {
+            val normalized = conductorLocalResourcePath(path) ?: return null
+            fileStore.resolveResource(normalized)
+        }.getOrNull()
 
     /** Reads a Markdown local link without executing it; link paths stay inside conductor/resources/. */
     fun previewLocalFile(path: String): LocalFilePreview? {

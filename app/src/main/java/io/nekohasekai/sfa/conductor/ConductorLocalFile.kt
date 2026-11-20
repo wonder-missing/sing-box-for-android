@@ -5,7 +5,13 @@ package io.nekohasekai.sfa.conductor
  * Conductor resource directory are opened; other schemes stay untouched.
  */
 internal fun conductorLocalResourcePath(url: String): String? {
-    val clean = url.substringBefore('#').substringBefore('?')
+    val clean =
+        url
+            .substringBefore('#')
+            .substringBefore('?')
+            .trim()
+            .removePrefix("./")
+            .trimStart('/')
     return when {
         clean.startsWith("conductor/resources/") -> clean
         clean.startsWith("resources/") -> "conductor/$clean"

@@ -70,6 +70,7 @@ class ConductorFileStore(
     fun ensureWorkspace(): File {
         workspaceDir.mkdirs()
         resourcesDir.mkdirs()
+        File(resourcesDir, ARTIFACTS_DIR).mkdirs()
         prune()
         return workspaceDir
     }
@@ -555,7 +556,7 @@ class ConductorFileStore(
     }
 
     private fun normalizeResourcePath(path: String): String {
-        val normalized = path.trim().replace('\\', '/')
+        val normalized = path.trim().replace('\\', '/').trimStart('/')
         val relative =
             when {
                 normalized.startsWith("conductor/resources/") -> normalized.removePrefix("conductor/resources/")
@@ -568,12 +569,27 @@ class ConductorFileStore(
         return relative
     }
 
+    /**
+     * Root-relative paths such as `/conductor/resources/x.jpg` are what a
+     * Markdown link naturally looks like. Treat them as relative to the
+     * working directory; other absolute paths stay rejected.
+     */
+    private fun normalizeRootRelativePath(path: String): String {
+        if (!path.startsWith("/")) return path
+        val trimmed = path.trimStart('/')
+        return when {
+            trimmed.startsWith("conductor/") -> trimmed
+            trimmed.startsWith("resources/") -> "conductor/$trimmed"
+            else -> path
+        }
+    }
+
     private fun resolve(
         root: File,
         path: String,
         allowRoot: Boolean,
     ): File {
-        val normalized = path.trim().replace('\\', '/')
+        val normalized = normalizeRootRelativePath(path.trim().replace('\\', '/'))
         if (normalized.length > MAX_PATH_CHARS) throw IllegalArgumentException("Path is too long.")
         if (normalized.startsWith("/")) throw IllegalArgumentException("Absolute paths are not allowed.")
         if (normalized.split('/').any { it == ".." }) {

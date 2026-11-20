@@ -30,6 +30,19 @@ class ConductorFileStoreTest {
         store.readText("/etc/passwd")
     }
 
+    @Test
+    fun rootRelativeConductorPathsResolveLikeMarkdownLinks() {
+        store.writeText("conductor/note.md", "x")
+        assertEquals("x", store.readText("/conductor/note.md").text)
+
+        store.writeText("/conductor/other.md", "y")
+        assertEquals("y", store.readText("conductor/other.md").text)
+
+        store.writeResourceBytes("conductor/resources/frame.png", byteArrayOf(1), overwrite = true)
+        assertEquals(1L, store.resolveResource("/conductor/resources/frame.png").length())
+        assertEquals(1L, store.resolveResource("/resources/frame.png").length())
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsWritesOutsideTheWorkspace() {
         store.writeText("report.txt", "nope")
@@ -102,6 +115,13 @@ class ConductorFileStoreTest {
     fun rejectsBinaryReads() {
         File(workingDir, "bin.dat").writeBytes(byteArrayOf(0, 1, 2, 3))
         store.readText("bin.dat")
+    }
+
+    @Test
+    fun workspaceCreatesTheArtifactsDirectory() {
+        store.ensureWorkspace()
+
+        assertTrue(File(workingDir, "conductor/resources/artifacts").isDirectory)
     }
 
     @Test

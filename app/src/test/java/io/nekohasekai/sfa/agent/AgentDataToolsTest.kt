@@ -334,7 +334,7 @@ class AgentDataToolsTest {
         val result =
             registry.exec(
                 "analyze_image",
-                """{"question":"What is shown?","path":"conductor/resources/artifacts/frame.png"}""",
+                """{"question":"What is shown?","path":"/conductor/resources/artifacts/frame.png"}""",
             )
 
         assertTrue(result.errorMessage ?: "", result.ok)

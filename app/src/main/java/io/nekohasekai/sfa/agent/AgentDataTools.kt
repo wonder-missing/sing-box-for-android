@@ -1073,11 +1073,12 @@ class AgentDataTools(
                         ?.takeIf { it.isNotEmpty() }
                 return try {
                     if (path != null) {
-                        if (!path.startsWith("conductor/")) {
+                        val normalizedPath = normalizeConductorPath(path)
+                        if (normalizedPath == null) {
                             return invalid("path must be under conductor/.")
                         }
                         val file =
-                            runCatching { fileStore.resolveRead(path) }
+                            runCatching { fileStore.resolveRead(normalizedPath) }
                                 .getOrElse { return invalid("path is not a readable file.") }
                         if (!file.isFile) return invalid("path must be a file.")
                         if (file.length() > MAX_IMAGE_BYTES) {
@@ -1151,6 +1152,15 @@ class AgentDataTools(
                 }
             }
         }
+
+    private fun normalizeConductorPath(path: String): String? {
+        val clean = path.trim().removePrefix("./").trimStart('/')
+        return when {
+            clean.startsWith("conductor/") -> clean
+            clean.startsWith("resources/") -> "conductor/$clean"
+            else -> null
+        }
+    }
 
     private suspend fun analyzeImageBytes(
         name: String,

@@ -151,8 +151,7 @@ class AgentToolCatalog(
                         put("category", tool.category)
                         tool.serverName?.let { put("server", it) }
                         tool.namespace?.let { put("namespace", it) }
-                        put("description", tool.description.lineSequence().firstOrNull()?.trim()?.take(160).orEmpty())
-                        put("requiresConfirmation", tool.confirmationPolicy != ConfirmationPolicy.NEVER)
+                        put("description", tool.description.lineSequence().firstOrNull()?.trim()?.take(80).orEmpty())
                     }
                 }.toMutableList()
         var output = buildCatalogOutput(categories, tools, truncated = false)

@@ -28,6 +28,7 @@ internal const val VFS_LINK_REQUEST_TOOL = "vfs_link_request"
 internal const val VFS_LINK_REVOKE_TOOL = "vfs_link_revoke"
 internal const val VFS_DEVICE_HEADER = "X-WonderSing-Device"
 internal const val DOCKER_RUN_TOOL = "docker_run"
+internal const val JOB_RUN_TOOL = "job_run"
 internal const val MCP_DOCKER_RUN_READ_TIMEOUT_MS: Int = 3_700_000
 internal const val MAX_EMBEDDED_BYTES: Int = 1024 * 1024
 private const val MCP_MAX_PAGES = 8

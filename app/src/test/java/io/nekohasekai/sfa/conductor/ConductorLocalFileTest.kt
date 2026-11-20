@@ -19,6 +19,18 @@ class ConductorLocalFileTest {
             "conductor/resources/report.md",
             conductorLocalResourcePath("conductor/resources/report.md#summary"),
         )
+        assertEquals(
+            "conductor/resources/report.md",
+            conductorLocalResourcePath("/conductor/resources/report.md"),
+        )
+        assertEquals(
+            "conductor/resources/report.md",
+            conductorLocalResourcePath("/resources/report.md"),
+        )
+        assertEquals(
+            "conductor/resources/report.md",
+            conductorLocalResourcePath("./conductor/resources/report.md"),
+        )
         assertNull(conductorLocalResourcePath("https://example.com/report.md"))
         assertNull(conductorLocalResourcePath("conductor/other.md"))
         assertNull(conductorLocalResourcePath("/data/local/tmp/report.md"))
