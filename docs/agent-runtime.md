@@ -1044,6 +1044,7 @@ UI 需要新增：
 - 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；安全的 agent 确认额外显示 `Run all N safe calls in this response` 和 `Allow all safe tools for this turn`。前者只对当前 assistant 批次的后继安全确认自动通过，后者对整个 turn 的安全工具生效；`ALWAYS` 工具不出现这两个选项。命令确认没有这些选项。
 - 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。wonder.37 起 UI 消息流追加 `Stopped.`，重复 Stop 只发一次提示；已完成但刚好在 Stop 前的工具结果保留，不再被改成 `cancelled`。这个 `Stopped.` 是 UI notice，不是模型 transcript 里的 assistant 消息；模型侧改用下一条 user 的 `[conductor:event ...]` 前缀知道中断。
 - 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。正文一开始输出就结算 Reasoning，避免 spinner 和已回答并存。
+- 用户消息气泡下方始终显示发送时间（当天只有时间，跨天带日期），不再用点按气泡的隐藏手势显示。正文行内代码只做等宽/主题色样式，复制走系统长按选择和 Copy；围栏代码块始终有表头（语言或 `Code`）和复制按钮，复制后按钮短暂变成对勾。不要再给行内代码挂 `ClickableSpan` 或点按复制。
 - Reasoning：`Thinking` 块流式显示 `reasoning_content`，不进入 transcript；wonder.38 起是两行高的自动上滚视窗（上下边缘渐隐），结束后标签变 `Thought`，可 Show/Hide 查看全文。所有结算点会清理全部 streaming 项，不只最后一项。
 - 输入框上限 8,000 字符（含恢复的 saved state），超长粘贴只截断并提示，避免大文本把 Compose 布局打崩。
 - 错误：错误码转成人话，可重试的显示 Retry。
@@ -1456,7 +1457,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - Stop 的取消宽限期改为 1 秒；工具未确认取消时直接显示 turn error，不再等 3 秒。
 - wonder.86 真机 VFS 分析 trace 复盘见 [`conductor-trace-review-2026-11-17.md`](conductor-trace-review-2026-11-17.md)：旧 84 上下文来自 `conductor/` 下的历史 handoff，不是 `.runtime/trace.md`；工具步数在日志正文分析前耗尽。
 
-- Transcript / API trace viewer：Rich 和 Raw 都启用右侧垂直滚动条；顶部放大镜搜索（Rich 按 block 高亮，Raw 用 Sora 搜索），目录按 Markdown 标题跳转（Rich block / Raw 行）；API trace 的 response body 把 OpenAI 流式 `chat.completion.chunk` 合并成标准 `chat.completion` JSON，原始 `api-trace.json` 仍保留 SSE 原文。
+- Transcript / API trace viewer：Rich 和 Raw 都启用右侧垂直滚动条；顶部放大镜搜索（Rich 按 block 高亮，Raw 用 Sora 搜索），再点一次放大镜关闭，搜索框内不重复放放大镜，工具栏也不重复放关闭按钮；目录按 Markdown 标题跳转（Rich block / Raw 行）；API trace 的 response body 把 OpenAI 流式 `chat.completion.chunk` 合并成标准 `chat.completion` JSON，原始 `api-trace.json` 仍保留 SSE 原文。Rich 的 RecyclerView 必须从带 `android:scrollbars="vertical"` 的 XML 布局创建：纯代码 `RecyclerView(context)` 没有 scrollbar cache，`setVerticalScrollBarEnabled(true)` 是空操作，滚动条不会出现。
 
 ### wonder.86：Viewer 细节、经典 fence 与更新恢复取证（2026-11-16）
 

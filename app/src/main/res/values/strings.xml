@@ -880,6 +880,9 @@
     <string name="conductor_copy_text">Copy text</string>
     <string name="conductor_save_to_file">Save to file</string>
     <string name="conductor_text_copied">Copied</string>
+    <string name="conductor_code_block">Code</string>
+    <string name="conductor_copy_code">Copy code</string>
+    <string name="conductor_code_copied">Code copied</string>
     <string name="conductor_viewer_rich">Rich</string>
     <string name="conductor_viewer_raw">Raw</string>
     <string name="conductor_viewer_options">Viewer options</string>
@@ -897,7 +900,6 @@
     <string name="conductor_model_hint">model ID</string>
     <string name="conductor_model_help">Use the provider’s exact model ID. The preset value is only a starting point; override it for your account.</string>
     <string name="conductor_reasoning_title">Thinking</string>
-    <string name="conductor_inline_code_copied">Inline code copied</string>
     <string name="conductor_local_file_unavailable">Could not open the file.</string>
     <string name="conductor_local_file_truncated">Only the first 256 KB is shown.</string>
     <string name="conductor_reasoning_expand">Expand thinking</string>
@@ -964,7 +966,6 @@
     <string name="conductor_viewer_search_hint">Search text</string>
     <string name="conductor_viewer_search_previous">Previous match</string>
     <string name="conductor_viewer_search_next">Next match</string>
-    <string name="conductor_viewer_search_close">Close search</string>
     <string name="conductor_viewer_toc">Contents</string>
     <string name="conductor_viewer_toc_empty">No headings</string>
 </resources>

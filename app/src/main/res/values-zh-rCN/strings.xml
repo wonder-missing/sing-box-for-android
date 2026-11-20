@@ -773,7 +773,9 @@
     <string name="last_fetched_icon">上次拉取</string>
     <string name="source_updated_icon">源端更新</string>
     <string name="conductor_reasoning_title">思考</string>
-    <string name="conductor_inline_code_copied">行内代码已复制</string>
+    <string name="conductor_code_block">代码</string>
+    <string name="conductor_copy_code">复制代码</string>
+    <string name="conductor_code_copied">代码已复制</string>
     <string name="conductor_local_file_unavailable">无法打开文件。</string>
     <string name="conductor_local_file_truncated">只显示前 256 KB。</string>
     <string name="conductor_reasoning_expand">展开思考</string>
@@ -819,7 +821,6 @@
     <string name="conductor_viewer_search_hint">搜索文本</string>
     <string name="conductor_viewer_search_previous">上一处</string>
     <string name="conductor_viewer_search_next">下一处</string>
-    <string name="conductor_viewer_search_close">关闭搜索</string>
     <string name="conductor_viewer_toc">目录</string>
     <string name="conductor_viewer_toc_empty">没有标题</string>
 </resources>

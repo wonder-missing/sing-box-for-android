@@ -52,9 +52,9 @@
 
 消息流现有实现是 `AnnotatedString` 的 `SpanStyle`，用主题派生色和透明背景即可；除这里写到的行内代码表现外，不要顺手重做整套 Markdown。
 
-2026-11-20 起正文走 `compose-markdown` / Markwon。行内代码在 `beforeSetMarkdown` 里移除 Markwon 的 `CodeSpan`，换回透明底、主题强调色和等宽字体，保持与表格单元格同一套样式；同时挂一个无下划线的 `ClickableSpan`，点按复制代码原文，长按仍可选中。以后替换 Markdown 渲染器时，这两个步骤要一并迁移。
+2026-11-20 起正文走 `compose-markdown` / Markwon。行内代码在 `beforeSetMarkdown` 里移除 Markwon 的 `CodeSpan`，换回透明底、主题强调色和等宽字体，保持与表格单元格同一套样式。行内代码不挂点按复制；复制走系统文本选择（长按选择 + Copy），不要再额外教用户一套点按手势。以后替换 Markdown 渲染器时，样式迁移这一步要一并处理。
 
-正文使用 `BREAK_STRATEGY_SIMPLE` 并关闭连字符，长标识符优先整词换行；只有单个标识比一行还宽时才在词内断行。表格单元格里的行内代码仍用长按选择复制。
+正文使用 `BREAK_STRATEGY_SIMPLE` 并关闭连字符，长标识符优先整词换行；只有单个标识比一行还宽时才在词内断行。表格单元格里的行内代码同样走长按选择复制。
 
 ## 5. 每条回复的用量
 

@@ -169,14 +169,19 @@ internal fun ConductorMarkdownViewer(
         is ParseState.Ready ->
             AndroidView(
                 factory = { ctx ->
-                    RecyclerView(ctx).apply {
+                    // A RecyclerView built in code has no scrollbar cache:
+                    // View.setVerticalScrollBarEnabled() is a no-op until the
+                    // android:scrollbars attribute has initialized one. Inflate
+                    // the layout with scrollbars="vertical" instead.
+                    val recycler =
+                        LayoutInflater.from(ctx)
+                            .inflate(R.layout.conductor_markdown_viewer, null) as RecyclerView
+                    recycler.apply {
                         layoutManager = LinearLayoutManager(ctx)
                         itemAnimator = null
                         adapter = markdownAdapter
-                        clipToPadding = true
                         controller?.attachRecycler(this)
                         isVerticalScrollBarEnabled = true
-                        scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             scrollBarFadeDuration = 1800
                             scrollBarDefaultDelayBeforeFade = 0

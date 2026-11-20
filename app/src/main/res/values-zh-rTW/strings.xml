@@ -698,7 +698,9 @@
     <string name="agent_confirm_batch_run">執行這則回覆裡剩餘 %1$d 個安全呼叫</string>
     <string name="agent_confirm_batch_tools">這則回覆包含：%1$s</string>
     <string name="conductor_reasoning_title">思考</string>
-    <string name="conductor_inline_code_copied">行內代碼已複製</string>
+    <string name="conductor_code_block">程式碼</string>
+    <string name="conductor_copy_code">複製程式碼</string>
+    <string name="conductor_code_copied">程式碼已複製</string>
     <string name="conductor_local_file_unavailable">無法開啟檔案。</string>
     <string name="conductor_local_file_truncated">只顯示前 256 KB。</string>
     <string name="conductor_reasoning_expand">展開思考</string>
@@ -751,7 +753,6 @@
     <string name="conductor_viewer_search_hint">搜尋文字</string>
     <string name="conductor_viewer_search_previous">上一處</string>
     <string name="conductor_viewer_search_next">下一處</string>
-    <string name="conductor_viewer_search_close">關閉搜尋</string>
     <string name="conductor_viewer_toc">目錄</string>
     <string name="conductor_viewer_toc_empty">沒有標題</string>
 </resources>

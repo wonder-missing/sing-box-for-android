@@ -66,11 +66,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Toc
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -160,6 +160,7 @@ import io.nekohasekai.sfa.compat.ProfileCodeEditor
 import io.nekohasekai.sfa.compat.ProfileEditorColors
 import java.io.File
 import java.text.DateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
@@ -1515,36 +1516,14 @@ private fun ConductorTextViewerDialog(
                         Modifier
                             .fillMaxWidth()
                             .statusBarsPadding()
-                            .padding(start = 16.dp, end = 8.dp, top = 8.dp),
+                            .padding(start = 8.dp, end = 8.dp, top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box {
-                        IconButton(onClick = { optionsOpen = true }) {
-                            Icon(
-                                imageVector = Icons.Default.MoreHoriz,
-                                contentDescription = stringResource(R.string.conductor_viewer_options),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = optionsOpen,
-                            onDismissRequest = { optionsOpen = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.conductor_viewer_auto_wrap)) },
-                                onClick = {
-                                    autoWrap = !autoWrap
-                                    optionsOpen = false
-                                },
-                                trailingIcon = {
-                                    if (autoWrap) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                        )
-                                    }
-                                },
-                            )
-                        }
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.close),
+                        )
                     }
                     Text(
                         text = viewer.title,
@@ -1552,7 +1531,7 @@ private fun ConductorTextViewerDialog(
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).padding(start = 4.dp),
+                        modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
                     )
                     IconButton(onClick = {
                         if (searchOpen) {
@@ -1574,15 +1553,39 @@ private fun ConductorTextViewerDialog(
                     }
                     IconButton(onClick = { tocOpen = true }) {
                         Icon(
-                            imageVector = Icons.Default.Menu,
+                            imageVector = Icons.AutoMirrored.Filled.Toc,
                             contentDescription = stringResource(R.string.conductor_viewer_toc),
                         )
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = stringResource(R.string.close),
-                        )
+                    if (!rich) {
+                        Box {
+                            IconButton(onClick = { optionsOpen = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreHoriz,
+                                    contentDescription = stringResource(R.string.conductor_viewer_options),
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = optionsOpen,
+                                onDismissRequest = { optionsOpen = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.conductor_viewer_auto_wrap)) },
+                                    onClick = {
+                                        autoWrap = !autoWrap
+                                        optionsOpen = false
+                                    },
+                                    trailingIcon = {
+                                        if (autoWrap) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1607,12 +1610,6 @@ private fun ConductorTextViewerDialog(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = null,
-                                )
-                            },
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                         )
@@ -1635,7 +1632,7 @@ private fun ConductorTextViewerDialog(
                                 }
                             },
                             enabled = if (rich) richMatches.isNotEmpty() else rawMatchCount > 0,
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowUp,
@@ -1655,21 +1652,11 @@ private fun ConductorTextViewerDialog(
                                 }
                             },
                             enabled = if (rich) richMatches.isNotEmpty() else rawMatchCount > 0,
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowDown,
                                 contentDescription = stringResource(R.string.conductor_viewer_search_next),
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                        IconButton(
-                            onClick = ::closeSearch,
-                            modifier = Modifier.size(40.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = stringResource(R.string.conductor_viewer_search_close),
                                 modifier = Modifier.size(20.dp),
                             )
                         }
@@ -1810,29 +1797,30 @@ private fun ConductorTextViewerDialog(
                         contentPadding = PaddingValues(bottom = 24.dp),
                     ) {
                         items(headings) { heading ->
-                            TextButton(
-                                onClick = {
-                                    tocOpen = false
-                                    if (rich) {
-                                        markdownController.scrollToBlock(heading.blockIndex)
-                                    } else {
-                                        editorRef.value?.scrollToLine((heading.line - 1).coerceAtLeast(0))
-                                    }
-                                },
+                            val indent = (16 + (heading.level - 1).coerceIn(0, 3) * 12).dp
+                            Row(
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
-                                        .padding(
-                                            start = (16 + (heading.level - 1).coerceIn(0, 3) * 12).dp,
-                                            end = 16.dp,
-                                        ),
-                                contentPadding = PaddingValues(vertical = 2.dp),
+                                        .clickable {
+                                            tocOpen = false
+                                            if (rich) {
+                                                markdownController.scrollToBlock(heading.blockIndex)
+                                            } else {
+                                                editorRef.value?.scrollToLine((heading.line - 1).coerceAtLeast(0))
+                                            }
+                                        }
+                                        .heightIn(min = 48.dp)
+                                        .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                Spacer(Modifier.width(indent))
                                 Text(
                                     text = heading.title,
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f).padding(end = 16.dp),
                                 )
                             }
                         }
@@ -2293,6 +2281,7 @@ private fun QuestionCard(
                                         }
                                 },
                             )
+                            .heightIn(min = 48.dp)
                             .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -2513,15 +2502,8 @@ private fun UserMessage(
     images: List<AgentImageRef>,
     imageFile: (String) -> File?,
 ) {
-    var showTime by remember { mutableStateOf(false) }
     Column(horizontalAlignment = Alignment.End) {
         Surface(
-            modifier =
-            Modifier.clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                enabled = sentAt > 0L,
-            ) { showTime = !showTime },
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
         ) {
@@ -2543,15 +2525,34 @@ private fun UserMessage(
                 }
             }
         }
-        if (showTime && sentAt > 0L) {
+        if (sentAt > 0L) {
             Text(
-                text = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(sentAt)),
+                text = formatUserMessageTime(sentAt),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, end = 4.dp),
             )
         }
     }
+}
+
+/**
+ * Chat apps show the time next to the message, not behind a tap. Keep the
+ * timestamp visible; add the date only when the message is not from today.
+ */
+private fun formatUserMessageTime(sentAt: Long): String {
+    val now = Calendar.getInstance()
+    val then = Calendar.getInstance().apply { timeInMillis = sentAt }
+    val sameDay =
+        now.get(Calendar.YEAR) == then.get(Calendar.YEAR) &&
+            now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
+    val format =
+        if (sameDay) {
+            DateFormat.getTimeInstance(DateFormat.SHORT)
+        } else {
+            DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+        }
+    return format.format(Date(sentAt))
 }
 
 @Composable
@@ -2814,6 +2815,7 @@ private fun McpUseSuggestions(
                         Modifier
                             .fillMaxWidth()
                             .clickable { onPick(index) }
+                            .heightIn(min = 48.dp)
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -2900,6 +2902,7 @@ private fun EffortSuggestions(
                     Modifier
                         .fillMaxWidth()
                         .clickable { onPick(level) }
+                        .heightIn(min = 48.dp)
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -2942,6 +2945,7 @@ private fun CommandSuggestions(
                     Modifier
                         .fillMaxWidth()
                         .clickable { onPick(command) }
+                        .heightIn(min = 48.dp)
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
