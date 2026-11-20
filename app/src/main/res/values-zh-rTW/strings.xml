@@ -747,4 +747,11 @@
     <string name="mcp_error_url_query">Token 請填到 token 一欄，不要放在 URL 裡。</string>
     <string name="mcp_error_token">Token 只能是一行，最多 512 個字元。</string>
     <string name="mcp_error_limit">最多新增 8 個 MCP 伺服器。</string>
+    <string name="conductor_viewer_search">搜尋</string>
+    <string name="conductor_viewer_search_hint">搜尋文字</string>
+    <string name="conductor_viewer_search_previous">上一處</string>
+    <string name="conductor_viewer_search_next">下一處</string>
+    <string name="conductor_viewer_search_close">關閉搜尋</string>
+    <string name="conductor_viewer_toc">目錄</string>
+    <string name="conductor_viewer_toc_empty">沒有標題</string>
 </resources>

@@ -960,4 +960,11 @@
     <string name="mcp_error_namespace">Namespace must start with a letter and use lowercase letters, digits or underscores, 16 characters or fewer.</string>
     <string name="mcp_error_namespace_duplicate">Another MCP server already uses this namespace.</string>
     <string name="mcp_error_not_found">This MCP server no longer exists.</string>
+    <string name="conductor_viewer_search">Search</string>
+    <string name="conductor_viewer_search_hint">Search text</string>
+    <string name="conductor_viewer_search_previous">Previous match</string>
+    <string name="conductor_viewer_search_next">Next match</string>
+    <string name="conductor_viewer_search_close">Close search</string>
+    <string name="conductor_viewer_toc">Contents</string>
+    <string name="conductor_viewer_toc_empty">No headings</string>
 </resources>

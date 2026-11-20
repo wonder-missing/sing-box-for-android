@@ -2,7 +2,10 @@ package io.nekohasekai.sfa.conductor
 
 import android.content.Context
 import android.graphics.Typeface
+import android.os.Build
+import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.style.BackgroundColorSpan
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
@@ -54,11 +57,13 @@ internal fun ConductorMarkdownViewer(
     text: String,
     viewerName: String,
     modifier: Modifier = Modifier,
+    controller: ConductorMarkdownController? = null,
 ) {
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     val markwon = remember(context, colorScheme) { buildMarkwon(context, colorScheme) }
-    val markdownAdapter = remember(colorScheme, viewerName) { buildAdapter(colorScheme, viewerName) }
+    val markdownAdapter =
+        remember(colorScheme, viewerName, controller) { buildAdapter(colorScheme, viewerName, controller) }
     val parseState by produceState<ParseState>(ParseState.Loading, text, markwon) {
         value =
             withContext(Dispatchers.Default) {
@@ -108,10 +113,15 @@ internal fun ConductorMarkdownViewer(
         }
     }
 
+    LaunchedEffect(markdownAdapter, controller) {
+        controller?.attachAdapter(markdownAdapter)
+    }
+
     val ready = parseState as? ParseState.Ready
     LaunchedEffect(ready) {
         if (ready == null) return@LaunchedEffect
         runCatching {
+            controller?.attachDocument(ready.node)
             markdownAdapter.setParsedMarkdown(markwon, ready.node)
             // MarkwonAdapterImpl.setParsedMarkdown only swaps its node list; it
             // does not notify the RecyclerView. Without this the view stays at
@@ -164,6 +174,13 @@ internal fun ConductorMarkdownViewer(
                         itemAnimator = null
                         adapter = markdownAdapter
                         clipToPadding = true
+                        controller?.attachRecycler(this)
+                        isVerticalScrollBarEnabled = true
+                        scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            scrollBarFadeDuration = 1800
+                            scrollBarDefaultDelayBeforeFade = 0
+                        }
                         val density = resources.displayMetrics.density
                         setPadding(
                             (16 * density).toInt(),
@@ -222,8 +239,10 @@ private fun buildMarkwon(
 private fun buildAdapter(
     colorScheme: ColorScheme,
     viewerName: String,
+    controller: ConductorMarkdownController?,
 ): MarkwonAdapter {
     val textColor = colorScheme.onSurface.toArgb()
+    val highlightColor = colorScheme.primary.copy(alpha = 0.30f).toArgb()
     val defaultEntry =
         ThemedEntry(
             layoutRes = R.layout.conductor_markdown_block,
@@ -232,6 +251,8 @@ private fun buildAdapter(
             textSizeSp = 14f,
             monospace = false,
             viewerName = viewerName,
+            controller = controller,
+            highlightColor = highlightColor,
         )
     val codeEntry =
         ThemedEntry(
@@ -241,11 +262,35 @@ private fun buildAdapter(
             textSizeSp = 13f,
             monospace = true,
             viewerName = viewerName,
+            controller = controller,
+            highlightColor = highlightColor,
         )
     return MarkwonAdapter.builder(defaultEntry)
         .include(FencedCodeBlock::class.java, codeEntry)
         .include(IndentedCodeBlock::class.java, codeEntry)
         .build()
+}
+
+private fun highlightMatches(
+    text: Spanned,
+    query: String,
+    color: Int,
+): Spanned {
+    val source = text.toString()
+    val builder = SpannableStringBuilder(text)
+    var start = 0
+    while (start < source.length) {
+        val hit = source.indexOf(query, start, ignoreCase = true)
+        if (hit < 0) break
+        builder.setSpan(
+            BackgroundColorSpan(color),
+            hit,
+            hit + query.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+        start = hit + query.length.coerceAtLeast(1)
+    }
+    return builder
 }
 
 private class ThemedEntry(
@@ -255,6 +300,8 @@ private class ThemedEntry(
     private val textSizeSp: Float,
     private val monospace: Boolean,
     private val viewerName: String,
+    private val controller: ConductorMarkdownController?,
+    private val highlightColor: Int,
 ) : MarkwonAdapter.Entry<Node, ThemedEntry.Holder>() {
     private val cache = HashMap<Node, Spanned>()
 
@@ -269,7 +316,14 @@ private class ThemedEntry(
         node: Node,
     ) {
         try {
-            val rendered = cache.getOrPut(node) { markwon.render(node) }
+            val base = cache.getOrPut(node) { markwon.render(node) }
+            val query = controller?.searchQuery.orEmpty()
+            val rendered =
+                if (query.isBlank()) {
+                    base
+                } else {
+                    highlightMatches(base, query, highlightColor)
+                }
             holder.text.setTextColor(textColor)
             holder.text.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
             if (monospace) holder.text.typeface = Typeface.MONOSPACE

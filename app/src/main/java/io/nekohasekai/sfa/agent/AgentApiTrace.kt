@@ -423,7 +423,7 @@ object AgentApiTrace {
                     entry.responseBody?.let { body ->
                         appendLine("### Response body")
                         appendLine()
-                        appendLine(markdownFence(prettyBody(body), "json"))
+                        appendLine(markdownFence(prettyResponseBody(body), "json"))
                         appendLine()
                     }
                 }
@@ -566,6 +566,11 @@ object AgentApiTrace {
             val element = Json.parseToJsonElement(body) as JsonElement
             prettyJson.encodeToString(JsonElement.serializer(), element)
         }.getOrElse { body }
+
+    private fun prettyResponseBody(body: String): String =
+        AgentTraceResponse.normalizeStreaming(body)?.let { normalized ->
+            prettyJson.encodeToString(JsonObject.serializer(), normalized)
+        } ?: prettyBody(body)
 
     private fun usageLine(body: String): String? {
         val root = runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null

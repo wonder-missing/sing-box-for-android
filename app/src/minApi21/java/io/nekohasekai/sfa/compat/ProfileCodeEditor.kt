@@ -112,6 +112,23 @@ class ProfileCodeEditor(context: Context, syntax: CodeEditorSyntax = CodeEditorS
         editor.setHorizontallyScrolling(!enabled)
     }
 
+    fun scrollToLine(line: Int) {
+        val text = getText()
+        var offset = 0
+        var current = 0
+        while (current < line && offset < text.length) {
+            val next = text.indexOf('\n', offset)
+            if (next < 0) {
+                offset = text.length
+                break
+            }
+            offset = next + 1
+            current++
+        }
+        editor.resumeAutoScroll()
+        editor.setSelection(offset.coerceIn(0, text.length))
+    }
+
     fun search(query: String) {
         searchQuery = query
         if (query.isEmpty()) {

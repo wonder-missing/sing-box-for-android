@@ -54,6 +54,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
@@ -61,22 +63,28 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -125,6 +133,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -1416,6 +1425,7 @@ private fun LocalFilePreviewDialog(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConductorTextViewerDialog(
     viewer: ConductorViewer,
@@ -1431,7 +1441,66 @@ private fun ConductorTextViewerDialog(
     }
     var autoWrap by remember(viewer.title) { mutableStateOf(false) }
     var optionsOpen by remember { mutableStateOf(false) }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var richMatches by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var richMatchIndex by remember { mutableStateOf(0) }
+    var rawMatchCount by remember { mutableStateOf(0) }
+    var rawMatchIndex by remember { mutableStateOf(0) }
+    var rawEditorReady by remember { mutableStateOf(false) }
+    var tocOpen by remember { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val markdownController = remember(viewer) { ConductorMarkdownController() }
+    val rawHeadings = remember(viewer.text) { ConductorMarkdownIndex.rawHeadings(viewer.text) }
+    val tocSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val editorRef = remember { mutableStateOf<ProfileCodeEditor?>(null) }
+
+    fun closeSearch() {
+        searchOpen = false
+        searchQuery = ""
+        richMatches = emptyList()
+        richMatchIndex = 0
+        rawMatchCount = 0
+        rawMatchIndex = 0
+        markdownController.setSearchQuery("")
+        editorRef.value?.search("")
+        focusManager.clearFocus()
+    }
+
+    LaunchedEffect(searchOpen) {
+        if (searchOpen) searchFocus.requestFocus()
+    }
+
+    LaunchedEffect(searchQuery, rich, searchOpen, markdownController.ready) {
+        if (!searchOpen) return@LaunchedEffect
+        if (rich) {
+            val query = searchQuery
+            if (query.isBlank()) {
+                richMatches = emptyList()
+                richMatchIndex = 0
+                markdownController.setSearchQuery("")
+                return@LaunchedEffect
+            }
+            delay(120)
+            val matches = withContext(Dispatchers.Default) { markdownController.search(query) }
+            if (searchQuery == query) {
+                richMatches = matches
+                richMatchIndex = 0
+                markdownController.setSearchQuery(query)
+                matches.firstOrNull()?.let { markdownController.scrollToBlock(it) }
+            }
+        } else {
+            markdownController.setSearchQuery("")
+        }
+    }
+
+    LaunchedEffect(searchQuery, rich, searchOpen, rawEditorReady) {
+        if (!searchOpen || rich || !rawEditorReady) return@LaunchedEffect
+        delay(120)
+        editorRef.value?.search(searchQuery)
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -1481,13 +1550,129 @@ private fun ConductorTextViewerDialog(
                         text = viewer.title,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).padding(start = 4.dp),
                     )
+                    IconButton(onClick = {
+                        if (searchOpen) {
+                            closeSearch()
+                        } else {
+                            searchOpen = true
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = stringResource(R.string.conductor_viewer_search),
+                            tint =
+                                if (searchOpen) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                        )
+                    }
+                    IconButton(onClick = { tocOpen = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = stringResource(R.string.conductor_viewer_toc),
+                        )
+                    }
                     IconButton(onClick = onDismiss) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = stringResource(R.string.close),
                         )
+                    }
+                }
+
+                if (searchOpen) {
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f).focusRequester(searchFocus),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            placeholder = {
+                                Text(
+                                    text = stringResource(R.string.conductor_viewer_search_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                        )
+                        val matchCount = if (rich) richMatches.size else rawMatchCount
+                        val matchIndex = if (rich) richMatchIndex else rawMatchIndex
+                        Text(
+                            text = if (matchCount == 0) "0/0" else "${matchIndex + 1}/$matchCount",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        IconButton(
+                            onClick = {
+                                if (rich) {
+                                    if (richMatches.isNotEmpty()) {
+                                        richMatchIndex = (richMatchIndex - 1 + richMatches.size) % richMatches.size
+                                        markdownController.scrollToBlock(richMatches[richMatchIndex])
+                                    }
+                                } else {
+                                    editorRef.value?.findPrevious()
+                                }
+                            },
+                            enabled = if (rich) richMatches.isNotEmpty() else rawMatchCount > 0,
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = stringResource(R.string.conductor_viewer_search_previous),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (rich) {
+                                    if (richMatches.isNotEmpty()) {
+                                        richMatchIndex = (richMatchIndex + 1) % richMatches.size
+                                        markdownController.scrollToBlock(richMatches[richMatchIndex])
+                                    }
+                                } else {
+                                    editorRef.value?.findNext()
+                                }
+                            },
+                            enabled = if (rich) richMatches.isNotEmpty() else rawMatchCount > 0,
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = stringResource(R.string.conductor_viewer_search_next),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        IconButton(
+                            onClick = ::closeSearch,
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = stringResource(R.string.conductor_viewer_search_close),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                 }
 
@@ -1516,6 +1701,7 @@ private fun ConductorTextViewerDialog(
                         text = viewer.text,
                         viewerName = viewer.title,
                         modifier = Modifier.fillMaxWidth().weight(1f),
+                        controller = markdownController,
                     )
                 } else {
                     val editorSyntax =
@@ -1534,7 +1720,14 @@ private fun ConductorTextViewerDialog(
                                 setText(viewer.text)
                                 applyColors(editorColors)
                                 setWordWrap(autoWrap)
-                            }.also { editorRef.value = it }.view
+                                onSearchResultChanged = { count, current ->
+                                    rawMatchCount = count
+                                    rawMatchIndex = if (count > 0) (current - 1).coerceAtLeast(0) else 0
+                                }
+                            }.also {
+                                editorRef.value = it
+                                rawEditorReady = true
+                            }.view
                         },
                         update = { editorRef.value?.setWordWrap(autoWrap) },
                         modifier =
@@ -1586,6 +1779,63 @@ private fun ConductorTextViewerDialog(
                         contentPadding = compactButtonPadding,
                     ) {
                         Text(stringResource(R.string.conductor_save_to_file))
+                    }
+                }
+            }
+        }
+    }
+
+    if (tocOpen) {
+        val headings = if (rich) markdownController.headings else rawHeadings
+        ModalBottomSheet(
+            onDismissRequest = { tocOpen = false },
+            sheetState = tocSheetState,
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+                Text(
+                    text = stringResource(R.string.conductor_viewer_toc),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+                if (headings.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.conductor_viewer_toc_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                    ) {
+                        items(headings) { heading ->
+                            TextButton(
+                                onClick = {
+                                    tocOpen = false
+                                    if (rich) {
+                                        markdownController.scrollToBlock(heading.blockIndex)
+                                    } else {
+                                        editorRef.value?.scrollToLine((heading.line - 1).coerceAtLeast(0))
+                                    }
+                                },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            start = (16 + (heading.level - 1).coerceIn(0, 3) * 12).dp,
+                                            end = 16.dp,
+                                        ),
+                                contentPadding = PaddingValues(vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = heading.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
                 }
             }

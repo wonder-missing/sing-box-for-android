@@ -61,6 +61,14 @@
 - [ ] 10 分钟不回答：输出 `cancelled=true`、`reason=timeout`。
 - [ ] 前一题未结束时再问：输出 `cancelled=true`、`reason=busy`。
 
+## Transcript / API trace viewer
+
+- [ ] Rich 与 Raw 滑动时右侧出现垂直滚动条；松手后约 1.8 秒淡出，能看到当前阅读位置。
+- [ ] 点放大镜打开搜索：Rich 高亮所有命中并显示 `当前/总数`，上下按钮跳块；Raw 用编辑器搜索高亮，计数和上下跳转正常；切换 Rich/Raw 后搜索仍生效。
+- [ ] 点目录图标，列出 Markdown 标题；Rich 跳到对应 block，Raw 跳到对应行；没有标题时显示空状态。
+- [ ] API trace 的 `### Response body` 是标准 `chat.completion` JSON：流式 `chat.completion.chunk` 已合并，`content`、`reasoning_content`、`tool_calls`、`finish_reason`、`usage` 都在，不显示 `data:` 行或 chunk 列表。
+- [ ] API trace 的请求体仍是原始请求 JSON，未被误改。
+
 ## Release notes
 
 - [ ] 让 Conductor 调 `release_notes`：返回的 `notes` 不能只有 `wonder.A8`，应包含 A8 正文和 `Changes since v1.15.0-alpha.13-wonder.A7`。

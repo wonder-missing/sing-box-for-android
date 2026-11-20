@@ -1456,6 +1456,8 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - Stop 的取消宽限期改为 1 秒；工具未确认取消时直接显示 turn error，不再等 3 秒。
 - wonder.86 真机 VFS 分析 trace 复盘见 [`conductor-trace-review-2026-11-17.md`](conductor-trace-review-2026-11-17.md)：旧 84 上下文来自 `conductor/` 下的历史 handoff，不是 `.runtime/trace.md`；工具步数在日志正文分析前耗尽。
 
+- Transcript / API trace viewer：Rich 和 Raw 都启用右侧垂直滚动条；顶部放大镜搜索（Rich 按 block 高亮，Raw 用 Sora 搜索），目录按 Markdown 标题跳转（Rich block / Raw 行）；API trace 的 response body 把 OpenAI 流式 `chat.completion.chunk` 合并成标准 `chat.completion` JSON，原始 `api-trace.json` 仍保留 SSE 原文。
+
 ### wonder.86：Viewer 细节、经典 fence 与更新恢复取证（2026-11-16）
 
 - Transcript / Trace Viewer 左上角三点菜单从 `MoreVert` 改成 `MoreHoriz`，和横排操作一致。

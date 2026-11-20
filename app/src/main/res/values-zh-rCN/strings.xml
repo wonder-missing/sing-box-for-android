@@ -815,4 +815,11 @@
     <string name="mcp_error_url_query">Token 请填到 token 一栏，不要放在 URL 里。</string>
     <string name="mcp_error_token">Token 只能是一行，最多 512 个字符。</string>
     <string name="mcp_error_limit">最多添加 8 个 MCP 服务器。</string>
+    <string name="conductor_viewer_search">搜索</string>
+    <string name="conductor_viewer_search_hint">搜索文本</string>
+    <string name="conductor_viewer_search_previous">上一处</string>
+    <string name="conductor_viewer_search_next">下一处</string>
+    <string name="conductor_viewer_search_close">关闭搜索</string>
+    <string name="conductor_viewer_toc">目录</string>
+    <string name="conductor_viewer_toc_empty">没有标题</string>
 </resources>

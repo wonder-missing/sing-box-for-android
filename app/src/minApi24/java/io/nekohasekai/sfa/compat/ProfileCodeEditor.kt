@@ -68,6 +68,8 @@ class ProfileCodeEditor(context: Context, private val syntax: CodeEditorSyntax =
             setTextSize(14f)
             isLineNumberEnabled = true
             isWordwrap = true
+            setScrollBarEnabled(true)
+            setVerticalScrollBarEnabled(true)
             tabWidth = JSON_INDENT_WIDTH
             setVerticalScrollbarThumbDrawable(
                 InsetDrawable(scrollbarThumb, (6 * context.resources.displayMetrics.density).toInt(), 0, 0, 0),
@@ -128,6 +130,12 @@ class ProfileCodeEditor(context: Context, private val syntax: CodeEditorSyntax =
 
     fun setWordWrap(enabled: Boolean) {
         editor.isWordwrap = enabled
+    }
+
+    fun scrollToLine(line: Int) {
+        val safe = line.coerceIn(0, maxOf(0, editor.text.lineCount - 1))
+        editor.setSelection(safe, 0)
+        editor.ensurePositionVisible(safe, 0, true)
     }
 
     fun search(query: String) {
