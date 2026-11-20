@@ -1518,9 +1518,18 @@ private fun ConductorTextViewerDialog(
                         modifier = Modifier.fillMaxWidth().weight(1f),
                     )
                 } else {
+                    val editorSyntax =
+                        if (viewer.kind == ConductorExport.Conversation) {
+                            // Sora's Markdown spans + word wrap can overlap wrapped
+                            // CJK lines in the raw transcript. Rich is the formatted
+                            // view; keep raw as plain source with line numbers/search.
+                            CodeEditorSyntax.PLAIN
+                        } else {
+                            CodeEditorSyntax.MARKDOWN
+                        }
                     AndroidView(
                         factory = { ctx ->
-                            ProfileCodeEditor(ctx, CodeEditorSyntax.MARKDOWN).apply {
+                            ProfileCodeEditor(ctx, editorSyntax).apply {
                                 setReadOnly(true)
                                 setText(viewer.text)
                                 applyColors(editorColors)
