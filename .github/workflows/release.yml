@@ -231,6 +231,11 @@ jobs:
             echo "Tag annotation must start with wonder.${WONDER_BUILD}" >&2
             exit 1
           }
+          BODY_LINES=$(tail -n +2 "$NOTES_FILE" | sed '/^[[:space:]]*$/d' | grep -v -E '^(Agent-Time|Agent-Loops):' | wc -l | tr -d ' ')
+          test "${BODY_LINES:-0}" -gt 0 || {
+            echo "Tag annotation must include release notes after the first line" >&2
+            exit 1
+          }
       - name: Setup OpenJDK 17
         uses: actions/setup-java@v5
         with:

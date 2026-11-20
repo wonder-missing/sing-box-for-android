@@ -239,6 +239,11 @@ if [ -n "$AGENT_LOOPS" ]; then
 Agent-Loops: $AGENT_LOOPS"
 fi
 
+if [ -z "$CHANGES" ] && [ -z "$NOTE" ]; then
+    echo "refusing to tag without release notes; pass --note" >&2
+    exit 1
+fi
+
 git tag -a "$TAG" "$SHA" -m "$MESSAGE"
 git push origin "$TAG"
 echo "tagged $TAG at $SHA"

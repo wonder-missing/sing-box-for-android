@@ -2,13 +2,12 @@ package io.nekohasekai.sfa.conductor
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.os.Build
 import android.text.Layout
 import android.text.Spannable
 import android.text.Spanned
 import android.text.TextPaint
 import android.text.style.ClickableSpan
-import android.text.style.ForegroundColorSpan
-import android.text.style.TypefaceSpan
 import android.view.View
 import android.widget.Toast
 import androidx.compose.material3.MaterialTheme
@@ -67,19 +66,23 @@ internal fun ConductorRichMarkdownText(
                     spannable.removeSpan(span)
                     if (start >= 0 && end > start) {
                         val code = spannable.subSequence(start, end).toString()
-                        spannable.setSpan(TypefaceSpan("monospace"), start, end, flags)
-                        spannable.setSpan(ForegroundColorSpan(codeColor.value), start, end, flags)
+                        spannable.setSpan(ConductorInlineCodeSpan(codeColor.value), start, end, flags)
                         spannable.setSpan(
                             object : ClickableSpan() {
                                 override fun onClick(widget: View) {
                                     val clipboard =
                                         widget.context.getSystemService(ClipboardManager::class.java)
                                     clipboard?.setPrimaryClip(ClipData.newPlainText("inline code", code))
-                                    Toast.makeText(
-                                        widget.context,
-                                        widget.context.getString(R.string.conductor_inline_code_copied),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
+                                    // Android 13+ already shows its clipboard preview.
+                                    // A second Toast only covers the message and blocks
+                                    // the next text selection.
+                                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                                        Toast.makeText(
+                                            widget.context,
+                                            widget.context.getString(R.string.conductor_inline_code_copied),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
                                 }
 
                                 override fun updateDrawState(ds: TextPaint) = Unit

@@ -216,6 +216,7 @@ private fun buildMarkwon(
                 }
             },
         )
+        .usePlugin(ConductorInlineCodePlugin(conductorInlineCodeColor(colorScheme).toArgb()))
         .build()
 
 private fun buildAdapter(

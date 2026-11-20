@@ -1424,7 +1424,11 @@ private fun ConductorTextViewerDialog(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var rich by remember(viewer.title) { mutableStateOf(false) }
+    // Transcripts are normally read, so start in Rich. API traces are for
+    // copying and searching, so keep their raw text as the default.
+    var rich by remember(viewer.title, viewer.kind) {
+        mutableStateOf(viewer.kind == ConductorExport.Conversation)
+    }
     var autoWrap by remember(viewer.title) { mutableStateOf(false) }
     var optionsOpen by remember { mutableStateOf(false) }
     val editorRef = remember { mutableStateOf<ProfileCodeEditor?>(null) }
@@ -1645,7 +1649,10 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            // Exactly the collapsed window height: expanding
+                            // replaces the two-line preview with the title row
+                            // without changing the top block's height.
+                            .height(viewportHeight)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,

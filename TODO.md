@@ -9,6 +9,7 @@
 
 ### P1 稳定性与隐私
 
+- [ ] **A6 内置 release notes 为空**：A6 tag 注解只有 `wonder.A6`，`release_notes` 工具返回的 notes 也只有这一行；不是网络或工具故障。Release workflow 已加“注解正文不能为空”检查，A7 用 `scripts/release.sh --note` 写完整说明后发布。
 - [ ] **Conductor VFS 长分析预算**：86 的 10 分钟会话里，模型完成 VFS 挂载、日志定位和两次容器读取后，最后一条 `route_call` 收到 `step_budget_exceeded`，`app.log` 正文分析没开始。2026-11-18 已去掉生产默认工具轮数上限，并加 5 秒内 10 次工具失败事件，让模型收尾；仍需真机确认长分析能完成或自然续跑，不再让用户重新解释。复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 - [ ] **`conductor/` 旧诊断文件进入新会话**：新会话的 `file_list` 能看到 `vfs-failure-handoff.md`、`session-trace-w84.md`、`session-transcript-w84.md`、`w84-transcript.md` 和 `w82-*`；模型因此直接知道了 84 的事。先定保留/归档规则，或在新会话开始前把这些一次性文件移出工作目录。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
