@@ -63,8 +63,8 @@
 
 ## Release notes
 
-- [ ] 让 Conductor 调 `release_notes`：返回的 `notes` 不能只有 `wonder.A7`，应包含 A7 正文和 `Changes since v1.15.0-alpha.13-wonder.A6`。
-- [ ] GitHub Release 正文与 APK 内置 `assets/release-notes-1.15.0-alpha.13-wonder.A7.txt` 一致。
+- [ ] 让 Conductor 调 `release_notes`：返回的 `notes` 不能只有 `wonder.A8`，应包含 A8 正文和 `Changes since v1.15.0-alpha.13-wonder.A7`。
+- [ ] GitHub Release 正文与 APK 内置 `assets/release-notes-1.15.0-alpha.13-wonder.A8.txt` 一致。
 - [ ] 只有 `wonder.<label>` 一行、没有正文的 tag 注解应被 Release workflow 拒绝。
 
 ## 回归抽查
