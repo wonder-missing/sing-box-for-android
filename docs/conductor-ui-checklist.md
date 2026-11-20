@@ -60,6 +60,12 @@
 - [ ] 10 分钟不回答：输出 `cancelled=true`、`reason=timeout`。
 - [ ] 前一题未结束时再问：输出 `cancelled=true`、`reason=busy`。
 
+## Release notes
+
+- [ ] 让 Conductor 调 `release_notes`：返回的 `notes` 不能只有 `wonder.A7`，应包含 A7 正文和 `Changes since v1.15.0-alpha.13-wonder.A6`。
+- [ ] GitHub Release 正文与 APK 内置 `assets/release-notes-1.15.0-alpha.13-wonder.A7.txt` 一致。
+- [ ] 只有 `wonder.<label>` 一行、没有正文的 tag 注解应被 Release workflow 拒绝。
+
 ## 回归抽查
 
 - [ ] Markdown 标题、列表、引用、粗斜体、链接仍正常；链接只打开 `http` / `https`。
