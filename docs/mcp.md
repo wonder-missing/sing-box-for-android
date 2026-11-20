@@ -18,7 +18,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 ## 协议
 
-只做 Streamable HTTP，协议版本 `2025-06-18`。没有 stdio，没有 OAuth，没有 prompts、resources、sampling。
+只做 Streamable HTTP，协议版本 `2025-06-18`。没有 stdio，没有 OAuth，没有 prompts、sampling，也没有 MCP `resources/read`；工具结果里的 embedded `resource` / `resource_link` content blocks 会解析。
 
 请求带 `Accept: application/json, text/event-stream`、`MCP-Protocol-Version`，以及服务器返回的 `Mcp-Session-Id`。有 token 时加 `Authorization: Bearer`。两种响应都认：单个 JSON，或 SSE 里按 JSON-RPC id 匹配的 `data:`。
 
