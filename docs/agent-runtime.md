@@ -905,6 +905,9 @@ fun interface AgentInputGuard {
 
 - 只保留最近 N 轮，wonder.59 起默认高水位 200 条消息、裁到 160 条，尽量保住前缀缓存；token 高水位由 Auto Compact 处理。
 - 每个 turn 开始前，`AgentContext.compactOldObservations` 把最近 user turn 之前、超过 `maxHistoricalObservationChars`（默认 8,000 字符）的 tool observation 替换为 `{"ok":...,"tool":...,"compacted":true,"originalChars":...}`。UI items 保留完整结果；模型需要时重新调用工具。压缩只在 turn 边界发生。
+- wonder.AB 起，非 `file_*` 工具的 observation 超过 24k 字符时，完整 JSON 先写到 `conductor/resources/artifacts/tool-output-<tool>-<timestamp>.txt`，模型只收到路径、字节数和 1,000 字符预览；历史压缩保留为长会话兜底。
+- MCP content blocks：`text` 进入模型文本；`image`/`audio`/embedded `resource`（≤1 MiB）由 App 物化到 `conductor/resources/artifacts`；`resource_link` 只接受与 MCP server 同 origin 的 HTTPS 地址并流式下载。base64 不进入 transcript。
+- 共享输入在 `conductor/resources/inbox/<id>/<name>` 虚拟只读；`workdir` scope 不能读 inbox，必须 `CONDUCTOR` scope。job 产物在 `conductor/resources/artifacts/`。
 - 单条 observation 上限 `maxObservationChars`，超出截断并标记 `truncated: true`。截断只影响发给模型的 transcript；UI 可以保留完整 sanitized 结果供展开查看。
 - 单轮 observation 总字符上限 `maxObservationCharsPerRound`，单 turn 总上限 `maxObservationCharsPerTurn`。
 - 单次请求总输入按当前模型的窗口估算；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。

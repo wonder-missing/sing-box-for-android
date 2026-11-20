@@ -18,7 +18,7 @@ class McpHttpTransport(
     private val token: String = "",
     private val connectTimeoutMs: Int = 15_000,
     private val readTimeoutMs: Int = 30_000,
-    private val maxBytes: Int = 512 * 1024,
+    private val maxBytes: Int = 2 * 1024 * 1024,
 ) : McpTransport {
     override suspend fun exchange(
         body: String,

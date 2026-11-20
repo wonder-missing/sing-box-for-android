@@ -11,7 +11,7 @@ enum class VfsScope(
     val path: String,
     val label: String,
 ) {
-    CONDUCTOR("conductor", "conductor/**", "Conductor files"),
+    CONDUCTOR("conductor", "conductor/**", "Conductor files (including shared files)"),
     TRACE("trace", ".runtime/trace.md", "API trace"),
     SYSTEM_PROMPT("system_prompt", ".runtime/system_prompt.md", "System prompt"),
     CONVERSATION("conversation", ".runtime/conversation.md", "Full conversation"),

@@ -19,6 +19,7 @@ data class TurnEvent(
 )
 
 internal const val RUNTIME_EVENT_PREFIX = "[conductor:event"
+private const val RUNTIME_METADATA_PREFIX = "[conductor:"
 
 /**
  * Prepends a runtime event to the user message and escapes user-authored lines
@@ -33,7 +34,7 @@ internal fun formatUserMessage(
         text.lines().joinToString("\n") { line ->
             // Runtime events are recognized at the start of a line; a user line
             // with leading spaces must not be able to impersonate one.
-            if (line.trimStart().startsWith(RUNTIME_EVENT_PREFIX)) "\\$line" else line
+            if (line.trimStart().startsWith(RUNTIME_METADATA_PREFIX)) "\\$line" else line
         }
     if (event == null) return escaped
     val detail =
@@ -43,6 +44,30 @@ internal fun formatUserMessage(
             ?.let { " message=\"${escapeEventValue(it)}\"" }
             .orEmpty()
     return "$RUNTIME_EVENT_PREFIX ${event.type} reason=${event.reason}$detail]\n$escaped"
+}
+
+/**
+ * Appends the logical inbox address of message attachments. The UI keeps the
+ * raw user text; only the model transcript sees this metadata.
+ */
+internal fun formatUserMessageWithAttachments(
+    text: String,
+    event: TurnEvent?,
+    images: List<AgentImageRef>,
+): String {
+    val base = formatUserMessage(text, event)
+    if (images.isEmpty()) return base
+    val attachments =
+        images.mapNotNull { ref ->
+            val path =
+                runCatching { InboxPaths.path(ref.id, ref.name, ref.mimeType) }.getOrNull()
+                    ?: return@mapNotNull null
+            "[conductor:attachment id=${ref.id} path=$path " +
+                "mime=${ref.mimeType.replace('\n', ' ').take(120)} size=${ref.size}]"
+        }
+    if (attachments.isEmpty()) return base
+    val metadata = attachments.joinToString("\n")
+    return if (base.isBlank()) metadata else "$base\n$metadata"
 }
 
 private const val MAX_EVENT_MESSAGE_CHARS = 400

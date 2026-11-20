@@ -22,7 +22,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 请求带 `Accept: application/json, text/event-stream`、`MCP-Protocol-Version`，以及服务器返回的 `Mcp-Session-Id`。有 token 时加 `Authorization: Bearer`。两种响应都认：单个 JSON，或 SSE 里按 JSON-RPC id 匹配的 `data:`。
 
-`404` 对 `initialize` / `tools/list` 会重新 `initialize` 一次；`tools/call` 不自动重试，避免写操作重复执行。响应超过 512KB 直接失败。连接超时 15 秒，读取超时 30 秒。不跟随重定向，避免把 token 送到别的主机。JSON-RPC error 的 `code` 会保留在异常里，工具观察输出 `jsonrpc_code`（例如 `-32602`），错误码仍是兼容的 `mcp_failed`；服务器返回的 `isError` 结果仍走 `mcp_error`。
+`404` 对 `initialize` / `tools/list` 会重新 `initialize` 一次；`tools/call` 不自动重试，避免写操作重复执行。响应超过 2MB 直接失败。连接超时 15 秒，读取超时 30 秒。不跟随重定向，避免把 token 送到别的主机。工具结果解析 MCP content blocks：`text` 进入模型可见文本；`image`/`audio`/embedded `resource`（≤1 MiB）物化到 `conductor/resources/artifacts`；`resource_link` 只允许与 MCP server 同 origin 的 HTTPS 地址，流式下载；base64 不进入 transcript。JSON-RPC error 的 `code` 会保留在异常里，工具观察输出 `jsonrpc_code`（例如 `-32602`），错误码仍是兼容的 `mcp_failed`；服务器返回的 `isError` 结果仍走 `mcp_error`。
 
 这一版只读这一次 POST 的响应（JSON 或响应体里的 SSE）。不另开 GET SSE 流。服务器需要在 POST 里直接返回结果。
 

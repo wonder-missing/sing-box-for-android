@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.vfs
 
+import io.nekohasekai.sfa.agent.InboxRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -74,6 +75,30 @@ class ConductorVirtualDirectorySourceTest {
             assertTrue(entry.isDirectory)
             assertEquals("conductor", entry.name)
             assertTrue(source.list("conductor").isEmpty())
+        }
+
+    @Test
+    fun inboxAppearsUnderResourcesWithoutAPhysicalDirectory() =
+        runBlocking {
+            val photo = File(temp.root, "photo.jpg").apply { writeText("image-bytes") }
+            val registry = InboxRegistry()
+            registry.registerFile("abc", "photo.jpg", "image/jpeg", photo)
+            val source =
+                ConductorVirtualDirectorySource(
+                    workingDir = temp.root,
+                    runtimeFiles = FakeRuntimeFiles(),
+                    inbox = InboxVirtualDirectorySource(registry),
+                )
+
+            assertTrue(source.stat("conductor/resources").isDirectory)
+            assertTrue(source.list("conductor/resources").any { it.name == "inbox" })
+            assertEquals(
+                "conductor/resources/inbox/abc",
+                source.list("conductor/resources/inbox").single().path,
+            )
+            val path = "conductor/resources/inbox/abc/photo.jpg"
+            assertEquals(11L, source.stat(path).size)
+            assertArrayEquals("image".toByteArray(), source.read(path, 0, 5).data)
         }
 
     @Test

@@ -12,7 +12,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import java.util.Locale
 
@@ -31,6 +34,8 @@ fun mcpAgentTools(
     serverPrefix: String,
     remote: List<McpRemoteTool>,
     session: McpSession,
+    artifactSink: McpArtifactSink? = null,
+    allowedResourceOrigins: Set<String> = emptySet(),
 ): List<AgentTool> {
     val used = mutableSetOf<String>()
     return remote.map { tool ->
@@ -60,6 +65,8 @@ fun mcpAgentTools(
                 ),
             remoteName = tool.name,
             session = session,
+            artifactSink = artifactSink,
+            allowedResourceOrigins = allowedResourceOrigins,
         )
     }
 }
@@ -135,6 +142,8 @@ private class McpBoundTool(
     override val definition: AgentToolDefinition,
     private val remoteName: String,
     private val session: McpSession,
+    private val artifactSink: McpArtifactSink?,
+    private val allowedResourceOrigins: Set<String>,
 ) : AgentTool {
     override suspend fun execute(
         args: JsonObject,
@@ -159,7 +168,13 @@ private class McpBoundTool(
                         (rpcCode?.let { "JSON-RPC $it: " }.orEmpty() + message).take(300),
                 )
             }
-        return mcpToolExecution(result)
+        return mcpToolExecution(
+            result,
+            artifactSink,
+            remoteName,
+            allowedResourceOrigins,
+            cancellation,
+        )
     }
 }
 
@@ -168,7 +183,87 @@ private class McpBoundTool(
  * JSON object as their text content; wrapping it in `{"text": "..."}` hides the
  * fields and makes the transcript render the same payload twice.
  */
-internal fun mcpToolExecution(result: McpCallResult): ToolExecution {
+internal suspend fun mcpToolExecution(
+    result: McpCallResult,
+    artifactSink: McpArtifactSink?,
+    toolName: String,
+    allowedResourceOrigins: Set<String>,
+    cancellation: ToolCancellation?,
+): ToolExecution {
+    if (result.isError || result.blocks.isEmpty()) return mcpTextExecution(result)
+    val sink = artifactSink
+        ?: return ToolExecution(
+            errorCode = "mcp_artifact_failed",
+            errorMessage = "Binary MCP results are not supported by this runtime.",
+        )
+    val parsed =
+        runCatching {
+            Json.parseToJsonElement(result.text) as? JsonObject
+        }.getOrNull()
+    val jobId = (parsed?.get("jobId") as? JsonPrimitive)?.contentOrNull
+    val runId = jobId?.takeIf { it.isNotBlank() } ?: "$toolName-${System.currentTimeMillis()}"
+    val artifacts = mutableListOf<JsonObject>()
+    val usedNames = mutableSetOf<String>()
+    fun uniqueName(name: String): String {
+        if (usedNames.add(name)) return name
+        val dot = name.lastIndexOf('.')
+        val base = if (dot > 0) name.substring(0, dot) else name
+        val extension = if (dot > 0) name.substring(dot) else ""
+        var index = 2
+        while (true) {
+            val candidate = "$base-$index$extension"
+            if (usedNames.add(candidate)) return candidate
+            index += 1
+        }
+    }
+    for (block in result.blocks) {
+        val artifact =
+            try {
+                when (block) {
+                    is McpContentBlock.Binary ->
+                        sink.saveBinary(block.bytes, uniqueName(block.name), block.mimeType, runId)
+
+                    is McpContentBlock.ResourceLink ->
+                        sink.saveResourceLink(
+                            uri = block.uri,
+                            name = uniqueName(block.name),
+                            mimeType = block.mimeType,
+                            runId = runId,
+                            allowedOrigins = allowedResourceOrigins,
+                            cancellation = cancellation,
+                        )
+                }
+            } catch (e: Exception) {
+                return ToolExecution(
+                    errorCode = "mcp_artifact_failed",
+                    errorMessage = (e.message ?: "Could not materialize the MCP result.").take(300),
+                )
+            }
+        artifacts +=
+            buildJsonObject {
+                put("path", artifact.path)
+                put("size", artifact.size)
+                put("mime", artifact.mimeType)
+                put("sha256", artifact.sha256)
+            }
+    }
+    val output =
+        buildJsonObject {
+            if (result.text.isNotBlank()) put("text", result.text)
+            result.structured?.let { put("structured", it) }
+            put(
+                "artifacts",
+                buildJsonArray {
+                    artifacts.forEach { add(it) }
+                },
+            )
+        }
+    return ToolExecution(output = output)
+}
+
+internal fun mcpToolExecution(result: McpCallResult): ToolExecution = mcpTextExecution(result)
+
+private fun mcpTextExecution(result: McpCallResult): ToolExecution {
     val parsed =
         runCatching {
             Json.parseToJsonElement(result.text) as? JsonObject

@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.vfs
 import android.content.Context
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.agent.AgentApiTrace
+import io.nekohasekai.sfa.agent.InboxRegistry
 import io.nekohasekai.sfa.conductor.ConductorSessionStore
 import io.nekohasekai.sfa.conductor.conductorConversationMarkdown
 
@@ -16,6 +17,7 @@ class AndroidVirtualDirectorySource(
     private val conductorSource =
         ConductorVirtualDirectorySource(
             workingDir = workingDir,
+            inbox = InboxVirtualDirectorySource(InboxRegistry.shared),
             runtimeFiles =
                 object : VirtualDirectoryRuntimeFiles {
                     override fun traceMarkdown(): String = AgentApiTrace.asMarkdown()

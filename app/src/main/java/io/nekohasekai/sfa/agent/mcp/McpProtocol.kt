@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.agent.mcp
 
+import io.nekohasekai.sfa.agent.InboxPaths
 import io.nekohasekai.sfa.agent.ToolCancellation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -14,9 +15,12 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import java.security.MessageDigest
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 internal const val MCP_PROTOCOL = "2025-06-18"
 internal const val MCP_MAX_TOOLS = 64
@@ -25,6 +29,7 @@ internal const val VFS_LINK_REVOKE_TOOL = "vfs_link_revoke"
 internal const val VFS_DEVICE_HEADER = "X-WonderSing-Device"
 internal const val DOCKER_RUN_TOOL = "docker_run"
 internal const val MCP_DOCKER_RUN_READ_TIMEOUT_MS: Int = 3_700_000
+internal const val MAX_EMBEDDED_BYTES: Int = 1024 * 1024
 private const val MCP_MAX_PAGES = 8
 
 class McpException(
@@ -59,9 +64,26 @@ data class McpRemoteTool(
     val fingerprint: String = "",
 )
 
+sealed interface McpContentBlock {
+    data class Binary(
+        val bytes: ByteArray,
+        val name: String,
+        val mimeType: String,
+    ) : McpContentBlock
+
+    data class ResourceLink(
+        val uri: String,
+        val name: String,
+        val mimeType: String?,
+        val size: Long?,
+    ) : McpContentBlock
+}
+
 data class McpCallResult(
     val text: String,
     val isError: Boolean,
+    val blocks: List<McpContentBlock> = emptyList(),
+    val structured: JsonElement? = null,
 )
 
 internal object McpMessages {
@@ -96,23 +118,95 @@ internal object McpMessages {
         }
     }
 
-    fun callText(result: JsonObject): McpCallResult {
+    fun callResult(result: JsonObject): McpCallResult {
         val isError = (result["isError"] as? JsonPrimitive)?.booleanOrNull == true
         val content = result["content"] as? JsonArray
-        val texts =
-            content
-                ?.mapNotNull { item ->
-                    val obj = item as? JsonObject ?: return@mapNotNull null
-                    val type = (obj["type"] as? JsonPrimitive)?.contentOrNull
-                    if (type != null && type != "text") return@mapNotNull null
-                    (obj["text"] as? JsonPrimitive)?.contentOrNull
-                }.orEmpty()
-        var text = texts.joinToString("\n").trim()
-        if (text.isEmpty()) {
-            result["structuredContent"]?.let { text = it.toString() }
+        val texts = mutableListOf<String>()
+        val blocks = mutableListOf<McpContentBlock>()
+        content?.forEach { item ->
+            val obj = item as? JsonObject ?: return@forEach
+            val type = (obj["type"] as? JsonPrimitive)?.contentOrNull
+            when (type) {
+                null, "text" -> {
+                    (obj["text"] as? JsonPrimitive)?.contentOrNull?.let(texts::add)
+                }
+
+                "image", "audio" -> {
+                    val mime = (obj["mimeType"] as? JsonPrimitive)?.contentOrNull
+                        ?: "application/octet-stream"
+                    val data = (obj["data"] as? JsonPrimitive)?.contentOrNull
+                        ?: return@forEach
+                    blocks +=
+                        McpContentBlock.Binary(
+                            bytes = decodeEmbedded(data),
+                            name = InboxPaths.fileName(if (type == "image") "image" else "audio", mime),
+                            mimeType = mime,
+                        )
+                }
+
+                "resource" -> {
+                    val resource = obj["resource"] as? JsonObject ?: return@forEach
+                    val mime = (resource["mimeType"] as? JsonPrimitive)?.contentOrNull
+                        ?: "application/octet-stream"
+                    val text = (resource["text"] as? JsonPrimitive)?.contentOrNull
+                    if (text != null) {
+                        texts += text
+                    } else {
+                        val blob = (resource["blob"] as? JsonPrimitive)?.contentOrNull
+                            ?: return@forEach
+                        val uri = (resource["uri"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                        val name = uri.substringAfterLast('/').ifBlank { "" }
+                        blocks +=
+                            McpContentBlock.Binary(
+                                bytes = decodeEmbedded(blob),
+                                name = InboxPaths.fileName(name, mime),
+                                mimeType = mime,
+                            )
+                    }
+                }
+
+                "resource_link" -> {
+                    val uri = (obj["uri"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+                    if (uri.isBlank()) return@forEach
+                    val name =
+                        (obj["name"] as? JsonPrimitive)?.contentOrNull
+                            ?.takeIf { it.isNotBlank() }
+                            ?: uri.substringAfterLast('/').ifBlank { "resource" }
+                    blocks +=
+                        McpContentBlock.ResourceLink(
+                            uri = uri,
+                            name = InboxPaths.fileName(name, "application/octet-stream"),
+                            mimeType = (obj["mimeType"] as? JsonPrimitive)?.contentOrNull,
+                            size = (obj["size"] as? JsonPrimitive)?.longOrNull,
+                        )
+                }
+            }
         }
-        if (text.length > 8_000) text = text.take(8_000)
-        return McpCallResult(text, isError)
+        val structured = result["structuredContent"]
+        var text = texts.joinToString("\n").trim()
+        if (text.isEmpty() && structured != null) {
+            text = structured.toString()
+        }
+        return McpCallResult(text, isError, blocks, structured)
+    }
+
+    fun callText(result: JsonObject): McpCallResult {
+        val parsed = callResult(result)
+        return McpCallResult(parsed.text, parsed.isError)
+    }
+
+    @OptIn(ExperimentalEncodingApi::class)
+    private fun decodeEmbedded(data: String): ByteArray {
+        val bytes =
+            try {
+                Base64.Default.decode(data)
+            } catch (e: IllegalArgumentException) {
+                throw McpException("MCP returned invalid base64 content.")
+            }
+        if (bytes.size > MAX_EMBEDDED_BYTES) {
+            throw McpException("MCP embedded content is too large; use a resource_link.")
+        }
+        return bytes
     }
 
     fun redact(
@@ -290,7 +384,7 @@ class McpSession(
                         },
                 ) as? JsonObject
                     ?: throw McpException("MCP tools/call returned no result.")
-            McpMessages.callText(result)
+            McpMessages.callResult(result)
         }
 
     private suspend fun request(

@@ -151,7 +151,7 @@ class AgentToolCatalog(
                         put("category", tool.category)
                         tool.serverName?.let { put("server", it) }
                         tool.namespace?.let { put("namespace", it) }
-                        put("description", tool.description)
+                        put("description", tool.description.lineSequence().firstOrNull()?.trim()?.take(160).orEmpty())
                         put("requiresConfirmation", tool.confirmationPolicy != ConfirmationPolicy.NEVER)
                     }
                 }.toMutableList()

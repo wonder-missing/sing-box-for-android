@@ -37,7 +37,16 @@ class VfsScopedSource(
         if (segments.isEmpty()) return true
         return when (segments.first()) {
             "appfiles" -> VfsScope.APPFILES in scopes
-            "conductor" -> VfsScope.CONDUCTOR in scopes || VfsScope.WORKDIR in scopes
+            "conductor" -> {
+                // The inbox maps app-private image-store files and picker
+                // content URIs. A workdir-only grant must not read it.
+                val inbox = segments.size >= 3 && segments[1] == "resources" && segments[2] == "inbox"
+                if (inbox) {
+                    VfsScope.CONDUCTOR in scopes
+                } else {
+                    VfsScope.CONDUCTOR in scopes || VfsScope.WORKDIR in scopes
+                }
+            }
             ".runtime" -> {
                 if (segments.size == 1) {
                     RUNTIME_SCOPES.any { it in scopes }

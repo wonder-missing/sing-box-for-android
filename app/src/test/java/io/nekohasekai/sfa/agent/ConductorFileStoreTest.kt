@@ -103,4 +103,50 @@ class ConductorFileStoreTest {
         File(workingDir, "bin.dat").writeBytes(byteArrayOf(0, 1, 2, 3))
         store.readText("bin.dat")
     }
+
+    @Test
+    fun streamsArtifactsAndReturnsTheirPathAndSize() {
+        val stored =
+            store.writeResourceStream("conductor/resources/artifacts/run/file.bin", maxBytes = 1024) { output ->
+                output.write(byteArrayOf(1, 2, 3, 4))
+            }
+
+        assertEquals("conductor/resources/artifacts/run/file.bin", stored.path)
+        assertEquals(4L, stored.size)
+        assertEquals(4L, store.resolveResource(stored.path).length())
+    }
+
+    @Test
+    fun streamedArtifactsRespectTheByteCap() {
+        val failure =
+            runCatching {
+                store.writeResourceStream("conductor/resources/artifacts/run/too-big.bin", maxBytes = 3) { output ->
+                    output.write(byteArrayOf(1, 2, 3, 4))
+                }
+            }
+
+        assertTrue(failure.isFailure)
+        assertFalse(File(workingDir, "conductor/resources/artifacts/run/too-big.bin").exists())
+    }
+
+    @Test
+    fun theInboxIsReadOnly() {
+        assertTrue(runCatching { store.writeText("conductor/resources/inbox/x/note.txt", "x") }.isFailure)
+        assertTrue(
+            runCatching {
+                store.writeResourceBytes("inbox/x/note.txt", "x".toByteArray())
+            }.isFailure,
+        )
+    }
+
+    @Test
+    fun resourcesDoNotConsumeTheWorkspaceFileLimit() {
+        repeat(25) { index ->
+            store.writeResourceBytes("conductor/resources/artifact-$index.txt", "x".toByteArray(), overwrite = true)
+        }
+
+        store.writeText("conductor/note.txt", "ok")
+
+        assertEquals("ok", store.readText("conductor/note.txt").text)
+    }
 }

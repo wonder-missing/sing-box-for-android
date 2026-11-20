@@ -10,6 +10,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.io.File
+import java.net.URLConnection
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -26,6 +27,7 @@ class AgentDataTools(
     private val fileSelection: FileSelectionPort? = null,
     private val releaseNotes: ReleaseNotesSource? = null,
     private val vision: VisionPort? = null,
+    private val chatImage: ((String) -> AgentImageData?)? = null,
 ) {
     private val fileList =
         object : AgentTool {
@@ -800,9 +802,11 @@ class AgentDataTools(
                     name = "request_files",
                     description =
                         "Ask the user to choose files with the system file picker. " +
-                            "Returns file names, sizes and opaque temporary handles; it does not read, copy or modify " +
-                            "the files. Handles work only while the app session lasts. " +
-                            "Images and other binary files can be selected, but file_read_selected only reads UTF-8 text.",
+                            "Returns file names, sizes, opaque temporary handles and a logical inbox path " +
+                            "(conductor/resources/inbox/<id>/<name>). The file itself is not copied or modified. " +
+                            "Handles work only while the app session lasts; the inbox path is a read-only VFS view " +
+                            "when the conductor scope is granted. file_read_selected only reads UTF-8 text; use " +
+                            "analyze_image for images.",
                     permission = AgentPermission.READ_FILES,
                     parameters =
                         listOf(
@@ -865,6 +869,16 @@ class AgentDataTools(
                                                     put("name", file.name)
                                                     put("size", file.size)
                                                     file.mimeType?.let { put("mime", it) }
+                                                    if (file.inboxReady) {
+                                                        put(
+                                                            "path",
+                                                            InboxPaths.path(
+                                                                file.id,
+                                                                file.name,
+                                                                file.mimeType ?: "application/octet-stream",
+                                                            ),
+                                                        )
+                                                    }
                                                 },
                                             )
                                         }
@@ -1005,8 +1019,9 @@ class AgentDataTools(
                     description =
                         "Analyze one image with the configured vision-capable model and return text. The image " +
                             "leaves the device for the provider. With file_id, reuse a file selected by " +
-                            "request_files; otherwise the user is asked to pick one from the gallery. " +
-                            "file_read_selected cannot read images; pass the handle to analyze_image as file_id.",
+                            "request_files or an image attached to the conversation. With path, read an image " +
+                            "under conductor/ (for example conductor/resources/artifacts/...). Omit both to open " +
+                            "the gallery picker. file_read_selected cannot read images.",
                     permission = AgentPermission.DATA_EGRESS,
                     parameters =
                         listOf(
@@ -1021,7 +1036,16 @@ class AgentDataTools(
                                 type = AgentParameterType.STRING,
                                 required = false,
                                 description =
-                                    "Optional image handle returned by request_files. Omit to open the gallery picker.",
+                                    "Optional image handle from request_files, or the id of an attached image. " +
+                                        "Omit to open the gallery picker.",
+                            ),
+                            AgentParameterSpec(
+                                name = "path",
+                                type = AgentParameterType.STRING,
+                                required = false,
+                                description =
+                                    "Optional image path under conductor/, for example " +
+                                        "conductor/resources/artifacts/<run>/<name>.",
                             ),
                         ),
                     confirmationPolicy = ConfirmationPolicy.NEVER,
@@ -1036,7 +1060,6 @@ class AgentDataTools(
                 args: JsonObject,
                 cancellation: ToolCancellation,
             ): ToolExecution {
-                val picker = fileSelection ?: return unavailable()
                 val analyzer = vision ?: return unavailable()
                 val question = AgentJson.string(args, "question")?.trim()
                 if (question.isNullOrEmpty()) return invalid("question is required")
@@ -1044,10 +1067,61 @@ class AgentDataTools(
                     AgentJson.string(args, "file_id")
                         ?.trim()
                         ?.takeIf { it.isNotEmpty() }
+                val path =
+                    AgentJson.string(args, "path")
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
                 return try {
-                    if (fileId != null) {
-                        return analyzeSelectedImage(picker, analyzer, fileId, question)
+                    if (path != null) {
+                        if (!path.startsWith("conductor/")) {
+                            return invalid("path must be under conductor/.")
+                        }
+                        val file =
+                            runCatching { fileStore.resolveRead(path) }
+                                .getOrElse { return invalid("path is not a readable file.") }
+                        if (!file.isFile) return invalid("path must be a file.")
+                        if (file.length() > MAX_IMAGE_BYTES) {
+                            return invalid("Image is larger than ${MAX_IMAGE_BYTES / (1024 * 1024)} MB.")
+                        }
+                        val mime = URLConnection.guessContentTypeFromName(file.name) ?: "image/jpeg"
+                        if (!mime.startsWith("image/", ignoreCase = true)) {
+                            return invalid("path must reference an image.")
+                        }
+                        return analyzeImageBytes(file.name, mime, file.readBytes(), analyzer, question)
                     }
+                    if (fileId != null) {
+                        val selected =
+                            fileSelection?.let {
+                                runCatching { it.readBytes(fileId, MAX_IMAGE_BYTES) }.getOrNull()
+                            }
+                        if (selected != null) {
+                            if (!selected.mimeType.startsWith("image/", ignoreCase = true)) {
+                                return invalid("file_id must reference an image.")
+                            }
+                            return analyzeImageBytes(
+                                selected.name,
+                                selected.mimeType,
+                                selected.bytes,
+                                analyzer,
+                                question,
+                            )
+                        }
+                        val attached =
+                            chatImage?.invoke(fileId)
+                                ?: return invalid(
+                                    "Unknown image handle '$fileId'. Use request_files or an attached image id.",
+                                )
+                        if (!attached.mimeType.startsWith("image/", ignoreCase = true)) {
+                            return invalid("file_id must reference an image.")
+                        }
+                        return analyzeImageBytes(fileId, attached.mimeType, attached.bytes, analyzer, question)
+                    }
+                    val picker =
+                        fileSelection
+                            ?: return ToolExecution(
+                                errorCode = "tool_unavailable",
+                                errorMessage = "No image picker is available.",
+                            )
                     val selection =
                         picker.request(
                             reason = "Pick one image to analyze. It will be sent to the configured model provider.",
@@ -1064,7 +1138,12 @@ class AgentDataTools(
                                 },
                         )
                     }
-                    analyzeSelectedImage(picker, analyzer, selection.files.first().id, question)
+                    val first = selection.files.first()
+                    val image = picker.readBytes(first.id, MAX_IMAGE_BYTES)
+                    if (!image.mimeType.startsWith("image/", ignoreCase = true)) {
+                        return invalid("file_id must reference an image.")
+                    }
+                    analyzeImageBytes(image.name, image.mimeType, image.bytes, analyzer, question)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -1073,24 +1152,21 @@ class AgentDataTools(
             }
         }
 
-    private suspend fun analyzeSelectedImage(
-        picker: FileSelectionPort,
+    private suspend fun analyzeImageBytes(
+        name: String,
+        mimeType: String,
+        bytes: ByteArray,
         analyzer: VisionPort,
-        fileId: String,
         question: String,
     ): ToolExecution {
-        val image = picker.readBytes(fileId, MAX_IMAGE_BYTES)
-        if (!image.mimeType.startsWith("image/", ignoreCase = true)) {
-            return invalid("file_id must reference an image.")
-        }
-        val analysis = analyzer.analyze(image.bytes, image.mimeType, question)
+        val analysis = analyzer.analyze(bytes, mimeType, question)
         val text = analysis.text
         val truncated = analysis.truncated || text.length > MAX_ANALYSIS_CHARS
         return ToolExecution(
             output =
                 buildJsonObject {
-                    put("file", image.name)
-                    put("mime", image.mimeType)
+                    put("file", name)
+                    put("mime", mimeType)
                     put("analysis", text.take(MAX_ANALYSIS_CHARS))
                     put("truncated", truncated)
                     analysis.finishReason?.let { put("finishReason", it) }
@@ -1159,7 +1235,9 @@ class AgentDataTools(
                     add(requestFiles)
                     add(fileReadSelected)
                     if (taildrop != null) add(taildropSendSelected)
-                    if (vision != null) add(analyzeImageTool)
+                }
+                if (vision != null) {
+                    add(analyzeImageTool)
                 }
             }
 

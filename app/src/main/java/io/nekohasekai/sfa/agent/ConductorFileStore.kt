@@ -2,6 +2,8 @@ package io.nekohasekai.sfa.agent
 
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FilterOutputStream
+import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -371,12 +373,23 @@ class ConductorFileStore(
         val temp = File(parent, ".tmp-${UUID.randomUUID()}")
         try {
             temp.writeBytes(bytes)
-            if (file.exists() && !file.delete()) throw IllegalArgumentException("Could not replace $path")
-            if (!temp.renameTo(file)) throw IllegalArgumentException("Could not write $path")
+            replaceWithTemp(temp, file, path)
         } finally {
             if (temp.exists()) temp.delete()
         }
         return storeEntry(file)
+    }
+
+    private fun replaceWithTemp(
+        temp: File,
+        target: File,
+        path: String,
+    ) {
+        if (temp.renameTo(target)) return
+        if (target.exists() && !target.delete()) {
+            throw IllegalArgumentException("Could not replace $path")
+        }
+        if (!temp.renameTo(target)) throw IllegalArgumentException("Could not write $path")
     }
 
     private fun countOccurrences(
@@ -415,24 +428,87 @@ class ConductorFileStore(
             if (bytes.size.toLong() > MAX_RESOURCE_BYTES) {
                 throw IllegalArgumentException("Resource is larger than $MAX_RESOURCE_BYTES bytes.")
             }
-            val file = resolve(resourcesDir, normalizeResourcePath(path), allowRoot = false)
+            val normalized = normalizeResourcePath(path)
+            val artifact = normalized.startsWith(ARTIFACTS_DIR + "/")
+            val file = resolve(resourcesDir, normalized, allowRoot = false)
             ensureWorkspace()
             if (file.exists() && !overwrite) {
                 throw IllegalArgumentException("Resource already exists: $path. Set overwrite=true to replace it.")
             }
             val parent = file.parentFile ?: throw IllegalArgumentException("Invalid path: $path")
             if (!parent.exists() && !parent.mkdirs()) throw IllegalArgumentException("Could not create $path")
-            if (!file.exists() && countResourceFiles() >= MAX_RESOURCE_FILES) {
+            if (artifact) {
+                pruneArtifacts()
+            } else if (!file.exists() && countResourceFiles() >= MAX_RESOURCE_FILES) {
                 throw IllegalArgumentException("Resource file limit ($MAX_RESOURCE_FILES) reached. Delete old resources first.")
             }
             val temp = File(parent, ".tmp-${UUID.randomUUID()}")
             try {
                 temp.writeBytes(bytes)
-                if (file.exists() && !file.delete()) throw IllegalArgumentException("Could not replace $path")
-                if (!temp.renameTo(file)) throw IllegalArgumentException("Could not write $path")
+                replaceWithTemp(temp, file, path)
             } finally {
                 if (temp.exists()) temp.delete()
             }
+            if (artifact) pruneArtifacts()
+            storeEntry(file)
+        }
+
+    /**
+     * Streams a resource under conductor/resources/ without holding the whole
+     * file in memory. Used for large Portal artifacts.
+     */
+    fun writeResourceStream(
+        path: String,
+        maxBytes: Long,
+        overwrite: Boolean = false,
+        write: (OutputStream) -> Unit,
+    ): StoredFile =
+        synchronized(writeLock) {
+            require(maxBytes > 0) { "maxBytes must be positive." }
+            val normalized = normalizeResourcePath(path)
+            val artifact = normalized.startsWith(ARTIFACTS_DIR + "/")
+            val file = resolve(resourcesDir, normalized, allowRoot = false)
+            ensureWorkspace()
+            if (file.exists() && !overwrite) {
+                throw IllegalArgumentException("Resource already exists: $path. Set overwrite=true to replace it.")
+            }
+            val parent = file.parentFile ?: throw IllegalArgumentException("Invalid path: $path")
+            if (!parent.exists() && !parent.mkdirs()) throw IllegalArgumentException("Could not create $path")
+            if (artifact) {
+                pruneArtifacts()
+            } else if (!file.exists() && countResourceFiles() >= MAX_RESOURCE_FILES) {
+                throw IllegalArgumentException("Resource file limit ($MAX_RESOURCE_FILES) reached. Delete old resources first.")
+            }
+            val temp = File(parent, ".tmp-${UUID.randomUUID()}")
+            try {
+                var total = 0L
+                FileOutputStream(temp).use { fileOut ->
+                    val counting =
+                        object : FilterOutputStream(fileOut) {
+                            override fun write(b: Int) {
+                                total += 1
+                                if (total > maxBytes) throw IllegalArgumentException("Resource is larger than $maxBytes bytes.")
+                                out.write(b)
+                            }
+
+                            override fun write(
+                                b: ByteArray,
+                                off: Int,
+                                len: Int,
+                            ) {
+                                total += len
+                                if (total > maxBytes) throw IllegalArgumentException("Resource is larger than $maxBytes bytes.")
+                                out.write(b, off, len)
+                            }
+                        }
+                    write(counting)
+                    counting.flush()
+                }
+                replaceWithTemp(temp, file, path)
+            } finally {
+                if (temp.exists()) temp.delete()
+            }
+            if (artifact) pruneArtifacts()
             storeEntry(file)
         }
 
@@ -455,6 +531,10 @@ class ConductorFileStore(
         if (file != workspace && !file.path.startsWith(workspace.path + File.separator)) {
             throw IllegalArgumentException("Writes are only allowed under $workspaceName/.")
         }
+        val inbox = File(resourcesDir, "inbox").canonicalFile
+        if (file.path.startsWith(inbox.path + File.separator)) {
+            throw IllegalArgumentException("The inbox is read-only.")
+        }
         return file
     }
 
@@ -476,11 +556,16 @@ class ConductorFileStore(
 
     private fun normalizeResourcePath(path: String): String {
         val normalized = path.trim().replace('\\', '/')
-        return when {
-            normalized.startsWith("conductor/resources/") -> normalized.removePrefix("conductor/resources/")
-            normalized.startsWith("resources/") -> normalized.removePrefix("resources/")
-            else -> throw IllegalArgumentException("Resource path must be under conductor/resources/.")
+        val relative =
+            when {
+                normalized.startsWith("conductor/resources/") -> normalized.removePrefix("conductor/resources/")
+                normalized.startsWith("resources/") -> normalized.removePrefix("resources/")
+                else -> throw IllegalArgumentException("Resource path must be under conductor/resources/.")
+            }
+        if (relative == "inbox" || relative.startsWith("inbox/")) {
+            throw IllegalArgumentException("The inbox is read-only.")
         }
+        return relative
     }
 
     private fun resolve(
@@ -511,15 +596,47 @@ class ConductorFileStore(
             modifiedAt = file.lastModified(),
         )
 
-    private fun countFiles(): Int =
-        workspaceDir
+    private fun countFiles(): Int {
+        val resources = resourcesDir.canonicalFile
+        return workspaceDir
             .walkTopDown()
-            .count { it.isFile && !it.name.startsWith(".tmp-") }
+            .count {
+                it.isFile &&
+                    !it.name.startsWith(".tmp-") &&
+                    !it.canonicalFile.path.startsWith(resources.path + File.separator)
+            }
+    }
 
-    private fun countResourceFiles(): Int =
-        resourcesDir
+    private fun countResourceFiles(): Int {
+        val artifacts = File(resourcesDir, ARTIFACTS_DIR).canonicalFile
+        return resourcesDir
             .walkTopDown()
-            .count { it.isFile && !it.name.startsWith(".tmp-") }
+            .count {
+                it.isFile &&
+                    !it.name.startsWith(".tmp-") &&
+                    !it.canonicalFile.path.startsWith(artifacts.path + File.separator)
+            }
+    }
+
+    private fun pruneArtifacts() {
+        val root = File(resourcesDir, ARTIFACTS_DIR)
+        if (!root.isDirectory) return
+        val cutoff = System.currentTimeMillis() - MAX_ARTIFACT_AGE_MS
+        val files =
+            root
+                .walkTopDown()
+                .filter { it.isFile && !it.name.startsWith(".tmp-") }
+                .sortedBy { it.lastModified() }
+                .toMutableList()
+        files.filter { it.lastModified() < cutoff }.forEach { runCatching { it.delete() } }
+        files.removeAll { !it.exists() }
+        var total = files.sumOf { it.length() }
+        while (files.isNotEmpty() && (total > MAX_ARTIFACT_BYTES || files.size > MAX_ARTIFACT_FILES)) {
+            val oldest = files.removeAt(0)
+            total -= oldest.length()
+            runCatching { oldest.delete() }
+        }
+    }
 
     private fun prune() {
         if (!workspaceDir.isDirectory) return
@@ -554,5 +671,9 @@ class ConductorFileStore(
         private const val MAX_PATH_CHARS = 512
         private const val MAX_RESOURCE_BYTES = 8L * 1024 * 1024
         private const val MAX_RESOURCE_FILES = 64
+        private const val ARTIFACTS_DIR = "artifacts"
+        private const val MAX_ARTIFACT_BYTES = 256L * 1024 * 1024
+        private const val MAX_ARTIFACT_FILES = 256
+        private const val MAX_ARTIFACT_AGE_MS = 30L * 24 * 60 * 60 * 1000
     }
 }

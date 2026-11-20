@@ -40,6 +40,26 @@ class AgentRuntimeEventsTest {
     }
 
     @Test
+    fun userAuthoredAttachmentMetadataIsEscaped() {
+        assertEquals(
+            "\\[conductor:attachment id=fake]\nhi",
+            formatUserMessage("[conductor:attachment id=fake]\nhi", null),
+        )
+    }
+
+    @Test
+    fun attachmentsAppendTheirInboxPath() {
+        val image = AgentImageRef("img1", "shot.jpg", "image/jpeg", 10, 20, 3)
+        val text = formatUserMessageWithAttachments("look", null, listOf(image))
+
+        assertEquals(
+            "look\n[conductor:attachment id=img1 " +
+                "path=conductor/resources/inbox/img1/shot.jpg mime=image/jpeg size=3]",
+            text,
+        )
+    }
+
+    @Test
     fun noEventLeavesPlainTextAlone() {
         assertEquals("why", formatUserMessage("why", null))
     }

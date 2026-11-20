@@ -184,6 +184,8 @@ data class SelectedFileInfo(
     val name: String,
     val size: Long,
     val mimeType: String? = null,
+    /** False when the content URI does not expose a reliable size and cannot back a VFS entry. */
+    val inboxReady: Boolean = true,
 )
 
 data class SelectedFileRead(

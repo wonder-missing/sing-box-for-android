@@ -94,6 +94,18 @@ class VfsScopedSourceTest {
         }
 
     @Test
+    fun workdirDoesNotExposeTheSharedInboxWithoutConductorScope() =
+        runBlocking {
+            val workdir = VfsScopedSource(source, setOf(VfsScope.WORKDIR))
+            val inboxPath = "conductor/resources/inbox/id/file.jpg"
+            assertEquals("not_found", failure { workdir.stat(inboxPath) }.code)
+            assertEquals("not_found", failure { workdir.list("conductor/resources/inbox") }.code)
+
+            val conductor = VfsScopedSource(source, setOf(VfsScope.CONDUCTOR))
+            assertEquals(inboxPath, conductor.stat(inboxPath).path)
+        }
+
+    @Test
     fun workdirWithTraceStillKeepsRuntimeFilesSeparate() =
         runBlocking {
             val scoped = VfsScopedSource(source, setOf(VfsScope.WORKDIR, VfsScope.TRACE))

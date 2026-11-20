@@ -74,7 +74,7 @@
     <string name="vfs_consent_title">允许「%1$s」读取文件？</string>
     <string name="vfs_consent_server">服务端：%1$s</string>
     <string name="vfs_consent_scope">它可以读取：</string>
-    <string name="vfs_scope_conductor">Conductor 文件（conductor/）</string>
+    <string name="vfs_scope_conductor">Conductor 文件（conductor/，含你分享给 Conductor 的文件）</string>
     <string name="vfs_scope_trace">API trace（.runtime/trace.md）</string>
     <string name="vfs_scope_system_prompt">系统提示词（.runtime/system_prompt.md）</string>
     <string name="vfs_scope_conversation">完整对话（.runtime/conversation.md）</string>

@@ -74,6 +74,7 @@ class AgentRuntime(
     private val brief: () -> Boolean = { false },
     private val modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
     private val imageLoader: (String) -> AgentImageData? = { null },
+    private val offloadStore: ObservationOffloadStore? = null,
 ) {
     private val confirmationIds = AtomicLong(0)
 
@@ -170,7 +171,10 @@ class AgentRuntime(
         val transcript =
             (
                 preparedHistory +
-                    AgentMessage.User(formatUserMessage(userText, initialEvent), images = images)
+                    AgentMessage.User(
+                        formatUserMessageWithAttachments(userText, initialEvent, images),
+                        images = images,
+                    )
             ).toMutableList()
         var startSize = preparedHistory.size
         val routingEnabled = toolRoutingEnabled()
@@ -445,7 +449,7 @@ class AgentRuntime(
             var roundObservationChars = 0
             var searchesThisRound = 0
 
-            fun recordObservation(
+            suspend fun recordObservation(
                 call: ToolCall,
                 raw: ToolObservation,
                 confirmationMs: Long? = null,
@@ -453,16 +457,50 @@ class AgentRuntime(
                 val remainingTurn = (config.maxObservationCharsPerTurn - turnObservationChars).coerceAtLeast(0)
                 val remainingRound = (config.maxObservationCharsPerRound - roundObservationChars).coerceAtLeast(0)
                 val budget = minOf(config.maxObservationChars, remainingTurn, remainingRound)
-                val observation =
-                    if (budget <= 0) {
-                        ToolObservation(
-                            ok = false,
-                            tool = call.name,
-                            errorCode = "observation_budget_exceeded",
-                            message = "Tool output was not sent because the context budget is exhausted.",
-                        )
+                val rawJson = raw.toJson().toString()
+                val offloaded =
+                    if (
+                        rawJson.length > config.maxObservationChars &&
+                        offloadStore != null &&
+                        !call.name.startsWith("file_")
+                    ) {
+                        try {
+                            offloadStore.save(call.name, rawJson)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            null
+                        }
                     } else {
-                        AgentContext.truncateObservation(raw, budget)
+                        null
+                    }
+                val observation =
+                    when {
+                        offloaded != null ->
+                            ToolObservation(
+                                ok = raw.ok,
+                                tool = call.name,
+                                output =
+                                    buildJsonObject {
+                                        put("offloaded", true)
+                                        put("path", offloaded.path)
+                                        put("bytes", offloaded.bytes)
+                                        put("preview", rawJson.take(OFFLOAD_PREVIEW_CHARS))
+                                    },
+                                errorCode = raw.errorCode,
+                                message = raw.message?.take(240),
+                                originalChars = rawJson.length,
+                            )
+
+                        budget <= 0 ->
+                            ToolObservation(
+                                ok = false,
+                                tool = call.name,
+                                errorCode = "observation_budget_exceeded",
+                                message = "Tool output was not sent because the context budget is exhausted.",
+                            )
+
+                        else -> AgentContext.truncateObservation(raw, budget)
                     }
                 transcript.add(observation.asToolMessage(call.name, call.id))
                 val observationChars = observation.toJson().toString().length
@@ -1314,5 +1352,6 @@ class AgentRuntime(
         const val MAX_COMPACT_FAILURES = 3
         const val OUTPUT_CONTEXT_HEADROOM = 8_000
         const val MIN_OUTPUT_TOKENS = 256
+        const val OFFLOAD_PREVIEW_CHARS = 1_000
     }
 }

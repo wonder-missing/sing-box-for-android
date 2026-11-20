@@ -22,6 +22,7 @@ interface VirtualDirectoryRuntimeFiles {
 class ConductorVirtualDirectorySource(
     workingDir: File,
     private val runtimeFiles: VirtualDirectoryRuntimeFiles,
+    private val inbox: InboxVirtualDirectorySource? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) : VirtualDirectorySource {
     private val fileStore = ConductorFileStore(workingDir)
@@ -69,8 +70,17 @@ class ConductorVirtualDirectorySource(
         }
     }
 
-    private fun conductorStat(segments: List<String>): VfsEntry {
+    private suspend fun conductorStat(segments: List<String>): VfsEntry {
         if (segments.size == 1) return conductorDirectoryEntry()
+        if (inbox != null && isInboxPath(segments)) {
+            return inbox.stat(segments.joinToString("/"))
+        }
+        if (inboxVisible() && isResourcesPath(segments)) {
+            val file = resolveConductorFile(segments)
+            if (file == null || !file.exists()) {
+                return directoryEntry(RESOURCES_PATH, RESOURCES_DIR)
+            }
+        }
         val file = resolveConductorFile(segments) ?: throw notFound()
         if (!file.exists()) throw notFound()
         if (file.isDirectory) {
@@ -94,13 +104,50 @@ class ConductorVirtualDirectorySource(
         )
     }
 
-    private fun conductorList(segments: List<String>): List<VfsEntry> {
-        if (segments.size == 1 && !workspaceDir.isDirectory) return emptyList()
-        val stored =
+    private suspend fun conductorList(segments: List<String>): List<VfsEntry> {
+        if (segments.size == 1 && !workspaceDir.isDirectory && !inboxVisible()) return emptyList()
+        if (inbox != null && isInboxPath(segments)) {
+            return inbox.list(segments.joinToString("/"))
+        }
+        val storedResult =
             runCatching { fileStore.list(segments.joinToString("/")) }
-                .getOrElse { throw notFound() }
-        return stored.map { it.toEntry() }
+        val stored = storedResult.getOrNull()
+        if (stored == null && !(inboxVisible() && (segments.size == 1 || isResourcesPath(segments)))) {
+            throw notFound()
+        }
+        val entries =
+            stored
+                .orEmpty()
+                .map { it.toEntry() }
+                .toMutableList()
+        if (inboxVisible()) {
+            when {
+                isResourcesPath(segments) -> {
+                    if (entries.none { it.name == INBOX_DIR }) {
+                        entries += directoryEntry("$RESOURCES_PATH/$INBOX_DIR", INBOX_DIR)
+                    }
+                }
+
+                segments.size == 1 -> {
+                    if (entries.none { it.name == RESOURCES_DIR }) {
+                        entries += directoryEntry(RESOURCES_PATH, RESOURCES_DIR)
+                    }
+                }
+            }
+        }
+        return entries.sortedBy { it.name }
     }
+
+    private fun isInboxPath(segments: List<String>): Boolean =
+        segments.size >= 3 &&
+            segments[0] == CONDUCTOR_DIR &&
+            segments[1] == RESOURCES_DIR &&
+            segments[2] == INBOX_DIR
+
+    private fun isResourcesPath(segments: List<String>): Boolean =
+        segments.size == 2 && segments[0] == CONDUCTOR_DIR && segments[1] == RESOURCES_DIR
+
+    private fun inboxVisible(): Boolean = inbox != null && !inbox.isEmpty()
 
     private fun conductorDirectoryEntry(): VfsEntry =
         VfsEntry(
@@ -114,12 +161,15 @@ class ConductorVirtualDirectorySource(
     private fun resolveConductorFile(segments: List<String>): File? =
         runCatching { fileStore.resolveRead(segments.joinToString("/")) }.getOrNull()
 
-    private fun readConductor(
+    private suspend fun readConductor(
         segments: List<String>,
         offset: Long,
         length: Int,
     ): VfsRead {
         if (segments.size == 1) throw VfsException(VfsErrorCode.NOT_SUPPORTED, "Directories are not readable.")
+        if (inbox != null && isInboxPath(segments)) {
+            return inbox.read(segments.joinToString("/"), offset, length)
+        }
         val file = resolveConductorFile(segments) ?: throw notFound()
         if (file.isDirectory) throw VfsException(VfsErrorCode.NOT_SUPPORTED, "Directories are not readable.")
         if (!file.isFile) throw notFound()
@@ -215,6 +265,9 @@ class ConductorVirtualDirectorySource(
     companion object {
         internal const val ROOT_PATH = ""
         internal const val CONDUCTOR_DIR = "conductor"
+        internal const val RESOURCES_DIR = "resources"
+        internal const val RESOURCES_PATH = "conductor/resources"
+        internal const val INBOX_DIR = "inbox"
         internal const val RUNTIME_DIR = ".runtime"
         internal const val MAX_PATH_CHARS = 4096
         internal const val MIME_MARKDOWN = "text/markdown; charset=utf-8"

@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.agent.mcp
 
 import android.content.Context
 import io.nekohasekai.sfa.agent.AgentTool
+import io.nekohasekai.sfa.agent.ConductorFileStore
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
 import io.nekohasekai.sfa.vfs.VfsServerBase
@@ -18,6 +19,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -66,6 +68,7 @@ class McpRuntime(
     private val staleAfterMs: Long = 60_000,
     private val clientVersion: String = "wondersing",
     private val deviceId: () -> String = { "" },
+    private val artifactSink: McpArtifactSink? = null,
 ) {
     private val gate = Mutex()
     private var servers: List<McpServerConfig> = emptyList()
@@ -193,7 +196,15 @@ class McpRuntime(
             cache[id]?.let { entry ->
                 cache[id] =
                     entry.copy(
-                        tools = mcpAgentTools(updated.name, updated.toolPrefix, entry.remote, entry.session),
+                        tools =
+                            mcpAgentTools(
+                                updated.name,
+                                updated.toolPrefix,
+                                entry.remote,
+                                entry.session,
+                                artifactSink,
+                                resourceOrigins(updated.url),
+                            ),
                     )
             }
             repository.save(servers)
@@ -340,9 +351,22 @@ class McpRuntime(
         return ServerCache(
             session = session,
             remote = remote,
-            tools = mcpAgentTools(config.name, config.toolPrefix, remote, session),
+            tools =
+                mcpAgentTools(
+                    config.name,
+                    config.toolPrefix,
+                    remote,
+                    session,
+                    artifactSink,
+                    resourceOrigins(config.url),
+                ),
             fetchedAt = clock(),
         )
+    }
+
+    private fun resourceOrigins(url: String): Set<String> {
+        val parsed = runCatching { url.toHttpUrlOrNull() }.getOrNull() ?: return emptySet()
+        return setOf("${parsed.scheme}://${parsed.host}:${parsed.port}")
     }
 
     private fun bumpLocked(id: String) {
@@ -463,15 +487,19 @@ object McpRuntimes {
         instance?.let { return it }
         synchronized(lock) {
             instance?.let { return it }
-            val file = File(context.applicationContext.filesDir, "conductor/mcp-servers.json")
+            val app = context.applicationContext
+            val file = File(app.filesDir, "conductor/mcp-servers.json")
             val deviceIdStore =
                 VfsDeviceIdStore(
-                    VfsPrivateFiles.deviceIdFile(context.applicationContext.noBackupFilesDir),
+                    VfsPrivateFiles.deviceIdFile(app.noBackupFilesDir),
                 )
+            val workingDir = app.getExternalFilesDir(null) ?: app.filesDir
+            val artifactSink = FileMcpArtifactSink(ConductorFileStore(workingDir))
             return McpRuntime(
                 repository = FileMcpServerRepository(file, McpTokenCipherFactory.create()),
                 transportFactory = { config -> McpHttpTransport(config.url, config.token) },
                 deviceId = { deviceIdStore.getOrCreate() },
+                artifactSink = artifactSink,
             ).also { instance = it }
         }
     }

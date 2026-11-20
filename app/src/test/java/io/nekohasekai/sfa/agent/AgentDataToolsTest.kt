@@ -290,6 +290,59 @@ class AgentDataToolsTest {
     }
 
     @Test
+    fun analyzeImageAcceptsAChatAttachmentId() {
+        val vision =
+            object : VisionPort {
+                override suspend fun analyze(
+                    image: ByteArray,
+                    mimeType: String,
+                    question: String,
+                ): VisionAnalysis = VisionAnalysis("A chat image.", "stop")
+            }
+        val chatImage: (String) -> AgentImageData? = { id ->
+            if (id == "img1") AgentImageData(byteArrayOf(1, 2, 3), "image/png") else null
+        }
+        val registry =
+            AgentToolRegistry(
+                AgentDataTools(store, vision = vision, chatImage = chatImage).all,
+            )
+
+        val result = registry.exec("analyze_image", """{"question":"What is shown?","file_id":"img1"}""")
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("img1", result.output!!.string("file"))
+        assertEquals("A chat image.", result.output!!.string("analysis"))
+    }
+
+    @Test
+    fun analyzeImageAcceptsAWorkspacePath() {
+        store.writeResourceBytes("conductor/resources/artifacts/frame.png", byteArrayOf(9, 8, 7, 6), overwrite = true)
+        var seen = 0
+        val vision =
+            object : VisionPort {
+                override suspend fun analyze(
+                    image: ByteArray,
+                    mimeType: String,
+                    question: String,
+                ): VisionAnalysis {
+                    seen = image.size
+                    return VisionAnalysis("A frame.", "stop")
+                }
+            }
+        val registry = AgentToolRegistry(AgentDataTools(store, vision = vision).all)
+
+        val result =
+            registry.exec(
+                "analyze_image",
+                """{"question":"What is shown?","path":"conductor/resources/artifacts/frame.png"}""",
+            )
+
+        assertTrue(result.errorMessage ?: "", result.ok)
+        assertEquals("frame.png", result.output!!.string("file"))
+        assertEquals(4, seen)
+    }
+
+    @Test
     fun diagnosticsTraceCarriesTheTimeRangeAndCoverage() {
         val registry = AgentToolRegistry(tools.all)
 
@@ -343,7 +396,12 @@ class AgentDataToolsTest {
 
         assertTrue(result.errorMessage ?: "", result.ok)
         assertEquals("temporary", result.output!!.string("grant"))
-        assertEquals("abc123", (result.output!!.array("files").single() as JsonObject).string("id"))
+        val picked = result.output!!.array("files").single() as JsonObject
+        assertEquals("abc123", picked.string("id"))
+        assertEquals(
+            "conductor/resources/inbox/abc123/picked.txt",
+            picked.string("path"),
+        )
         assertEquals("Attach the log", selection.reason)
         assertEquals(false, selection.multiple)
         assertEquals(listOf("text/*"), selection.mimeTypes)

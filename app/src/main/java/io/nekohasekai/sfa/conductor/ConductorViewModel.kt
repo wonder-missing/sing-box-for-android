@@ -49,8 +49,12 @@ import io.nekohasekai.sfa.agent.DiagnosticsSource
 import io.nekohasekai.sfa.agent.DefaultAgentInputGuard
 import io.nekohasekai.sfa.agent.FileSelectionPort
 import io.nekohasekai.sfa.agent.FileSelectionResult
+import io.nekohasekai.sfa.agent.InboxPaths
+import io.nekohasekai.sfa.agent.InboxRegistry
 import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
+import io.nekohasekai.sfa.agent.ObservationOffload
+import io.nekohasekai.sfa.agent.ObservationOffloadStore
 import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.OkHttpHttpFetchPort
@@ -254,6 +258,26 @@ class ConductorViewModel(
     private val workingDir: File = application.getExternalFilesDir(null) ?: application.filesDir
     private val fileStore = ConductorFileStore(workingDir)
     private val imageStore = ConductorImageStore(File(application.filesDir, "conductor/images"))
+    private val observationOffloadStore =
+        object : ObservationOffloadStore {
+            override suspend fun save(
+                tool: String,
+                json: String,
+            ): ObservationOffload? =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val toolName = InboxPaths.fileName(tool, "text/plain").removeSuffix(".txt")
+                        val name = "tool-output-$toolName-${System.currentTimeMillis()}.txt"
+                        val stored =
+                            fileStore.writeResourceBytes(
+                                "conductor/resources/artifacts/$name",
+                                json.toByteArray(Charsets.UTF_8),
+                                overwrite = true,
+                            )
+                        ObservationOffload(stored.path, stored.size)
+                    }.getOrNull()
+                }
+        }
 
     private val diagnosticsSource =
         object : DiagnosticsSource {
@@ -735,6 +759,7 @@ class ConductorViewModel(
                     fileSelection = fileSelectionPort,
                     releaseNotes = releaseNotesSource,
                     vision = visionPort,
+                    chatImage = { imageStore.load(it) },
                 ).all +
                 listOf(VfsConnectTool(vfsConnectionManager), AskUserTool(askUserPort)),
             toolTimeoutMs = agentConfig.toolTimeoutMs,
@@ -761,6 +786,7 @@ class ConductorViewModel(
             brief = { Settings.conductorBrief },
             modelLimits = { ModelProviderSettings.limitsFor(ModelProviderSettings.endpoint()) },
             imageLoader = { id -> imageStore.load(id) },
+            offloadStore = observationOffloadStore,
         )
 
     private var transcript: List<AgentMessage> = emptyList()
@@ -794,6 +820,7 @@ class ConductorViewModel(
     private data class SelectedFile(
         val info: SelectedFileInfo,
         val uri: Uri,
+        val inboxEligible: Boolean = true,
     )
 
     private val selectedFilesLock = Any()
@@ -948,6 +975,11 @@ class ConductorViewModel(
         if (isClear) {
             clearConversation()
             return
+        }
+        images.forEach { ref ->
+            imageStore.file(ref.id)?.let { file ->
+                InboxRegistry.shared.registerFile(ref.id, ref.name, ref.mimeType, file)
+            }
         }
         val slash = if (text.startsWith("/")) ConductorCommands.parse(text) else null
         if (slash?.command?.action == ConductorCommandKind.TOOL) {
@@ -1249,16 +1281,21 @@ class ConductorViewModel(
             val picked = mutableListOf<SelectedFile>()
             for (uri in uris.take(if (request.multiple) MAX_SELECTED_FILES else 1)) {
                 val described = describeUri(resolver, uri) ?: continue
+                val measured =
+                    described.second.takeIf { it >= 0L }
+                        ?: measureUriSize(resolver, uri)
                 picked +=
                     SelectedFile(
                         info =
                             SelectedFileInfo(
                                 id = UUID.randomUUID().toString().take(8),
                                 name = described.first,
-                                size = described.second,
+                                size = measured.coerceAtLeast(0L),
                                 mimeType = described.third,
+                                inboxReady = measured >= 0L,
                             ),
                         uri = uri,
+                        inboxEligible = measured >= 0L,
                     )
             }
             if (picked.isEmpty()) {
@@ -1273,7 +1310,18 @@ class ConductorViewModel(
                     if (pendingFileRequest !== request) {
                         false
                     } else {
-                        picked.forEach { selectedFiles[it.info.id] = it }
+                        picked.forEach { file ->
+                            selectedFiles[file.info.id] = file
+                            if (file.inboxEligible) {
+                                InboxRegistry.shared.register(
+                                    id = file.info.id,
+                                    originalName = file.info.name,
+                                    mimeType = file.info.mimeType ?: "application/octet-stream",
+                                    size = file.info.size,
+                                    source = UriInboxSource(resolver, file.uri),
+                                )
+                            }
+                        }
                         while (selectedFiles.size > MAX_RETAINED_SELECTED_FILES) {
                             selectedFiles.remove(selectedFiles.keys.first())
                         }
@@ -1378,7 +1426,31 @@ class ConductorViewModel(
                 ?.takeIf { it.isNotBlank() }
                 ?: return null
         val mimeType = runCatching { resolver.getType(uri) }.getOrNull()
-        return Triple(displayName, size.coerceAtLeast(0L), mimeType)
+        return Triple(displayName, size, mimeType)
+    }
+
+    private fun measureUriSize(
+        resolver: android.content.ContentResolver,
+        uri: Uri,
+    ): Long {
+        runCatching {
+            resolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                if (descriptor.length >= 0) return descriptor.length
+            }
+        }
+        runCatching {
+            resolver.openInputStream(uri)?.use { input ->
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) return total
+                    total += read
+                    if (total > MAX_MEASURE_BYTES) return -1L
+                }
+            }
+        }
+        return -1L
     }
 
     /**
@@ -1461,6 +1533,7 @@ class ConductorViewModel(
         cancelPendingFileRequest("The conversation was cleared.")
         cancelPendingAskUser("The conversation was cleared.")
         synchronized(selectedFilesLock) { selectedFiles.clear() }
+        InboxRegistry.shared.clear()
         sessionStartVersion = BuildConfig.VERSION_NAME
         toolStartedAt.clear()
         transcript = emptyList()
@@ -2654,6 +2727,14 @@ class ConductorViewModel(
         val loadedTranscript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
         val repaired = repairRestoredTranscript(loadedTranscript, session.items)
         transcript = repaired.takeIf { validateTranscriptPairing(it) } ?: loadedTranscript
+        transcript
+            .filterIsInstance<AgentMessage.User>()
+            .flatMap { it.images }
+            .forEach { ref ->
+                imageStore.file(ref.id)?.let { file ->
+                    InboxRegistry.shared.registerFile(ref.id, ref.name, ref.mimeType, file)
+                }
+            }
         pendingTurnEvent = session.pendingEvent
         AgentApiTrace.restoreSummaries(session.trace)
         val restored = restoreConductorItems(session.items)
@@ -2815,5 +2896,6 @@ class ConductorViewModel(
         private const val MAX_FILE_NAME_CHARS = 200
         private const val MAX_FILE_REQUEST_REASON_CHARS = 240
         private const val MAX_IMAGE_READ_BYTES = 5 * 1024 * 1024
+        private const val MAX_MEASURE_BYTES = 512L * 1024 * 1024
     }
 }

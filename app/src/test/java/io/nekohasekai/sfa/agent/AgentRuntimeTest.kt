@@ -97,6 +97,66 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun oversizedToolOutputIsOffloadedToAFileReference() =
+        runBlocking {
+            val call = ToolCall("call_1", "mcp_tool", "{}")
+            val tool = listNodes.copy(name = "mcp_tool")
+            val big = "x".repeat(30_000)
+            val model =
+                ScriptedModel(
+                    mutableListOf(
+                        AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null),
+                        response("done"),
+                    ),
+                )
+            val executor =
+                FakeExecutor(listOf(tool)) { _, _ ->
+                    AgentInvocationResult(
+                        tool = "mcp_tool",
+                        ok = true,
+                        output = buildJsonObject { put("text", big) },
+                    )
+                }
+            val saved = mutableListOf<String>()
+            val store =
+                ObservationOffloadStore { _, json ->
+                    saved += json
+                    ObservationOffload("conductor/resources/artifacts/tool-output.txt", json.length.toLong())
+                }
+            val runtime =
+                runtime(
+                    model,
+                    executor,
+                    key = "sk-test",
+                    config = AgentConfig(maxToolRounds = 2),
+                    offloadStore = store,
+                )
+
+            val result = runtime.runTurn("go", emptyList(), onEvent = {}, confirm = { true })
+
+            val toolMessage = result.messages.filterIsInstance<AgentMessage.Tool>().single()
+            assertTrue(toolMessage.content.contains("offloaded"))
+            assertTrue(toolMessage.content.contains("tool-output.txt"))
+            assertFalse(toolMessage.content.contains(big))
+            assertEquals(1, saved.size)
+        }
+
+    @Test
+    fun attachmentMetadataIsAddedOnlyToTheModelMessage() =
+        runBlocking {
+            val image = AgentImageRef("img1", "shot.jpg", "image/jpeg", 10, 20, 3)
+            val model = ScriptedModel(mutableListOf(response("done")))
+            val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+            val runtime = runtime(model, executor, key = "sk-test")
+
+            runtime.runTurn("look", emptyList(), onEvent = {}, confirm = { true }, images = listOf(image))
+
+            val user = model.requests.single().messages.last() as AgentMessage.User
+            assertTrue(user.content.contains("[conductor:attachment"))
+            assertTrue(user.content.contains("conductor/resources/inbox/img1/shot.jpg"))
+        }
+
+    @Test
     fun reasoningEffortIsFixedAtTurnStart() {
         val call = ToolCall("call_1", "list_nodes", "{}")
         var stored = ReasoningEffort.LOW
@@ -1145,6 +1205,7 @@ class AgentRuntimeTest {
         brief: () -> Boolean = { false },
         modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
         imageLoader: (String) -> AgentImageData? = { null },
+        offloadStore: ObservationOffloadStore? = null,
     ): AgentRuntime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
@@ -1156,6 +1217,7 @@ class AgentRuntimeTest {
             brief = brief,
             modelLimits = modelLimits,
             imageLoader = imageLoader,
+            offloadStore = offloadStore,
         )
 
     private fun response(text: String): AgentModelResponse =
