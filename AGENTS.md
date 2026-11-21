@@ -24,6 +24,9 @@ General working style follows the owner's global working agreement; project-spec
 5. Run `./scripts/local-test.sh` for JVM compile and tests; run `./scripts/e2e-emulator.sh` for startup/UI wiring. Then commit, `git push origin dev`, and `gh run list -R wonder-missing/sing-box-for-android -w Test -L 1` / `gh run watch <id> -R wonder-missing/sing-box-for-android --exit-status`. Red → fix and repeat until green. CI remains the release gate.
 6. When an issue is fixed: `gh issue comment` (what changed, which commit or release) and `gh issue close` (with `-R ...`).
 
+## Upstream sync
+- Sync infrequently and in one pass: fetch upstream, identify already-applied equivalents, cherry-pick the remaining commits together, resolve all conflicts, verify once, and push once. Do not split functional and translation commits into separate merges.
+
 ## Evidence and data pulls
 - **Gate before any pull.** Name the artifact that can answer the question and confirm the source can contain it. `client_telemetry` / `conductor_tool` is metadata only (tool name, status, timing); it cannot answer Plan-card usability, message text or final-answer questions. Use a transcript (`Plain Transcript`, `diagnostics_export kind=conversation`) or the API trace. If only metadata is available, stop in the first response and ask for the export; do not probe device, VFS, ADB or alternate transports. State the gate in one line: question → required artifact → source coverage → pull or stop.
 - **Check coverage before interpreting:** retained entries vs summaries, `[body truncated]` markers, request/response sizes, whether the final request and answer are present, and whether a full-turn snapshot exists. Prefer `appfiles/conductor/trace-turns/` for a whole turn; live `api-trace.json` is a bounded recent window.
