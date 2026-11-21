@@ -32,13 +32,15 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 - When the owner asks to pull an API trace, log or session for analysis, check coverage **before** interpreting it: retained entries vs summaries, `[body truncated]` markers, request/response sizes, whether the final request and final answer are present, and whether a full-turn snapshot exists.
 - If the data is incomplete for the question, stop and report exactly what is missing. Do not produce an assessment from a partial sample. Either narrow the question to what the data supports or ask for a complete export.
 - Put the coverage boundary in the first paragraph of the report. A tool-call analysis may use the final request transcript; a reasoning/final-answer analysis needs the response bodies. Do not mix them.
+- If the owner interjects during a data pull, handle the interjection first and say which part of the pull is paused; then resume. If the interjection changes priority, follow it and record where the original task stopped.
 - Prefer the per-turn snapshot under `appfiles/conductor/trace-turns/` for a whole turn; the live `api-trace.json` is a bounded recent window, not a complete experiment record.
 
 ## Planning
 
 - Plans are change plans: files/changes, order, tests, and release steps.
-- Time is reported only as `Agent-Time` (hours) or `Agent-Loops` when the release tag records them; see Release flow.
+- Do not put time estimates in plans. `Agent-Time` / `Agent-Loops` are release-tag metadata recorded only when measured; see Release flow.
 - Complete the whole requested change in one pass. Stop for the owner only when there are two genuinely different designs.
+- For visual/interaction exploration, show a concrete effect before an implementation list; technical choices that will remain still need a plan.
 - The ~1–2h scope in the work loop is for autonomous TODO/issue picking. A user-requested change is delivered as one whole change.
 - Product phases and batches in `docs/` are roadmaps; a coding task plan uses the format above.
 
@@ -64,6 +66,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 
 ## Release flow
 Default: do not release unless the user explicitly asks. Do not bump `WONDER_BUILD` or create tags as a routine close-out; advance the label only when actually cutting a release and keep the remaining labels for later releases.
+Release is a five-step close-out: check anything promised in the session but not done, align docs with behavior, run the full local verification, push, and deploy to the owner's actual install entry (GitHub release + Feishu notice). Report evidence for each step.
 Deterministic steps live in [`scripts/release.sh`](scripts/release.sh): `--check` prints the plan, `--watch <tag>` rechecks a published release. It never force-pushes and never moves or deletes a tag.
 1. Set `WONDER_BUILD` to the next unused two-character label in `version.properties` (see [`docs/versioning.md`](docs/versioning.md); the order is `A9` → `AA`, not `A10`). `VERSION_CODE` and `VERSION_NAME` are derived from `CORE_VERSION` and `WONDER_BUILD`; only change `CORE_VERSION` when moving to a new upstream core.
 2. Commit, `git push origin dev`, wait for green Test CI.
@@ -72,6 +75,7 @@ Deterministic steps live in [`scripts/release.sh`](scripts/release.sh): `--check
    and confirm the `arm64-v8a` APK asset exists. Also confirm the `Release notify` run sent the Feishu message. Report the download URL.
    The publish step retries up to 5 times if creating or uploading the release fails, and checks that the arm64 APK asset is present before it treats the attempt as done. The Feishu notice includes the unit-test count from the Test artifact `unit-test-count`, the unit-test job duration, the release build duration when that work actually ran (a cached libbox restore is omitted), the `Agent-Time` and `Agent-Loops` lines from the annotated tag, and a short commit list since the previous release. Missing values are left out. The notice stays text under 320 characters and 8 lines, and becomes an interactive card past that. A normal release with the APK link crosses that and is sent as a card.
 - Releases are **arm64-v8a only**.
+- Commit messages and release-tag notes omit `Co-Authored-By`.
 - `release.yml` restores the `libbox.aar` cache that `test.yml` writes on `dev` (tag runs may read the default-branch cache). Keep the cache key and trailing recipe version in sync between the two workflows; bump both when the libbox build recipe changes.
 - Never delete/move tags or releases; never force-push; push only to `dev` (and release tags).
 - In `.claude/settings.json`, the delete-refspec deny is `Bash(git push origin ::*)`. A trailing `:*` is consumed as the prefix wildcard, so `Bash(git push origin :*)` matches every command that starts with `git push origin `, including `dev` and release tags. Leave the double colon in place.
