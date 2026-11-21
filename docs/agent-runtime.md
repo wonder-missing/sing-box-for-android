@@ -995,6 +995,8 @@ fun interface AgentInputGuard {
 - `allowedUrls` 来自工具定义的 `allowedUrlParameter`（`probe_via_node.url`、`http_fetch.url`）以及工具通过 `ToolExecution.allowedUrls` 返回的来源 URL（例如 `web_search`）。
 - 日志用独立的 `sanitizeForLog`，所有 URL、token、Authorization、订阅字段都打码；模型请求日志、错误日志、审计日志都不能出现 API key、Authorization header、订阅 URL。
 - 模型请求/响应 body 会进入有界的应用私有 trace 文件 `conductor/api-trace.json`（最多 20 条、总计约 2.5M 字符）；header 在写入前脱敏。body 仍可能包含对话正文，导出前按隐私内容处理。
+- wonder.AD 起 streaming response 在写入 trace 前先合并成标准 `chat.completion`，不再存 SSE 原文；合并后按字段裁剪：reasoning 先截、content 次之、tool_call arguments 最后，保证最终回答和工具调用优先保留。请求超过单个 body 上限时保留头部并另存最后 8k 的 `requestTail`，历史请求的尾部 `[runtime:plan]` 仍可审计。
+- 每个 turn 结束时写一份完整快照 `conductor/trace-turns/trace-turn-<time>.json`，包含该 turn 的全部 API 调用（不受 live trace 20 条窗口限制），保留最近 3 份、总大小约 12MB；`appfiles` scope 可读，`/clear` 会删除。live trace 只是最近窗口，不能当完整实验记录。
 - 消息流普通文本段用 `compose-markdown` / Markwon 渲染 CommonMark，覆盖标题、列表、引用、链接、强调、行内代码和换行；图片、SVG、围栏代码块和 GitHub 风格表格在进入它之前拆成 Conductor 专用块。支持范围、测试消息和验收清单见 [`message-markdown.md`](message-markdown.md)。普通文本的强调和行内代码由 Markwon 主题渲染；表格单元格内的行内代码仍用主题派生强调色。代码块用等宽字体、主题底色、可选中，横向滚动，纵向最多 360dp；有语言名时用更暗的小号标签和分隔线做表头，不跟代码正文抢视觉。表格按行渲染，列宽有上下限，整表横向滚动，单元格可选中；支持 `:---`、`:---:`、`---:` 对齐声明并应用到单元格，分隔行不会作为正文显示，不使用图片代替表格。远端图片先显示带 alt/URL 的 `Load image` 卡片，用户点按后才通过无重定向的 HTTPS 请求加载，拒绝 localhost、私网、链路本地和 IPv4/IPv6 私网地址，单图最多 8 MiB、解码长边最多 1600；`data:image/...;base64` 自动解码但同样限 8 MiB；Markdown 图片引用可以是 Web Search 得到的 HTTPS URL，也可以是 `conductor/resources/` 下的本地资源；本地路径只允许资源根，远端图片仍走点按加载和公开 HTTPS 限制。SVG 可从 svg 围栏或裸 `<svg>` 块进入，用 AndroidSVG 静态渲染，不执行脚本，拒绝脚本、foreignObject、外部 href 和外部资源，最多 256K 字符、1600px；加载后的 SVG 直接贴消息宽度，不再外包 Surface 底色，点击打开全屏大图，支持双指缩放和拖动。图片加载后贴卡片边缘渲染，卡片只保留 12dp 圆角，不再在图片外再套一层内边距或底色形成厚边框。system prompt 因此要求字面量（路径、命令、flag、工具名、配置键）必须使用行内代码，允许表格和围栏代码，标题仍禁用，SVG 只允许用真正的图表，不用来画表格。不执行 HTML，不自动打开链接。
 - Transcript / API trace 查看器的 Rich 模式另用 Markwon core，支持 CommonMark 基础块和行内元素（标题、粗斜体、列表、引用、链接、行内/围栏代码、分隔线）；未加载 `ext-tables`、`ext-strikethrough`、`ext-tasklist` 等扩展。
 
@@ -1131,7 +1133,7 @@ UI 需要新增：
 - 恢复时丢弃未完成的 confirmation；残留的 `RUNNING` tool 标为 `CANCELLED`，避免旧状态继续执行。
 - `/clear` 同时清 store。
 - Conductor 最后一条消息下方的左侧横三点菜单提供 Copy conversation，把当前 user、assistant、tool、notice、error 导出为 Markdown；tool output 用 pretty JSON 代码块。
-- 同一菜单的 Copy API trace 导出当前会话每一次模型请求和响应，包含请求/响应 headers 和 body；Authorization、Cookie 等敏感 header 在进入 trace 前已经打码。trace 的完整 body 有界写入私有文件 `conductor/api-trace.json`，`/clear` 删除文件并递增 generation；已取消请求的迟到记录会被丢弃，不能把清空前的对话写回来。
+- 同一菜单的 Copy API trace 导出当前会话每一次模型请求和响应，包含请求/响应 headers 和 body；Authorization、Cookie 等敏感 header 在进入 trace 前已经打码。trace 的 body 有界写入私有文件 `conductor/api-trace.json`；wonder.AD 起 response 存合并后的 `chat.completion`，每个 turn 另写 `trace-turns/trace-turn-*.json` 完整快照。`/clear` 删除文件和快照并递增 generation；已取消请求的迟到记录会被丢弃，不能把清空前的对话写回来。
 - wonder.38 起同一菜单增加 Save API trace to file：通过系统 CreateDocument 选择落点，把同一份 sanitized Markdown 写到文件，避免 2MB 文本走剪贴板后无法粘贴。
 - wonder.40 起同一菜单增加 Save conversation to file：和 Copy conversation 使用同一份 Markdown 生成器，和 API trace 共用一个 CreateDocument 导出通道。文件写入在 IO 线程；空会话和空 trace 只提示，不落文件。建议文件名带设备本地时间，形如 `conductor-conversation-yyyyMMdd-HHmmss.md` 和 `conductor-api-trace-yyyyMMdd-HHmmss.md`，避免多次上传撞名。
 - 持久化只保存 sanitized 后的 UI/transcript 内容；原始 tool 参数和 pending confirmation 不落盘。
@@ -1529,7 +1531,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - Stop 的取消宽限期改为 1 秒；工具未确认取消时直接显示 turn error，不再等 3 秒。
 - wonder.86 真机 VFS 分析 trace 复盘见 [`conductor-trace-review-2026-11-17.md`](conductor-trace-review-2026-11-17.md)：旧 84 上下文来自 `conductor/` 下的历史 handoff，不是 `.runtime/trace.md`；工具步数在日志正文分析前耗尽。
 
-- Transcript / API trace viewer：Rich 和 Raw 都启用右侧垂直滚动条；顶部放大镜搜索（Rich 按 block 高亮，Raw 用 Sora 搜索），再点一次放大镜关闭，搜索框内不重复放放大镜，工具栏也不重复放关闭按钮；目录按 Markdown 标题跳转（Rich block / Raw 行）；API trace 的 response body 把 OpenAI 流式 `chat.completion.chunk` 合并成标准 `chat.completion` JSON，原始 `api-trace.json` 仍保留 SSE 原文。Rich 的 RecyclerView 必须从带 `android:scrollbars="vertical"` 的 XML 布局创建：纯代码 `RecyclerView(context)` 没有 scrollbar cache，`setVerticalScrollBarEnabled(true)` 是空操作，滚动条不会出现。
+- Transcript / API trace viewer：Rich 和 Raw 都启用右侧垂直滚动条；顶部放大镜搜索（Rich 按 block 高亮，Raw 用 Sora 搜索），再点一次放大镜关闭，搜索框内不重复放放大镜，工具栏也不重复放关闭按钮；目录按 Markdown 标题跳转（Rich block / Raw 行）；API trace 的 response body 把 OpenAI 流式 `chat.completion.chunk` 合并成标准 `chat.completion` JSON；wonder.AD 起 `api-trace.json` 也存合并后的结构，SSE 原始行不再落盘。Rich 的 RecyclerView 必须从带 `android:scrollbars="vertical"` 的 XML 布局创建：纯代码 `RecyclerView(context)` 没有 scrollbar cache，`setVerticalScrollBarEnabled(true)` 是空操作，滚动条不会出现。
 
 ### wonder.86：Viewer 细节、经典 fence 与更新恢复取证（2026-11-16）
 

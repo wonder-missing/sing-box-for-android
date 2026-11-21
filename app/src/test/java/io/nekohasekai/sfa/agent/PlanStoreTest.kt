@@ -68,6 +68,22 @@ class PlanStoreTest {
     }
 
     @Test
+    fun clearAttributionDistinguishesTheModelFromTheUser() {
+        val store = PlanStore()
+        store.update(
+            "task",
+            listOf(PlanItem("one", PlanItemStatus.IN_PROGRESS)),
+            "",
+        )
+        store.update("", emptyList(), "", clearedBy = PlanClearedBy.MODEL)
+        assertTrue(store.current()!!.recitation().contains("cleared by the model"))
+
+        store.update("task", listOf(PlanItem("one", PlanItemStatus.IN_PROGRESS)), "")
+        store.clear()
+        assertTrue(store.current()!!.recitation().contains("cleared by the user"))
+    }
+
+    @Test
     fun restoreKeepsTheVersionAndDropsAnEmptyPlan() {
         val store = PlanStore()
         store.restore(

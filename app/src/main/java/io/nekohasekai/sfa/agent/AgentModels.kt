@@ -158,6 +158,8 @@ data class TraceExport(
     val lastTimestamp: Long?,
     val availableFrom: Long?,
     val missingBefore: Boolean,
+    val totalCount: Int = count,
+    val droppedCount: Int = 0,
 )
 
 interface DiagnosticsSource {

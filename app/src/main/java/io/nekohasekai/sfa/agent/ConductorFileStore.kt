@@ -86,7 +86,11 @@ class ConductorFileStore(
             .map { file -> storeEntry(file) }
     }
 
-    fun stat(path: String): StoredFile = storeEntry(resolve(workingDir, path, allowRoot = true))
+    fun stat(path: String): StoredFile {
+        val file = resolve(workingDir, path, allowRoot = true)
+        if (!file.exists()) throw IllegalArgumentException("File or directory not found: $path")
+        return storeEntry(file)
+    }
 
     fun readText(
         path: String,

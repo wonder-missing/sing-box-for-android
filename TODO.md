@@ -9,6 +9,7 @@
 
 ### P1 稳定性与隐私
 
+- [ ] **Trace 可观测性真机验收（AD）**：live trace 改为存合并后的 `chat.completion`（不再存 SSE 原文），响应按 reasoning → content → tool args 的顺序裁剪，长请求另存最后 8k `requestTail`；每个 turn 结束写 `filesDir/conductor/trace-turns/trace-turn-*.json` 完整快照，保留最近 3 份、约 12MB，`appfiles` scope 可读。JVM 710 用例绿。待装 AD 后确认：`appfiles/conductor/trace-turns/` 能拉到完整 turn，最终回答和 tool calls 未丢；`diagnostics_export kind=trace` 的 `totalRequests`/`droppedRequests` 与实际一致；`/clear` 不留下旧快照。
 - [ ] **Conductor VFS 长分析预算**：86 的 10 分钟会话里，模型完成 VFS 挂载、日志定位和两次容器读取后，最后一条 `route_call` 收到 `step_budget_exceeded`，`app.log` 正文分析没开始。2026-11-18 已去掉生产默认工具轮数上限，并加 5 秒内 10 次工具失败事件，让模型收尾；仍需真机确认长分析能完成或自然续跑，不再让用户重新解释。复盘见 [`docs/conductor-trace-review-2026-11-17.md`](docs/conductor-trace-review-2026-11-17.md)。
 - [ ] **`conductor/` 旧诊断文件进入新会话**：新会话的 `file_list` 能看到 `vfs-failure-handoff.md`、`session-trace-w84.md`、`session-transcript-w84.md`、`w84-transcript.md` 和 `w82-*`；模型因此直接知道了 84 的事。先定保留/归档规则，或在新会话开始前把这些一次性文件移出工作目录。
 - [ ] **Conductor 进程死亡恢复（剩余）**：进程级 ViewModel 和恢复时的 interrupted 工具卡已落地；进程死亡仍会丢进行中 turn 的 tool 卡片和未完成 assistant。下一步把运行中的 turn 快照持久化，重启后恢复成一条明确的 interrupted turn，不重跑工具。
@@ -23,6 +24,9 @@
 
 ### P2 数据面与能力
 
+- [ ] **plan_update 隐藏导致相邻思考卡**：一轮只有 `plan_update` 时，它只更新顶部计划卡、不插入对话流；前后两个模型调用的 reasoning 卡会贴在一起。可选轻量「计划已更新 · x/y」行，或合并同一 turn 内相邻 reasoning；两条路的视觉不同，待拍板。
+- [ ] **plan note / blocked / 备注命名统一**：`plan_update` schema 把 note 定义成 “current blocker or dead end”，recitation 渲染成 `blocked:`，计划卡 UI 却叫「备注」；模型会把同一字段当成三个概念。先定它是 blocker 还是自由备注，再统一三处文案。
+- [ ] **file_delete 目录递归确认**：`file_delete` 对目录是递归删除，确认卡只写 “deletes an item”，没有说明递归和子项数；结果也没有 `deletedFiles` 计数。补确认文案和结果字段前先定产品口径。
 - [ ] **Conductor 短时后台后的 prompt cache**：90 trace 显示离开约 8m48s 和 6m32s 后，首轮 cache hit 从约 95% 掉到 23–24%（hit 2304 / miss 7269、7585），延迟升到 6.8s / 3.7s。缓存 TTL 是分钟级，不是 w88 报告推测的“>1h”。评估是否需要在回到前台时提示，或压缩上下文降低首轮成本。
 - [ ] **ApplicationExitInfo 进程退出取证**：API 30+ 用 `ActivityManager.getHistoricalProcessExitReasons` 读取本进程退出原因、说明、时间戳和 ANR/native trace，写到外部 `diagnostics/exit-info.json`；API 24–29 回退到 crash report 和 `onTrimMemory` 内存快照。用于服务重启后 core 不可达、ANR、native crash。
 - [ ] **VFS scope 验收（剩余）**：93 真机已验证 `conductor_session` 与 `all` 的 visibleRoots/missingScopes、`workdir` 覆盖 `conductor/`、`appfiles`/`.runtime` 可读；仍需确认 `vfs/` 私有目录排除、`/work` 隔离和只读写入失败不变，按 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md) 收尾。2026-11-18 `all` 挂载实测同时暴露 `appfiles/configuration.json`（节点密码/UUID）和 `tailscale/tailscaled.state`，只做测试分析时优先用 `conductor_session`。
@@ -57,7 +61,7 @@
 - [ ] **probe 链路复测（等出口健康）**：wonder.34 的 6 连失败是出口节点不健康，不是 Conductor 回归；204 分类待出口健康后复测。
 - [ ] **跨版本旧 tool schema 归一**：wonder.51 已加版本 Notice/`app_updated`/导出 header；旧 tool observation 的 `ok` 等字段仍按旧语义留在 transcript。
 - [ ] **设备上下文版本历史（低）**：`appVersionHistory`/`updateCount`，当前只有 `appVersion` + `app_updated`。
-- [ ] **增量更新（低）**：整包 bsdiff，约 3–4 个工作日；见 [`docs/incremental-update.md`](docs/incremental-update.md)。
+- [ ] **增量更新（低）**：整包 bsdiff；见 [`docs/incremental-update.md`](docs/incremental-update.md)。
 - [ ] **路由 A/B 真机执行**：语料见 [`docs/conductor-eval.md`](docs/conductor-eval.md)；native/routing 对比未跑。
 - [ ] **确认与事务语义**：模型看不到确认事件；多步调用没有框架级事务；等 2B 流式和 Phase 3 再评估。
 - [ ] **最后一条用户消息长按只有「全选」**（[#7](https://github.com/wonder-missing/sing-box-for-android/issues/7)）：已关 Compose 1.11 的新 context menu/smart selection；待真机确认 Copy 回来，再按上游修复移除开关。

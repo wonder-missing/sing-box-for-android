@@ -56,6 +56,7 @@ import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
 import io.nekohasekai.sfa.agent.ObservationOffload
 import io.nekohasekai.sfa.agent.ObservationOffloadStore
 import io.nekohasekai.sfa.agent.PLAN_UPDATE_TOOL
+import io.nekohasekai.sfa.agent.PlanClearedBy
 import io.nekohasekai.sfa.agent.PlanItem
 import io.nekohasekai.sfa.agent.PlanState
 import io.nekohasekai.sfa.agent.PlanStore
@@ -108,6 +109,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1645,6 +1647,7 @@ class ConductorViewModel(
                     return@launch
                 }
                 ModelProviderSettings.pinForTurn()
+                AgentApiTrace.beginTurn()
                 val result =
                     try {
                         runtime.runTurn(
@@ -1677,6 +1680,10 @@ class ConductorViewModel(
                                 ),
                             pendingEvent = initialEvent ?: TurnEvent("turn_failed", "exception", message),
                         )
+                    } finally {
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            AgentApiTrace.endTurn()
+                        }
                     }
                 withContext(Dispatchers.Main) {
                     finishReasoning()
@@ -2795,7 +2802,7 @@ class ConductorViewModel(
             )
             return
         }
-        planStore.update(goal, items, note)
+        planStore.update(goal, items, note, clearedBy = PlanClearedBy.USER)
     }
 
     fun clearPlan() {

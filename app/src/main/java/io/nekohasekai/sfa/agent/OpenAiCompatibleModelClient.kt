@@ -356,10 +356,10 @@ class OpenAiCompatibleModelClient(
                         method = "POST",
                         url = httpRequest.url.toString(),
                         requestHeaders = requestHeaders,
-                        requestBody = AgentApiTrace.truncateBody(payload) ?: payload,
+                        requestBody = payload,
                         status = status,
                         responseHeaders = responseHeaders,
-                        responseBody = AgentApiTrace.truncateBody(responseBody.toString()),
+                        responseBody = responseBody.toString(),
                         error = traceError,
                         errorCode = traceErrorCode,
                         startedAt = startedAt,
@@ -731,7 +731,7 @@ class OpenAiCompatibleModelClient(
                     }
                     output.toString(Charsets.UTF_8.name())
                 }.orEmpty()
-            responseBody = AgentApiTrace.truncateBody(response)
+            responseBody = response
             if (status in 200..299) {
                 val root = runCatching { Json.parseToJsonElement(response) as? JsonObject }.getOrNull()
                 val choice = (root?.get("choices") as? JsonArray)?.firstOrNull() as? JsonObject
@@ -759,7 +759,7 @@ class OpenAiCompatibleModelClient(
                         method = "POST",
                         url = connection.url.toString(),
                         requestHeaders = requestHeaders,
-                        requestBody = AgentApiTrace.truncateBody(body) ?: body,
+                        requestBody = body,
                         status = status,
                         responseHeaders = responseHeaders,
                         responseBody = responseBody,

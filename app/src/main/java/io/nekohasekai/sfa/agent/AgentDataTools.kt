@@ -721,6 +721,7 @@ class AgentDataTools(
                                     },
                                 )
                                 if (it.note.isNotBlank()) put("note", it.note)
+                                put("recitation", it.recitation())
                             }
                         },
                 )
@@ -788,6 +789,9 @@ class AgentDataTools(
                 val source = diagnostics ?: return unavailable()
                 val kind = AgentJson.string(args, "kind")?.trim()?.lowercase(Locale.US)
                     ?: return invalid("kind is required")
+                if (kind != "conversation" && kind != "trace") {
+                    return invalid("kind must be conversation or trace")
+                }
                 val tail = AgentJson.int(args, "tail")
                 val sinceMinutes = AgentJson.int(args, "since_minutes")
                 if (tail != null && tail !in 1..20) return invalid("tail must be between 1 and 20")
@@ -827,6 +831,8 @@ class AgentDataTools(
                                 put("sha256", fileStore.sha256(fileStore.resolveRead(entry.path)))
                                 traceExport?.let { export ->
                                     put("entries", export.count)
+                                    put("totalRequests", export.totalCount)
+                                    put("droppedRequests", export.droppedCount)
                                     export.firstTimestamp?.let { put("rangeStart", formatTraceTime(it)) }
                                     export.lastTimestamp?.let { put("rangeEnd", formatTraceTime(it)) }
                                     export.availableFrom?.let { put("availableFrom", formatTraceTime(it)) }

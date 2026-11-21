@@ -47,6 +47,15 @@ data class PlanItem(
 )
 
 @Serializable
+enum class PlanClearedBy {
+    @SerialName("user")
+    USER,
+
+    @SerialName("model")
+    MODEL,
+}
+
+@Serializable
 data class PlanState(
     val version: Long = 1L,
     val goal: String = "",
@@ -57,6 +66,8 @@ data class PlanState(
      * know that an earlier plan_update result is no longer active.
      */
     val cleared: Boolean = false,
+    /** Who cleared the plan; null on old snapshots that predate this field. */
+    val clearedBy: PlanClearedBy? = null,
 ) {
     /**
      * A compact recitation for the end of the model request. The full plan
@@ -65,9 +76,15 @@ data class PlanState(
      */
     fun recitation(): String {
         if (cleared) {
+            val actor =
+                when (clearedBy) {
+                    PlanClearedBy.USER -> " by the user"
+                    PlanClearedBy.MODEL -> " by the model"
+                    null -> ""
+                }
             return buildString {
                 appendLine("[runtime:plan v=$version]")
-                appendLine("state: no active plan (cleared by the user)")
+                appendLine("state: no active plan (cleared$actor)")
                 append("[/runtime:plan]")
             }
         }
@@ -123,6 +140,7 @@ class PlanStore(
         goal: String,
         items: List<PlanItem>,
         note: String,
+        clearedBy: PlanClearedBy = PlanClearedBy.MODEL,
     ): PlanUpdateResult =
         synchronized(lock) {
             val current = _state.value
@@ -135,7 +153,12 @@ class PlanStore(
                 if (current == null || current.cleared) {
                     PlanUpdateResult(current, changed = false, cleared = false)
                 } else {
-                    val clearedState = PlanState(version = current.version + 1L, cleared = true)
+                    val clearedState =
+                        PlanState(
+                            version = current.version + 1L,
+                            cleared = true,
+                            clearedBy = clearedBy,
+                        )
                     _state.value = clearedState
                     PlanUpdateResult(clearedState, changed = true, cleared = true)
                 }
@@ -164,7 +187,7 @@ class PlanStore(
             }
         }
 
-    fun clear(): PlanUpdateResult = update("", emptyList(), "")
+    fun clear(): PlanUpdateResult = update("", emptyList(), "", clearedBy = PlanClearedBy.USER)
 
     private fun normalized(value: PlanState?): PlanState? {
         if (value == null) return null
@@ -179,6 +202,7 @@ class PlanStore(
                 goal = cleanPlanText(value.goal, MAX_PLAN_GOAL_CHARS),
                 items = items,
                 note = cleanPlanText(value.note, MAX_PLAN_NOTE_CHARS),
+                clearedBy = null,
             ).takeIf { items.isNotEmpty() }
     }
 }

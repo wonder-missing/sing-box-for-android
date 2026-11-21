@@ -7,6 +7,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.int
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -44,6 +45,48 @@ class AgentTraceResponseTest {
         val usage = root["usage"]!!.jsonObject
         assertEquals(11, usage["prompt_tokens"]!!.jsonPrimitive.int)
         assertEquals(7, usage["completion_tokens"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun capsHugeReasoningButKeepsTheFinalAnswerAndToolCalls() {
+        val reasoning = "r".repeat(300_000)
+        val body =
+            """
+            data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"$reasoning"},"finish_reason":null}]}
+            data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"final answer"},"finish_reason":null}]}
+            data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"foo","arguments":"{\"a\":1}"}}]},"finish_reason":"tool_calls"}]}
+            data: [DONE]
+            """.trimIndent()
+
+        val prepared = AgentTraceResponse.prepareForTrace(body, 200_000)
+
+        assertTrue(prepared.normalized)
+        assertTrue(prepared.truncated)
+        val message =
+            Json
+                .parseToJsonElement(prepared.text)
+                .jsonObject["choices"]!!
+                .jsonArray
+                .single()
+                .jsonObject["message"]!!
+                .jsonObject
+        assertEquals("final answer", message["content"]!!.jsonPrimitive.content)
+        assertTrue(message["reasoning_content"]!!.jsonPrimitive.content.contains("trace truncated"))
+        val call = message["tool_calls"]!!.jsonArray.single().jsonObject
+        assertEquals("call_1", call["id"]!!.jsonPrimitive.content)
+        assertEquals("foo", call["function"]!!.jsonObject["name"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun shortStructuredJsonIsNotMarkedTruncated() {
+        val body =
+            """{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"""
+
+        val prepared = AgentTraceResponse.prepareForTrace(body, 200_000)
+
+        assertFalse(prepared.truncated)
+        assertFalse(prepared.normalized)
+        assertTrue(prepared.text.contains("\"content\":\"ok\"") || prepared.text.contains("\"content\": \"ok\""))
     }
 
     @Test

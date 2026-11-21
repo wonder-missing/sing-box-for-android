@@ -1,11 +1,17 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -383,6 +389,159 @@ class AgentApiTraceTest {
         assertTrue(markdown.contains("req-19-" + "x".repeat(190_000)))
         assertTrue(markdown.contains("[body truncated for memory]"))
         AgentApiTrace.clear()
+    }
+
+    @Test
+    fun storesTheAssembledStreamingAnswerAndToolCalls() {
+        AgentApiTrace.clear()
+        val reasoning = "r".repeat(300_000)
+        val body =
+            """
+            data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"$reasoning"},"finish_reason":null}]}
+            data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"final answer"},"finish_reason":null}]}
+            data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"foo","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}
+            data: [DONE]
+            """.trimIndent()
+        AgentApiTrace.record(
+            ApiTraceEntry(
+                timestamp = 1_700_000_000_000L,
+                method = "POST",
+                url = "https://api.deepseek.com/chat/completions",
+                requestHeaders = emptyMap(),
+                requestBody = "{}",
+                status = 200,
+                responseHeaders = emptyMap(),
+                responseBody = body,
+                error = null,
+            ),
+        )
+
+        val markdown = AgentApiTrace.asMarkdown()
+
+        assertTrue(markdown.contains("final answer"))
+        assertTrue(markdown.contains("tool_calls"))
+        assertTrue(markdown.contains("trace truncated"))
+        assertTrue(markdown.contains("response body: kept"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
+    fun keepsTheTailOfALongRequest() {
+        AgentApiTrace.clear()
+        val filler = "x".repeat(210_000)
+        val body = """{"messages":[{"role":"system","content":"$filler"}],"tail_marker":"TAIL_SENTINEL"}"""
+        AgentApiTrace.record(
+            ApiTraceEntry(
+                timestamp = 1_700_000_000_000L,
+                method = "POST",
+                url = "https://api.deepseek.com/chat/completions",
+                requestHeaders = emptyMap(),
+                requestBody = body,
+                status = 200,
+                responseHeaders = emptyMap(),
+                responseBody = "{}",
+                error = null,
+            ),
+        )
+
+        val markdown = AgentApiTrace.asMarkdown()
+
+        assertTrue(markdown.contains("Request tail"))
+        assertTrue(markdown.contains("TAIL_SENTINEL"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
+    fun exportReportsDroppedEntriesWithoutSince() {
+        AgentApiTrace.clear()
+        repeat(25) { index ->
+            AgentApiTrace.record(traceEntry(1_700_000_000_000L + index, "prompt-$index"))
+        }
+
+        val export = AgentApiTrace.export()
+
+        assertEquals(20, export.count)
+        assertEquals(25, export.totalCount)
+        assertTrue(export.missingBefore)
+        assertTrue(export.droppedCount >= 5)
+        assertTrue(export.text.contains("retained request bodies: 20 of 25"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
+    fun turnSnapshotKeepsCallsEvictedFromTheLiveTrace() {
+        val dir = Files.createTempDirectory("conductor-turn-trace").toFile()
+        val file = File(dir, "api-trace.json")
+        AgentApiTrace.clear()
+        AgentApiTrace.attachPersistence(file)
+        AgentApiTrace.beginTurn()
+        repeat(25) { index ->
+            AgentApiTrace.record(traceEntry(1_700_000_000_000L + index, "prompt-$index"))
+        }
+
+        val snapshot = AgentApiTrace.endTurn()
+
+        assertNotNull(snapshot)
+        assertTrue(snapshot!!.isFile)
+        val root = Json.parseToJsonElement(snapshot.readText()).jsonObject
+        assertEquals(25, root["entries"]!!.jsonArray.size)
+        assertEquals(0, root["droppedEntries"]!!.jsonPrimitive.int)
+        assertTrue(snapshot.name.startsWith("trace-turn-"))
+        AgentApiTrace.clear()
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun turnSnapshotKeepsTheRequestTail() {
+        val dir = Files.createTempDirectory("conductor-turn-tail").toFile()
+        val file = File(dir, "api-trace.json")
+        AgentApiTrace.clear()
+        AgentApiTrace.attachPersistence(file)
+        AgentApiTrace.beginTurn()
+        val filler = "x".repeat(210_000)
+        AgentApiTrace.record(
+            ApiTraceEntry(
+                timestamp = 1_700_000_000_000L,
+                method = "POST",
+                url = "https://api.deepseek.com/chat/completions",
+                requestHeaders = emptyMap(),
+                requestBody = """{"messages":[{"role":"system","content":"$filler"}],"tail_marker":"SNAPSHOT_TAIL"}""",
+                status = 200,
+                responseHeaders = emptyMap(),
+                responseBody = "{}",
+                error = null,
+            ),
+        )
+
+        val snapshot = AgentApiTrace.endTurn()
+
+        assertNotNull(snapshot)
+        val entry =
+            Json
+                .parseToJsonElement(snapshot!!.readText())
+                .jsonObject["entries"]!!
+                .jsonArray
+                .single()
+                .jsonObject
+        assertTrue(entry["requestTail"]!!.jsonPrimitive.content.contains("SNAPSHOT_TAIL"))
+        AgentApiTrace.clear()
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun clearDropsAnActiveTurnSnapshot() {
+        val dir = Files.createTempDirectory("conductor-turn-clear").toFile()
+        val file = File(dir, "api-trace.json")
+        AgentApiTrace.clear()
+        AgentApiTrace.attachPersistence(file)
+        AgentApiTrace.beginTurn()
+        AgentApiTrace.record(traceEntry(1_700_000_000_000L, "prompt"))
+
+        AgentApiTrace.clear()
+
+        assertTrue(AgentApiTrace.endTurn() == null)
+        assertFalse(File(dir, "trace-turns").exists())
+        dir.deleteRecursively()
     }
 
     @Test

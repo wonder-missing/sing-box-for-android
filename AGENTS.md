@@ -18,7 +18,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 ## Work loop
 1. `git pull --ff-only` on `dev`.
 2. Read `TODO.md` and `gh issue list -R wonder-missing/sing-box-for-android`.
-3. Pick ~1–2h of scope (issues first, then TODO). Keep TODO.md updated.
+3. When working autonomously, pick ~1–2h of scope (issues first, then TODO). Keep TODO.md updated.
 4. Features/fixes need JVM unit tests.
 5. Run `./scripts/local-test.sh` for JVM compile and unit tests (setup in
    [`docs/local-testing.md`](docs/local-testing.md)). Then commit, `git push origin dev`, and
@@ -26,6 +26,21 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
    `gh run watch <id> -R wonder-missing/sing-box-for-android --exit-status`. Red → fix and repeat until green.
    CI remains the release gate; a green local run does not replace it.
 6. When an issue is fixed: `gh issue comment` (what changed, which commit or release) and `gh issue close` (with `-R ...`).
+
+## Data pulls and evidence
+
+- When the owner asks to pull an API trace, log or session for analysis, check coverage **before** interpreting it: retained entries vs summaries, `[body truncated]` markers, request/response sizes, whether the final request and final answer are present, and whether a full-turn snapshot exists.
+- If the data is incomplete for the question, stop and report exactly what is missing. Do not produce an assessment from a partial sample. Either narrow the question to what the data supports or ask for a complete export.
+- Put the coverage boundary in the first paragraph of the report. A tool-call analysis may use the final request transcript; a reasoning/final-answer analysis needs the response bodies. Do not mix them.
+- Prefer the per-turn snapshot under `appfiles/conductor/trace-turns/` for a whole turn; the live `api-trace.json` is a bounded recent window, not a complete experiment record.
+
+## Planning
+
+- Plans are change plans: files/changes, order, tests, and release steps.
+- Time is reported only as `Agent-Time` (hours) or `Agent-Loops` when the release tag records them; see Release flow.
+- Complete the whole requested change in one pass. Stop for the owner only when there are two genuinely different designs.
+- The ~1–2h scope in the work loop is for autonomous TODO/issue picking. A user-requested change is delivered as one whole change.
+- Product phases and batches in `docs/` are roadmaps; a coding task plan uses the format above.
 
 ## UI conventions
 

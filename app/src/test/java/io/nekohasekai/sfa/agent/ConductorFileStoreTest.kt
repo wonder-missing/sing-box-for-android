@@ -44,6 +44,11 @@ class ConductorFileStoreTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
+    fun statRejectsMissingPaths() {
+        store.stat("conductor/missing.txt")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
     fun rejectsWritesOutsideTheWorkspace() {
         store.writeText("report.txt", "nope")
     }

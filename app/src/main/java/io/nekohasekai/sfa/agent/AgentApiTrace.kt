@@ -32,6 +32,18 @@ data class ApiTraceEntry(
     val durationMs: Long? = null,
     val usage: TokenUsage? = null,
     val finishReason: FinishReason? = null,
+    /** Original request size before the bounded trace copied it. */
+    val requestChars: Int = 0,
+    /** True when [requestBody] is not the full request. */
+    val requestTruncated: Boolean = false,
+    /** Last part of a long request; keeps the tail recitation auditable. */
+    val requestTail: String? = null,
+    /** Original assembled response size before the bounded trace copied it. */
+    val responseChars: Int = 0,
+    /** True when [responseBody] is not the full assembled response. */
+    val responseTruncated: Boolean = false,
+    /** True when [responseBody] was assembled from streaming chunks. */
+    val responseNormalized: Boolean = false,
 )
 
 /**
@@ -54,11 +66,29 @@ data class ApiTraceSummary(
 
 @Serializable
 private data class PersistedApiTrace(
-    val version: Int = 1,
+    val version: Int = 2,
     val appVersion: String = "",
     val systemPrompt: String? = null,
     val entries: List<ApiTraceEntry> = emptyList(),
     val summaries: List<ApiTraceSummary> = emptyList(),
+)
+
+/**
+ * A complete snapshot for one Conductor turn. The live trace keeps only the
+ * last [MAX_ENTRIES] calls; the snapshot is the authoritative record for a
+ * real-device experiment, including calls that were evicted from the live
+ * trace later in the same turn.
+ */
+@Serializable
+private data class PersistedTurnTrace(
+    val version: Int = 2,
+    val appVersion: String = "",
+    val systemPrompt: String? = null,
+    val startedAt: Long = 0L,
+    val endedAt: Long = 0L,
+    val entries: List<ApiTraceEntry> = emptyList(),
+    val summaries: List<ApiTraceSummary> = emptyList(),
+    val droppedEntries: Int = 0,
 )
 
 /**
@@ -72,12 +102,23 @@ object AgentApiTrace {
     private const val MAX_BODY_CHARS = 200_000
     private const val MAX_TOTAL_BODY_CHARS = 1_000_000
     private const val MAX_OLD_BODY_CHARS = 20_000
+    private const val REQUEST_TAIL_CHARS = 8_000
     private const val MAX_MARKDOWN_CHARS = 2_000_000
     private const val MAX_PERSIST_CHARS = 2_500_000
+    private const val MAX_TURN_ENTRIES = 120
+    private const val MAX_TURN_BODY_CHARS = 4_000_000
+    private const val MAX_TURN_SNAPSHOTS = 3
+    private const val MAX_TURN_SNAPSHOT_BYTES = 12_000_000L
+    private const val SNAPSHOT_DIR = "trace-turns"
 
     private val lock = Any()
     private val entries = ArrayDeque<ApiTraceEntry>()
     private val summaryEntries = ArrayDeque<ApiTraceSummary>()
+    private val turnEntries = ArrayDeque<ApiTraceEntry>()
+    private var turnActive = false
+    private var turnStartedAt = 0L
+    private var turnDroppedEntries = 0
+    private var lastTurnSnapshot: File? = null
     private val prettyJson = Json { prettyPrint = true }
     private val persistJson = Json {
         ignoreUnknownKeys = true
@@ -181,6 +222,11 @@ object AgentApiTrace {
         synchronized(lock) {
             entries.clear()
             summaryEntries.clear()
+            turnEntries.clear()
+            turnActive = false
+            turnStartedAt = 0L
+            turnDroppedEntries = 0
+            lastTurnSnapshot = null
             systemPrompt = null
         }
     }
@@ -191,25 +237,34 @@ object AgentApiTrace {
         entry: ApiTraceEntry,
         generation: Int? = null,
     ) {
+        val prepared = prepareEntry(entry)
         synchronized(lock) {
             if (generation != null && generation != persistenceGeneration) return
-            entries.addLast(entry)
+            entries.addLast(prepared)
             while (entries.size > MAX_ENTRIES) {
                 entries.removeFirst()
             }
             enforceBodyBudget()
+            if (turnActive) {
+                turnEntries.addLast(prepared)
+                while (turnEntries.size > MAX_TURN_ENTRIES) {
+                    turnEntries.removeFirst()
+                    turnDroppedEntries += 1
+                }
+                enforceTurnBudgetLocked()
+            }
             summaryEntries.addLast(
                 ApiTraceSummary(
-                    timestamp = entry.startedAt ?: entry.timestamp,
+                    timestamp = prepared.startedAt ?: prepared.timestamp,
                     version = appVersion,
-                    status = entry.status,
-                    durationMs = entry.durationMs,
-                    error = entry.error,
-                    errorCode = entry.errorCode,
-                    inputTokens = entry.usage?.inputTokens,
-                    outputTokens = entry.usage?.outputTokens,
-                    cacheHitTokens = entry.usage?.cacheHitTokens,
-                    cacheMissTokens = entry.usage?.cacheMissTokens,
+                    status = prepared.status,
+                    durationMs = prepared.durationMs,
+                    error = prepared.error,
+                    errorCode = prepared.errorCode,
+                    inputTokens = prepared.usage?.inputTokens,
+                    outputTokens = prepared.usage?.outputTokens,
+                    cacheHitTokens = prepared.usage?.cacheHitTokens,
+                    cacheMissTokens = prepared.usage?.cacheMissTokens,
                 ),
             )
             while (summaryEntries.size > MAX_SUMMARIES) {
@@ -219,16 +274,144 @@ object AgentApiTrace {
         }
     }
 
+    private fun prepareEntry(entry: ApiTraceEntry): ApiTraceEntry {
+        val request = prepareRequest(entry.requestBody)
+        val response = AgentTraceResponse.prepareForTrace(entry.responseBody, MAX_BODY_CHARS)
+        return entry.copy(
+            requestBody = request.text,
+            requestChars = request.originalChars,
+            requestTruncated = request.truncated,
+            requestTail = request.tail,
+            responseBody = response.text.ifEmpty { null },
+            responseChars = response.originalChars,
+            responseTruncated = response.truncated,
+            responseNormalized = response.normalized,
+        )
+    }
+
+    private data class PreparedRequest(
+        val text: String,
+        val tail: String?,
+        val truncated: Boolean,
+        val originalChars: Int,
+    )
+
+    private fun prepareRequest(body: String): PreparedRequest {
+        val redacted = redactImageDataUrls(body) ?: body
+        val truncated = redacted.length > MAX_BODY_CHARS
+        val text = if (truncated) redacted.take(MAX_BODY_CHARS) + "\n[body truncated]" else redacted
+        val tail =
+            if (redacted.length > MAX_OLD_BODY_CHARS) {
+                redacted.takeLast(REQUEST_TAIL_CHARS)
+            } else {
+                null
+            }
+        return PreparedRequest(text, tail, truncated, redacted.length)
+    }
+
+    /**
+     * Marks the start of a Conductor turn. Entries recorded until [endTurn]
+     * are kept separately from the live 20-entry window and written to a full
+     * turn snapshot at the end. Calling this outside a turn is harmless.
+     */
+    fun beginTurn() {
+        synchronized(lock) {
+            turnEntries.clear()
+            turnDroppedEntries = 0
+            turnStartedAt = System.currentTimeMillis()
+            turnActive = true
+        }
+    }
+
+    /**
+     * Writes the complete turn trace and prunes old snapshots. Returns the
+     * snapshot file, or null when no turn is active or no call was recorded.
+     */
+    fun endTurn(): File? =
+        synchronized(lock) {
+            if (!turnActive) return null
+            turnActive = false
+            val entries = turnEntries.toList()
+            val dropped = turnDroppedEntries
+            turnEntries.clear()
+            turnDroppedEntries = 0
+            val started = turnStartedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+            turnStartedAt = 0L
+            if (entries.isEmpty()) return null
+            val traceFile = persistenceFile ?: return null
+            val dir = File(traceFile.parentFile ?: File("."), SNAPSHOT_DIR)
+            if (!dir.exists() && !dir.mkdirs()) return null
+            val ended = System.currentTimeMillis()
+            val target = File(dir, "trace-turn-${fileTime(started)}-${started % 1000}.json")
+            val payload =
+                PersistedTurnTrace(
+                    appVersion = appVersion,
+                    systemPrompt = systemPrompt,
+                    startedAt = started,
+                    endedAt = ended,
+                    entries = entries,
+                    summaries = summaryEntries.filter { it.timestamp >= started },
+                    droppedEntries = dropped,
+                )
+            runCatching {
+                target.writeText(persistJson.encodeToString(payload))
+                lastTurnSnapshot = target
+                pruneSnapshotsLocked(dir)
+                target
+            }.getOrNull()
+        }
+
+    fun latestTurnSnapshot(): File? =
+        synchronized(lock) {
+            lastTurnSnapshot?.takeIf { it.isFile }
+                ?: snapshotDir()
+                    ?.listFiles { file -> file.isFile && file.name.startsWith("trace-turn-") && file.name.endsWith(".json") }
+                    ?.maxByOrNull { it.lastModified() }
+        }
+
+    internal fun latestTurnSnapshotName(): String? = latestTurnSnapshot()?.name
+
     fun clear() {
         synchronized(lock) {
             entries.clear()
             summaryEntries.clear()
+            turnEntries.clear()
+            turnActive = false
+            turnStartedAt = 0L
+            turnDroppedEntries = 0
+            lastTurnSnapshot = null
             systemPrompt = null
             persistenceGeneration += 1
             persistenceLoaded = true
         }
         runCatching { persistenceFile?.delete() }
+        runCatching { snapshotDir()?.deleteRecursively() }
     }
+
+    private fun snapshotDir(): File? =
+        persistenceFile?.parentFile?.let { File(it, SNAPSHOT_DIR) }
+
+    private fun pruneSnapshotsLocked(dir: File) {
+        val files =
+            dir
+                .listFiles { file -> file.isFile && file.name.startsWith("trace-turn-") && file.name.endsWith(".json") }
+                ?.sortedBy { it.lastModified() }
+                ?: return
+        var count = files.size
+        var total = files.sumOf { it.length() }
+        files.forEach { file ->
+            if (count > MAX_TURN_SNAPSHOTS || total > MAX_TURN_SNAPSHOT_BYTES) {
+                if (file.delete()) {
+                    count -= 1
+                    total -= file.length()
+                }
+            }
+        }
+        if (lastTurnSnapshot?.exists() != true) lastTurnSnapshot = null
+    }
+
+    private fun fileTime(timestamp: Long): String =
+        SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(timestamp))
 
     private fun persistLocked() {
         // A load in flight must not be overwritten with only the entries that
@@ -282,11 +465,7 @@ object AgentApiTrace {
         for (index in 0 until kept.lastIndex) {
             if (total <= MAX_TOTAL_BODY_CHARS) break
             val entry = kept[index]
-            val shortened =
-                entry.copy(
-                    requestBody = shortenForMemory(entry.requestBody),
-                    responseBody = entry.responseBody?.let { shortenForMemory(it) },
-                )
+            val shortened = shortenEntryForMemory(entry)
             total -= entry.bodyChars() - shortened.bodyChars()
             kept[index] = shortened
         }
@@ -297,18 +476,56 @@ object AgentApiTrace {
         entries.addAll(kept)
     }
 
-    private fun shortenForMemory(body: String): String =
+    private fun enforceTurnBudgetLocked() {
+        var total = turnEntries.sumOf { it.bodyChars() }
+        if (total <= MAX_TURN_BODY_CHARS) return
+        val kept = turnEntries.toMutableList()
+        for (index in 0 until kept.lastIndex) {
+            if (total <= MAX_TURN_BODY_CHARS) break
+            val entry = kept[index]
+            val shortened = shortenEntryForMemory(entry)
+            total -= entry.bodyChars() - shortened.bodyChars()
+            kept[index] = shortened
+        }
+        while (total > MAX_TURN_BODY_CHARS && kept.size > 1) {
+            total -= kept.removeAt(0).bodyChars()
+            turnDroppedEntries += 1
+        }
+        turnEntries.clear()
+        turnEntries.addAll(kept)
+    }
+
+    private fun shortenEntryForMemory(entry: ApiTraceEntry): ApiTraceEntry {
+        val request = shortenText(entry.requestBody)
+        val response =
+            entry.responseBody?.let { body ->
+                val prepared = AgentTraceResponse.prepareForTrace(body, MAX_OLD_BODY_CHARS)
+                prepared.text to (entry.responseTruncated || prepared.truncated)
+            }
+        return entry.copy(
+            requestBody = request.first,
+            requestTruncated = entry.requestTruncated || request.second,
+            responseBody = response?.first,
+            responseTruncated = response?.second ?: entry.responseTruncated,
+        )
+    }
+
+    /** Head-truncates non-structured text; structured responses use field caps. */
+    private fun shortenText(body: String): Pair<String, Boolean> =
         if (body.length <= MAX_OLD_BODY_CHARS) {
-            body
+            body to false
         } else {
-            body.take(MAX_OLD_BODY_CHARS) + "\n[body truncated for memory]"
+            (body.take(MAX_OLD_BODY_CHARS) + "\n[body truncated for memory]") to true
         }
 
     internal fun retainedBodyChars(): Int = synchronized(lock) { entries.sumOf { it.bodyChars() } }
 
     internal fun retainedEntryCount(): Int = synchronized(lock) { entries.size }
 
-    private fun ApiTraceEntry.bodyChars(): Int = requestBody.length + (responseBody?.length ?: 0)
+    internal fun retainedTurnEntryCount(): Int = synchronized(lock) { turnEntries.size }
+
+    private fun ApiTraceEntry.bodyChars(): Int =
+        requestBody.length + (requestTail?.length ?: 0) + (responseBody?.length ?: 0)
 
     fun hasEntries(): Boolean =
         synchronized(lock) { entries.isNotEmpty() || summaryEntries.isNotEmpty() }
@@ -330,13 +547,30 @@ object AgentApiTrace {
         val limit = lastEntries?.coerceIn(1, MAX_ENTRIES)
         val snapshot = if (limit != null) filteredEntries.takeLast(limit) else filteredEntries
         val history = if (limit != null) filteredHistory.takeLast(limit) else filteredHistory
+        val totalCount = maxOf(filteredHistory.size, filteredEntries.size)
+        val droppedCount = (totalCount - snapshot.size).coerceAtLeast(0)
         val missingBefore =
-            since != null &&
+            droppedCount > 0 ||
                 (
-                    (earliest != null && earliest > since) ||
-                        (earliest == null && allHistory.any { it.timestamp < since })
+                    since != null &&
+                        (
+                            (earliest != null && earliest > since) ||
+                                (earliest == null && allHistory.any { it.timestamp < since })
+                        )
                 )
-        val text = render(snapshot, history, limit, since, until, earliest, missingBefore)
+        val text =
+            render(
+                snapshot = snapshot,
+                history = history,
+                limit = limit,
+                since = since,
+                until = until,
+                availableFrom = earliest,
+                missingBefore = missingBefore,
+                totalCount = totalCount,
+                droppedCount = droppedCount,
+                turnSnapshot = latestTurnSnapshotName(),
+            )
         return TraceExport(
             text = text,
             count = snapshot.size,
@@ -344,6 +578,8 @@ object AgentApiTrace {
             lastTimestamp = snapshot.lastOrNull()?.let { it.startedAt ?: it.timestamp },
             availableFrom = earliest,
             missingBefore = missingBefore,
+            totalCount = totalCount,
+            droppedCount = droppedCount,
         )
     }
 
@@ -361,6 +597,9 @@ object AgentApiTrace {
         until: Long?,
         availableFrom: Long?,
         missingBefore: Boolean,
+        totalCount: Int,
+        droppedCount: Int,
+        turnSnapshot: String?,
     ): String {
         val text =
             buildString {
@@ -371,14 +610,20 @@ object AgentApiTrace {
                         "- requested range: ${since?.let(::formatTime) ?: "start"} – ${until?.let(::formatTime) ?: "now"}",
                     )
                 }
+                appendLine("- retained request bodies: ${snapshot.size} of $totalCount")
                 if (missingBefore) {
                     if (availableFrom != null) {
                         appendLine("- full request bodies start at: ${formatTime(availableFrom)}")
-                        appendLine("- earlier entries exist only as request-history summaries")
+                        if (droppedCount > 0) {
+                            appendLine("- $droppedCount earlier request(s) exist only as request-history summaries")
+                        } else {
+                            appendLine("- earlier requests are outside the requested range")
+                        }
                     } else {
                         appendLine("- full request/response bodies are not retained")
                     }
                 }
+                turnSnapshot?.let { appendLine("- latest full-turn snapshot: $it (app-private)") }
                 if (limit != null) appendLine("- showing last $limit requests")
                 appendLine()
                 if (snapshot.isEmpty() && history.isEmpty()) {
@@ -411,6 +656,14 @@ object AgentApiTrace {
                     if (entry.usage == null) {
                         entry.responseBody?.let { body -> usageLine(body)?.let { appendLine("- usage: $it") } }
                     }
+                    if (entry.requestChars > entry.requestBody.length) {
+                        appendLine("- request body: kept ${entry.requestBody.length} of ${entry.requestChars} chars")
+                    }
+                    if (entry.responseChars > (entry.responseBody?.length ?: 0)) {
+                        appendLine(
+                            "- response body: kept ${entry.responseBody?.length ?: 0} of ${entry.responseChars} chars",
+                        )
+                    }
                     appendLine()
                     appendLine("### Request headers")
                     appendLine()
@@ -420,6 +673,14 @@ object AgentApiTrace {
                     appendLine()
                     appendLine(markdownFence(prettyBody(entry.requestBody), "json"))
                     appendLine()
+                    if (entry.requestTail != null && entry.requestChars > entry.requestBody.length) {
+                        appendLine("### Request tail")
+                        appendLine()
+                        appendLine("The stored request body was shortened; this is its original tail.")
+                        appendLine()
+                        appendLine(markdownFence(entry.requestTail, "text"))
+                        appendLine()
+                    }
                     if (entry.responseHeaders.isNotEmpty()) {
                         appendLine("### Response headers")
                         appendLine()

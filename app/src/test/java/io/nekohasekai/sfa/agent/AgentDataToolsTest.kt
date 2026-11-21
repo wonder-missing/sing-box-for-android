@@ -343,6 +343,27 @@ class AgentDataToolsTest {
     }
 
     @Test
+    fun fileStatReportsMissingPaths() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val result = registry.exec("file_stat", """{"path":"conductor/missing.txt"}""")
+
+        assertFalse(result.ok)
+        assertTrue(result.errorMessage!!.contains("not found", ignoreCase = true))
+    }
+
+    @Test
+    fun diagnosticsExportRejectsAnUnknownKind() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val result = registry.exec("diagnostics_export", """{"kind":"bogus_kind"}""")
+
+        assertFalse(result.ok)
+        assertEquals("invalid_parameter", result.errorCode)
+        assertFalse(File(workingDir, "conductor/bogus_kind.md").exists())
+    }
+
+    @Test
     fun diagnosticsTraceCarriesTheTimeRangeAndCoverage() {
         val registry = AgentToolRegistry(tools.all)
 
@@ -631,6 +652,7 @@ class AgentDataToolsTest {
         assertTrue(replaced.output!!.boolean("changed"))
         assertEquals(2L, replaced.output!!.long("version"))
         assertEquals("uploading", planStore.current()!!.note)
+        assertTrue(replaced.output!!.string("recitation")!!.contains("blocked: uploading"))
 
         val cleared = registry.exec("plan_update", """{"items":[]}""")
         assertTrue(cleared.output!!.boolean("cleared"))
