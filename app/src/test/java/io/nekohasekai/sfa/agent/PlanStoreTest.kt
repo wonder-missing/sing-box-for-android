@@ -84,6 +84,26 @@ class PlanStoreTest {
     }
 
     @Test
+    fun restoreCleansAndBoundsAnAuxiliaryPlan() {
+        val store = PlanStore()
+        store.restore(
+            PlanState(
+                version = 1,
+                goal = "api_key=secret" + "x".repeat(300),
+                items = (1..30).map { PlanItem("step $it " + "y".repeat(300)) },
+                note = "token=secret",
+            ),
+        )
+
+        val restored = store.current()!!
+        assertTrue(restored.goal.length <= MAX_PLAN_GOAL_CHARS)
+        assertTrue(restored.goal.contains("api_key=***"))
+        assertEquals(MAX_PLAN_ITEMS, restored.items.size)
+        assertTrue(restored.items.all { it.step.length <= MAX_PLAN_STEP_CHARS })
+        assertTrue(restored.note.contains("token=***"))
+    }
+
+    @Test
     fun recitationKeepsTheCurrentStepAndEscapesRuntimeMarkers() {
         val state =
             PlanState(

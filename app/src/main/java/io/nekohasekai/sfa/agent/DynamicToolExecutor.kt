@@ -13,6 +13,7 @@ class DynamicToolExecutor(
     private val lock = Any()
     private var current = AgentToolRegistry(builtin, toolTimeoutMs)
     private val previous = ArrayDeque<AgentToolRegistry>()
+    private val active = mutableSetOf<AgentToolRegistry>()
 
     fun setExtras(extras: List<AgentTool>) {
         val builtinNames = builtin.map { it.definition.name }.toSet()
@@ -32,24 +33,37 @@ class DynamicToolExecutor(
     override fun definitions(): List<AgentToolDefinition> = synchronized(lock) { current.definitions() }
 
     override fun cancelActive() {
-        val registries = synchronized(lock) { listOf(current) + previous }
-        registries.forEach { it.cancelActive() }
+        val registries = synchronized(lock) { listOf(current) + active + previous }
+        registries.distinct().forEach { it.cancelActive() }
     }
 
     override suspend fun invokeUserCommand(
         name: String,
         argsJson: String,
-    ): AgentInvocationResult = registry().invokeUserCommand(name, argsJson)
+    ): AgentInvocationResult =
+        withActiveRegistry { it.invokeUserCommand(name, argsJson) }
 
     override suspend fun confirmUserCommand(
         name: String,
         argsJson: String,
-    ): AgentInvocationResult = registry().confirmUserCommand(name, argsJson)
+    ): AgentInvocationResult =
+        withActiveRegistry { it.confirmUserCommand(name, argsJson) }
 
     override suspend fun invokeAgent(
         call: ToolCall,
         humanApproved: Boolean,
-    ): AgentInvocationResult = registry().invokeAgent(call, humanApproved)
+    ): AgentInvocationResult =
+        withActiveRegistry { it.invokeAgent(call, humanApproved) }
+
+    private suspend fun <T> withActiveRegistry(block: suspend (AgentToolRegistry) -> T): T {
+        val registry = registry()
+        synchronized(lock) { active += registry }
+        return try {
+            block(registry)
+        } finally {
+            synchronized(lock) { active -= registry }
+        }
+    }
 
     private fun registry(): AgentToolRegistry = synchronized(lock) { current }
 }

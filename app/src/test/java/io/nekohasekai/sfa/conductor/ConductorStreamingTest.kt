@@ -109,6 +109,14 @@ class ConductorStreamingTest {
     }
 
     @Test
+    fun usageDoesNotReuseAnAssistantFromThePreviousTurn() {
+        val usage = TokenUsage(inputTokens = 100, outputTokens = 20)
+        val items = listOf(ConductorItem.Assistant("previous answer"))
+
+        assertEquals(items, items.attachUsage(usage, contextPercent = 42, assistantCountBefore = 1))
+    }
+
+    @Test
     fun usageWithoutAnAssistantReplyLeavesItemsUnchanged() {
         val usage = TokenUsage(inputTokens = 100, outputTokens = 20)
         val items = listOf(ConductorItem.Notice("tool", "done"))

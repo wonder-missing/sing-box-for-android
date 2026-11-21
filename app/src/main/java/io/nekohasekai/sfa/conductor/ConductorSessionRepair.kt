@@ -35,7 +35,7 @@ internal fun reconcileAgentUserMessages(
         }
     if (expected.isEmpty()) return transcript
 
-    val firstUserIndex = transcript.indexOfFirst { it is AgentMessage.User }
+    val firstUserIndex = transcript.indexOfFirst { it is AgentMessage.User && !isRuntimeSummary(it) }
     val firstUser = transcript.getOrNull(firstUserIndex) as? AgentMessage.User
     // The session store may have trimmed older messages from the transcript
     // while the UI still lists them. Anchor reconciliation at the oldest user
@@ -44,7 +44,7 @@ internal fun reconcileAgentUserMessages(
         if (firstUser == null) {
             expected.lastIndex
         } else {
-            expected.indexOfFirst { userContentMatches(firstUser, it) }
+            expected.indexOfLast { userContentMatches(firstUser, it) }
                 .takeIf { it >= 0 }
                 ?: return transcript
         }
@@ -56,15 +56,18 @@ internal fun reconcileAgentUserMessages(
         val found =
             (searchFrom until result.size).firstOrNull { position ->
                 val candidate = result[position]
-                candidate is AgentMessage.User && userContentMatches(candidate, message)
+                candidate is AgentMessage.User &&
+                    !isRuntimeSummary(candidate) &&
+                    userContentMatches(candidate, message)
             }
         if (found != null) {
             searchFrom = found + 1
             continue
         }
         val insertAt =
-            (searchFrom until result.size).firstOrNull { result[it] is AgentMessage.User }
-                ?: result.size
+            (searchFrom until result.size).firstOrNull {
+                result[it] is AgentMessage.User && !isRuntimeSummary(result[it])
+            } ?: result.size
         result.add(insertAt, AgentMessage.User(message.content, images = message.images))
         searchFrom = insertAt + 1
     }
@@ -84,6 +87,9 @@ private fun agentUserMessages(items: List<ConductorItem>): List<ExpectedUser> =
             null
         }
     }
+
+private fun isRuntimeSummary(message: AgentMessage): Boolean =
+    message is AgentMessage.User && message.content.startsWith("[runtime:summary]")
 
 private fun userContentMatches(
     message: AgentMessage.User,
@@ -105,9 +111,24 @@ private fun userContentMatches(
  */
 internal fun scrubHistoricalToolOutputs(transcript: List<AgentMessage>): List<AgentMessage> =
     transcript.map { message ->
-        if (message is AgentMessage.Tool) {
-            message.copy(content = AgentSanitizer.scrubPersonalData(message.content))
-        } else {
-            message
+        when (message) {
+            is AgentMessage.Tool ->
+                message.copy(content = AgentSanitizer.scrubPersonalData(message.content))
+
+            is AgentMessage.User ->
+                if (message.content.startsWith("[runtime:summary]")) {
+                    message.copy(content = AgentSanitizer.scrubForModelRead(message.content))
+                } else {
+                    message
+                }
+
+            is AgentMessage.System ->
+                if (message.content.startsWith("Conversation summary")) {
+                    message.copy(content = AgentSanitizer.scrubForModelRead(message.content))
+                } else {
+                    message
+                }
+
+            else -> message
         }
     }

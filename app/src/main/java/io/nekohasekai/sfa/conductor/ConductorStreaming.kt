@@ -98,7 +98,9 @@ internal fun List<ConductorItem>.withAssistantFinal(text: String): List<Conducto
 internal fun List<ConductorItem>.attachUsage(
     usage: TokenUsage,
     contextPercent: Int?,
+    assistantCountBefore: Int = -1,
 ): List<ConductorItem> {
+    if (assistantCountBefore >= 0 && count { it is Assistant } <= assistantCountBefore) return this
     val index = indexOfLast { it is Assistant }
     if (index < 0) return this
     val updated = toMutableList()

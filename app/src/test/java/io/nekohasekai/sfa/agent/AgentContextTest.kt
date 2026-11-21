@@ -82,6 +82,24 @@ class AgentContextTest {
     }
 
     @Test
+    fun fitToBudgetKeepsTheCurrentToolTurnIntact() {
+        val history =
+            listOf(
+                AgentMessage.User("old"),
+                AgentMessage.Assistant("old answer"),
+                AgentMessage.User("new"),
+                AgentMessage.Assistant(null, listOf(ToolCall("c1", "x", "{}"))),
+                AgentMessage.Tool("c1", "x", "x".repeat(20_000)),
+            )
+
+        val fitted = AgentContext.fitToBudget(history, maxTokens = 1)
+
+        assertEquals(AgentMessage.User("new"), fitted.first())
+        assertTrue(fitted.any { it is AgentMessage.Tool && it.toolCallId == "c1" })
+        assertTrue(validateTranscriptPairing(fitted))
+    }
+
+    @Test
     fun fitToBudgetDropsOldTurnsAndKeepsTheCurrentUser() {
         val big = "x".repeat(20_000)
         val history =

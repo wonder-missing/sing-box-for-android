@@ -128,7 +128,8 @@ class PlanStore(
             val current = _state.value
             val normalizedItems =
                 items
-                    .map { it.copy(step = cleanPlanText(it.step)) }
+                    .take(MAX_PLAN_ITEMS)
+                    .map { it.copy(step = cleanPlanText(it.step, MAX_PLAN_STEP_CHARS)) }
                     .filter { it.step.isNotEmpty() }
             if (normalizedItems.isEmpty()) {
                 if (current == null || current.cleared) {
@@ -139,8 +140,8 @@ class PlanStore(
                     PlanUpdateResult(clearedState, changed = true, cleared = true)
                 }
             } else {
-                val normalizedGoal = cleanPlanText(goal)
-                val normalizedNote = cleanPlanText(note)
+                val normalizedGoal = cleanPlanText(goal, MAX_PLAN_GOAL_CHARS)
+                val normalizedNote = cleanPlanText(note, MAX_PLAN_NOTE_CHARS)
                 if (
                     current != null &&
                     !current.cleared &&
@@ -168,12 +169,24 @@ class PlanStore(
     private fun normalized(value: PlanState?): PlanState? {
         if (value == null) return null
         if (value.cleared) return value.copy(items = emptyList())
-        val items = value.items.filter { item -> item.step.isNotBlank() }
-        return value.copy(items = items).takeIf { items.isNotEmpty() }
+        val items =
+            value.items
+                .take(MAX_PLAN_ITEMS)
+                .map { it.copy(step = cleanPlanText(it.step, MAX_PLAN_STEP_CHARS)) }
+                .filter { item -> item.step.isNotBlank() }
+        return value
+            .copy(
+                goal = cleanPlanText(value.goal, MAX_PLAN_GOAL_CHARS),
+                items = items,
+                note = cleanPlanText(value.note, MAX_PLAN_NOTE_CHARS),
+            ).takeIf { items.isNotEmpty() }
     }
 }
 
-private fun cleanPlanText(text: String): String = AgentSanitizer.scrubForModelRead(text.trim())
+private fun cleanPlanText(
+    text: String,
+    maxChars: Int,
+): String = AgentSanitizer.scrubForModelRead(text.trim()).take(maxChars)
 
 private fun modelText(text: String): String =
     AgentSanitizer

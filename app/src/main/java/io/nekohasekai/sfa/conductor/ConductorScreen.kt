@@ -2327,10 +2327,10 @@ private fun PlanEditDialog(
 @Composable
 private fun ConductorItemView(
     item: ConductorItem,
-    onConfirm: () -> Unit,
-    onConfirmAll: () -> Unit,
-    onConfirmBatch: () -> Unit,
-    onCancel: () -> Unit,
+    onConfirm: (Long) -> Unit,
+    onConfirmAll: (Long) -> Unit,
+    onConfirmBatch: (Long) -> Unit,
+    onCancel: (Long) -> Unit,
     onAnswerQuestion: (String, List<String>) -> Unit,
     onCancelQuestion: (String) -> Unit,
     canRetry: Boolean,
@@ -2473,7 +2473,7 @@ private fun ConductorItemView(
                         }
                         TextButton(
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                            onClick = onConfirmBatch,
+                            onClick = { onConfirmBatch(item.request.id) },
                         ) {
                             Text(
                                 stringResource(
@@ -2502,7 +2502,7 @@ private fun ConductorItemView(
                     if (item.request.allowTurnApproval) {
                         TextButton(
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                            onClick = onConfirmAll,
+                            onClick = { onConfirmAll(item.request.id) },
                         ) {
                             Text(stringResource(R.string.agent_confirm_run_all))
                         }
@@ -2511,10 +2511,10 @@ private fun ConductorItemView(
                         modifier = Modifier.padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        TextButton(onClick = onConfirm) {
+                        TextButton(onClick = { onConfirm(item.request.id) }) {
                             Text(stringResource(R.string.agent_confirm_run))
                         }
-                        TextButton(onClick = onCancel) {
+                        TextButton(onClick = { onCancel(item.request.id) }) {
                             Text(stringResource(R.string.conductor_probe_cancel))
                         }
                     }

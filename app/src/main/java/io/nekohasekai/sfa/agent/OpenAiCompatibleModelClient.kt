@@ -245,6 +245,7 @@ class OpenAiCompatibleModelClient(
         apiKey: String,
     ): Flow<AgentModelChunk> =
         flow {
+            val traceGeneration = AgentApiTrace.generation()
             val endpoint = currentEndpoint()
             if (apiKey.isBlank()) {
                 throw AgentModelException(
@@ -366,6 +367,7 @@ class OpenAiCompatibleModelClient(
                         usage = usage,
                         finishReason = finish,
                     ),
+                    traceGeneration,
                 )
             }
         }.flowOn(Dispatchers.IO)
@@ -682,6 +684,7 @@ class OpenAiCompatibleModelClient(
         providerLabel: String,
         recordTrace: Boolean = true,
     ): Pair<Int, String> {
+        val traceGeneration = AgentApiTrace.generation()
         val connection =
             (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -767,6 +770,7 @@ class OpenAiCompatibleModelClient(
                         usage = usage,
                         finishReason = finish,
                     ),
+                    traceGeneration,
                 )
             }
             connection.disconnect()

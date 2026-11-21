@@ -185,8 +185,14 @@ object AgentApiTrace {
         }
     }
 
-    fun record(entry: ApiTraceEntry) {
+    fun generation(): Int = synchronized(lock) { persistenceGeneration }
+
+    fun record(
+        entry: ApiTraceEntry,
+        generation: Int? = null,
+    ) {
         synchronized(lock) {
+            if (generation != null && generation != persistenceGeneration) return
             entries.addLast(entry)
             while (entries.size > MAX_ENTRIES) {
                 entries.removeFirst()

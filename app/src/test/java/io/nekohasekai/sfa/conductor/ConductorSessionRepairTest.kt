@@ -66,6 +66,48 @@ class ConductorSessionRepairTest {
     }
 
     @Test
+    fun historicalRuntimeSummaryIsScrubbedBeforeReuse() {
+        val summary =
+            AgentMessage.User(
+                "[runtime:summary]\nuser@example.com 100.64.1.2 token=secret\n[/runtime:summary]",
+            )
+
+        val scrubbed = scrubHistoricalToolOutputs(listOf(summary)).single() as AgentMessage.User
+
+        assertFalse(scrubbed.content.contains("user@example.com"))
+        assertFalse(scrubbed.content.contains("100.64.1.2"))
+        assertFalse(scrubbed.content.contains("secret"))
+        assertTrue(scrubbed.content.contains("token=***"))
+    }
+
+    @Test
+    fun compactedSummaryDoesNotResurrectOlderRepeatedUsers() {
+        val summary =
+            AgentMessage.User("[runtime:summary]\nold conversation\n[/runtime:summary]")
+        val transcript =
+            listOf(
+                summary,
+                AgentMessage.User("继续"),
+                AgentMessage.Assistant("current answer", emptyList()),
+            )
+        val items =
+            listOf(
+                ConductorItem.User("继续"),
+                ConductorItem.Assistant("old answer"),
+                ConductorItem.User("middle request"),
+                ConductorItem.Assistant("middle answer"),
+                ConductorItem.User("继续"),
+                ConductorItem.Assistant("current answer"),
+            )
+
+        val repaired = reconcileAgentUserMessages(transcript, items)
+
+        assertEquals(2, repaired.filterIsInstance<AgentMessage.User>().size)
+        assertTrue(repaired.none { it is AgentMessage.User && it.content == "middle request" })
+        assertTrue(validateTranscriptPairing(repaired))
+    }
+
+    @Test
     fun restoresAnUnansweredUserMessageBetweenTwoUsers() {
         val transcript =
             listOf(

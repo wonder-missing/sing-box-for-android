@@ -149,6 +149,17 @@ data class ToolConsoleState(
     val running: Boolean = false,
 )
 
+/** A stale card must not approve the confirmation that replaced it. */
+internal fun confirmationMatchesCurrent(
+    requestId: Long,
+    agentId: Long?,
+    commandId: Long?,
+): Boolean = (agentId ?: commandId) == requestId
+
+/** Retry only the last real prompt, never a slash command that landed later. */
+internal fun retryableUserIndex(items: List<ConductorItem>): Int =
+    items.indexOfLast { it is ConductorItem.User && !it.text.startsWith("/") }
+
 class ConductorViewModel(
     application: Application,
 ) : AndroidViewModel(application),
@@ -813,6 +824,7 @@ class ConductorViewModel(
 
     @Volatile
     private var pendingAgentConfirmation: CompletableDeferred<Boolean>? = null
+    private var pendingAgentConfirmationId: Long? = null
 
     @Volatile
     private var autoApproveAgentSafeTools: Boolean = false
@@ -821,6 +833,7 @@ class ConductorViewModel(
     private var autoApproveAgentBatchId: String? = null
 
     private var pendingCommandConfirmation: Pair<String, String>? = null
+    private var pendingCommandConfirmationId: Long? = null
     private var pendingCommandAsTool = false
 
     private data class PendingFileRequest(
@@ -1169,6 +1182,7 @@ class ConductorViewModel(
 
     fun confirmAgent() {
         val pending = pendingAgentConfirmation ?: return
+        pendingAgentConfirmationId = null
         removeConfirmationItems()
         pending.complete(true)
     }
@@ -1178,8 +1192,8 @@ class ConductorViewModel(
      * for ALWAYS tools (probes, network changes, Taildrop); ViewModel answers
      * later safe confirmations without drawing another card.
      */
-    fun confirmAllSafeAgent() {
-        if (pendingAgentConfirmation == null) return
+    fun confirmAllSafeAgent(requestId: Long) {
+        if (!isCurrentConfirmation(requestId) || pendingAgentConfirmation == null) return
         val request =
             _uiState.value.items
                 .filterIsInstance<ConductorItem.Confirmation>()
@@ -1199,8 +1213,8 @@ class ConductorViewModel(
      * ALWAYS tools are marked non-approvable by the runtime and still draw an
      * individual card.
      */
-    fun confirmBatchAgent() {
-        if (pendingAgentConfirmation == null) return
+    fun confirmBatchAgent(requestId: Long) {
+        if (!isCurrentConfirmation(requestId) || pendingAgentConfirmation == null) return
         val request =
             _uiState.value.items
                 .filterIsInstance<ConductorItem.Confirmation>()
@@ -1219,6 +1233,7 @@ class ConductorViewModel(
         autoApproveAgentSafeTools = false
         autoApproveAgentBatchId = null
         val pending = pendingAgentConfirmation ?: return
+        pendingAgentConfirmationId = null
         removeConfirmationItems()
         pending.complete(false)
     }
@@ -1231,6 +1246,8 @@ class ConductorViewModel(
         cancelPendingFileRequest("The turn was stopped.")
         cancelPendingAskUser("The turn was stopped.")
         pendingAgentConfirmation?.complete(false)
+        pendingAgentConfirmationId = null
+        pendingCommandConfirmationId = null
         removeConfirmationItems()
         runtime.cancel()
         McpRuntimes.get(getApplication()).cancelActive()
@@ -1451,7 +1468,7 @@ class ConductorViewModel(
     fun retryLastTurn() {
         if (_uiState.value.isRunning || !_uiState.value.canRetryLastTurn) return
         val items = _uiState.value.items
-        val lastUserIndex = items.indexOfLast { it is ConductorItem.User }
+        val lastUserIndex = retryableUserIndex(items)
         if (lastUserIndex < 0) return
         if (transcript.lastOrNull() !is AgentMessage.User) return
         val user = items[lastUserIndex] as ConductorItem.User
@@ -1469,7 +1486,27 @@ class ConductorViewModel(
         )
     }
 
-    fun confirmConfirmation() {
+    private fun isCurrentConfirmation(requestId: Long): Boolean {
+        if (confirmationMatchesCurrent(requestId, pendingAgentConfirmationId, pendingCommandConfirmationId)) {
+            return true
+        }
+        removeConfirmationItem(requestId)
+        return false
+    }
+
+    private fun removeConfirmationItem(requestId: Long) {
+        updateUi {
+            copy(
+                items =
+                    items.filterNot {
+                        it is ConductorItem.Confirmation && it.request.id == requestId
+                    },
+            )
+        }
+    }
+
+    fun confirmConfirmation(requestId: Long) {
+        if (!isCurrentConfirmation(requestId)) return
         if (pendingAgentConfirmation != null) {
             confirmAgent()
         } else {
@@ -1477,7 +1514,8 @@ class ConductorViewModel(
         }
     }
 
-    fun cancelConfirmation() {
+    fun cancelConfirmation(requestId: Long) {
+        if (!isCurrentConfirmation(requestId)) return
         if (pendingAgentConfirmation != null) {
             cancelAgent()
         } else {
@@ -1489,6 +1527,7 @@ class ConductorViewModel(
         val pending = pendingCommandConfirmation ?: return
         val asTool = pendingCommandAsTool
         pendingCommandConfirmation = null
+        pendingCommandConfirmationId = null
         pendingCommandAsTool = false
         removeConfirmationItems()
         invokeCommandTool(pending.first, pending.second, pending.first, asTool)
@@ -1497,6 +1536,7 @@ class ConductorViewModel(
     fun cancelCommand() {
         val asTool = pendingCommandAsTool
         pendingCommandConfirmation = null
+        pendingCommandConfirmationId = null
         pendingCommandAsTool = false
         removeConfirmationItems()
         updateUi { copy(isRunning = false, toolConsole = if (asTool) null else toolConsole) }
@@ -1516,8 +1556,10 @@ class ConductorViewModel(
         autoApproveAgentSafeTools = false
         autoApproveAgentBatchId = null
         pendingAgentConfirmation = null
+        pendingAgentConfirmationId = null
         pendingTurnEvent = null
         pendingCommandConfirmation = null
+        pendingCommandConfirmationId = null
         pendingCommandAsTool = false
         updateUi { copy(toolConsole = null) }
         cancelPendingFileRequest("The conversation was cleared.")
@@ -1584,6 +1626,7 @@ class ConductorViewModel(
             )
         }
         val initialEvent = pendingTurnEvent
+        val assistantCountBefore = _uiState.value.items.count { it is ConductorItem.Assistant }
         agentJob =
             viewModelScope.launch {
                 refreshMcpTools()
@@ -1657,6 +1700,9 @@ class ConductorViewModel(
                         )
                     }
                     pendingAgentConfirmation = null
+                    pendingAgentConfirmationId = null
+                    pendingCommandConfirmationId = null
+                    removeConfirmationItems()
                     stopRequested = false
                     autoApproveAgentSafeTools = false
                     autoApproveAgentBatchId = null
@@ -1693,7 +1739,14 @@ class ConductorViewModel(
                                 _uiState.value.contextPercent
                                     .takeIf { _uiState.value.contextLimitTokens > 0 }
                             updateUi {
-                                copy(items = items.attachUsage(usage, contextPercent))
+                                copy(
+                                    items =
+                                        items.attachUsage(
+                                            usage,
+                                            contextPercent,
+                                            assistantCountBefore,
+                                        ),
+                                )
                             }
                         }
                     }
@@ -1862,12 +1915,15 @@ class ConductorViewModel(
                         autoApproveAgentBatchId != null &&
                         event.request.batchId == autoApproveAgentBatchId
                 if ((autoApproveAgentSafeTools && event.request.allowTurnApproval) || batchApproved) {
+                    pendingAgentConfirmationId = event.request.id
                     pendingAgentConfirmation =
                         CompletableDeferred<Boolean>().apply { complete(true) }
                 } else {
                     finishReasoning()
                     finishStreamingAssistant()
+                    pendingAgentConfirmationId = event.request.id
                     pendingAgentConfirmation = CompletableDeferred()
+                    removeConfirmationItems()
                     append(ConductorItem.Confirmation(event.request))
                     setTurnStatus("Waiting for your approval")
                 }
@@ -2406,12 +2462,14 @@ class ConductorViewModel(
         asTool: Boolean = false,
     ) {
         pendingCommandConfirmation = name to confirmation.argsJson
+        pendingCommandConfirmationId = commandConfirmationIds.incrementAndGet()
         pendingCommandAsTool = asTool
         updateUi { copy(isRunning = true) }
+        removeConfirmationItems()
         append(
             ConductorItem.Confirmation(
                 ConfirmationRequest(
-                    id = commandConfirmationIds.incrementAndGet(),
+                    id = pendingCommandConfirmationId!!,
                     toolName = name,
                     displayArgsJson = confirmation.displayArgsJson,
                     reason = confirmation.reason,

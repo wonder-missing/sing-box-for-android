@@ -48,6 +48,31 @@ class AgentApiTraceTest {
     }
 
     @Test
+    fun recordsFromBeforeClearAreDropped() {
+        AgentApiTrace.clear()
+        val generation = AgentApiTrace.generation()
+        AgentApiTrace.clear()
+
+        AgentApiTrace.record(
+            ApiTraceEntry(
+                timestamp = 1_700_000_000_000L,
+                method = "POST",
+                url = "https://api.deepseek.com/chat/completions",
+                requestHeaders = emptyMap(),
+                requestBody = """{"stale":true}""",
+                status = 200,
+                responseHeaders = emptyMap(),
+                responseBody = "{}",
+                error = null,
+            ),
+            generation,
+        )
+
+        assertFalse(AgentApiTrace.asMarkdown().contains("stale"))
+        AgentApiTrace.clear()
+    }
+
+    @Test
     fun markdownCanKeepOnlyTheLastRequests() {
         AgentApiTrace.clear()
         repeat(2) { index ->
