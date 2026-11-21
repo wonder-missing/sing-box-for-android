@@ -30,6 +30,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 
 ## Data pulls and evidence
 
+- **Gate before any pull.** Name the artifact that can answer the question and confirm the source can contain it. `client_telemetry` / `conductor_tool` is metadata only (tool name, status, timing); it cannot answer Plan-card usability, message text, or final-answer questions. For those, use a transcript (`Plain Transcript`, `diagnostics_export kind=conversation`) or the API trace. If only metadata is available, stop in the first response and ask for the export; do not probe device, VFS, ADB or alternate transports as a workaround. State the gate in one line before the first pull: question → required artifact → source coverage → pull or stop. If it says stop, do not run another probe.
 - When the owner asks to pull an API trace, log or session for analysis, check coverage **before** interpreting it: retained entries vs summaries, `[body truncated]` markers, request/response sizes, whether the final request and final answer are present, and whether a full-turn snapshot exists.
 - If the data is incomplete for the question, stop and report exactly what is missing. Do not produce an assessment from a partial sample. Either narrow the question to what the data supports or ask for a complete export.
 - Put the coverage boundary in the first paragraph of the report. A tool-call analysis may use the final request transcript; a reasoning/final-answer analysis needs the response bodies. Do not mix them.
