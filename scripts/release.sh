@@ -216,7 +216,9 @@ wait_run "$TEST_ID" "Test" 7200
 PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*-wonder.*' HEAD 2>/dev/null || true)
 CHANGES=""
 if [ -n "$PREV_TAG" ]; then
-    CHANGES=$(git log --no-merges --pretty='- %s' "$PREV_TAG..HEAD" | head -40)
+    # Release notes are app-facing: keep only commits that touch app runtime
+    # source, so docs/CI/local tooling and governance do not leak into them.
+    CHANGES=$(git log --no-merges --pretty='- %s' "$PREV_TAG..HEAD" -- app/src/main | head -40)
 fi
 
 MESSAGE="wonder.$BUILD"
