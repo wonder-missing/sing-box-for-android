@@ -36,6 +36,8 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 参数不走内置工具那套「只能是字符串」。本机只检查 schema `required` 里的键：缺了、是 null、或是空字符串，就拒绝。其余类型交给服务器。
 
+App 不解释具体 MCP 工具的参数语义。`vfs`、`jobId`、`scope` 这些参数属于服务器；客户端只透传 JSON、做通用 `required` 检查和 content block 处理。某个工具是否需要先连 VFS、是否需要某个前置工具，由服务器在自己的工具描述和返回错误里表达（例如 Portal 在建 job 前预检）。唯一的例外是 VFS Link 握手本身：`vfs_link_request` 的 scope 是 App 的 VFS 契约，客户端会给这个参数补说明；这不涉及 job 参数。
+
 所有 MCP 工具都是 `AGENT_ONLY`，先确认再发出；`annotations.readOnlyHint` 只作为服务器提示，不能绕过确认。权限是 `DATA_EGRESS`。确认卡保留 URL 的 host/path，但屏蔽 userinfo 和敏感 query。输出仍然过现有 sanitizer，所以结果里的订阅链接和 token 会被打掉。
 
 有没有激活的 MCP 工具，系统提示和静态 `tools` 都相同。工具列表在每轮开始时如果空了，或超过 60 秒，会刷新。刷新失败沿用上一份列表，不让这一轮失败；还没有成功过的列表也不会每条消息都重试。状态留在设置行上。Stop 会断开正在进行的 MCP 连接。
