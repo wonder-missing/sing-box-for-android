@@ -34,6 +34,9 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 - When the owner asks to pull an API trace, log or session for analysis, check coverage **before** interpreting it: retained entries vs summaries, `[body truncated]` markers, request/response sizes, whether the final request and final answer are present, and whether a full-turn snapshot exists.
 - If the data is incomplete for the question, stop and report exactly what is missing. Do not produce an assessment from a partial sample. Either narrow the question to what the data supports or ask for a complete export.
 - Put the coverage boundary in the first paragraph of the report. A tool-call analysis may use the final request transcript; a reasoning/final-answer analysis needs the response bodies. Do not mix them.
+- **Coverage is a gate, not the deliverable.** Once the data can answer the question, answer it. Do not spend turns re-auditing completeness or report completeness as the finding unless completeness is the question. If the owner redirects ("I don't care about X, analyze Y"), drop X and answer Y in the same turn.
+- **Label evidence.** Separate observed facts (trace, code, user reproduction), inferred mechanisms, and subjective assessments. An agent's self-evaluation is opinion, not evidence; state its observational boundary and corroborate factual claims with code, trace, or a rendered UI.
+- If the owner says you are off-focus, stop, restate their question in one line, and answer it; do not recap the detour.
 - If the owner interjects during a data pull, handle the interjection first and say which part of the pull is paused; then resume. If the interjection changes priority, follow it and record where the original task stopped.
 - Prefer the per-turn snapshot under `appfiles/conductor/trace-turns/` for a whole turn; the live `api-trace.json` is a bounded recent window, not a complete experiment record.
 
@@ -42,6 +45,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 - Plans are change plans: files/changes, order, tests, and release steps.
 - Do not put time estimates in plans. `Agent-Time` / `Agent-Loops` are release-tag metadata recorded only when measured; see Release flow.
 - Complete the whole requested change in one pass. Stop for the owner only when there are two genuinely different designs.
+- For an evidence-backed cleanup, list the observed issues and their evidence first. If there is no design fork, proceed to implementation without asking for a second confirmation.
 - For visual/interaction exploration, show a concrete effect before an implementation list; technical choices that will remain still need a plan.
 - The ~1–2h scope in the work loop is for autonomous TODO/issue picking. A user-requested change is delivered as one whole change.
 - Product phases and batches in `docs/` are roadmaps; a coding task plan uses the format above.
@@ -57,6 +61,9 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 - The owner has web frontend experience. Accept `padding` / `margin` / `gap` / `border-radius` / `flex` / `align-items` wording and translate it to dp and Compose `Row` / `Column` / `weight`.
 - Prefer references (DeepSeek input bar, WeChat composer, Material 3 components) and relative descriptions (“same size as the left button”, “icon centred in its circle”) over requiring exact numbers.
 - Apply product-level padding, alignment and safe margins yourself; do not wait for the owner to point out basic spacing or centring.
+- **Inspect the UI path before explaining behavior.** When the owner reports an interaction, read the Compose/UI code and reproduce it; an agent's explanation of a card it cannot see is not evidence.
+- **Conductor Plan card completion is terminal.** When every step is `done`, hide Edit and do not add Reopen; re-planning is a natural-language request to Conductor. While work remains, the card stays editable. Every model/user plan change is a `PlanEvent` (version, time, actor, action) and appears in `## Plan history`; `[runtime:plan]` carries `updatedBy`.
+- **Render UI changes locally.** Compile/tests are not a UI proof; use `scripts/e2e-emulator.sh` (keep it with `E2E_KEEP_EMULATOR=1` when inspecting) and keep screenshots/XML under `build/e2e-emulator/`. Report the path, not "should be fixed".
 - A bare “px” means design dp (`1 design px ≈ 1dp`) and 5dp is a very small radius. For this app, inputs and cards usually use `8–12dp` radii.
 - Design specs, tokens and the handoff checklist live in `design/README.md`.
 - Conductor-specific UI decisions live in `docs/agent-control-plane.md`.
