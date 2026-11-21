@@ -168,7 +168,6 @@ System Prompt 增加资源约定：
 - `request_files`：返回逻辑路径，不复制，不强制挂 VFS。
 - `vfs_connect`：`conductor` scope 包含 inbox/artifacts，只读。
 - `analyze_image`：`file_id` 支持聊天附件和选中文件；`path` 支持 workspace/artifacts，并接受 `/conductor/...`、`/resources/...`、`./...` 根相对写法。
-- MCP `job_run`/`docker_run` 带 `vfs=true` 且当前没有 `VfsConnectionState.Connected` 时，App 在发往服务器前返回 `vfs_not_connected`，提示先 `cpk_vfs_link_request` + `vfs_connect`，避免一次无效 job。
 
 Consent：
 

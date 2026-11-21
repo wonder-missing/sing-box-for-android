@@ -13,7 +13,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -37,7 +36,6 @@ fun mcpAgentTools(
     session: McpSession,
     artifactSink: McpArtifactSink? = null,
     allowedResourceOrigins: Set<String> = emptySet(),
-    vfsConnected: (() -> Boolean)? = null,
 ): List<AgentTool> {
     val used = mutableSetOf<String>()
     return remote.map { tool ->
@@ -69,7 +67,6 @@ fun mcpAgentTools(
             session = session,
             artifactSink = artifactSink,
             allowedResourceOrigins = allowedResourceOrigins,
-            vfsConnected = vfsConnected,
         )
     }
 }
@@ -147,24 +144,12 @@ private class McpBoundTool(
     private val session: McpSession,
     private val artifactSink: McpArtifactSink?,
     private val allowedResourceOrigins: Set<String>,
-    private val vfsConnected: (() -> Boolean)?,
 ) : AgentTool {
     override suspend fun execute(
         args: JsonObject,
         cancellation: ToolCancellation,
     ): ToolExecution {
         if (cancellation.isCancelled()) throw CancellationException("cancelled")
-        if (
-            (remoteName == JOB_RUN_TOOL || remoteName == DOCKER_RUN_TOOL) &&
-            (args["vfs"] as? JsonPrimitive)?.booleanOrNull == true &&
-            vfsConnected?.invoke() == false
-        ) {
-            return ToolExecution(
-                errorCode = "vfs_not_connected",
-                errorMessage =
-                    "A vfs job needs an active VFS Link. Call cpk_vfs_link_request, then vfs_connect, then retry job_run.",
-            )
-        }
         val result =
             try {
                 session.call(remoteName, args, cancellation)

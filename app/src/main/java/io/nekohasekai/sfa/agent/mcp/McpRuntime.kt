@@ -4,9 +4,7 @@ import android.content.Context
 import io.nekohasekai.sfa.agent.AgentTool
 import io.nekohasekai.sfa.agent.ConductorFileStore
 import io.nekohasekai.sfa.agent.ToolCancellation
-import io.nekohasekai.sfa.vfs.VfsConnectionState
 import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
-import io.nekohasekai.sfa.vfs.VfsRuntime
 import io.nekohasekai.sfa.vfs.VfsServerBase
 import io.nekohasekai.sfa.vfs.VfsPrivateFiles
 import kotlinx.coroutines.CancellationException
@@ -71,7 +69,6 @@ class McpRuntime(
     private val clientVersion: String = "wondersing",
     private val deviceId: () -> String = { "" },
     private val artifactSink: McpArtifactSink? = null,
-    private val vfsConnected: (() -> Boolean)? = null,
 ) {
     private val gate = Mutex()
     private var servers: List<McpServerConfig> = emptyList()
@@ -207,7 +204,6 @@ class McpRuntime(
                                 entry.session,
                                 artifactSink,
                                 resourceOrigins(updated.url),
-                                vfsConnected,
                             ),
                     )
             }
@@ -363,7 +359,6 @@ class McpRuntime(
                     session,
                     artifactSink,
                     resourceOrigins(config.url),
-                    vfsConnected,
                 ),
             fetchedAt = clock(),
         )
@@ -505,7 +500,6 @@ object McpRuntimes {
                 transportFactory = { config -> McpHttpTransport(config.url, config.token) },
                 deviceId = { deviceIdStore.getOrCreate() },
                 artifactSink = artifactSink,
-                vfsConnected = { VfsRuntime.state.value is VfsConnectionState.Connected },
             ).also { instance = it }
         }
     }
