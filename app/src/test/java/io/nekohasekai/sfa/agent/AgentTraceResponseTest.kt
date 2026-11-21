@@ -90,6 +90,27 @@ class AgentTraceResponseTest {
     }
 
     @Test
+    fun acceptsTheReasoningAlias() {
+        val body =
+            """
+            data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant","reasoning":"Think"},"finish_reason":null}]}
+            data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}
+            data: [DONE]
+            """.trimIndent()
+
+        val message =
+            AgentTraceResponse
+                .normalizeStreaming(body)!!["choices"]!!
+                .jsonArray
+                .single()
+                .jsonObject["message"]!!
+                .jsonObject
+
+        assertEquals("Think", message["reasoning_content"]!!.jsonPrimitive.content)
+        assertEquals("ok", message["content"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun leavesOrdinaryJsonAlone() {
         val body = """{"id":"x","object":"chat.completion","choices":[]}"""
         assertNull(AgentTraceResponse.normalizeStreaming(body))

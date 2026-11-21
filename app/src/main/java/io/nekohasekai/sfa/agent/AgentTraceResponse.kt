@@ -116,6 +116,7 @@ internal object AgentTraceResponse {
                     val newMessage = message.toMutableMap()
                     listOf(
                         "reasoning_content" to (reasoningLimit to false),
+                        "reasoning" to (reasoningLimit to false),
                         "content" to (contentLimit to true),
                     ).forEach { (key, limits) ->
                         if (newMessage.containsKey(key)) {
@@ -235,8 +236,10 @@ internal object AgentTraceResponse {
                 val delta = choice["delta"] as? JsonObject ?: return@forEach
                 (delta["role"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }?.let { role = it }
                 (delta["content"] as? JsonPrimitive)?.contentOrNull?.let { accumulator.content.append(it) }
-                (delta["reasoning_content"] as? JsonPrimitive)?.contentOrNull
-                    ?.let { accumulator.reasoning.append(it) }
+                (
+                    (delta["reasoning_content"] as? JsonPrimitive)?.contentOrNull
+                        ?: (delta["reasoning"] as? JsonPrimitive)?.contentOrNull
+                )?.let { accumulator.reasoning.append(it) }
                 (delta["tool_calls"] as? JsonArray)?.forEachIndexed { position, rawCall ->
                     val call = rawCall as? JsonObject ?: return@forEachIndexed
                     val callIndex = (call["index"] as? JsonPrimitive)?.intOrNull ?: position
