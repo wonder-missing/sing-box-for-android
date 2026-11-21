@@ -47,9 +47,18 @@ if [ ! -f "$ROOT/app/libs/libbox.aar" ] || [ ! -f "$ROOT/app/libs/libbox-legacy.
     exit 1
 fi
 
+clean_gb=${WONDERSING_CLEAN_THRESHOLD_GB:-10}
+min_gb=${WONDERSING_MIN_FREE_GB:-5}
+clean_kb=$((clean_gb * 1024 * 1024))
+min_kb=$((min_gb * 1024 * 1024))
 free_kb=$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')
-if [ "${free_kb:-0}" -lt 5242880 ]; then
-    echo "Less than 5 GB free on this volume. Run $0 --clean or free space first." >&2
+if [ "${free_kb:-0}" -lt "$clean_kb" ]; then
+    echo "Free space ${free_kb}KB is below the ${clean_gb}GB cleanup threshold; running --clean." >&2
+    "$0" --clean
+    free_kb=$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')
+fi
+if [ "${free_kb:-0}" -lt "$min_kb" ]; then
+    echo "Less than ${min_gb}GB free on this volume (${free_kb}KB). Free space first." >&2
     exit 1
 fi
 

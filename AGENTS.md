@@ -9,7 +9,7 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 - Workspace: `~/workspace` on clawdy-mini. CFG repo: `~/workspace/CFG`.
 - CFG is a neighboring project. Use its CLI tools as needed (`python3 ~/workspace/CFG/cli/bin/cfg ...`, e.g. `clientlog report --hours N` for WonderSing app telemetry); do not modify CFG code from this repo.
 - Local bare backup: remote `wondersing` at `~/repos/WonderSing`; after each daily commit, push `dev` there, and push tags when releasing.
-- Local JVM unit tests and compile checks run on the Mini; setup, versions and disk cleanup are in [`docs/local-testing.md`](docs/local-testing.md). CI remains the release gate. There is no emulator; UI changes need a device check.
+- Local JVM unit tests and compile checks run on the Mini; setup, versions and disk cleanup are in [`docs/local-testing.md`](docs/local-testing.md). CI remains the release gate. `scripts/e2e-emulator.sh` runs a headless emulator smoke test for startup/UI wiring; VPN/service behavior still needs a real-device check.
 - Update install path, the system scan prompt, and post-update service restore: [`docs/update-install.md`](docs/update-install.md).
 - `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `WONDER_BUILD` is a two-character label: 99 was followed by `A0`, and labels advance in base-36 order (`A9` → `AA` → `AB`), never `A9` → `A10`; use the next unused label from [`docs/versioning.md`](docs/versioning.md). `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
 - Capability scenarios live in [`docs/conductor-scenarios.md`](docs/conductor-scenarios.md). Before removing or merging a tool, or changing a tool parameter, check the scenarios that name it and preserve or explicitly retire them.
@@ -21,7 +21,8 @@ Goal: given "check TODO and latest issues, do 1–2h of work", produce and test 
 3. When working autonomously, pick ~1–2h of scope (issues first, then TODO). Keep TODO.md updated.
 4. Features/fixes need JVM unit tests.
 5. Run `./scripts/local-test.sh` for JVM compile and unit tests (setup in
-   [`docs/local-testing.md`](docs/local-testing.md)). Then commit, `git push origin dev`, and
+   [`docs/local-testing.md`](docs/local-testing.md)); for startup/UI wiring run
+   `./scripts/e2e-emulator.sh`. Then commit, `git push origin dev`, and
    `gh run list -R wonder-missing/sing-box-for-android -w Test -L 1` /
    `gh run watch <id> -R wonder-missing/sing-box-for-android --exit-status`. Red → fix and repeat until green.
    CI remains the release gate; a green local run does not replace it.
