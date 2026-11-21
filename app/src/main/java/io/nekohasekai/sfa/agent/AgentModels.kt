@@ -81,6 +81,21 @@ data class AgentToolDefinition(
 ) {
     val parametersSchema: JsonObject
         get() = parametersSchemaOverride ?: AgentJson.schema(parameters)
+
+    /**
+     * DATA_EGRESS tools may not run without confirmation even if their
+     * definition says NEVER. Keep the registry, catalog and UI on the same
+     * effective policy.
+     */
+    val effectiveConfirmationPolicy: ConfirmationPolicy
+        get() =
+            if (permission == AgentPermission.DATA_EGRESS &&
+                confirmationPolicy == ConfirmationPolicy.NEVER
+            ) {
+                ConfirmationPolicy.AGENT_ONLY
+            } else {
+                confirmationPolicy
+            }
 }
 
 interface AgentToolExecutor {

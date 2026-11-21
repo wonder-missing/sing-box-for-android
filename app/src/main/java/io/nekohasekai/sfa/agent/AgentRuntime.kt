@@ -202,6 +202,8 @@ class AgentRuntime(
         var toolsEnabled = true
         var failureStorm = false
         var budgetNoticeShown = false
+        var planInjectionEnabled = true
+        var planFallbackUsed = false
         val partialContent = StringBuilder()
         val toolFailureTimes = ArrayDeque<Long>()
         lastPromptTokens = 0
@@ -219,7 +221,8 @@ class AgentRuntime(
             return toolFailureTimes.size >= config.maxRapidToolFailures
         }
 
-        while (true) {
+        try {
+            while (true) {
             if (cancelRequested) {
                 return finish(transcript, startSize, TurnOutcome.Cancelled("user"), onEvent)
             }
@@ -243,7 +246,7 @@ class AgentRuntime(
 
             val limits = modelLimits()
             val contextWindow = limits.contextWindow.coerceAtLeast(MIN_CONTEXT_WINDOW)
-            val planText = planBlock()?.takeIf { it.isNotBlank() }
+            val planText = if (planInjectionEnabled) planBlock()?.takeIf { it.isNotBlank() } else null
             val planTokens = planText?.let { AgentContext.estimateTokens(it) + 8 } ?: 0
             var estimatedContext =
                 maxOf(
@@ -315,6 +318,18 @@ class AgentRuntime(
                         callModelWithRetry(request, apiKey)
                     }
                 } catch (e: AgentModelException) {
+                    if (
+                        e.code == AgentTurnErrorCode.INVALID_REQUEST &&
+                        planText != null &&
+                        !planFallbackUsed
+                    ) {
+                        planFallbackUsed = true
+                        planInjectionEnabled = false
+                        partialContent.clear()
+                        onEvent(AgentEvent.StreamReset)
+                        onEvent(AgentEvent.Notice("The provider rejected the plan recitation; retrying without it."))
+                        continue
+                    }
                     appendPartialAssistant(transcript, partialContent)
                     return finish(
                         transcript,
@@ -331,6 +346,7 @@ class AgentRuntime(
                 }
             val usedTokens = response.usage?.inputTokens ?: sentInput
             lastPromptTokens = usedTokens
+            compactFailures = 0
             onEvent(
                 AgentEvent.ContextUsage(
                     usedTokens = usedTokens,
@@ -340,12 +356,15 @@ class AgentRuntime(
             )
             step += 1
 
+            val responseToolCalls = ensureUniqueToolCallIds(response.toolCalls)
+
             if (cancelRequested) {
                 appendPartialAssistant(transcript, partialContent)
                 return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
             }
 
             if (response.finishReason == FinishReason.CONTENT_FILTER) {
+                appendPartialAssistant(transcript, partialContent)
                 return finish(
                     transcript,
                     startSize,
@@ -356,7 +375,8 @@ class AgentRuntime(
                 )
             }
 
-            if (response.finishReason == FinishReason.LENGTH && response.toolCalls.isNotEmpty()) {
+            if (response.finishReason == FinishReason.LENGTH && responseToolCalls.isNotEmpty()) {
+                appendPartialAssistant(transcript, partialContent)
                 val limitHint = request.maxOutputTokens?.let { " ($it tokens)" }.orEmpty()
                 return finish(
                     transcript,
@@ -373,7 +393,7 @@ class AgentRuntime(
                 )
             }
 
-            if (response.toolCalls.isEmpty() && response.content.isNullOrBlank()) {
+            if (responseToolCalls.isEmpty() && response.content.isNullOrBlank()) {
                 return finish(
                     transcript,
                     startSize,
@@ -388,11 +408,11 @@ class AgentRuntime(
                 )
             }
 
-            transcript.add(AgentMessage.Assistant(response.content, response.toolCalls))
+            transcript.add(AgentMessage.Assistant(response.content, responseToolCalls))
             partialContent.clear()
             response.content?.takeIf { it.isNotBlank() }?.let { onEvent(AgentEvent.AssistantMessage(it)) }
 
-            if (response.toolCalls.isEmpty()) {
+            if (responseToolCalls.isEmpty()) {
                 val outcome =
                     when (response.finishReason) {
                         FinishReason.CONTENT_FILTER ->
@@ -411,7 +431,7 @@ class AgentRuntime(
             }
 
             if (!toolsEnabled) {
-                appendBudgetObservations(transcript, response.toolCalls, onEvent)
+                appendBudgetObservations(transcript, responseToolCalls, onEvent)
                 return finish(
                     transcript,
                     startSize,
@@ -430,7 +450,7 @@ class AgentRuntime(
             }
 
             if (toolRounds >= config.maxToolRounds) {
-                appendBudgetObservations(transcript, response.toolCalls, onEvent)
+                appendBudgetObservations(transcript, responseToolCalls, onEvent)
                 onEvent(
                     AgentEvent.Notice(
                         "No more tool steps are available. Answering with the information already collected.",
@@ -440,7 +460,7 @@ class AgentRuntime(
                 continue
             }
 
-            val calls = response.toolCalls
+            val calls = responseToolCalls
             val executable = calls.take(config.maxToolCallsPerRound)
             val extra = calls.drop(config.maxToolCallsPerRound)
             val batchId = UUID.randomUUID().toString()
@@ -556,11 +576,11 @@ class AgentRuntime(
                     )
                 }
                 transcript.add(
-                    AgentMessage.System(
-                        "Tool execution was stopped because too many tool calls failed too quickly " +
-                            "(max ${config.maxRapidToolFailures} failures in ${config.rapidToolFailureWindowMs} ms). " +
-                            "Do not call more tools. Explain to the user what failed and answer with the " +
-                            "information already collected.",
+                    AgentMessage.User(
+                        "[runtime:event tool_failure_loop count=${config.maxRapidToolFailures} " +
+                            "window_ms=${config.rapidToolFailureWindowMs}]\n" +
+                            "Tool execution was stopped after repeated failures. Summarize what failed " +
+                            "and answer with the information already collected.",
                     ),
                 )
                 onEvent(AgentEvent.Notice("Tool failures repeated; stopping tool use and asking the model to summarize."))
@@ -713,7 +733,20 @@ class AgentRuntime(
                         appendCancelled(transcript, executable.drop(index), "cancelled by user", onEvent)
                         return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled by user"), onEvent)
                     }
-                    result = tools.invokeAgent(executed, humanApproved = true)
+                    result =
+                        try {
+                            tools.invokeAgent(executed, humanApproved = true)
+                        } catch (e: CancellationException) {
+                            appendCancelled(transcript, executable.drop(index), "cancelled", onEvent)
+                            return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
+                        } catch (e: Exception) {
+                            AgentInvocationResult(
+                                tool = executed.name,
+                                ok = false,
+                                errorCode = "internal_error",
+                                errorMessage = AgentSanitizer.sanitizeText(e.message ?: "tool failed"),
+                            )
+                        }
                 }
 
                 if (recordObservation(executed, result.toObservation(), confirmationMs)) {
@@ -751,6 +784,23 @@ class AgentRuntime(
             }
 
             toolRounds += 1
+            }
+        } catch (e: CancellationException) {
+            appendPartialAssistant(transcript, partialContent)
+            return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
+        } catch (e: Exception) {
+            appendPartialAssistant(transcript, partialContent)
+            return finish(
+                transcript,
+                startSize,
+                TurnOutcome.Failed(
+                    AgentError(
+                        AgentTurnErrorCode.UNKNOWN,
+                        AgentSanitizer.sanitizeText(e.message ?: e.toString()).ifBlank { "Agent failed." },
+                    ),
+                ),
+                onEvent,
+            )
         }
     }
 
@@ -859,9 +909,10 @@ class AgentRuntime(
         target: String? = null,
         suggestions: List<String> = emptyList(),
     ): ToolObservation {
+        val sanitizedTarget = target?.let { AgentSanitizer.sanitizeText(it) }
         val output =
             buildJsonObject {
-                if (target != null) put("target", target)
+                if (sanitizedTarget != null) put("target", sanitizedTarget)
                 if (suggestions.isNotEmpty()) {
                     put(
                         "suggestions",
@@ -875,7 +926,7 @@ class AgentRuntime(
             ok = false,
             tool = tool,
             errorCode = code,
-            message = message,
+            message = AgentSanitizer.sanitizeText(message),
             output = output.takeIf { it.isNotEmpty() },
         )
     }
@@ -993,6 +1044,16 @@ class AgentRuntime(
         var id: String? = null
         var name: String? = null
         val arguments = StringBuilder()
+    }
+
+    private fun ensureUniqueToolCallIds(calls: List<ToolCall>): List<ToolCall> {
+        val used = mutableSetOf<String>()
+        return calls.map { call ->
+            val id =
+                call.id.takeIf { it.isNotBlank() && used.add(it) }
+                    ?: "call_${UUID.randomUUID()}".also { used.add(it) }
+            call.copy(id = id)
+        }
     }
 
     private fun displayArgs(

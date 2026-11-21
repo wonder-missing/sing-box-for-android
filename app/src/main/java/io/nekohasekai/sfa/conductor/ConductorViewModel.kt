@@ -85,6 +85,7 @@ import io.nekohasekai.sfa.agent.TurnResult
 import io.nekohasekai.sfa.agent.TurnState
 import io.nekohasekai.sfa.agent.VisionPort
 import io.nekohasekai.sfa.agent.buildCommandNodeState
+import io.nekohasekai.sfa.agent.formatUserMessageWithAttachments
 import io.nekohasekai.sfa.agent.validateTranscriptPairing
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.constant.ServiceMode
@@ -1236,51 +1237,19 @@ class ConductorViewModel(
         viewModelScope.launch {
             delay(STOP_CONFIRM_TIMEOUT_MS)
             if (!_uiState.value.isRunning) return@launch
-            // A blocked provider or tool call may never observe the flag. One
-            // second is the whole grace period: return the composer and make
-            // the timeout explicit instead of leaving Stop on screen for 3s.
-            agentJob?.cancel()
-            agentJob = null
-            if (!_uiState.value.isRunning) return@launch
-            val stoppedItems =
-                _uiState.value.items.map { item ->
-                    if (item is ConductorItem.Tool && item.status == ToolStatus.RUNNING) {
-                        item.copy(
-                            status = ToolStatus.CANCELLED,
-                            result =
-                                ToolResultView(
-                                    callId = item.call.id,
-                                    name = item.call.name,
-                                    ok = false,
-                                    output = null,
-                                    errorCode = "cancelled",
-                                    message = "Stopped by user; cancellation was not confirmed.",
-                                    truncated = false,
-                                ),
-                        )
-                    } else {
-                        item
-                    }
-                }
-            updateUi {
-                copy(
-                    items = stoppedItems,
-                    isRunning = false,
-                    turnStatus = null,
-                    turnStatusSince = 0L,
-                )
-            }
+            // A blocked provider or tool call may never observe the flag. Do not
+            // cancel the job or persist a half-turn: the UI items are ahead of
+            // the model transcript. Keep isRunning until the worker actually
+            // exits, otherwise the next turn loses the user/tool history.
+            AppLog.info("conductor stop timeout waiting for tool")
+            setTurnStatus("Stopping…")
             append(
-                ConductorItem.Error(
-                    "agent",
-                    "Stopped by user; the current tool did not confirm cancellation within 1 second.",
+                ConductorItem.Notice(
+                    "conductor",
+                    "Stop requested; the current tool has not confirmed cancellation yet. " +
+                        "Waiting for it to exit.",
                 ),
             )
-            stopRequested = false
-            runtime.resetCancel()
-            toolStartedAt.clear()
-            ModelProviderSettings.unpin()
-            persistSession()
         }
     }
 
@@ -1647,16 +1616,23 @@ class ConductorViewModel(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
+                        val message = AgentSanitizer.sanitizeText(e.message ?: "Agent failed.")
                         TurnResult(
-                            messages = emptyList(),
+                            messages =
+                                listOf(
+                                    AgentMessage.User(
+                                        formatUserMessageWithAttachments(text, initialEvent, images),
+                                        images = images,
+                                    ),
+                                ),
                             outcome =
                                 TurnOutcome.Failed(
                                     AgentError(
                                         AgentTurnErrorCode.UNKNOWN,
-                                        e.message ?: "Agent failed.",
+                                        message,
                                     ),
                                 ),
-                            pendingEvent = initialEvent,
+                            pendingEvent = initialEvent ?: TurnEvent("turn_failed", "exception", message),
                         )
                     }
                 withContext(Dispatchers.Main) {
@@ -2745,6 +2721,22 @@ class ConductorViewModel(
         note: String,
     ) {
         if (_uiState.value.isRunning) return
+        val text =
+            buildString {
+                appendLine(goal)
+                items.forEach { appendLine(it.step) }
+                appendLine(note)
+            }
+        if (DefaultAgentInputGuard.check(text) is InputGuardResult.Blocked) {
+            append(
+                ConductorItem.Notice(
+                    "plan",
+                    "This plan may contain a subscription link, token or log excerpt. " +
+                        "It was not saved. Remove the sensitive part and try again.",
+                ),
+            )
+            return
+        }
         planStore.update(goal, items, note)
     }
 
@@ -2758,6 +2750,7 @@ class ConductorViewModel(
             items = _uiState.value.items,
             appVersion = BuildConfig.VERSION_NAME,
             sessionStartVersion = sessionStartVersion,
+            plan = _uiState.value.plan,
         )
 
     fun apiTraceMarkdown(lastEntries: Int? = null): String = AgentApiTrace.asMarkdown(lastEntries)
@@ -2820,11 +2813,15 @@ class ConductorViewModel(
     }
 
     private fun persistSession() {
+        // Mid-turn the UI items are ahead of the model transcript. Writing that
+        // pair would make a process-death restore show tool cards the model
+        // never saw. The turn's final persist below writes both together.
+        if (_uiState.value.isRunning) return
         // The restored session must be applied before any write: a save during
         // startup would replace the stored conversation with the empty state.
         if (!sessionReady.isCompleted) return
         val items = _uiState.value.items.filterNot { it is ConductorItem.Confirmation }
-        val plan = _uiState.value.plan?.takeIf { it.items.isNotEmpty() }
+        val plan = _uiState.value.plan?.takeIf { it.items.isNotEmpty() || it.cleared }
         if (transcript.isEmpty() && items.isEmpty() && pendingTurnEvent == null && plan == null) {
             runCatching { sessionWrites.execute { sessionStore.clear() } }
             return

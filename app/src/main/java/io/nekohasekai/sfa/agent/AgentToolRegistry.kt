@@ -162,14 +162,7 @@ class AgentToolRegistry(
                 ?.let { setOf(it) }
                 .orEmpty()
 
-        val policy =
-            if (definition.permission == AgentPermission.DATA_EGRESS &&
-                definition.confirmationPolicy == ConfirmationPolicy.NEVER
-            ) {
-                ConfirmationPolicy.AGENT_ONLY
-            } else {
-                definition.confirmationPolicy
-            }
+        val policy = definition.effectiveConfirmationPolicy
         val confirmationRequired =
             when (policy) {
                 ConfirmationPolicy.NEVER -> false

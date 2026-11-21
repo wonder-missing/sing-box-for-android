@@ -4,7 +4,7 @@ import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.AgentSanitizer
 import io.nekohasekai.sfa.agent.RUNTIME_EVENT_PREFIX
-import io.nekohasekai.sfa.agent.formatUserMessage
+import io.nekohasekai.sfa.agent.formatUserMessageWithAttachments
 
 /**
  * A session can outlive several app versions. Older runtimes rolled back a
@@ -30,7 +30,9 @@ internal fun reconcileAgentUserMessages(
     items: List<ConductorItem>,
 ): List<AgentMessage> {
     val expected =
-        agentUserMessages(items).map { it.copy(content = formatUserMessage(it.content, null)) }
+        agentUserMessages(items).map {
+            it.copy(content = formatUserMessageWithAttachments(it.content, null, it.images))
+        }
     if (expected.isEmpty()) return transcript
 
     val firstUserIndex = transcript.indexOfFirst { it is AgentMessage.User }

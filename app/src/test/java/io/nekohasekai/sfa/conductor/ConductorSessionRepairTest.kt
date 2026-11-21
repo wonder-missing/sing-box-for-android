@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.conductor
 
+import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.AgentMessage
+import io.nekohasekai.sfa.agent.formatUserMessageWithAttachments
 import io.nekohasekai.sfa.agent.validateTranscriptPairing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +35,33 @@ class ConductorSessionRepairTest {
             listOf("first", "second", "[runtime:event turn_failed reason=model_unavailable]\nthird"),
             repaired.filterIsInstance<AgentMessage.User>().map { it.content },
         )
+        assertTrue(validateTranscriptPairing(repaired))
+    }
+
+    @Test
+    fun restoresAnImageUserMessageUsingItsRuntimeAttachmentMetadata() {
+        val image = AgentImageRef("img1", "shot.jpg", "image/jpeg", 10, 20, 3)
+        val transcript =
+            listOf(
+                AgentMessage.User("first"),
+                AgentMessage.Assistant("answer", emptyList()),
+            )
+        val items =
+            listOf(
+                ConductorItem.User("first"),
+                ConductorItem.Assistant("answer"),
+                ConductorItem.User("look", images = listOf(image)),
+            )
+
+        val repaired = reconcileAgentUserMessages(transcript, items)
+
+        val users = repaired.filterIsInstance<AgentMessage.User>()
+        assertEquals(2, users.size)
+        assertEquals(
+            formatUserMessageWithAttachments("look", null, listOf(image)),
+            users[1].content,
+        )
+        assertEquals(listOf(image), users[1].images)
         assertTrue(validateTranscriptPairing(repaired))
     }
 

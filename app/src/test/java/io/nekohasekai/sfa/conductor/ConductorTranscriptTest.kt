@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.ConfirmationRequest
+import io.nekohasekai.sfa.agent.PlanItem
+import io.nekohasekai.sfa.agent.PlanState
 import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
@@ -177,6 +179,26 @@ class ConductorTranscriptTest {
 
         assertTrue(markdown.contains("````text\n```\ninner\n```\n````"))
         assertFalse(markdown.contains("~~~"))
+    }
+
+    @Test
+    fun planIsExportedAndSensitiveTextIsRedacted() {
+        val plan =
+            PlanState(
+                version = 2,
+                goal = "token=secret",
+                items = listOf(PlanItem("fetch https://example.com/private?token=abc")),
+                note = "api_key=top-secret",
+            )
+
+        val markdown = conductorConversationMarkdown(emptyList(), "1.0", plan = plan)
+
+        assertTrue(markdown.contains("## Plan"))
+        assertTrue(markdown.contains("[pending]"))
+        assertTrue(markdown.contains("token=***"))
+        assertTrue(markdown.contains("api_key=***"))
+        assertFalse(markdown.contains("secret"))
+        assertFalse(markdown.contains("token=abc"))
     }
 
     @Test

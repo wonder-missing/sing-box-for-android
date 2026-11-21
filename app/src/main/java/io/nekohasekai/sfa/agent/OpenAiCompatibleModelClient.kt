@@ -418,7 +418,23 @@ class OpenAiCompatibleModelClient(
         images: Map<String, AgentImageData>,
     ): JsonArray =
         buildJsonArray {
-            messages.forEach { message ->
+            // Chat templates vary in how many leading system messages they
+            // accept. Merge the leading run into one message; a compaction
+            // summary then follows the main prompt instead of creating a second
+            // system role at the head.
+            val leadingSystem = messages.takeWhile { it is AgentMessage.System }
+            if (leadingSystem.isNotEmpty()) {
+                add(
+                    buildJsonObject {
+                        put("role", "system")
+                        put(
+                            "content",
+                            leadingSystem.joinToString("\n\n") { (it as AgentMessage.System).content },
+                        )
+                    },
+                )
+            }
+            messages.drop(leadingSystem.size).forEach { message ->
                 when (message) {
                     is AgentMessage.System ->
                         add(

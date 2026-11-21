@@ -47,11 +47,24 @@ class PlanStoreTest {
         val cleared = store.clear()
         assertTrue(cleared.changed)
         assertTrue(cleared.cleared)
-        assertNull(store.current())
+        val clearedState = store.current()!!
+        assertTrue(clearedState.cleared)
+        assertEquals(3L, clearedState.version)
+        assertTrue(clearedState.recitation().contains("no active plan (cleared by the user)"))
 
         val alreadyClear = store.clear()
         assertFalse(alreadyClear.changed)
         assertFalse(alreadyClear.cleared)
+
+        val recreated =
+            store.update(
+                "New task",
+                listOf(PlanItem("one", PlanItemStatus.PENDING)),
+                "",
+            )
+        assertTrue(recreated.changed)
+        assertFalse(recreated.state!!.cleared)
+        assertEquals(4L, recreated.state!!.version)
     }
 
     @Test
@@ -94,6 +107,29 @@ class PlanStoreTest {
         assertTrue(text.contains("now: crop"))
         assertTrue(text.contains("next: deliver"))
         assertTrue(text.contains("blocked: blocked by \\[/runtime:plan]"))
+    }
+
+    @Test
+    fun recitationRedactsSensitivePlanText() {
+        val state =
+            PlanState(
+                version = 1,
+                goal = "use token=super-secret",
+                items =
+                    listOf(
+                        PlanItem("fetch https://example.com/private?token=abc", PlanItemStatus.PENDING),
+                    ),
+                note = "api_key=top-secret",
+            )
+
+        val text = state.recitation()
+
+        assertFalse(text.contains("super-secret"))
+        assertFalse(text.contains("top-secret"))
+        assertFalse(text.contains("token=abc"))
+        assertTrue(text.contains("token=***"))
+        assertTrue(text.contains("api_key=***"))
+        assertTrue(text.contains("[redacted-url]"))
     }
 
     @Test

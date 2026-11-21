@@ -1,9 +1,12 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import java.util.Locale
 
@@ -124,7 +127,7 @@ class AgentToolCatalog(
                         // lookup. Keep them compact; the model can search by
                         // exact name when it decides to try one.
                         if (!weak) put("parameters", tool.parametersSchema)
-                        put("requiresConfirmation", tool.confirmationPolicy != ConfirmationPolicy.NEVER)
+                        put("requiresConfirmation", tool.effectiveConfirmationPolicy != ConfirmationPolicy.NEVER)
                     }
                 }.toMutableList()
         val categories = definitions.groupingBy { it.category }.eachCount().toSortedMap()
@@ -211,9 +214,23 @@ class AgentToolCatalog(
 
     private fun usage(tool: AgentToolDefinition): String {
         val parameters =
-            tool.parameters.joinToString(", ") { spec ->
-                val optional = if (spec.required) "" else "?"
-                "${spec.name}: ${spec.type.schemaType}$optional"
+            if (tool.passthroughArguments) {
+                val schema = tool.parametersSchema
+                val properties = schema["properties"] as? JsonObject
+                val required =
+                    (schema["required"] as? JsonArray)
+                        ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                        ?.toSet()
+                        .orEmpty()
+                properties
+                    ?.keys
+                    ?.joinToString(", ") { name -> if (name in required) name else "$name?" }
+                    .orEmpty()
+            } else {
+                tool.parameters.joinToString(", ") { spec ->
+                    val optional = if (spec.required) "" else "?"
+                    "${spec.name}: ${spec.type.schemaType}$optional"
+                }
             }
         return "${tool.name}($parameters): ${tool.description}"
     }
@@ -227,7 +244,7 @@ class AgentToolCatalog(
         weak: Boolean,
     ): JsonObject =
         buildJsonObject {
-            put("query", query)
+            put("query", AgentSanitizer.sanitizeText(query))
             put("total", total)
             put("truncated", truncated)
             put("weak", weak)

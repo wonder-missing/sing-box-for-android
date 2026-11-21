@@ -3,6 +3,11 @@ package io.nekohasekai.sfa.agent
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -203,6 +208,39 @@ class AgentToolCatalogTest {
         val output = smallCatalog.searchOutput("network", limit = 5, maxChars = 1_400)
         assertTrue(output.toString().length <= 1_400)
         assertEquals("true", (output["truncated"] as JsonPrimitive).content)
+    }
+
+    @Test
+    fun passthroughRosterListsSchemaParameters() {
+        val plan =
+            definition("plan_update", "utility", listOf("plan"), core = true).copy(
+                passthroughArguments = true,
+                parametersSchemaOverride =
+                    buildJsonObject {
+                        put("type", "object")
+                        putJsonObject("properties") {
+                            putJsonObject("goal") { put("type", "string") }
+                            putJsonObject("items") { put("type", "array") }
+                            putJsonObject("note") { put("type", "string") }
+                        }
+                        putJsonArray("required") { add("items") }
+                    },
+            )
+        val catalog = AgentToolCatalog(listOf(plan))
+
+        assertTrue(catalog.promptSection().contains("plan_update(goal?, items, note?)"))
+    }
+
+    @Test
+    fun dataEgressNeverIsReportedAsConfirmationRequired() {
+        val image =
+            definition("analyze_image", "files", listOf("image"))
+                .copy(permission = AgentPermission.DATA_EGRESS)
+        val catalog = AgentToolCatalog(listOf(image))
+
+        val match = (catalog.searchOutput("analyze_image")["matches"] as JsonArray).first() as JsonObject
+
+        assertEquals("true", (match["requiresConfirmation"] as JsonPrimitive).content)
     }
 
     private fun definition(

@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentSanitizer
+import io.nekohasekai.sfa.agent.PlanState
 import io.nekohasekai.sfa.agent.markdownFence
 
 /**
@@ -14,6 +15,7 @@ internal fun conductorConversationMarkdown(
     appVersion: String,
     sessionStartVersion: String = "",
     includeReasoning: Boolean = false,
+    plan: PlanState? = null,
 ): String =
     buildString {
         appendLine("# Conductor transcript")
@@ -23,6 +25,20 @@ internal fun conductorConversationMarkdown(
             appendLine("- session started on: $sessionStartVersion")
         }
         appendLine()
+        if (plan != null) {
+            appendLine("## Plan")
+            appendLine()
+            if (plan.cleared) {
+                appendLine("- state: no active plan (cleared)")
+            } else {
+                if (plan.goal.isNotBlank()) appendLine("- goal: ${AgentSanitizer.sanitizeText(plan.goal)}")
+                plan.items.forEach { item ->
+                    appendLine("- [${item.status.wire}] ${AgentSanitizer.sanitizeText(item.step)}")
+                }
+                if (plan.note.isNotBlank()) appendLine("- note: ${AgentSanitizer.sanitizeText(plan.note)}")
+            }
+            appendLine()
+        }
         items.forEach { item ->
             when (item) {
                 is ConductorItem.User -> {

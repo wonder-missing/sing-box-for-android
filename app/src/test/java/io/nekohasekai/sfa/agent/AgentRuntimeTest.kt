@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.agent
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -106,6 +107,73 @@ class AgentRuntimeTest {
         assertEquals(firstMessages.dropLast(1), second.take(firstMessages.size - 1))
         assertEquals(plan, (second.last() as AgentMessage.User).content)
         assertTrue(second[second.lastIndex - 1] is AgentMessage.Tool)
+    }
+
+    @Test
+    fun unknownRouteTargetIsRedactedInTheMetaError() {
+        val call =
+            ToolCall(
+                "call_1",
+                AgentMetaTools.ROUTE_CALL,
+                """{"tool":"https://example.com/private?token=secret","args":{}}""",
+            )
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val runtime = runtime(model, FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }, key = "sk-test")
+
+        val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        val observation = result.messages.filterIsInstance<AgentMessage.Tool>().single().content
+        assertFalse(observation.contains("secret"))
+        assertTrue(observation.contains("[redacted-url]"))
+    }
+
+    @Test
+    fun providerRejectingThePlanBlockRetriesWithoutItOnce() {
+        val plan = "[runtime:plan v=1]\ngoal: test\n[/runtime:plan]"
+        val requests = mutableListOf<AgentModelRequest>()
+        var calls = 0
+        val model =
+            object : AgentModelClient {
+                override suspend fun complete(
+                    request: AgentModelRequest,
+                    apiKey: String,
+                ): AgentModelResponse {
+                    requests += request
+                    if (calls++ == 0) {
+                        throw AgentModelException(
+                            AgentTurnErrorCode.INVALID_REQUEST,
+                            "provider rejected the request",
+                        )
+                    }
+                    return response("ok")
+                }
+            }
+        val runtime =
+            runtime(
+                model,
+                FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") },
+                key = "sk-test",
+                planBlock = { plan },
+            )
+
+        val events = mutableListOf<AgentEvent>()
+        val result =
+            runBlocking {
+                runtime.runTurn("hi", emptyList(), onEvent = { events += it }, confirm = { true })
+            }
+
+        assertTrue(result.outcome is TurnOutcome.Completed)
+        assertEquals(2, requests.size)
+        assertTrue(requests[0].messages.last() is AgentMessage.User)
+        assertEquals(plan, (requests[0].messages.last() as AgentMessage.User).content)
+        assertTrue(requests[1].messages.none { it is AgentMessage.User && it.content.contains("[runtime:plan") })
+        assertTrue(events.filterIsInstance<AgentEvent.Notice>().any { it.text.contains("retrying without it") })
     }
 
     @Test
@@ -288,6 +356,29 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun duplicateProviderToolCallIdsAreNormalized() {
+        val first = ToolCall("duplicate", "list_nodes", "{}")
+        val second = ToolCall("duplicate", "list_nodes", "{}")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(first, second), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime = runtime(model, executor, key = "sk-test")
+
+        val result = runBlocking { runtime.runTurn("show nodes", emptyList(), onEvent = {}, confirm = { true }) }
+
+        val assistant = result.messages.filterIsInstance<AgentMessage.Assistant>().first()
+        assertEquals(2, assistant.toolCalls.size)
+        assertEquals(2, assistant.toolCalls.map { it.id }.distinct().size)
+        assertEquals(2, result.messages.filterIsInstance<AgentMessage.Tool>().size)
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
     fun stepBudgetStillProducesAnAnswer() {
         val first = ToolCall("call_1", "list_nodes", "{}")
         val second = ToolCall("call_2", "list_nodes", "{}")
@@ -355,8 +446,11 @@ class AgentRuntimeTest {
         assertEquals(10, result.messages.count { it is AgentMessage.Tool })
         assertTrue(
             result.messages
-                .filterIsInstance<AgentMessage.System>()
-                .any { it.content.contains("too many tool calls") && it.content.contains("Do not call more tools") },
+                .filterIsInstance<AgentMessage.User>()
+                .any {
+                    it.content.contains("[runtime:event tool_failure_loop") &&
+                        it.content.contains("Summarize what failed")
+                },
         )
         assertTrue(validateTranscriptPairing(result.messages))
     }
@@ -968,6 +1062,121 @@ class AgentRuntimeTest {
             events.filterIsInstance<AgentEvent.AssistantDelta>().map { it.text },
         )
         assertTrue(result.messages.any { it is AgentMessage.Assistant && it.content == "Hello" })
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun unexpectedRuntimeExceptionStillFinishesAndKeepsTheUser() {
+        val model =
+            object : AgentModelClient {
+                override suspend fun complete(
+                    request: AgentModelRequest,
+                    apiKey: String,
+                ): AgentModelResponse = throw IllegalStateException("boom")
+            }
+        val runtime =
+            runtime(
+                model,
+                FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") },
+                key = "sk-test",
+            )
+
+        val events = mutableListOf<AgentEvent>()
+        val result =
+            runBlocking {
+                runtime.runTurn("hi", emptyList(), onEvent = { events += it }, confirm = { true })
+            }
+
+        assertTrue(result.outcome is TurnOutcome.Failed)
+        assertTrue(result.messages.any { it is AgentMessage.User && it.content == "hi" })
+        assertTrue(events.any { it is AgentEvent.TurnFinished })
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun confirmedToolCancellationStillFinishesWithUserAndToolResult() {
+        val call = ToolCall("call_1", "probe_via_node", "{}")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null),
+                ),
+            )
+        val executor =
+            FakeExecutor(listOf(probe)) { _, approved ->
+                if (approved) throw CancellationException("cancelled")
+                AgentInvocationResult(
+                    tool = "probe_via_node",
+                    ok = false,
+                    confirmation =
+                        AgentConfirmation(
+                            tool = "probe_via_node",
+                            argsJson = "{}",
+                            displayArgsJson = "{}",
+                            reason = "test",
+                        ),
+                )
+            }
+        val runtime = runtime(model, executor, key = "sk-test")
+
+        val events = mutableListOf<AgentEvent>()
+        val result =
+            runBlocking {
+                runtime.runTurn("hi", emptyList(), onEvent = { events += it }, confirm = { true })
+            }
+
+        assertTrue(result.outcome is TurnOutcome.Cancelled)
+        assertTrue(result.messages.any { it is AgentMessage.User && it.content == "hi" })
+        val tool = result.messages.filterIsInstance<AgentMessage.Tool>().single()
+        assertTrue(tool.content.contains("cancelled"))
+        assertTrue(
+            events
+                .filterIsInstance<AgentEvent.ToolFinished>()
+                .any { it.result.callId == "call_1" && !it.result.ok },
+        )
+        assertTrue(validateTranscriptPairing(result.messages))
+    }
+
+    @Test
+    fun truncatedStreamingAnswerKeepsThePartialContentInTheTranscript() {
+        val streaming =
+            StreamingScriptedModel(
+                mutableListOf(
+                    listOf(
+                        AgentModelChunk.ContentDelta("partial answer"),
+                        AgentModelChunk.ToolCallDelta(0, id = "call_1", name = "list_nodes", argumentsDelta = "{}"),
+                        AgentModelChunk.Completed(FinishReason.LENGTH, null),
+                    ),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime =
+            AgentRuntime(
+                inputGuard = DefaultAgentInputGuard,
+                model = ScriptedModel(mutableListOf()),
+                tools = executor,
+                apiKeys = FakeKeyProvider("sk-test"),
+                config = AgentConfig(maxToolRounds = 1),
+                streamingModel = streaming,
+            )
+
+        val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        assertTrue(result.outcome is TurnOutcome.Failed)
+        assertEquals(
+            AgentTurnErrorCode.OUTPUT_TRUNCATED,
+            (result.outcome as TurnOutcome.Failed).error.code,
+        )
+        assertEquals(
+            listOf("hi", "partial answer"),
+            result.messages.mapNotNull {
+                when (it) {
+                    is AgentMessage.User -> it.content
+                    is AgentMessage.Assistant -> it.content
+                    else -> null
+                }
+            },
+        )
         assertTrue(validateTranscriptPairing(result.messages))
     }
 

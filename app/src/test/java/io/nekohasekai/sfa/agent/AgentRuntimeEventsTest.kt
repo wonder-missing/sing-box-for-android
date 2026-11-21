@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.agent
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRuntimeEventsTest {
@@ -57,6 +58,15 @@ class AgentRuntimeEventsTest {
                 "path=conductor/resources/inbox/img1/shot.jpg mime=image/jpeg size=3]",
             text,
         )
+    }
+
+    @Test
+    fun imageOnlyMessageGetsARealRequestBeforeItsMetadata() {
+        val image = AgentImageRef("img1", "shot.jpg", "image/jpeg", 10, 20, 3)
+
+        val text = formatUserMessageWithAttachments("", null, listOf(image))
+
+        assertTrue(text.startsWith("Please look at the attached image.\n[runtime:attachment"))
     }
 
     @Test

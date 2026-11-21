@@ -67,10 +67,17 @@ internal fun formatUserMessageWithAttachments(
         }
     if (attachments.isEmpty()) return base
     val metadata = attachments.joinToString("\n")
-    return if (base.isBlank()) metadata else "$base\n$metadata"
+    val prompt =
+        if (text.isBlank()) {
+            if (base.isBlank()) IMAGE_ONLY_PROMPT else "$base\n$IMAGE_ONLY_PROMPT"
+        } else {
+            base
+        }
+    return "$prompt\n$metadata"
 }
 
 private const val MAX_EVENT_MESSAGE_CHARS = 400
+private const val IMAGE_ONLY_PROMPT = "Please look at the attached image."
 
 private fun escapeEventValue(value: String): String =
     value

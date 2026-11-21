@@ -52,6 +52,11 @@ data class PlanState(
     val goal: String = "",
     val items: List<PlanItem> = emptyList(),
     val note: String = "",
+    /**
+     * A cleared tombstone. It keeps the version monotonic and lets the model
+     * know that an earlier plan_update result is no longer active.
+     */
+    val cleared: Boolean = false,
 ) {
     /**
      * A compact recitation for the end of the model request. The full plan
@@ -59,6 +64,13 @@ data class PlanState(
      * progress and blockers in the model's recent attention window.
      */
     fun recitation(): String {
+        if (cleared) {
+            return buildString {
+                appendLine("[runtime:plan v=$version]")
+                appendLine("state: no active plan (cleared by the user)")
+                append("[/runtime:plan]")
+            }
+        }
         val done = items.count { it.status == PlanItemStatus.DONE }
         val current =
             items.firstOrNull { it.status == PlanItemStatus.IN_PROGRESS }
@@ -67,15 +79,15 @@ data class PlanState(
         val next = items.drop(currentIndex + 1).firstOrNull { it.status == PlanItemStatus.PENDING }
         return buildString {
             appendLine("[runtime:plan v=$version]")
-            if (goal.isNotBlank()) appendLine("goal: ${escapeRuntimeMarker(goal)}")
+            if (goal.isNotBlank()) appendLine("goal: ${modelText(goal)}")
             appendLine("progress: $done/${items.size} done")
             if (current == null) {
                 appendLine("all steps done")
             } else {
-                appendLine("now: ${escapeRuntimeMarker(current.step)}")
-                next?.let { appendLine("next: ${escapeRuntimeMarker(it.step)}") }
+                appendLine("now: ${modelText(current.step)}")
+                next?.let { appendLine("next: ${modelText(it.step)}") }
             }
-            if (note.isNotBlank()) appendLine("blocked: ${escapeRuntimeMarker(note)}")
+            if (note.isNotBlank()) appendLine("blocked: ${modelText(note)}")
             append("[/runtime:plan]")
         }
     }
@@ -114,19 +126,24 @@ class PlanStore(
     ): PlanUpdateResult =
         synchronized(lock) {
             val current = _state.value
-            val normalizedItems = items.map { it.copy(step = it.step.trim()) }.filter { it.step.isNotEmpty() }
+            val normalizedItems =
+                items
+                    .map { it.copy(step = cleanPlanText(it.step)) }
+                    .filter { it.step.isNotEmpty() }
             if (normalizedItems.isEmpty()) {
-                if (current == null) {
-                    PlanUpdateResult(null, changed = false, cleared = false)
+                if (current == null || current.cleared) {
+                    PlanUpdateResult(current, changed = false, cleared = false)
                 } else {
-                    _state.value = null
-                    PlanUpdateResult(null, changed = true, cleared = true)
+                    val clearedState = PlanState(version = current.version + 1L, cleared = true)
+                    _state.value = clearedState
+                    PlanUpdateResult(clearedState, changed = true, cleared = true)
                 }
             } else {
-                val normalizedGoal = goal.trim()
-                val normalizedNote = note.trim()
+                val normalizedGoal = cleanPlanText(goal)
+                val normalizedNote = cleanPlanText(note)
                 if (
                     current != null &&
+                    !current.cleared &&
                     current.goal == normalizedGoal &&
                     current.items == normalizedItems &&
                     current.note == normalizedNote
@@ -148,14 +165,18 @@ class PlanStore(
 
     fun clear(): PlanUpdateResult = update("", emptyList(), "")
 
-    private fun normalized(value: PlanState?): PlanState? =
-        value
-            ?.takeIf { it.items.isNotEmpty() }
-            ?.let { it.copy(items = it.items.filter { item -> item.step.isNotBlank() }) }
-            ?.takeIf { it.items.isNotEmpty() }
+    private fun normalized(value: PlanState?): PlanState? {
+        if (value == null) return null
+        if (value.cleared) return value.copy(items = emptyList())
+        val items = value.items.filter { item -> item.step.isNotBlank() }
+        return value.copy(items = items).takeIf { items.isNotEmpty() }
+    }
 }
 
-private fun escapeRuntimeMarker(text: String): String =
-    text
+private fun cleanPlanText(text: String): String = AgentSanitizer.scrubForModelRead(text.trim())
+
+private fun modelText(text: String): String =
+    AgentSanitizer
+        .sanitizeText(text)
         .replace("[runtime:", "\\[runtime:")
         .replace("[/runtime:", "\\[/runtime:")

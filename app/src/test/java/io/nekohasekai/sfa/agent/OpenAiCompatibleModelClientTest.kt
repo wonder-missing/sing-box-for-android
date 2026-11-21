@@ -109,6 +109,33 @@ class OpenAiCompatibleModelClientTest {
     }
 
     @Test
+    fun mergesLeadingSystemMessagesIntoOne() {
+        responseBody = """{"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]}"""
+        val client = clientFor("http://127.0.0.1:${server.localPort}")
+
+        runBlocking {
+            client.complete(
+                AgentModelRequest(
+                    messages =
+                        listOf(
+                            AgentMessage.System("main prompt"),
+                            AgentMessage.System("compaction summary"),
+                            AgentMessage.User("hi"),
+                        ),
+                    tools = emptyList(),
+                    maxOutputTokens = 16,
+                    timeoutMs = 5_000,
+                    toolChoice = AgentToolChoice.NONE,
+                ),
+                apiKey = "sk-test",
+            )
+        }
+
+        assertEquals(1, Regex("\"role\":\"system\"").findAll(requestBody).count())
+        assertTrue(requestBody.contains("main prompt\\n\\ncompaction summary"))
+    }
+
+    @Test
     fun serializesUserImagesAsContentParts() {
         responseBody =
             """

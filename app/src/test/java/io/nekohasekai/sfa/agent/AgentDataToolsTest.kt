@@ -634,7 +634,8 @@ class AgentDataToolsTest {
 
         val cleared = registry.exec("plan_update", """{"items":[]}""")
         assertTrue(cleared.output!!.boolean("cleared"))
-        assertTrue(planStore.current() == null)
+        assertTrue(planStore.current()!!.cleared)
+        assertTrue(planStore.current()!!.items.isEmpty())
     }
 
     @Test

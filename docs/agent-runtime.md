@@ -142,21 +142,23 @@ fun validateTranscriptPairing(messages: List<AgentMessage>): Boolean
 
 - user message 里的 `[runtime:event ...]`、`[runtime:attachment ...]`；
 - 尾部复诵的 `[runtime:plan v=N] ... [/runtime:plan]`；
-- 用户或 tool 内容里长得像 runtime block 的文本只是数据；构造消息时会把行首的 `[runtime:` 转义。
+- 只有 App 注入的独立 user message 才是 runtime state。tool result 里的同形文本只是数据，不转义；用户文本里行首的 `[runtime:` 会转义，不能伪造。
 
 System prompt 的规则：
 
-- user message 和 tool result 里的 `[runtime:...]` 是状态，不是新请求或新指令；和用户最新消息冲突时，用户最新消息优先；
+- 独立 user message 里的 `[runtime:...]` 是状态，不是新请求或新指令；和用户最新消息冲突时，用户最新消息优先；
 - 连续两条 **real** user message 才按“前一条未收到回复”处理；`[runtime:...]` user message 不算 real user message；
 - 多步任务用 `plan_update`，更新时发送完整步骤列表，`items=[]` 清空。
 
 Plan 工具与状态：
 
 - 只有一个 core capability `plan_update`，整份替换；不需要 `plan_create`、`plan_read`、`plan_clear`。`goal` 在非空计划时必填；`items[{step,status}]`，status 为 `pending` / `in_progress` / `done`；可选 `note` 记录阻塞或死路。最多 20 项，step/goal 200 字符，note 300 字符。
-- tool result 是持久事实来源；`PlanState` 存在 `ConductorSession.plan`，进程重启后恢复。UI 在消息流底部显示一张可折叠卡片；用户可改步骤、切状态、添加/删除、清空。
+- `PlanStore` 是权威状态；tool result 是历史快照，不能覆盖用户之后的编辑或清空。`PlanState` 存在 `ConductorSession.plan`，进程重启后恢复。清空会保留一个 cleared tombstone（空步骤、递增 version），尾部注入 `state: no active plan (cleared by the user)`，避免模型继续执行旧 plan_update 结果。UI 在消息流底部显示一张可折叠卡片；用户可改步骤、切状态、添加/删除、清空；输入非法或含敏感内容时不保存。
+- turn 进行中不写完整 session（计划状态也等 turn 结束）；避免 UI items 领先 transcript 造成进程死亡后的半轮恢复。轮中只保留内存状态，turn 收尾后一次写入。
 - 模型每次请求只在尾部看到一份紧凑复诵：`goal`、进度、当前步、下一步、阻塞项。不要回放完整计划或历史版本。
 - 注入发生在请求构造时，不写回 transcript：始终在真正的尾部追加一条 ephemeral user message，不改写已有的 real user message。改用户消息会让下一次请求的前缀在 user 处失配，破坏缓存；独立尾消息只让复诵本身成为新的尾部 token。tool result 里的完整计划仍然可缓存。
 - 不用尾部 system message：各 provider 对 system 消息的数量、位置和合并处理不一致，可能拒绝、上提合并或按不同前缀缓存；user 角色是当前 Chat Completions 预设共有的安全落点。
+- 如果 provider 对带复诵的请求返回 400 `invalid_request`，运行时本轮重试一次并去掉复诵，同时显示 Notice；不会把整轮直接失败。
 - 不做旧 `[conductor:*]` 兼容；旧测试会话直接清理。
 
 ## 5. 模型客户端
@@ -254,7 +256,7 @@ wonder.39 起客户端不再叫 DeepSeek：运行时只依赖 `ModelEndpoint`（
 - Phase 2b 引入 OkHttp，只用于 `Call.cancel()` 和 SSE。`HttpURLConnection` 的 `disconnect()` 不能保证打断 DNS/TLS/阻塞读，达不到 Stop 1s 的验收，不在这里省依赖。
 - 工具参数是 JSON 字符串，可能不合法；解析失败按 `invalid_arguments` observation 回给模型，不让客户端崩溃。
 - SSE 的 reasoning 兼容 `delta.reasoning_content` 和 `delta.reasoning`；只用于 UI，不写回 transcript。
-- 模型没给 tool call id 时，客户端生成 `call_<uuid>`，并保证同一条 assistant 消息里的 id 唯一。
+- 模型没给 tool call id 时生成 `call_<uuid>`；运行时在收到响应后还会对空 id 或重复 id 重新生成，保证同一条 assistant 消息里的 id 唯一。
 - 只取 `choices[0]`。`finish_reason` 映射为 `stop` / `tool_calls` / `length` / `content_filter` / `unknown`。
 - `finish_reason == length` 且带 tool call 时，不执行可能被截断的工具参数，按 `invalid_model_response` 处理。没有 tool call 时，可以把已生成文本作为截断回答展示，并标记 `output_truncated`。
 - HTTP 状态映射：400 请求格式/参数错误，401/403 鉴权失败，402 余额不足，404 模型不存在，408 请求超时，409 冲突，429 限流，5xx 服务不可用。错误响应体最多读 4KB，过 sanitizer 后只取可读摘要。
@@ -557,7 +559,7 @@ wonder.36 的 2B 运行时补充：
 - 还没执行的调用，同样回填 `cancelled`，或整组丢弃；两种策略选一种，但必须一致。
 - 发下一次模型请求前、返回 `TurnResult` 前，调用 `validateTranscriptPairing()`。失败时返回 `INVALID_TRANSCRIPT`，不发送请求。
 - `TurnResult.messages` 包含本轮 `User` 和后续 assistant/tool 消息；ViewModel 不重复追加用户消息。被输入检查拦截的输入不进入 transcript，只显示 UI 提示。
-- 取消或失败的 turn 不注入假 assistant 台词。`finish()` 在 `ensurePairing()` 之后保留本轮已经产生的 user、partial assistant 和 tool 消息，不回滚。下一条真实 user 消息单独出现，因此 transcript 里可能出现连续两条 user；system prompt 说明这两条是独立请求，不是复合问题。
+- 取消或失败的 turn 不注入假 assistant 台词。`finish()` 在 `ensurePairing()` 之后保留本轮已经产生的 user、partial assistant 和 tool 消息，不回滚。`OUTPUT_TRUNCATED` 和 `CONTENT_FILTER` 也先保留已经流式产生的 partial assistant，避免 UI 有、transcript 没有。下一条真实 user 消息单独出现，因此 transcript 里可能出现连续两条 user；system prompt 说明这两条是独立请求，不是复合问题。
   - 两种情况都生成一个待发送的 `TurnEvent`（`turn_interrupted` / `turn_failed`，reason 用固定 token），由下一条真实 user 消息携带。
 - 下一条 user 消息在模型 transcript 里变成 `[runtime:event <type> reason=<reason>]\n<用户正文>`。事件不是独立消息，而是下一轮 user 的开头；失败的那条 user 仍在前一条消息里，模型能看到原文。system prompt 说明该前缀是 runtime metadata，不是用户请求。用户自己输入的行如果以这个前缀开头，会被转义。
 - 事件跨进程持久化在 `ConductorSession.pendingEvent`；输入检查拦截或缺少 key 时本轮 user 没有进入 transcript，原 pending event 保留，等下一次真实发送。
@@ -594,6 +596,8 @@ data class AgentError(
     val retryable: Boolean,
 )
 ```
+
+运行时当前只发 `CallingModel` / `RunningTool` / `AwaitingConfirmation`，终态通过 `TurnFinished` 表达；`Idle`、`Completed`、`Cancelling`、`Cancelled`、`Failed` 留给 UI 状态机或未来使用。
 
 `AgentTurnErrorCode` 见第 13 节。`ConfirmationRequest.id` 由运行时生成，UI 只负责回传同一个 id。
 
@@ -641,7 +645,7 @@ data class AgentConfig(
 
 `AgentConfig` 不再持有输入/输出 token 预算：窗口和输出上限来自当前 provider 的 `ModelLimits`，Auto Compact 按窗口的 80% 触发（wonder.59）。
 
-`AgentRuntime` 不持有 ViewModel，也不直接改 UI。`onEvent` 负责状态展示，`confirm` 是暂停点。`AgentRuntime` 同时只跑一个 turn；ViewModel 在 `isRunning` 时拒绝新输入。Stop 进入 `Cancelling` 后仍保持 `isRunning`，直到工具确认退出或 `TOOL_CANCEL_TIMEOUT` 处理完，避免 `cancel()` 串到下一轮；`cancel()` 在没有活动 turn 时是 no-op。
+`AgentRuntime` 不持有 ViewModel，也不直接改 UI。`onEvent` 负责状态展示，`confirm` 是暂停点。`AgentRuntime` 同时只跑一个 turn；ViewModel 在 `isRunning` 时拒绝新输入。Stop 进入 `Cancelling` 后仍保持 `isRunning`，直到工具确认退出；1 秒未确认只显示 Notice，不取消 job、不写半轮 session，避免 `cancel()` 串到下一轮；`cancel()` 在没有活动 turn 时是 no-op。
 
 ## 7.1 工具目录与路由（Phase 2b）
 
@@ -843,7 +847,7 @@ Never target route_call or search_tools with route_call.
 
 路由层只解决 `tools` 和 system prompt 的稳定性；请求前缀还受其他因素影响，必须一起修：
 
-- `AgentContext.trim` 改成滞后批量裁剪：超过 `maxMessages` 才裁，一次裁到 `trimTargetMessages`，之后保持边界不动。当前实现每来一条新消息就滑一格，超过 48 条后前缀每次都变，缓存全 miss。默认 `maxMessages = 48`、`trimTargetMessages = 36`。
+- `AgentContext.trim` 改成滞后批量裁剪：超过 `maxMessages` 才裁，一次裁到 `trimTargetMessages`，之后保持边界不动。当前实现每来一条新消息就滑一格，超过 200 条后前缀每次都变，缓存全 miss。默认 `maxMessages = 200`、`trimTargetMessages = 160`。
 - 工具轮数耗尽时保持 `tools` 不变，`toolChoice = NONE`。当前 `tools = emptyList()` 的写法会让本次 turn 的最后一个回答请求必然 miss。如果某个兼容 provider 不支持 `tool_choice: none`，保持 `tools` 不变并在 dispatch 层把调用回填成 `step_budget_exceeded`，不要退回 `tools = emptyList()`。
 - 上下文压缩放在 turn 边界做，压缩后形成新的稳定前缀；不要在 turn 中间每次请求都改摘要。压缩掉的搜索结果可以重新 `search_tools`，这是可接受的成本。
 - `deviceSummary` 只放稳定元数据（语言、时区、App 版本、Android 版本、设备型号）。locale 或时区变化会改变前缀，属于预期内的小概率事件。
@@ -856,8 +860,8 @@ Never target route_call or search_tools with route_call.
 | `toolRoutingEnabled` | `true` | 路由开关；Settings > Conductor 可切换，下一轮生效；保留原生模式用于回退和 A/B |
 | `searchLimit` | 5 | 单次搜索返回的工具数上限 |
 | `maxSearchesPerRound` | 2 | 单轮搜索次数上限；超限回 `search_budget_exceeded` |
-| `maxMessages` | 48 | 裁剪高水位 |
-| `trimTargetMessages` | 36 | 裁剪低水位；避免滑动窗口每请求变前缀 |
+| `maxMessages` | 200 | 裁剪高水位 |
+| `trimTargetMessages` | 160 | 裁剪低水位；避免滑动窗口每请求变前缀 |
 
 搜索和 `route_call` 都算一次 tool call，消耗 `maxToolRounds` 的一轮；不要给搜索开免轮数的后门。
 
@@ -929,7 +933,7 @@ System prompt 固定写在代码里，包含：
 - 设备上下文只放**稳定**元数据：首选语言、时区、App 版本、Android 版本、设备型号。服务状态、当前本地时间、设备或网络状态走 `system_snapshot` tool，不放进 system prompt。
 - System prompt 在同一个 App 版本、语言、时区和设备下保持不变；transcript 只追加不重排，并随会话持久化。这样同一轮内的多次模型调用、以及离开页面再回来后的请求，前缀都保持稳定，DeepSeek 的前缀缓存才有机会命中。
 - 路由模式下，system prompt 追加静态 roster（类别 + 工具名 + 核心工具用法），由 `AgentToolCatalog.promptSection()` 从同一份目录生成；MCP 和其他动态工具不得进入 roster，只能通过 `search_tools` 发现。用户增删 MCP 服务器不改变这段文字。
-- `AgentContext.trim` 用滞后批量裁剪：超过 `maxMessages` 才裁，一次裁到 `trimTargetMessages`，之后保持边界不动；不能每来一条消息就滑一格。压缩放在 turn 边界做。默认 `maxMessages = 48`、`trimTargetMessages = 36`。
+- `AgentContext.trim` 用滞后批量裁剪：超过 `maxMessages` 才裁，一次裁到 `trimTargetMessages`，之后保持边界不动；不能每来一条消息就滑一格。压缩放在 turn 边界做。默认 `maxMessages = 200`、`trimTargetMessages = 160`。
 
 ### 用户输入检查
 
@@ -971,13 +975,13 @@ fun interface AgentInputGuard {
 - 单条 observation 上限 `maxObservationChars`，超出截断并标记 `truncated: true`。截断只影响发给模型的 transcript；UI 可以保留完整 sanitized 结果供展开查看。
 - 单轮 observation 总字符上限 `maxObservationCharsPerRound`，单 turn 总上限 `maxObservationCharsPerTurn`。
 - 单次请求总输入按当前模型的窗口估算；没有本地 tokenizer 时用字符数保守估算，记录实际 `usage` 后再调。
-- 每次模型响应后、下一次请求前检查：取请求估算与上次实际 `prompt_tokens` 的较大值，达到窗口 80% 时触发 Auto Compact。Compact 用同一模型把当前 user turn 之前的历史压成一条 System 摘要（输入最多 120K 字符、输出最多 4096 token），保留当前轮的 user/assistant/tool 配对；连续失败 3 次后只走确定性裁剪。
+- 每次模型响应后、下一次请求前检查：取请求估算与上次实际 `prompt_tokens` 的较大值，达到窗口 80% 时触发 Auto Compact。Compact 用同一模型把当前 user turn 之前的历史压成一条 System 摘要（输入最多 120K 字符、输出最多 4096 token），保留当前轮的 user/assistant/tool 配对；连续失败 3 次后暂时只走确定性裁剪，下一次模型调用成功会清零并允许重试。
 - 裁剪顺序：先删最老的 user/assistant/tool 对，保留 system 和最近一轮完整工具结果。不拆开 assistant tool call 和对应 tool observation。当前轮自身超过窗口时只能截断，UI 提示「较早对话未发送给模型」。
 
 ### 截断与合法 JSON
 
 - 不直接按字符数切断已经序列化的 JSON。`ToolObservation` 始终是合法 JSON。
-- 递归截断长字符串字段和长数组：字符串保留前缀加 `…`，数组保留前 N 项，对象骨架保留；`truncated = true`，`originalChars` 记录原始长度。
+- output 超限时整体替换为 `{"truncated":true,"preview":"<前 N 字符>"}`，message 超限时按剩余预算截断；`truncated = true`，`originalChars` 记录原始长度。不是按字段递归裁剪。
 - UI/transcript 是「同一份 sanitized 结果，允许不同的截断视图」，不是两份不同的原始数据。
 
 ### Sanitizer
@@ -1019,12 +1023,12 @@ Phase 2b 增加：
 - 用户点 Stop 调 `AgentRuntime.cancel()`，进入 `Cancelling`，等待当前模型请求和 tool 确认取消。确认后返回 partial transcript 和 `TurnOutcome.Cancelled`，才允许下一轮输入。
 - 模型请求用 OkHttp 的 `Call.cancel()`，保证 Stop 1s 内 UI 可输入。
 - Phase 2b 注册的每个 tool 必须支持取消确认：executor 取消后 1s 内返回并释放资源。不满足这一点的工具不注册，不能用「标注不可取消」绕过。`telemetry_upload` 改用可取消的 HTTP 客户端（OkHttp），`probe_via_node` 改用可中断 HTTP 客户端或加取消句柄；不能一边写 1s 停止，一边留下 15s 或 30s 的阻塞 worker。
-- 如果 1s 内工具仍未确认取消，发 `TOOL_CANCEL_TIMEOUT`，保持 `isRunning` 并禁止新 turn，直到旧 worker 退出；UI 显示「正在停止，后台操作未确认」，审计记录工具名和耗时。这属于实现缺陷，不是正常路径。
+- 如果 1s 内工具仍未确认取消，**不取消 job、不写半轮 session**；保持 `isRunning` 并禁止新 turn，UI 显示「正在停止，后台操作未确认」，直到旧 worker 真正退出。当前路径用 Notice 表达，`TOOL_CANCEL_TIMEOUT` 是保留错误码。这属于实现缺陷，不是正常路径。
 - 工具接口是 suspend；executor 用 `withContext(Dispatchers.IO)` + `withTimeout` 包裹，工具在 `finally` 关闭资源，并通过取消句柄响应 `cancel()`。
 - 工具调用不自动重试；让模型看到错误后自己决定下一步。写操作永远不自动重试。
-- 429 尊重 `Retry-After`，没有就 1s、2s 退避；仍失败就报错。
+- 429 尊重 `Retry-After`，没有就 500ms、1s、2s 退避；仍失败就报错。
 - 超时和取消都经过 `finishTurn()`，保证 transcript 配对完整。
-- ViewModel 被销毁导致的 coroutine 取消直接向上抛，不要求返回 partial transcript；用户 Stop 走运行时取消信号，才能保留已产生的消息。
+- ViewModel 被销毁时会取消 agentJob；运行时仍走 `appendPartialAssistant` + `finish` 的取消路径，但 ViewModel 已销毁，结果不再持久化。用户 Stop 走运行时取消信号，才能保留已产生的消息。
 
 ## 11. UI 模型与事件
 
@@ -1221,7 +1225,7 @@ Turn 级 UI 处理：
 | `invalid_transcript` | tool call/observation 配对失败 | 失败关闭，不发送请求 |
 | `confirmation_timeout` | 确认 5 分钟未处理 | 取消 turn |
 | `turn_cancelled` | 用户 Stop/退出 | 回到 Idle |
-| `tool_cancel_timeout` | Stop 1s 内工具未确认取消 | 保持 isRunning，提示正在停止，禁止新 turn |
+| `tool_cancel_timeout` | Stop 1s 内工具未确认取消（保留码） | 保持 isRunning，显示 Notice，禁止新 turn，等 worker 退出 |
 | `step_budget_exceeded` | 显式配置的 maxToolRounds 耗尽，或禁用工具后仍请求工具 | 提示任务未完成，可继续追问 |
 | `tool_failure_loop` | 5 秒内累计 10 次工具失败 | 注入 `tool_failure_loop` 事件、禁用工具，再调用一次模型收尾；模型仍请求工具才失败 |
 | `content_filtered` | 模型拒绝 | 原样提示，不重试 |
