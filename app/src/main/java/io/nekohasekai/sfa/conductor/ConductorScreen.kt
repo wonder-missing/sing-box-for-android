@@ -2503,24 +2503,30 @@ private fun UserMessage(
     imageFile: (String) -> File?,
 ) {
     Column(horizontalAlignment = Alignment.End) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-        ) {
-            Column {
-                images.forEach { ref ->
-                    Box(modifier = Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp)) {
-                        UserImage(ref, imageFile)
+        if (text.isBlank() && images.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                images.forEach { ref -> UserImage(ref, imageFile) }
+            }
+        } else {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Column {
+                    images.forEach { ref ->
+                        Box(modifier = Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp)) {
+                            UserImage(ref, imageFile)
+                        }
                     }
-                }
-                if (text.isNotBlank()) {
-                    SelectionContainer {
-                        Text(
-                            text = text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        )
+                    if (text.isNotBlank()) {
+                        SelectionContainer {
+                            Text(
+                                text = text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            )
+                        }
                     }
                 }
             }
