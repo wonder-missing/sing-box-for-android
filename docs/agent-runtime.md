@@ -128,7 +128,7 @@ data class ToolObservation(
 - 每个 `ToolCall.id` 必须在随后的 `Tool` 消息里出现一次。一次 assistant 消息带多个 tool call 时，全部 observation 回填后才能发起下一次模型调用。
 - `Tool.content` 是序列化后的 `ToolObservation`，必须是合法 JSON。
 - 发到 provider 的 tool 消息只包含 `role`、`tool_call_id`、`content`，内部 `name` 不序列化。
-- 不把 `reasoning_content` 放进 transcript；需要调试时单独记录，不发送回模型。
+- 不把 `reasoning_content` 放进 transcript；需要调试时单独记录，不发送回模型。原因、边界和 provider 差异见 §5「Reasoning 回放策略」。
 - UI 的 `ConductorItem` 不是模型消息；ViewModel 负责把 `AgentEvent` 映射成界面消息。
 - 每次模型请求前、以及返回 `TurnResult` 前，必须用 `validateTranscriptPairing()` 检查配对。发现孤儿 tool 消息、缺失 observation、或一个 id 对应多条 tool 消息，就失败关闭，不发送请求。
 
@@ -260,6 +260,43 @@ OpenAI-compatible 请求形态（DeepSeek / xAI / Custom 共用）：
 ```
 
 `max_tokens` 按 `ModelLimits` 与本次输入动态计算（模型上限、上下文窗口减输入减 8K），不是固定预算；未知 provider 省略该字段，由 API 默认值决定。三个预设都按 OpenAI-compatible 的 Bearer + Chat Completions 形态发请求。用户把 Reasoning effort 选成 low / medium / high 时，请求带 `reasoning_effort`；默认不传这个字段，避免非推理模型返回 400。DeepSeek 把 medium 映射成 high，默认强度是 high；xAI 接受 low / medium / high，默认也是 high。`none`、`max`、`xhigh` 不在共用档位里，不发送。其余 provider 私有能力仍不抽象：`stream_options.include_usage`、`max_completion_tokens`、非 Bearer 鉴权（如 Azure）。
+
+### Reasoning 回放策略（2026-11-21 定）
+
+当前实现：SSE 的 `reasoning_content` / `reasoning` 只用于 UI 的 `Thinking` 块，最多进 API trace；`AgentMessage.Assistant` 不带 reasoning，后续请求只回放 `content`、`tool_calls` 和 `Tool` observation。这不是漏字段，而是有意把 reasoning 当临时 scratch。
+
+理论判断是条件命题，不是“reasoning 永远不影响发挥”：
+
+- 把 agent loop 看成 POMDP：工具调用是动作，工具结果是观测；reasoning 是策略采样中的隐变量，不是观测。如果可见 transcript（user/assistant content、tool calls、tool results）已经构成任务状态的充分统计量，下一动作可以由它重新推导；回放 reasoning 不增加外部信息，只省一次重算。
+- reasoning 的真实价值是计算缓存：缓存计划或摘要，降低重新推导的 compute 和采样方差；代价是 token 增长、每步 prefix 变化，以及把早期错误计划锚定成“既定事实”的风险。
+- 边界：如果 reasoning 里有一个尚未外化的多步承诺，而下一步动作依赖它，它就是隐状态；丢掉会重复探索、漂移或自相矛盾。这时应把计划写进可见 content、todo/scratchpad 工具或文件，而不是依赖隐藏 CoT。若 provider 把 reasoning 做成签名/加密状态，回放是协议要求，不属于优化。
+
+主流 API 和框架的处理（2026-11）：
+
+| 类型 | 代表 | 做法 |
+|---|---|---|
+| Provider-native stateful | OpenAI Responses API / Agents SDK / Codex；Anthropic Messages / Claude Agent SDK；Google Gemini / ADK | reasoning 当作不透明状态：reasoning items、thinking block + signature、thought signature。工具循环里原样回传，或用 `previous_response_id` / encrypted reasoning 续接 |
+| 通用 Chat Completions 消息循环 | LangChain/LangGraph、多数自建 agent loop、AutoGen/CrewAI 一类消息列表框架 | 历史通常只有 `role/content/tool_calls`；reasoning 作为流式 UI 或日志，是否回放由 provider adapter 决定；DeepSeek 适配器近期才在补回放 |
+| ReAct / 外化计划 | 经典 ReAct、SWE-agent 风格、Reflection/Memory agent | `Thought` 本来就是 assistant 可见内容，所以自然会被回放；或者把 reflection/summary 存进 memory，而不是回放原始 CoT |
+
+具体事实：
+
+- OpenAI Responses API 的 reasoning items 在普通多轮里可以不回放，但工具调用循环里建议回放；OpenAI cookbook 报告同 prompt/setup 下 SWE-bench 约 3% 提升。`store=false` 时用 `reasoning.encrypted_content` 客户端回传；Codex CLI 也按这个路径。
+- Anthropic extended thinking 的 `thinking` block 带 `signature`，工具循环里必须和 `tool_use` 一起原样回传；丢掉会丢失推理，格式不对会 400。Claude Agent SDK / Claude Code 走这套。
+- Gemini 的 `functionCall` 带 `thought_signature`，当前 turn 内必须回传，缺失会 400；并行调用只有第一个带签名。ADK 负责处理。
+- LangChain/LangGraph 把 reasoning 作为消息/流字段暴露，但通用消息历史不强制回放；真正回放取决于 chat model adapter。
+- OpenHands 为 Anthropic 保留 thinking block；压缩历史时必须保住整个 tool loop 和 thinking block，否则 Claude API 会 400。
+
+共同规律：provider 越把 reasoning 当作 hidden state，框架越会原样保存；框架越想 provider-neutral，越倾向于把计划外化成可见内容或摘要。把原始 hidden CoT 当通用记忆来回放的框架并不多。
+
+结论：
+
+- 当前 DeepSeek Chat Completions 路径属于 stateless scratchpad 模式，保持不回放；不为 DeepSeek `reasoning_content` 做兼容工作，也不做 A/B。2026-11-20 的 A9 裁剪会话里，两次显式工具错误都在下一次调用修正，未观察到 reasoning 丢失导致的重复失败；失败点主要是工具发现和错误信息。
+- 换到 Responses / Anthropic / Gemini 时，用它们的官方续接机制，不手写拼 reasoning；需要 provider-neutral 的计划持久化时，加可见的 plan/todo 或 scratchpad 工具，而不是回放原始 CoT。
+- 判断规则：下一动作是否依赖一个不在 tool result / 可见 assistant 内容里的隐含承诺？是 → 外化；否 → 不回放。Provider 是否把 reasoning 当签名状态？是 → 用官方机制；否 → 不回放。
+- 若以后要做 A/B：按 [`docs/conductor-eval.md`](conductor-eval.md) 的方法，A 当前、B 只回放上一条 tool-call turn、C 回放全部历史；8–12 条多步任务 ×3 次；看完成率、重复失败调用、首次参数合法率、token/cache、延迟。先做一次 provider 兼容性 probe，再决定。
+
+参考：[OpenAI reasoning items](https://learn.chatgpt.com/cookbook/examples/responses_api/reasoning_items)、[Anthropic thinking in tool workflows](https://platform.claude.com/docs/en/build-with-claude/thinking-tool-workflows)、[Gemini thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures)、[OpenHands LLM reasoning](https://docs.openhands.dev/sdk/guides/llm-reasoning)、[LangChain event streaming](https://docs.langchain.com/oss/python/langchain/event-streaming)。
 
 ## 6. Tool schema、确认策略与 sanitizer
 
