@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
@@ -645,7 +646,7 @@ class AgentToolsTest {
         val result =
             registry.userExec(
                 "probe_via_node",
-                """{"outbound":"missing","url":"https://example.com/"}""",
+                """{"outbound":"node-a","url":"https://example.com/"}""",
             )
 
         assertFalse(result.ok)
@@ -731,6 +732,86 @@ class AgentToolsTest {
         assertFalse(output.toString().contains("@"))
         assertFalse(output.toString().contains("100."))
     }
+
+    @Test
+    fun probePreflightRejectsUnknownNodeBeforeConfirmation() =
+        runBlocking {
+            val registry = buildTestRegistry()
+
+            val result =
+                registry.invokeAgent(
+                    ToolCall("c1", "probe_via_node", """{"outbound":"missing","url":"https://example.com/"}"""),
+                    humanApproved = false,
+                )
+
+            assertFalse(result.ok)
+            assertNull(result.confirmation)
+            assertTrue(result.errorMessage!!.contains("not a selectable node"))
+        }
+
+    @Test
+    fun selectOutboundPreflightRejectsUnknownNodeBeforeConfirmation() =
+        runBlocking {
+            val registry = buildTestRegistry(selectionPort = FakeNodeSelectionPort())
+
+            val result =
+                registry.invokeAgent(
+                    ToolCall("c1", "select_outbound", """{"group":"proxy","outbound":"missing"}"""),
+                    humanApproved = false,
+                )
+
+            assertFalse(result.ok)
+            assertNull(result.confirmation)
+            assertTrue(result.errorMessage!!.contains("not in selectable group"))
+        }
+
+    @Test
+    fun httpFetchGetAndPostUseDifferentApprovalKinds() =
+        runBlocking {
+            val registry = buildTestRegistry(httpFetchPort = FakeHttpFetchPort())
+
+            val get =
+                registry.invokeAgent(
+                    ToolCall("c1", "http_fetch", """{"url":"https://example.com/"}"""),
+                    humanApproved = false,
+                )
+            assertEquals(ConfirmationKind.NETWORK_READ, get.confirmation!!.kind)
+            assertEquals(BulkApproval.TURN, get.confirmation!!.bulkApproval)
+
+            val post =
+                registry.invokeAgent(
+                    ToolCall("c2", "http_fetch", """{"url":"https://example.com/","method":"POST","body":"x"}"""),
+                    humanApproved = false,
+                )
+            assertEquals(ConfirmationKind.DATA_EGRESS, post.confirmation!!.kind)
+            assertEquals(BulkApproval.BATCH, post.confirmation!!.bulkApproval)
+        }
+
+    @Test
+    fun httpFetchPreflightRejectsAnInvalidOutputPathBeforeConfirmation() =
+        runBlocking {
+            val dir = Files.createTempDirectory("http-preflight").toFile()
+            val registry =
+                buildTestRegistry(
+                    httpFetchPort = FakeHttpFetchPort(),
+                    fileStore = ConductorFileStore(dir),
+                )
+
+            val result =
+                registry.invokeAgent(
+                    ToolCall(
+                        "c1",
+                        "http_fetch",
+                        """{"url":"https://example.com/","output_path":"crash_reports/outside.txt"}""",
+                    ),
+                    humanApproved = false,
+                )
+
+            assertFalse(result.ok)
+            assertNull(result.confirmation)
+            dir.deleteRecursively()
+            Unit
+        }
 
     @Test
     fun selectOutboundUsesTheSelectionPortAndReturnsPrevious() {

@@ -112,6 +112,10 @@ data class ConfirmationRequest(
     val batchApprovableRemaining: Int = 1,
     /** Remaining tool names in this batch, for the batch confirmation card. */
     val batchToolNames: List<String> = emptyList(),
+    val confirmationKind: ConfirmationKind = ConfirmationKind.OTHER,
+    val bulkApproval: BulkApproval = BulkApproval.NONE,
+    /** Scope the turn approval covers, e.g. workspace_write or network_read. */
+    val approvalScope: String = "",
 )
 
 sealed interface AgentEvent {

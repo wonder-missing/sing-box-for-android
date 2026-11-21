@@ -10,6 +10,7 @@ import kotlinx.serialization.json.long
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -343,6 +344,107 @@ class AgentDataToolsTest {
     }
 
     @Test
+    fun fileWritePreflightRejectsDeadCallsBeforeConfirmation() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val traversal = registry.invokeAgentOnly("file_write", """{"path":"../escape.txt","text":"x"}""")
+        assertFalse(traversal.ok)
+        assertNull(traversal.confirmation)
+
+        val outside = registry.invokeAgentOnly("file_write", """{"path":"conductor2/x.txt","text":"x"}""")
+        assertFalse(outside.ok)
+        assertNull(outside.confirmation)
+
+        store.writeText("conductor/existing.txt", "x")
+        val exists = registry.invokeAgentOnly("file_write", """{"path":"conductor/existing.txt","text":"x"}""")
+        assertFalse(exists.ok)
+        assertNull(exists.confirmation)
+
+        val valid = registry.invokeAgentOnly("file_write", """{"path":"conductor/resources/a.txt","text":"x"}""")
+        assertEquals("confirmation_required", valid.errorCode)
+        assertNotNull(valid.confirmation)
+        assertEquals(ConfirmationKind.WORKSPACE_WRITE, valid.confirmation!!.kind)
+        assertEquals(BulkApproval.TURN, valid.confirmation!!.bulkApproval)
+    }
+
+    @Test
+    fun fileWriteOverwritingAnUntrackedFileCards() {
+        val registry = AgentToolRegistry(tools.all)
+        store.ensureWorkspace()
+        val userFile = File(workingDir, "conductor/user-note.txt")
+        userFile.writeText("old")
+
+        val result =
+            registry.invokeAgentOnly(
+                "file_write",
+                """{"path":"conductor/user-note.txt","text":"new","overwrite":true}""",
+            )
+
+        assertEquals("confirmation_required", result.errorCode)
+        assertEquals(ConfirmationKind.WORKSPACE_OVERWRITE, result.confirmation!!.kind)
+        assertEquals(BulkApproval.NONE, result.confirmation!!.bulkApproval)
+    }
+
+    @Test
+    fun fileEditPreflightRejectsMissingMatchesBeforeConfirmation() {
+        val registry = AgentToolRegistry(tools.all)
+        store.writeText("conductor/edit.txt", "line one\n")
+
+        val missing =
+            registry.invokeAgentOnly(
+                "file_edit",
+                """{"path":"conductor/edit.txt","edits":[{"old_text":"missing","new_text":"x"}]}""",
+            )
+        assertFalse(missing.ok)
+        assertNull(missing.confirmation)
+
+        val valid =
+            registry.invokeAgentOnly(
+                "file_edit",
+                """{"path":"conductor/edit.txt","edits":[{"old_text":"line one","new_text":"LINE ONE"}]}""",
+            )
+        assertEquals("confirmation_required", valid.errorCode)
+        assertNotNull(valid.confirmation)
+        assertEquals(ConfirmationKind.WORKSPACE_WRITE, valid.confirmation!!.kind)
+    }
+
+    @Test
+    fun fileDeleteHintsFileOrDirectoryBeforeTheCard() {
+        val registry = AgentToolRegistry(tools.all)
+        store.writeText("conductor/delete-me.txt", "x")
+        store.ensureWorkspace()
+
+        val file = registry.invokeAgentOnly("file_delete", """{"path":"conductor/delete-me.txt"}""")
+        assertEquals(ConfirmationKind.WORKSPACE_DELETE_FILE, file.confirmation!!.kind)
+        assertEquals(BulkApproval.BATCH, file.confirmation!!.bulkApproval)
+
+        val directory = registry.invokeAgentOnly("file_delete", """{"path":"conductor/resources/artifacts"}""")
+        assertEquals(ConfirmationKind.WORKSPACE_DELETE_DIR, directory.confirmation!!.kind)
+        assertEquals(BulkApproval.NONE, directory.confirmation!!.bulkApproval)
+
+        val userFile = File(workingDir, "conductor/user-owned.txt")
+        userFile.writeText("keep")
+        val untracked = registry.invokeAgentOnly("file_delete", """{"path":"conductor/user-owned.txt"}""")
+        assertEquals(ConfirmationKind.WORKSPACE_DELETE_UNTRACKED, untracked.confirmation!!.kind)
+        assertEquals(BulkApproval.NONE, untracked.confirmation!!.bulkApproval)
+
+        val missing = registry.invokeAgentOnly("file_delete", """{"path":"conductor/missing.txt"}""")
+        assertFalse(missing.ok)
+        assertNull(missing.confirmation)
+    }
+
+    @Test
+    fun diagnosticsExportPreflightRejectsUnknownKindBeforeConfirmation() {
+        val registry = AgentToolRegistry(tools.all)
+
+        val result = registry.invokeAgentOnly("diagnostics_export", """{"kind":"bogus_kind"}""")
+
+        assertFalse(result.ok)
+        assertNull(result.confirmation)
+        assertEquals("invalid_parameter", result.errorCode)
+    }
+
+    @Test
     fun fileStatReportsMissingPaths() {
         val registry = AgentToolRegistry(tools.all)
 
@@ -362,6 +464,73 @@ class AgentDataToolsTest {
         assertEquals("invalid_parameter", result.errorCode)
         assertFalse(File(workingDir, "conductor/bogus_kind.md").exists())
     }
+
+    @Test
+    fun analyzeImagePreflightRejectsAMissingPathBeforeConfirmation() =
+        runBlocking {
+            val vision =
+                object : VisionPort {
+                    override suspend fun analyze(
+                        image: ByteArray,
+                        mimeType: String,
+                        question: String,
+                    ): VisionAnalysis = VisionAnalysis("unused")
+                }
+            val registry = AgentToolRegistry(AgentDataTools(store, vision = vision).all)
+
+            val result =
+                registry.invokeAgent(
+                    ToolCall(
+                        "c1",
+                        "analyze_image",
+                        """{"question":"What is shown?","path":"conductor/no_such_image.png"}""",
+                    ),
+                    humanApproved = false,
+                )
+
+            assertFalse(result.ok)
+            assertNull(result.confirmation)
+        }
+
+    @Test
+    fun taildropPreflightRejectsAnOfflinePeerBeforeConfirmation() =
+        runBlocking {
+            store.writeText("conductor/resources/send.txt", "x")
+            val offline =
+                object : TaildropPort {
+                    override suspend fun send(
+                        peer: String,
+                        files: List<File>,
+                        cancellation: ToolCancellation?,
+                    ): TaildropSendResult = TaildropSendResult(peer, files.map { it.name }, false)
+
+                    override suspend fun sendSelected(
+                        peer: String,
+                        ids: List<String>,
+                        cancellation: ToolCancellation?,
+                    ): TaildropSendResult = TaildropSendResult(peer, ids, false)
+
+                    override suspend fun peerOnline(
+                        peer: String,
+                        cancellation: ToolCancellation?,
+                    ): Boolean = false
+                }
+            val registry = AgentToolRegistry(AgentDataTools(store, taildrop = offline).all)
+
+            val result =
+                registry.invokeAgent(
+                    ToolCall(
+                        "c1",
+                        "taildrop_send",
+                        """{"peer":"gbot-cc","files":["conductor/resources/send.txt"]}""",
+                    ),
+                    humanApproved = false,
+                )
+
+            assertFalse(result.ok)
+            assertNull(result.confirmation)
+            assertTrue(result.errorMessage!!.contains("offline"))
+        }
 
     @Test
     fun diagnosticsTraceCarriesTheTimeRangeAndCoverage() {
@@ -696,6 +865,14 @@ class AgentDataToolsTest {
         runBlocking {
             val first = invokeUserCommand(name, argsJson)
             if (first.confirmation != null) confirmUserCommand(name, argsJson) else first
+        }
+
+    private fun AgentToolRegistry.invokeAgentOnly(
+        name: String,
+        argsJson: String,
+    ): AgentInvocationResult =
+        runBlocking {
+            invokeAgent(ToolCall("test-call", name, argsJson), humanApproved = false)
         }
 
     private fun JsonObject.string(key: String): String = (getValue(key) as JsonPrimitive).content

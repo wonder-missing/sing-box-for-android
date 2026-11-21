@@ -1,5 +1,7 @@
 package io.nekohasekai.sfa.agent.mcp
 
+import io.nekohasekai.sfa.agent.BulkApproval
+import io.nekohasekai.sfa.agent.ConfirmationKind
 import io.nekohasekai.sfa.agent.ToolCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -44,6 +46,48 @@ class McpToolsTest {
 
         assertEquals(MCP_DOCKER_RUN_TIMEOUT_MS, definition.timeoutMs)
     }
+
+    @Test
+    fun mcpToolsGetRiskKindsBeforeTheCard() {
+        val remote =
+            listOf(
+                McpRemoteTool("vfs_link_request", "grant", buildJsonObject { put("type", "object") }, false),
+                McpRemoteTool("job_run", "run", buildJsonObject { put("type", "object") }, false),
+                McpRemoteTool("job_status", "status", buildJsonObject { put("type", "object") }, false),
+                McpRemoteTool("note_create", "write", buildJsonObject { put("type", "object") }, false),
+            )
+        val tools = mcpAgentTools("Portal", "portal", remote, unusedSession()).associateBy { it.definition.name }
+
+        assertEquals(ConfirmationKind.VFS_GRANT, tools.getValue("portal_vfs_link_request").definition.confirmationKind)
+        assertEquals(BulkApproval.NONE, tools.getValue("portal_vfs_link_request").definition.bulkApproval)
+        assertEquals(ConfirmationKind.REMOTE_EXEC, tools.getValue("portal_job_run").definition.confirmationKind)
+        assertEquals(BulkApproval.TURN, tools.getValue("portal_job_run").definition.bulkApproval)
+        assertEquals(ConfirmationKind.MCP_READ, tools.getValue("portal_job_status").definition.confirmationKind)
+        assertEquals(BulkApproval.TURN, tools.getValue("portal_job_status").definition.bulkApproval)
+        assertEquals(ConfirmationKind.MCP_WRITE, tools.getValue("portal_note_create").definition.confirmationKind)
+        assertEquals(BulkApproval.BATCH, tools.getValue("portal_note_create").definition.bulkApproval)
+    }
+
+    @Test
+    fun vfsLinkPreflightRejectsMissingOrStringScope() =
+        runBlocking {
+            val tool =
+                mcpAgentTools(
+                    "Portal",
+                    "portal",
+                    listOf(McpRemoteTool("vfs_link_request", "grant", buildJsonObject { put("type", "object") }, false)),
+                    unusedSession(),
+                ).single()
+
+            val missing = tool.preflight(Json.parseToJsonElement("{}").jsonObject)
+            assertEquals("invalid_parameter", missing!!.errorCode)
+
+            val wrongType = tool.preflight(Json.parseToJsonElement("""{"scope":"conductor"}""").jsonObject)
+            assertEquals("invalid_parameter", wrongType!!.errorCode)
+
+            val valid = tool.preflight(Json.parseToJsonElement("""{"scope":["conductor"]}""").jsonObject)
+            assertNull(valid)
+        }
 
     @Test
     fun toolNamesUseTheNamespaceWithoutTheMcpPrefix() {

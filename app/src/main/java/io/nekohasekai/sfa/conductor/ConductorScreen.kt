@@ -151,6 +151,7 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentImageRef
+import io.nekohasekai.sfa.agent.ApprovalProfile
 import io.nekohasekai.sfa.agent.MAX_PLAN_GOAL_CHARS
 import io.nekohasekai.sfa.agent.MAX_PLAN_ITEMS
 import io.nekohasekai.sfa.agent.MAX_PLAN_NOTE_CHARS
@@ -711,6 +712,9 @@ fun ConductorScreen(
                 )
                 .padding(bottom = panelHeight),
         ) {
+            if (uiState.approvalProfile != ApprovalProfile.STRICT) {
+                ApprovalBanner(uiState.approvalProfile)
+            }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 LazyColumn(
                     state = listState,
@@ -738,6 +742,8 @@ fun ConductorScreen(
                                 inputExpanded = false
                                 viewModel.submit(command)
                             },
+                            approvalProfile = uiState.approvalProfile,
+                            onApprovalProfile = viewModel::setApprovalProfile,
                         )
                     }
                 } else {
@@ -806,6 +812,8 @@ fun ConductorScreen(
                                         kind = ConductorExport.ApiTrace,
                                     )
                             },
+                            approvalProfile = uiState.approvalProfile,
+                            onApprovalProfile = viewModel::setApprovalProfile,
                         )
                     }
                 }
@@ -1199,9 +1207,86 @@ private fun vfsScopeLabel(scope: VfsScope): String =
     )
 
 @Composable
+private fun ApprovalChip(
+    profile: ApprovalProfile,
+    onApprovalProfile: (ApprovalProfile) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        AssistChip(
+            onClick = { expanded = true },
+            label = {
+                Text(
+                    stringResource(
+                        when (profile) {
+                            ApprovalProfile.STRICT -> R.string.conductor_approval_strict_short
+                            ApprovalProfile.WORKSPACE -> R.string.conductor_approval_workspace_short
+                            ApprovalProfile.TEST -> R.string.conductor_approval_test_short
+                        },
+                    ),
+                )
+            },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            listOf(
+                ApprovalProfile.STRICT to R.string.conductor_approval_strict,
+                ApprovalProfile.WORKSPACE to R.string.conductor_approval_workspace,
+                ApprovalProfile.TEST to R.string.conductor_approval_test,
+            ).forEach { (item, label) ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(label)) },
+                    onClick = {
+                        expanded = false
+                        onApprovalProfile(item)
+                    },
+                    trailingIcon = {
+                        if (item == profile) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                            )
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApprovalBanner(profile: ApprovalProfile) {
+    val label =
+        when (profile) {
+            ApprovalProfile.STRICT -> return
+            ApprovalProfile.WORKSPACE -> R.string.conductor_approval_workspace_short
+            ApprovalProfile.TEST -> R.string.conductor_approval_test_short
+        }
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+    ) {
+        Text(
+            text = stringResource(label),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        )
+    }
+}
+
+@Composable
 private fun ConversationActions(
     onPlainTranscript: () -> Unit,
     onApiTrace: () -> Unit,
+    approvalProfile: ApprovalProfile,
+    onApprovalProfile: (ApprovalProfile) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(
@@ -1241,6 +1326,32 @@ private fun ConversationActions(
                         onApiTrace()
                     },
                 )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.conductor_approvals)) },
+                    enabled = false,
+                    onClick = {},
+                )
+                listOf(
+                    ApprovalProfile.STRICT to R.string.conductor_approval_strict,
+                    ApprovalProfile.WORKSPACE to R.string.conductor_approval_workspace,
+                    ApprovalProfile.TEST to R.string.conductor_approval_test,
+                ).forEach { (profile, label) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(label)) },
+                        onClick = {
+                            expanded = false
+                            onApprovalProfile(profile)
+                        },
+                        trailingIcon = {
+                            if (profile == approvalProfile) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                )
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -1849,7 +1960,11 @@ private fun ConductorTextViewerDialog(
 }
 
 @Composable
-private fun ConductorEmptyState(onCommand: (String) -> Unit) {
+private fun ConductorEmptyState(
+    onCommand: (String) -> Unit,
+    approvalProfile: ApprovalProfile,
+    onApprovalProfile: (ApprovalProfile) -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 48.dp, start = 8.dp, end = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1869,6 +1984,7 @@ private fun ConductorEmptyState(onCommand: (String) -> Unit) {
             item { AssistChip(onClick = { onCommand("/help") }, label = { Text("/help") }) }
             item { AssistChip(onClick = { onCommand("/capabilities") }, label = { Text("/capabilities") }) }
             item { AssistChip(onClick = { onCommand("/tailscale") }, label = { Text("/tailscale") }) }
+            item { ApprovalChip(approvalProfile, onApprovalProfile) }
         }
     }
 }

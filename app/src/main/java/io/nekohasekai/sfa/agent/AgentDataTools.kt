@@ -373,7 +373,29 @@ class AgentDataTools(
                     category = "files",
                     aliases = listOf("write file", "create file", "save file"),
                     confirmationReason = "This writes a file inside the Conductor workspace.",
+                    confirmationKind = ConfirmationKind.WORKSPACE_WRITE,
+                    bulkApproval = BulkApproval.TURN,
+                    approvalScope = "workspace_write",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? =
+                preflightPath(args) { path ->
+                    fileStore.preflightWrite(path, AgentJson.boolean(args, "overwrite") ?: false)
+                }
+
+            override fun confirmationHint(args: JsonObject): ConfirmationHint? {
+                val path = AgentJson.string(args, "path") ?: return null
+                val exists = runCatching { !fileStore.stat(path).directory }.getOrDefault(false)
+                return if (exists && !fileStore.isSessionCreated(path)) {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.WORKSPACE_OVERWRITE,
+                        bulkApproval = BulkApproval.NONE,
+                        approvalScope = "workspace_overwrite",
+                    )
+                } else {
+                    null
+                }
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -426,7 +448,27 @@ class AgentDataTools(
                     category = "files",
                     aliases = listOf("append file", "append text", "add to file"),
                     confirmationReason = "This appends text to a file inside the Conductor workspace.",
+                    confirmationKind = ConfirmationKind.WORKSPACE_WRITE,
+                    bulkApproval = BulkApproval.TURN,
+                    approvalScope = "workspace_write",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? =
+                preflightPath(args) { path -> fileStore.preflightAppend(path) }
+
+            override fun confirmationHint(args: JsonObject): ConfirmationHint? {
+                val path = AgentJson.string(args, "path") ?: return null
+                val exists = runCatching { !fileStore.stat(path).directory }.getOrDefault(false)
+                return if (exists && !fileStore.isSessionCreated(path)) {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.WORKSPACE_OVERWRITE,
+                        bulkApproval = BulkApproval.NONE,
+                        approvalScope = "workspace_overwrite",
+                    )
+                } else {
+                    null
+                }
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -517,7 +559,49 @@ class AgentDataTools(
                             put("additionalProperties", false)
                         },
                     confirmationReason = "This edits a file inside the Conductor workspace.",
+                    confirmationKind = ConfirmationKind.WORKSPACE_WRITE,
+                    bulkApproval = BulkApproval.TURN,
+                    approvalScope = "workspace_write",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? {
+                val path = AgentJson.string(args, "path") ?: return missingPath()
+                val rawEdits = args["edits"] as? JsonArray ?: return invalid("edits must be an array")
+                if (rawEdits.isEmpty() || rawEdits.size > MAX_FILE_EDITS) {
+                    return invalid("edits must contain between 1 and $MAX_FILE_EDITS edits")
+                }
+                val edits = mutableListOf<TextEditSpec>()
+                for ((index, element) in rawEdits.withIndex()) {
+                    val edit = element as? JsonObject ?: return invalid("edits[$index] must be an object")
+                    val oldText = AgentJson.string(edit, "old_text")
+                    if (oldText.isNullOrEmpty()) return invalid("edits[$index].old_text must not be empty")
+                    val newText = AgentJson.string(edit, "new_text")
+                        ?: return invalid("edits[$index].new_text is required")
+                    val replaceAll = AgentJson.boolean(edit, "replace_all") ?: false
+                    edits += TextEditSpec(oldText, newText, replaceAll)
+                }
+                val expected = AgentJson.string(args, "expected_sha256")?.trim()?.takeIf { it.isNotEmpty() }
+                if (expected != null && !SHA256_HEX.matches(expected)) {
+                    return invalid("expected_sha256 must be 64 hex characters")
+                }
+                return runCatching {
+                    fileStore.preflightEdit(path, edits, expected)
+                    null
+                }.getOrElse { failure(it) }
+            }
+
+            override fun confirmationHint(args: JsonObject): ConfirmationHint? {
+                val path = AgentJson.string(args, "path") ?: return null
+                return if (!fileStore.isSessionCreated(path)) {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.WORKSPACE_OVERWRITE,
+                        bulkApproval = BulkApproval.NONE,
+                        approvalScope = "workspace_overwrite",
+                    )
+                } else {
+                    null
+                }
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -583,7 +667,37 @@ class AgentDataTools(
                     category = "files",
                     aliases = listOf("delete file", "remove"),
                     confirmationReason = "This deletes an item inside the Conductor workspace.",
+                    confirmationKind = ConfirmationKind.WORKSPACE_DELETE_FILE,
+                    bulkApproval = BulkApproval.BATCH,
+                    approvalScope = "workspace_delete",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? =
+                preflightPath(args) { path -> fileStore.preflightDelete(path) }
+
+            override fun confirmationHint(args: JsonObject): ConfirmationHint? {
+                val path = AgentJson.string(args, "path") ?: return null
+                val directory = runCatching { fileStore.stat(path).directory }.getOrNull() ?: return null
+                return if (directory) {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.WORKSPACE_DELETE_DIR,
+                        bulkApproval = BulkApproval.NONE,
+                        approvalScope = "workspace_delete_dir",
+                    )
+                } else if (fileStore.isSessionCreated(path)) {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.WORKSPACE_DELETE_FILE,
+                        bulkApproval = BulkApproval.BATCH,
+                        approvalScope = "workspace_delete",
+                    )
+                } else {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.WORKSPACE_DELETE_UNTRACKED,
+                        bulkApproval = BulkApproval.NONE,
+                        approvalScope = "workspace_delete_untracked",
+                    )
+                }
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -780,7 +894,52 @@ class AgentDataTools(
                     category = "diagnostics",
                     aliases = listOf("export trace", "export conversation", "diagnostics"),
                     confirmationReason = "This reads the current conversation or API trace and writes it to the workspace.",
+                    confirmationKind = ConfirmationKind.DIAGNOSTICS,
+                    bulkApproval = BulkApproval.TURN,
+                    approvalScope = "diagnostics",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? {
+                val kind = AgentJson.string(args, "kind")?.trim()?.lowercase(Locale.US)
+                    ?: return invalid("kind is required")
+                if (kind != "conversation" && kind != "trace") {
+                    return invalid("kind must be conversation or trace")
+                }
+                val tail = AgentJson.int(args, "tail")
+                val sinceMinutes = AgentJson.int(args, "since_minutes")
+                if (tail != null && tail !in 1..20) return invalid("tail must be between 1 and 20")
+                if (sinceMinutes != null && sinceMinutes !in 1..1440) {
+                    return invalid("since_minutes must be between 1 and 1440")
+                }
+                if (kind != "trace" && (tail != null || sinceMinutes != null)) {
+                    return invalid("tail and since_minutes are only supported for trace")
+                }
+                val requested = AgentJson.string(args, "name")?.trim().orEmpty()
+                if (requested.isNotEmpty()) {
+                    val path = "conductor/${markdownName(sanitizeName(requested))}"
+                    return runCatching {
+                        fileStore.preflightWrite(path, AgentJson.boolean(args, "overwrite") ?: false)
+                        null
+                    }.getOrElse { failure(it) }
+                }
+                return null
+            }
+
+            override fun confirmationHint(args: JsonObject): ConfirmationHint? {
+                val requested = AgentJson.string(args, "name")?.trim().orEmpty()
+                if (requested.isEmpty()) return null
+                val path = "conductor/${markdownName(sanitizeName(requested))}"
+                val exists = runCatching { !fileStore.stat(path).directory }.getOrDefault(false)
+                return if (exists && !fileStore.isSessionCreated(path)) {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.WORKSPACE_OVERWRITE,
+                        bulkApproval = BulkApproval.NONE,
+                        approvalScope = "workspace_overwrite",
+                    )
+                } else {
+                    null
+                }
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -887,7 +1046,35 @@ class AgentDataTools(
                     core = true,
                     aliases = listOf("send files", "taildrop", "transfer", "deliver", "send to peer", "send to device"),
                     confirmationReason = "This sends the selected files from this device to a Tailscale peer.",
+                    confirmationKind = ConfirmationKind.FILE_TRANSFER,
+                    bulkApproval = BulkApproval.NONE,
+                    approvalScope = "taildrop",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? {
+                val port = taildrop ?: return unavailable()
+                val peer = AgentJson.string(args, "peer")?.trim() ?: return invalid("peer is required")
+                val paths =
+                    AgentJson.stringList(args, "files")
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotEmpty() }
+                        .orEmpty()
+                if (paths.isEmpty()) return invalid("files must contain at least one path")
+                var total = 0L
+                for (path in paths) {
+                    val file =
+                        runCatching { fileStore.resolveRead(path) }.getOrElse { return failure(it) }
+                    if (!file.isFile) return invalid("Not a file: $path")
+                    total += file.length()
+                }
+                if (total > MAX_SEND_BYTES) {
+                    return invalid("Total size is larger than $MAX_SEND_BYTES bytes.")
+                }
+                if (port.peerOnline(peer) == false) {
+                    return invalid("Peer is offline: $peer")
+                }
+                return null
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -1116,6 +1303,9 @@ class AgentDataTools(
                     category = "transfer",
                     aliases = listOf("send selected files", "send attachments", "taildrop selected"),
                     confirmationReason = "This sends the user-selected files from this device to a Tailscale peer.",
+                    confirmationKind = ConfirmationKind.FILE_TRANSFER,
+                    bulkApproval = BulkApproval.NONE,
+                    approvalScope = "taildrop",
                 )
 
             override suspend fun execute(
@@ -1193,7 +1383,33 @@ class AgentDataTools(
                     aliases = listOf("image", "photo", "screenshot", "vision", "ocr", "read image"),
                     confirmationReason = "The selected image will be sent to the configured model provider for analysis.",
                     timeoutMs = IMAGE_ANALYSIS_TIMEOUT_MS,
+                    confirmationKind = ConfirmationKind.DATA_EGRESS,
+                    bulkApproval = BulkApproval.NONE,
+                    approvalScope = "image_egress",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? {
+                val question = AgentJson.string(args, "question")?.trim()
+                if (question.isNullOrEmpty()) return invalid("question is required")
+                val path =
+                    AgentJson.string(args, "path")
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: return null
+                val normalizedPath = normalizeConductorPath(path) ?: return invalid("path must be under conductor/.")
+                val file =
+                    runCatching { fileStore.resolveRead(normalizedPath) }
+                        .getOrElse { return invalid("path is not a readable file.") }
+                if (!file.isFile) return invalid("path must be a file.")
+                if (file.length() > MAX_IMAGE_BYTES) {
+                    return invalid("Image is larger than ${MAX_IMAGE_BYTES / (1024 * 1024)} MB.")
+                }
+                val mime = URLConnection.guessContentTypeFromName(file.name) ?: "image/jpeg"
+                if (!mime.startsWith("image/", ignoreCase = true)) {
+                    return invalid("path must reference an image.")
+                }
+                return null
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -1397,6 +1613,15 @@ class AgentDataTools(
     ): ToolExecution {
         val path = AgentJson.string(args, "path") ?: return missingPath()
         return runCatching { block(path) }.getOrElse { failure(it) }
+    }
+
+    private fun preflightPath(
+        args: JsonObject,
+        block: (String) -> Unit,
+    ): ToolExecution? {
+        val path = AgentJson.string(args, "path") ?: return missingPath()
+        val error = runCatching { block(path) }.exceptionOrNull()
+        return error?.let { failure(it) }
     }
 
     private fun fileEntryJson(entry: StoredFile): JsonObject =

@@ -77,6 +77,7 @@ class AgentRuntime(
     private val imageLoader: (String) -> AgentImageData? = { null },
     private val offloadStore: ObservationOffloadStore? = null,
     private val planBlock: () -> String? = { null },
+    private val approvalProfile: () -> ApprovalProfile = { ApprovalProfile.STRICT },
 ) {
     private val confirmationIds = AtomicLong(0)
 
@@ -698,57 +699,106 @@ class AgentRuntime(
                 var confirmationMs: Long? = null
 
                 if (result.confirmation != null) {
-                    val repeatable = isBulkApprovable(executed.name)
-                    val request =
-                        ConfirmationRequest(
-                            id = confirmationIds.incrementAndGet(),
-                            toolName = executed.name,
-                            displayArgsJson = result.confirmation!!.displayArgsJson,
-                            reason = result.confirmation!!.reason,
-                            batchRemaining = executable.size - index,
-                            allowTurnApproval = repeatable,
-                            batchId = batchId,
-                            allowBatchApproval = repeatable,
-                            batchApprovableRemaining =
-                                executable.drop(index).count { isBulkApprovable(it.name) },
-                            batchToolNames =
-                                executable.drop(index).map { it.name }.distinct().take(8),
-                        )
-                    onEvent(AgentEvent.ConfirmationRequested(request))
-                    onEvent(AgentEvent.StateChanged(TurnState.AwaitingConfirmation(step, request)))
-                    val confirmationStartedAt = System.currentTimeMillis()
-                    val decision = withTimeoutOrNull(config.confirmationTimeoutMs) { confirm(request) }
-                    confirmationMs = System.currentTimeMillis() - confirmationStartedAt
-                    confirmationPausedMs += confirmationMs
-                    if (decision == null) {
-                        appendCancelled(transcript, executable.drop(index), "confirmation timed out", onEvent)
-                        return finish(
-                            transcript,
-                            startSize,
-                            TurnOutcome.Failed(
-                                AgentError(AgentTurnErrorCode.CONFIRMATION_TIMEOUT, "Confirmation timed out."),
-                            ),
-                            onEvent,
-                        )
-                    }
-                    if (!decision) {
-                        appendCancelled(transcript, executable.drop(index), "cancelled by user", onEvent)
-                        return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled by user"), onEvent)
-                    }
-                    result =
-                        try {
-                            tools.invokeAgent(executed, humanApproved = true)
-                        } catch (e: CancellationException) {
-                            appendCancelled(transcript, executable.drop(index), "cancelled", onEvent)
-                            return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
-                        } catch (e: Exception) {
-                            AgentInvocationResult(
-                                tool = executed.name,
-                                ok = false,
-                                errorCode = "internal_error",
-                                errorMessage = AgentSanitizer.sanitizeText(e.message ?: "tool failed"),
+                    val confirmation = result.confirmation!!
+                    val definition = catalog.definitions.firstOrNull { it.name == executed.name }
+                    // A real registry confirmation always carries a classified
+                    // kind or scope; only an explicit NONE (for example a
+                    // recursive directory delete) must not fall back to the
+                    // tool's batch default. Test doubles may leave both blank.
+                    val classified =
+                        confirmation.kind != ConfirmationKind.OTHER ||
+                            confirmation.approvalScope.isNotBlank()
+                    val kind =
+                        if (classified) {
+                            confirmation.kind
+                        } else {
+                            definition?.confirmationKind ?: ConfirmationKind.OTHER
+                        }
+                    val bulk =
+                        if (classified) {
+                            confirmation.bulkApproval
+                        } else {
+                            definition?.bulkApproval?.takeUnless { it == BulkApproval.NONE }
+                                ?: if (isBulkApprovable(executed.name)) BulkApproval.TURN else BulkApproval.NONE
+                        }
+                    val scope =
+                        if (classified) {
+                            confirmation.approvalScope
+                        } else {
+                            definition?.approvalScope?.takeIf { it.isNotBlank() }
+                                ?: AgentApprovalPolicy.defaultScope(kind, executed.name)
+                        }
+                    if (AgentApprovalPolicy.autoApprove(approvalProfile(), kind)) {
+                        result =
+                            try {
+                                tools.invokeAgent(executed, humanApproved = true)
+                            } catch (e: CancellationException) {
+                                appendCancelled(transcript, executable.drop(index), "cancelled", onEvent)
+                                return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
+                            } catch (e: Exception) {
+                                AgentInvocationResult(
+                                    tool = executed.name,
+                                    ok = false,
+                                    errorCode = "internal_error",
+                                    errorMessage = AgentSanitizer.sanitizeText(e.message ?: "tool failed"),
+                                )
+                            }
+                    } else {
+                        val repeatable = bulk != BulkApproval.NONE
+                        val request =
+                            ConfirmationRequest(
+                                id = confirmationIds.incrementAndGet(),
+                                toolName = executed.name,
+                                displayArgsJson = confirmation.displayArgsJson,
+                                reason = confirmation.reason,
+                                batchRemaining = executable.size - index,
+                                allowTurnApproval = bulk == BulkApproval.TURN,
+                                batchId = batchId,
+                                allowBatchApproval = repeatable,
+                                batchApprovableRemaining =
+                                    executable.drop(index).count { isBulkApprovable(it.name) },
+                                batchToolNames =
+                                    executable.drop(index).map { it.name }.distinct().take(8),
+                                confirmationKind = kind,
+                                bulkApproval = bulk,
+                                approvalScope = scope,
+                            )
+                        onEvent(AgentEvent.ConfirmationRequested(request))
+                        onEvent(AgentEvent.StateChanged(TurnState.AwaitingConfirmation(step, request)))
+                        val confirmationStartedAt = System.currentTimeMillis()
+                        val decision = withTimeoutOrNull(config.confirmationTimeoutMs) { confirm(request) }
+                        confirmationMs = System.currentTimeMillis() - confirmationStartedAt
+                        confirmationPausedMs += confirmationMs
+                        if (decision == null) {
+                            appendCancelled(transcript, executable.drop(index), "confirmation timed out", onEvent)
+                            return finish(
+                                transcript,
+                                startSize,
+                                TurnOutcome.Failed(
+                                    AgentError(AgentTurnErrorCode.CONFIRMATION_TIMEOUT, "Confirmation timed out."),
+                                ),
+                                onEvent,
                             )
                         }
+                        if (!decision) {
+                            appendCancelled(transcript, executable.drop(index), "cancelled by user", onEvent)
+                            return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled by user"), onEvent)
+                        }
+                        result =
+                            try {
+                                tools.invokeAgent(executed, humanApproved = true)
+                            } catch (e: CancellationException) {
+                                appendCancelled(transcript, executable.drop(index), "cancelled", onEvent)
+                                return finish(transcript, startSize, TurnOutcome.Cancelled("cancelled"), onEvent)
+                            } catch (e: Exception) {
+                                AgentInvocationResult(
+                                    tool = executed.name,
+                                    ok = false,
+                                    errorCode = "internal_error",
+                                    errorMessage = AgentSanitizer.sanitizeText(e.message ?: "tool failed"),
+                                )
+                            }
+                    }
                 }
 
                 if (recordObservation(executed, result.toObservation(), confirmationMs)) {

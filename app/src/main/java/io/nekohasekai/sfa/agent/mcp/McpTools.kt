@@ -3,6 +3,8 @@ package io.nekohasekai.sfa.agent.mcp
 import io.nekohasekai.sfa.agent.AgentPermission
 import io.nekohasekai.sfa.agent.AgentTool
 import io.nekohasekai.sfa.agent.AgentToolDefinition
+import io.nekohasekai.sfa.agent.BulkApproval
+import io.nekohasekai.sfa.agent.ConfirmationKind
 import io.nekohasekai.sfa.agent.ConfirmationPolicy
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolExecution
@@ -10,6 +12,7 @@ import io.nekohasekai.sfa.vfs.VfsScope
 import io.nekohasekai.sfa.vfs.VfsScopeAliases
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -62,6 +65,9 @@ fun mcpAgentTools(
                         } else {
                             MCP_TOOL_TIMEOUT_MS
                         },
+                    confirmationKind = mcpKind(tool.name, tool.readOnly),
+                    bulkApproval = mcpBulk(tool.name, tool.readOnly),
+                    approvalScope = mcpScope(tool.name, tool.readOnly),
                 ),
             remoteName = tool.name,
             session = session,
@@ -88,6 +94,54 @@ internal fun allocateToolName(
     used += name
     return name
 }
+
+private val remoteExecNames = setOf(DOCKER_RUN_TOOL, "job_run", "run_command", "exec")
+private val readOnlyMarks = setOf("job_file", "orb_status")
+
+private fun isReadOnlyRemote(
+    name: String,
+    readOnly: Boolean,
+): Boolean =
+    readOnly ||
+        name in readOnlyMarks ||
+        name.endsWith("_status") ||
+        name.endsWith("_list") ||
+        name.endsWith("_logs") ||
+        name.endsWith("_read") ||
+        name.endsWith("_get")
+
+private fun mcpKind(
+    name: String,
+    readOnly: Boolean,
+): ConfirmationKind =
+    when {
+        name == VFS_LINK_REQUEST_TOOL -> ConfirmationKind.VFS_GRANT
+        name in remoteExecNames -> ConfirmationKind.REMOTE_EXEC
+        isReadOnlyRemote(name, readOnly) -> ConfirmationKind.MCP_READ
+        else -> ConfirmationKind.MCP_WRITE
+    }
+
+private fun mcpBulk(
+    name: String,
+    readOnly: Boolean,
+): BulkApproval =
+    when (mcpKind(name, readOnly)) {
+        ConfirmationKind.MCP_READ, ConfirmationKind.REMOTE_EXEC -> BulkApproval.TURN
+        ConfirmationKind.MCP_WRITE -> BulkApproval.BATCH
+        else -> BulkApproval.NONE
+    }
+
+private fun mcpScope(
+    name: String,
+    readOnly: Boolean,
+): String =
+    when (mcpKind(name, readOnly)) {
+        ConfirmationKind.MCP_READ -> "mcp_read"
+        ConfirmationKind.REMOTE_EXEC -> "remote_exec"
+        ConfirmationKind.VFS_GRANT -> "vfs_grant"
+        ConfirmationKind.MCP_WRITE -> "mcp_write"
+        else -> "mcp"
+    }
 
 private fun aliases(
     serverName: String,
@@ -145,6 +199,24 @@ private class McpBoundTool(
     private val artifactSink: McpArtifactSink?,
     private val allowedResourceOrigins: Set<String>,
 ) : AgentTool {
+    override suspend fun preflight(args: JsonObject): ToolExecution? {
+        if (remoteName != VFS_LINK_REQUEST_TOOL) return null
+        val scope = args["scope"] as? JsonArray
+            ?: return ToolExecution(
+                errorCode = "invalid_parameter",
+                errorMessage = "scope must be a non-empty array of scope names.",
+            )
+        if (scope.isEmpty() ||
+            scope.any { it !is JsonPrimitive || !it.isString || it.content.isBlank() }
+        ) {
+            return ToolExecution(
+                errorCode = "invalid_parameter",
+                errorMessage = "scope must be a non-empty array of scope names.",
+            )
+        }
+        return null
+    }
+
     override suspend fun execute(
         args: JsonObject,
         cancellation: ToolCancellation,

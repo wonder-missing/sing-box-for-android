@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.conductor
 
 import android.app.Application
+import io.nekohasekai.sfa.R
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
@@ -22,6 +23,7 @@ import io.nekohasekai.sfa.agent.AgentInvocationResult
 import io.nekohasekai.sfa.agent.AgentImageRef
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentMessage
+import io.nekohasekai.sfa.agent.ApprovalProfile
 import io.nekohasekai.sfa.agent.AgentMetaTools
 import io.nekohasekai.sfa.agent.AgentRuntime
 import io.nekohasekai.sfa.agent.AgentSanitizer
@@ -124,6 +126,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.util.Collections
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -186,6 +189,8 @@ class ConductorViewModel(
         val toolConsole: ToolConsoleState? = null,
         /** The current task plan; persisted with the session, not a message. */
         val plan: PlanState? = null,
+        /** Session-scoped confirmation envelope; reset on /clear and process death. */
+        val approvalProfile: ApprovalProfile = ApprovalProfile.STRICT,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -323,6 +328,20 @@ class ConductorViewModel(
                     names = files.map { it.name },
                     cancellation = cancellation,
                 )
+
+            override suspend fun peerOnline(
+                peer: String,
+                cancellation: ToolCancellation?,
+            ): Boolean? =
+                runCatching {
+                    tailscaleSource
+                        .status(cancellation)
+                        .endpoints
+                        .asSequence()
+                        .flatMap { it.peers.asSequence() }
+                        .firstOrNull { it.name == peer }
+                        ?.online
+                }.getOrNull()
 
             override suspend fun sendSelected(
                 peer: String,
@@ -812,6 +831,7 @@ class ConductorViewModel(
             imageLoader = { id -> imageStore.load(id) },
             offloadStore = observationOffloadStore,
             planBlock = { planStore.state.value?.recitation() },
+            approvalProfile = { _uiState.value.approvalProfile },
         )
 
     private var transcript: List<AgentMessage> = emptyList()
@@ -828,11 +848,13 @@ class ConductorViewModel(
     private var pendingAgentConfirmation: CompletableDeferred<Boolean>? = null
     private var pendingAgentConfirmationId: Long? = null
 
-    @Volatile
-    private var autoApproveAgentSafeTools: Boolean = false
+    private val autoApproveApprovalScopes = Collections.synchronizedSet(mutableSetOf<String>())
 
     @Volatile
     private var autoApproveAgentBatchId: String? = null
+
+    @Volatile
+    private var autoApproveBatchScope: String? = null
 
     private var pendingCommandConfirmation: Pair<String, String>? = null
     private var pendingCommandConfirmationId: Long? = null
@@ -1190,9 +1212,8 @@ class ConductorViewModel(
     }
 
     /**
-     * Approve all safe tools for the rest of the turn. The runtime still asks
-     * for ALWAYS tools (probes, network changes, Taildrop); ViewModel answers
-     * later safe confirmations without drawing another card.
+     * Approve later calls in the same approval scope for the rest of the turn.
+     * Other scopes keep their own cards.
      */
     fun confirmAllSafeAgent(requestId: Long) {
         if (!isCurrentConfirmation(requestId) || pendingAgentConfirmation == null) return
@@ -1206,14 +1227,13 @@ class ConductorViewModel(
             confirmAgent()
             return
         }
-        autoApproveAgentSafeTools = true
+        request.approvalScope.takeIf { it.isNotBlank() }?.let { autoApproveApprovalScopes += it }
         confirmAgent()
     }
 
     /**
-     * Approve the safe calls remaining in this assistant batch. Destructive
-     * ALWAYS tools are marked non-approvable by the runtime and still draw an
-     * individual card.
+     * Approve calls in the same approval scope in this assistant batch. Other
+     * scopes still draw their own cards.
      */
     fun confirmBatchAgent(requestId: Long) {
         if (!isCurrentConfirmation(requestId) || pendingAgentConfirmation == null) return
@@ -1228,12 +1248,14 @@ class ConductorViewModel(
             return
         }
         autoApproveAgentBatchId = request.batchId
+        autoApproveBatchScope = request.approvalScope
         confirmAgent()
     }
 
     fun cancelAgent() {
-        autoApproveAgentSafeTools = false
+        autoApproveApprovalScopes.clear()
         autoApproveAgentBatchId = null
+        autoApproveBatchScope = null
         val pending = pendingAgentConfirmation ?: return
         pendingAgentConfirmationId = null
         removeConfirmationItems()
@@ -1243,8 +1265,9 @@ class ConductorViewModel(
     fun stopAgent() {
         if (!_uiState.value.isRunning || stopRequested) return
         stopRequested = true
-        autoApproveAgentSafeTools = false
+        autoApproveApprovalScopes.clear()
         autoApproveAgentBatchId = null
+        autoApproveBatchScope = null
         cancelPendingFileRequest("The turn was stopped.")
         cancelPendingAskUser("The turn was stopped.")
         pendingAgentConfirmation?.complete(false)
@@ -1555,8 +1578,9 @@ class ConductorViewModel(
         agentJob = null
         stopRequested = false
         runtime.resetCancel()
-        autoApproveAgentSafeTools = false
+        autoApproveApprovalScopes.clear()
         autoApproveAgentBatchId = null
+        autoApproveBatchScope = null
         pendingAgentConfirmation = null
         pendingAgentConfirmationId = null
         pendingTurnEvent = null
@@ -1568,6 +1592,7 @@ class ConductorViewModel(
         cancelPendingAskUser("The conversation was cleared.")
         synchronized(selectedFilesLock) { selectedFiles.clear() }
         InboxRegistry.shared.clear()
+        fileStore.resetSessionTracking()
         sessionStartVersion = BuildConfig.VERSION_NAME
         toolStartedAt.clear()
         transcript = emptyList()
@@ -1584,6 +1609,7 @@ class ConductorViewModel(
                 turnStatus = null,
                 turnStatusSince = 0L,
                 pendingImage = null,
+                approvalProfile = ApprovalProfile.STRICT,
             )
         }
         sessionWrites.execute { sessionStore.clear() }
@@ -1617,8 +1643,9 @@ class ConductorViewModel(
         }
         stopRequested = false
         runtime.resetCancel()
-        autoApproveAgentSafeTools = false
+        autoApproveApprovalScopes.clear()
         autoApproveAgentBatchId = null
+        autoApproveBatchScope = null
         updateUi {
             copy(
                 isRunning = true,
@@ -1711,8 +1738,9 @@ class ConductorViewModel(
                     pendingCommandConfirmationId = null
                     removeConfirmationItems()
                     stopRequested = false
-                    autoApproveAgentSafeTools = false
+                    autoApproveApprovalScopes.clear()
                     autoApproveAgentBatchId = null
+                    autoApproveBatchScope = null
                     ModelProviderSettings.unpin()
                     if (outcome is TurnOutcome.Failed) {
                         TelemetryEventLog.recordAsync(
@@ -1920,8 +1948,12 @@ class ConductorViewModel(
                 val batchApproved =
                     event.request.allowBatchApproval &&
                         autoApproveAgentBatchId != null &&
-                        event.request.batchId == autoApproveAgentBatchId
-                if ((autoApproveAgentSafeTools && event.request.allowTurnApproval) || batchApproved) {
+                        event.request.batchId == autoApproveAgentBatchId &&
+                        event.request.approvalScope == autoApproveBatchScope
+                val turnApproved =
+                    event.request.allowTurnApproval &&
+                        event.request.approvalScope in autoApproveApprovalScopes
+                if (turnApproved || batchApproved) {
                     pendingAgentConfirmationId = event.request.id
                     pendingAgentConfirmation =
                         CompletableDeferred<Boolean>().apply { complete(true) }
@@ -2808,6 +2840,32 @@ class ConductorViewModel(
     fun clearPlan() {
         if (_uiState.value.isRunning) return
         planStore.clear()
+    }
+
+    fun setApprovalProfile(profile: ApprovalProfile) {
+        if (_uiState.value.approvalProfile == profile) return
+        if (_uiState.value.isRunning) {
+            append(
+                ConductorItem.Notice(
+                    "approvals",
+                    getApplication<Application>().getString(R.string.conductor_approval_running),
+                ),
+            )
+            return
+        }
+        updateUi { copy(approvalProfile = profile) }
+        val message =
+            when (profile) {
+                ApprovalProfile.STRICT -> R.string.conductor_approval_strict_notice
+                ApprovalProfile.WORKSPACE -> R.string.conductor_approval_workspace_notice
+                ApprovalProfile.TEST -> R.string.conductor_approval_test_notice
+            }
+        append(
+            ConductorItem.Notice(
+                "approvals",
+                getApplication<Application>().getString(message),
+            ),
+        )
     }
 
     fun conversationTranscript(): String =

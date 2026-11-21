@@ -810,6 +810,121 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun testProfileRunsTrustedWorkspaceCallsWithoutACard() {
+        val definition =
+            AgentToolDefinition(
+                name = "workspace_write",
+                description = "Write",
+                permission = AgentPermission.WRITE_FILES,
+                parameters = emptyList(),
+                confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+                category = "files",
+                confirmationKind = ConfirmationKind.WORKSPACE_WRITE,
+            )
+        val call = ToolCall("call_1", "workspace_write", """{"path":"conductor/a.txt"}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor =
+            FakeExecutor(listOf(definition)) { call, humanApproved ->
+                if (humanApproved) {
+                    ok(call.name)
+                } else {
+                    AgentInvocationResult(
+                        tool = call.name,
+                        ok = false,
+                        errorCode = "confirmation_required",
+                        confirmation =
+                            AgentConfirmation(
+                                tool = call.name,
+                                argsJson = call.argumentsJson,
+                                displayArgsJson = call.argumentsJson,
+                                reason = "write",
+                                kind = ConfirmationKind.WORKSPACE_WRITE,
+                                bulkApproval = BulkApproval.TURN,
+                            ),
+                    )
+                }
+            }
+        var cards = 0
+
+        val result =
+            runBlocking {
+                runtime(model, executor, key = "sk-test", approvalProfile = { ApprovalProfile.TEST })
+                    .runTurn(
+                        "write",
+                        emptyList(),
+                        onEvent = { if (it is AgentEvent.ConfirmationRequested) cards += 1 },
+                        confirm = { true },
+                    )
+            }
+
+        assertEquals(0, cards)
+        assertTrue(result.outcome is TurnOutcome.Completed)
+    }
+
+    @Test
+    fun testProfileStillCardsAnExternalBoundary() {
+        val definition =
+            AgentToolDefinition(
+                name = "vfs_grant",
+                description = "Grant",
+                permission = AgentPermission.DATA_EGRESS,
+                parameters = emptyList(),
+                confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
+                category = "mcp",
+                confirmationKind = ConfirmationKind.VFS_GRANT,
+            )
+        val call = ToolCall("call_1", "vfs_grant", "{}")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor =
+            FakeExecutor(listOf(definition)) { call, humanApproved ->
+                if (humanApproved) {
+                    ok(call.name)
+                } else {
+                    AgentInvocationResult(
+                        tool = call.name,
+                        ok = false,
+                        errorCode = "confirmation_required",
+                        confirmation =
+                            AgentConfirmation(
+                                tool = call.name,
+                                argsJson = call.argumentsJson,
+                                displayArgsJson = call.argumentsJson,
+                                reason = "grant",
+                                kind = ConfirmationKind.VFS_GRANT,
+                            ),
+                    )
+                }
+            }
+        var cards = 0
+
+        val result =
+            runBlocking {
+                runtime(model, executor, key = "sk-test", approvalProfile = { ApprovalProfile.TEST })
+                    .runTurn(
+                        "grant",
+                        emptyList(),
+                        onEvent = { if (it is AgentEvent.ConfirmationRequested) cards += 1 },
+                        confirm = { true },
+                    )
+            }
+
+        assertEquals(1, cards)
+        assertTrue(result.outcome is TurnOutcome.Completed)
+    }
+
+    @Test
     fun alwaysToolsDoNotOfferBatchApproval() {
         val call = ToolCall("call_1", "probe_via_node", """{"outbound":"node-a","url":"https://example.com/"}""")
         val model =
@@ -1548,6 +1663,7 @@ class AgentRuntimeTest {
         imageLoader: (String) -> AgentImageData? = { null },
         offloadStore: ObservationOffloadStore? = null,
         planBlock: () -> String? = { null },
+        approvalProfile: () -> ApprovalProfile = { ApprovalProfile.STRICT },
     ): AgentRuntime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
@@ -1561,6 +1677,7 @@ class AgentRuntimeTest {
             imageLoader = imageLoader,
             offloadStore = offloadStore,
             planBlock = planBlock,
+            approvalProfile = approvalProfile,
         )
 
     private fun response(text: String): AgentModelResponse =

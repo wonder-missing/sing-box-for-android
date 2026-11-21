@@ -86,6 +86,10 @@ class AgentToolRegistry(
                     "Missing required parameter '$missing'.${parameterHint(definition)}",
                 )
             }
+            val invalidType = invalidPassthroughType(definition.parametersSchema, args)
+            if (invalidType != null) {
+                return failure(name, "invalid_parameter_type", invalidType)
+            }
         } else {
             for (spec in definition.parameters) {
                 val element = args[spec.name]
@@ -162,6 +166,31 @@ class AgentToolRegistry(
                 ?.let { setOf(it) }
                 .orEmpty()
 
+        val preflight =
+            try {
+                withContext(Dispatchers.IO) { tool.preflight(args) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ToolExecution(
+                    errorCode = "internal_error",
+                    errorMessage = AgentSanitizer.sanitizeText(e.message ?: e.toString()),
+                )
+            }
+        if (preflight != null && !preflight.ok) {
+            return AgentInvocationResult(
+                tool = name,
+                ok = false,
+                output = preflight.output,
+                errorCode = preflight.errorCode ?: "tool_failed",
+                errorMessage =
+                    AgentSanitizer.sanitizeText(
+                        preflight.errorMessage ?: "Tool preflight failed.",
+                        allowedUrls,
+                    ),
+            )
+        }
+
         val policy = definition.effectiveConfirmationPolicy
         val confirmationRequired =
             when (policy) {
@@ -170,6 +199,15 @@ class AgentToolRegistry(
                 ConfirmationPolicy.ALWAYS -> !humanApproved
             }
         if (confirmationRequired) {
+            val hint =
+                runCatching { tool.confirmationHint(args) }
+                    .getOrNull()
+            val kind = hint?.kind ?: definition.confirmationKind
+            val bulk = hint?.bulkApproval ?: definition.bulkApproval
+            val scope =
+                hint?.approvalScope?.takeIf { it.isNotBlank() }
+                    ?: definition.approvalScope.takeIf { it.isNotBlank() }
+                    ?: AgentApprovalPolicy.defaultScope(kind, name)
             return AgentInvocationResult(
                 tool = name,
                 ok = false,
@@ -187,6 +225,9 @@ class AgentToolRegistry(
                                 AgentSanitizer.sanitizeArgsJson(trimmed.ifEmpty { "{}" }, allowedUrls)
                             },
                         reason = definition.confirmationReason ?: "This tool can change network state.",
+                        kind = kind,
+                        bulkApproval = bulk,
+                        approvalScope = scope,
                     ),
             )
         }
@@ -265,6 +306,44 @@ class AgentToolRegistry(
             }
         return " Accepted parameters: ${names.joinToString()}."
     }
+
+    private fun invalidPassthroughType(
+        schema: JsonObject,
+        args: JsonObject,
+    ): String? {
+        val properties = schema["properties"] as? JsonObject ?: return null
+        properties.forEach { (key, rawSpec) ->
+            val value = args[key] ?: return@forEach
+            if (value is JsonNull) return@forEach
+            val spec = rawSpec as? JsonObject ?: return@forEach
+            val type = (spec["type"] as? JsonPrimitive)?.contentOrNull
+            val valid =
+                when (type) {
+                    "string" -> value is JsonPrimitive && value.isString
+                    "array" -> value is JsonArray
+                    "boolean" -> value is JsonPrimitive && value.booleanOrNull != null
+                    "integer" -> value is JsonPrimitive && !value.isString && value.intOrNull != null
+                    "number" -> value is JsonPrimitive && !value.isString && value.contentOrNull != null
+                    "object" -> value is JsonObject
+                    else -> true
+                }
+            if (!valid && type != null) {
+                return "Parameter '$key' must be ${article(type)}."
+            }
+            val allowed = spec["enum"] as? JsonArray ?: return@forEach
+            if (value is JsonPrimitive && value.isString) {
+                val text = value.content
+                if (allowed.none { it is JsonPrimitive && it.contentOrNull == text }) {
+                    return "Parameter '$key' must be one of: " +
+                        allowed.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.joinToString(", ")
+                }
+            }
+        }
+        return null
+    }
+
+    private fun article(type: String): String =
+        if (type == "array" || type == "integer" || type == "object") "an $type" else "a $type"
 
     private fun missingPassthrough(
         schema: JsonObject,

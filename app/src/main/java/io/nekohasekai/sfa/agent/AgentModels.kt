@@ -35,6 +35,54 @@ enum class InvocationSource {
     AGENT,
 }
 
+/** User-selected confirmation envelope for a Conductor session. */
+enum class ApprovalProfile {
+    /** Every confirmation-required call asks. */
+    STRICT,
+
+    /** Both built-in workspace writes and diagnostics run without cards. */
+    WORKSPACE,
+
+    /** Also trusts read-only network and MCP calls; external boundaries still ask. */
+    TEST,
+}
+
+/**
+ * What the call actually crosses, independent of the tool's name. A failed
+ * preflight never reaches a card; these kinds only classify calls that can run.
+ */
+enum class ConfirmationKind {
+    READ_ONLY,
+    WORKSPACE_WRITE,
+    WORKSPACE_OVERWRITE,
+    WORKSPACE_DELETE_FILE,
+    WORKSPACE_DELETE_UNTRACKED,
+    WORKSPACE_DELETE_DIR,
+    DIAGNOSTICS,
+    NETWORK_READ,
+    NETWORK_CHANGE,
+    DATA_EGRESS,
+    FILE_TRANSFER,
+    REMOTE_EXEC,
+    VFS_GRANT,
+    MCP_READ,
+    MCP_WRITE,
+    OTHER,
+}
+
+/** Scope of a user-approved turn/batch shortcut. */
+enum class BulkApproval {
+    NONE,
+    BATCH,
+    TURN,
+}
+
+data class ConfirmationHint(
+    val kind: ConfirmationKind,
+    val bulkApproval: BulkApproval,
+    val approvalScope: String,
+)
+
 interface ToolCancellation {
     fun isCancelled(): Boolean
 
@@ -78,6 +126,9 @@ data class AgentToolDefinition(
     val namespace: String? = null,
     /** Per-tool execution budget; null uses the registry default. */
     val timeoutMs: Long? = null,
+    val confirmationKind: ConfirmationKind = ConfirmationKind.OTHER,
+    val bulkApproval: BulkApproval = BulkApproval.NONE,
+    val approvalScope: String = "",
 ) {
     val parametersSchema: JsonObject
         get() = parametersSchemaOverride ?: AgentJson.schema(parameters)
@@ -194,6 +245,12 @@ interface TaildropPort {
         ids: List<String>,
         cancellation: ToolCancellation? = null,
     ): TaildropSendResult
+
+    /** Null means the implementation cannot check; false blocks the confirmation. */
+    suspend fun peerOnline(
+        peer: String,
+        cancellation: ToolCancellation? = null,
+    ): Boolean? = null
 }
 
 data class SelectedFileInfo(
@@ -480,6 +537,9 @@ data class AgentConfirmation(
     val argsJson: String,
     val displayArgsJson: String,
     val reason: String,
+    val kind: ConfirmationKind = ConfirmationKind.OTHER,
+    val bulkApproval: BulkApproval = BulkApproval.NONE,
+    val approvalScope: String = "",
 )
 
 data class AgentInvocationResult(
@@ -512,6 +572,17 @@ interface AgentTool {
      * provider/build capabilities that must not be advertised at all.
      */
     fun isAvailable(): Boolean = true
+
+    /**
+     * Read-only validation before any confirmation card. Return a ToolExecution
+     * with ok=false when the call cannot possibly run (missing path, invalid
+     * node, offline peer, bad overwrite state). This keeps dead actions out of
+     * the human approval flow.
+     */
+    suspend fun preflight(args: JsonObject): ToolExecution? = null
+
+    /** Args-aware risk label; defaults to the definition's static fields. */
+    fun confirmationHint(args: JsonObject): ConfirmationHint? = null
 
     suspend fun execute(
         args: JsonObject,

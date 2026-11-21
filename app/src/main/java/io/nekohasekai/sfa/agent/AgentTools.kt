@@ -328,7 +328,37 @@ class AgentTools(
                             "then restores the previous selection. App traffic may briefly use that node. " +
                             "If the app process is killed mid-probe, the core can stay on the probe node until it restarts.",
                     allowedUrlParameter = "url",
+                    confirmationKind = ConfirmationKind.NETWORK_READ,
+                    bulkApproval = BulkApproval.TURN,
+                    approvalScope = "network_read",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? {
+                val outbound = AgentJson.string(args, "outbound")?.trim()?.takeIf { it.isNotBlank() }
+                    ?: return invalidArgument("outbound is required")
+                val url = AgentJson.string(args, "url")?.trim()?.takeIf { it.isNotBlank() }
+                    ?: return invalidArgument("url is required")
+                if (!isAllowedHttpUrl(url)) return invalidArgument("url must be an absolute http(s) URL")
+                val snapshot = nodeSource.snapshot()
+                if (!snapshot.commandClientConnected) {
+                    return ToolExecution(
+                        errorCode = "tool_unavailable",
+                        errorMessage = "sing-box core is not reachable; start the service before probing",
+                    )
+                }
+                if (snapshot.groups.isNotEmpty()) {
+                    val selectable =
+                        snapshot.groups.any { group ->
+                            group.selectable && group.items.any { it.tag == outbound }
+                        }
+                    if (!selectable) {
+                        return invalidArgument(
+                            "outbound '$outbound' is not a selectable node in any outbound group",
+                        )
+                    }
+                }
+                return null
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -422,7 +452,55 @@ class AgentTools(
                     confirmationReason =
                         "This probes several outbounds by temporarily changing the running core's selected outbound " +
                             "for each one. It restores the previous selection after each probe and may take about 90 seconds.",
+                    confirmationKind = ConfirmationKind.NETWORK_READ,
+                    bulkApproval = BulkApproval.TURN,
+                    approvalScope = "network_read",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? {
+                val groupTag =
+                    AgentJson.string(args, "group")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "group is required")
+                val url =
+                    AgentJson.string(args, "url")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "url is required")
+                if (!isAllowedHttpUrl(url)) {
+                    return ToolExecution(errorCode = "invalid_parameter", errorMessage = "url must be an absolute http(s) URL")
+                }
+                val snapshot = nodeSource.snapshot()
+                if (!snapshot.commandClientConnected) {
+                    return ToolExecution(
+                        errorCode = "tool_unavailable",
+                        errorMessage = "sing-box core is not reachable; start the service before probing",
+                    )
+                }
+                if (snapshot.remoteControl) {
+                    return ToolExecution(
+                        errorCode = "tool_unavailable",
+                        errorMessage = "probe_many is local-only; Remote Control does not expose an outbound-bound HTTP client",
+                    )
+                }
+                val group =
+                    snapshot.groups.firstOrNull { it.tag == groupTag && it.selectable }
+                        ?: return ToolExecution(
+                            errorCode = "invalid_parameter",
+                            errorMessage = "Unknown selectable group '$groupTag'. Use list_nodes to list groups.",
+                        )
+                val requested =
+                    AgentJson.string(args, "outbounds")
+                        ?.split(',', ' ', '\n', '\t')
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotEmpty() }
+                        .orEmpty()
+                val unknown = requested.firstOrNull { tag -> group.items.none { it.tag == tag } }
+                if (unknown != null) {
+                    return ToolExecution(
+                        errorCode = "invalid_parameter",
+                        errorMessage = "Unknown outbound '$unknown' in group '$groupTag'.",
+                    )
+                }
+                return null
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -567,7 +645,35 @@ class AgentTools(
                     confirmationReason =
                         "This changes the running core's selected outbound and keeps it changed. App traffic may switch immediately. " +
                             "The previous selection is restored if the call fails, not after a successful change.",
+                    confirmationKind = ConfirmationKind.NETWORK_CHANGE,
+                    bulkApproval = BulkApproval.NONE,
+                    approvalScope = "network_change",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? {
+                val groupTag =
+                    AgentJson.string(args, "group")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "group is required")
+                val outbound =
+                    AgentJson.string(args, "outbound")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return ToolExecution(errorCode = "missing_parameter", errorMessage = "outbound is required")
+                val group =
+                    nodeSource
+                        .snapshot()
+                        .groups
+                        .firstOrNull { it.tag == groupTag && it.selectable }
+                        ?: return ToolExecution(
+                            errorCode = "invalid_parameter",
+                            errorMessage = "Unknown selectable group '$groupTag'. Use list_nodes to list groups.",
+                        )
+                if (group.items.none { it.tag == outbound }) {
+                    return ToolExecution(
+                        errorCode = "invalid_parameter",
+                        errorMessage = "outbound '$outbound' is not in selectable group '$groupTag'",
+                    )
+                }
+                return null
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -733,7 +839,89 @@ class AgentTools(
                     confirmationReason =
                         "This sends an HTTP request from this device to the URL you provide.",
                     allowedUrlParameter = "url",
+                    confirmationKind = ConfirmationKind.DATA_EGRESS,
+                    bulkApproval = BulkApproval.BATCH,
+                    approvalScope = "http_fetch",
                 )
+
+            override suspend fun preflight(args: JsonObject): ToolExecution? {
+                val url =
+                    AgentJson.string(args, "url")?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return invalidParameter("url is required")
+                if (!isAllowedHttpUrl(url)) {
+                    return invalidParameter("url must be an absolute http(s) URL")
+                }
+                val method =
+                    normalizeFetchMethod(AgentJson.string(args, "method") ?: "GET")
+                        ?: return invalidParameter(
+                            "method must be a valid HTTP token other than CONNECT, TRACE or TRACK",
+                        )
+                val bodyProvided = args.containsKey("body")
+                if (bodyProvided && AgentJson.string(args, "body") == null) {
+                    return invalidParameter("body must be a string")
+                }
+                val body = if (bodyProvided) AgentJson.string(args, "body") else null
+                if (body != null && (method == "GET" || method == "HEAD")) {
+                    return invalidParameter("GET and HEAD requests cannot carry a body")
+                }
+                if (body != null && body.toByteArray(Charsets.UTF_8).size > MAX_FETCH_BODY_BYTES) {
+                    return invalidParameter("body is larger than $MAX_FETCH_BODY_BYTES bytes")
+                }
+                if (parseFetchHeaders(AgentJson.stringList(args, "headers")) == null) {
+                    return invalidParameter("headers must be \"Name: value\" strings without CR or LF")
+                }
+                val outputPath =
+                    AgentJson.string(args, "output_path")?.trim()?.takeIf { it.isNotEmpty() }
+                if (outputPath != null) {
+                    val store =
+                        fileStore
+                            ?: return ToolExecution(
+                                errorCode = "tool_unavailable",
+                                errorMessage = "The workspace is not available.",
+                            )
+                    return runCatching {
+                        store.preflightResourceWrite(
+                            outputPath,
+                            AgentJson.boolean(args, "overwrite") ?: false,
+                        )
+                        null
+                    }.getOrElse { invalidParameter(it.message ?: "output_path is not writable") }
+                }
+                return null
+            }
+
+            override fun confirmationHint(args: JsonObject): ConfirmationHint? {
+                val outputPath = AgentJson.string(args, "output_path")?.trim()?.takeIf { it.isNotEmpty() }
+                val store = fileStore
+                if (outputPath != null && store != null) {
+                    val normalized =
+                        if (outputPath.startsWith("resources/")) "conductor/$outputPath" else outputPath
+                    val exists = runCatching { !store.stat(normalized).directory }.getOrDefault(false)
+                    if (exists && !store.isSessionCreated(normalized)) {
+                        return ConfirmationHint(
+                            kind = ConfirmationKind.WORKSPACE_OVERWRITE,
+                            bulkApproval = BulkApproval.NONE,
+                            approvalScope = "workspace_overwrite",
+                        )
+                    }
+                }
+                val method =
+                    normalizeFetchMethod(AgentJson.string(args, "method") ?: "GET")
+                        ?: return null
+                return if (method == "GET" || method == "HEAD") {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.NETWORK_READ,
+                        bulkApproval = BulkApproval.TURN,
+                        approvalScope = "network_read",
+                    )
+                } else {
+                    ConfirmationHint(
+                        kind = ConfirmationKind.DATA_EGRESS,
+                        bulkApproval = BulkApproval.BATCH,
+                        approvalScope = "http_fetch",
+                    )
+                }
+            }
 
             override suspend fun execute(
                 args: JsonObject,
@@ -950,6 +1138,9 @@ class AgentTools(
                     confirmationReason =
                         "This sends the search query to the configured DeepSeek web-search service.",
                     timeoutMs = WEB_SEARCH_TIMEOUT_MS,
+                    confirmationKind = ConfirmationKind.DATA_EGRESS,
+                    bulkApproval = BulkApproval.NONE,
+                    approvalScope = "web_search",
                 )
 
             override fun isAvailable(): Boolean = webSearchAvailable()
@@ -1085,6 +1276,9 @@ class AgentTools(
                     aliases = listOf("telemetry", "upload"),
                     confirmationReason =
                         "This uploads pending telemetry from this device to the configured ingest endpoint.",
+                    confirmationKind = ConfirmationKind.DATA_EGRESS,
+                    bulkApproval = BulkApproval.NONE,
+                    approvalScope = "telemetry",
                 )
 
             override suspend fun execute(

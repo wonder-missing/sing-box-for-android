@@ -5,6 +5,7 @@ import java.io.FileOutputStream
 import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.security.MessageDigest
+import java.util.Collections
 import java.util.UUID
 
 data class StoredFile(
@@ -66,6 +67,23 @@ class ConductorFileStore(
 ) {
     val workspaceDir: File = File(workingDir, workspaceName)
     val resourcesDir: File = File(workspaceDir, "resources")
+    private val sessionCreated = Collections.synchronizedSet(mutableSetOf<String>())
+
+    fun resetSessionTracking() {
+        sessionCreated.clear()
+    }
+
+    fun isSessionCreated(path: String): Boolean {
+        val relative =
+            runCatching { relativePath(resolve(workingDir, path, allowRoot = true)) }
+                .getOrNull()
+                ?: return false
+        return relative in sessionCreated
+    }
+
+    private fun markCreated(file: File) {
+        sessionCreated += relativePath(file)
+    }
 
     fun ensureWorkspace(): File {
         workspaceDir.mkdirs()
@@ -90,6 +108,78 @@ class ConductorFileStore(
         val file = resolve(workingDir, path, allowRoot = true)
         if (!file.exists()) throw IllegalArgumentException("File or directory not found: $path")
         return storeEntry(file)
+    }
+
+    /** Read-only check used before a confirmation card. */
+    fun preflightWrite(
+        path: String,
+        overwrite: Boolean,
+    ) {
+        val file = resolveWrite(path)
+        if (file.isDirectory) throw IllegalArgumentException("Not a file: $path")
+        if (file.exists() && !overwrite) {
+            throw IllegalArgumentException("File already exists: $path. Set overwrite=true to replace it.")
+        }
+    }
+
+    /** Read-only check used before a confirmation card. */
+    fun preflightAppend(path: String) {
+        val file = resolveWrite(path)
+        if (file.exists() && !file.isFile) throw IllegalArgumentException("Not a file: $path")
+    }
+
+    /**
+     * Read-only check used before a confirmation card. It verifies the file,
+     * edit shape and expected hash without writing anything.
+     */
+    fun preflightEdit(
+        path: String,
+        edits: List<TextEditSpec>,
+        expectedSha256: String? = null,
+    ) {
+        if (edits.isEmpty()) throw IllegalArgumentException("edits must contain at least one edit.")
+        val file = resolveWrite(path)
+        if (!file.isFile) throw IllegalArgumentException("Not a file: $path")
+        if (file.length() > maxFileBytes) {
+            throw IllegalArgumentException("File is larger than $maxFileBytes bytes.")
+        }
+        if (!expectedSha256.isNullOrBlank() && !sha256(file).equals(expectedSha256, ignoreCase = true)) {
+            throw IllegalArgumentException("File hash does not match expected_sha256; read it again before editing.")
+        }
+        val text = String(file.readBytes(), Charsets.UTF_8)
+        edits.forEachIndexed { index, edit ->
+            if (edit.oldText.isEmpty()) {
+                throw IllegalArgumentException("edits[$index].old_text must not be empty.")
+            }
+            val occurrences = countOccurrences(text, edit.oldText)
+            if (occurrences == 0) {
+                throw IllegalArgumentException("edits[$index].old_text was not found.")
+            }
+            if (!edit.replaceAll && occurrences > 1) {
+                throw IllegalArgumentException(
+                    "edits[$index].old_text occurs $occurrences times; set replace_all=true or provide more context.",
+                )
+            }
+        }
+    }
+
+    /** Returns true for a directory delete; used to keep recursive deletes carded. */
+    fun preflightDelete(path: String): Boolean {
+        val file = resolveWrite(path)
+        if (!file.exists()) throw IllegalArgumentException("File or directory not found: $path")
+        return file.isDirectory
+    }
+
+    /** Read-only resource-path and overwrite check. */
+    fun preflightResourceWrite(
+        path: String,
+        overwrite: Boolean,
+    ) {
+        val normalized = normalizeResourcePath(path)
+        val file = resolve(resourcesDir, normalized, allowRoot = false)
+        if (file.exists() && !overwrite) {
+            throw IllegalArgumentException("Resource already exists: $path. Set overwrite=true to replace it.")
+        }
     }
 
     fun readText(
@@ -290,10 +380,11 @@ class ConductorFileStore(
     ): StoredFile =
         synchronized(writeLock) {
             val file = resolveWrite(path)
+            val existed = file.exists()
             val bytes = text.toByteArray(Charsets.UTF_8)
-            if (file.exists() && !file.isFile) throw IllegalArgumentException("Not a file: $path")
+            if (existed && !file.isFile) throw IllegalArgumentException("Not a file: $path")
             ensureWorkspace()
-            val existing = if (file.exists()) file.length() else 0L
+            val existing = if (existed) file.length() else 0L
             if (existing + bytes.size > maxFileBytes) {
                 throw IllegalArgumentException("File is larger than ${maxFileBytes} bytes.")
             }
@@ -306,6 +397,7 @@ class ConductorFileStore(
                 }
             }
             FileOutputStream(file, true).use { output -> output.write(bytes) }
+            if (!existed) markCreated(file)
             storeEntry(file)
         }
 
@@ -359,12 +451,13 @@ class ConductorFileStore(
         overwrite: Boolean,
     ): StoredFile {
         val file = resolveWrite(path)
+        val existed = file.exists()
         val bytes = text.toByteArray(Charsets.UTF_8)
         if (bytes.size.toLong() > maxFileBytes) {
             throw IllegalArgumentException("File is larger than ${maxFileBytes} bytes.")
         }
         ensureWorkspace()
-        if (file.exists() && !overwrite) {
+        if (existed && !overwrite) {
             throw IllegalArgumentException("File already exists: $path. Set overwrite=true to replace it.")
         }
         val parent = file.parentFile ?: throw IllegalArgumentException("Invalid path: $path")
@@ -382,6 +475,7 @@ class ConductorFileStore(
         } finally {
             if (temp.exists()) temp.delete()
         }
+        if (!existed) markCreated(file)
         return storeEntry(file)
     }
 
@@ -436,8 +530,9 @@ class ConductorFileStore(
             val normalized = normalizeResourcePath(path)
             val artifact = normalized.startsWith(ARTIFACTS_DIR + "/")
             val file = resolve(resourcesDir, normalized, allowRoot = false)
+            val existed = file.exists()
             ensureWorkspace()
-            if (file.exists() && !overwrite) {
+            if (existed && !overwrite) {
                 throw IllegalArgumentException("Resource already exists: $path. Set overwrite=true to replace it.")
             }
             val parent = file.parentFile ?: throw IllegalArgumentException("Invalid path: $path")
@@ -454,6 +549,7 @@ class ConductorFileStore(
             } finally {
                 if (temp.exists()) temp.delete()
             }
+            if (!existed) markCreated(file)
             if (artifact) pruneArtifacts()
             storeEntry(file)
         }
@@ -473,8 +569,9 @@ class ConductorFileStore(
             val normalized = normalizeResourcePath(path)
             val artifact = normalized.startsWith(ARTIFACTS_DIR + "/")
             val file = resolve(resourcesDir, normalized, allowRoot = false)
+            val existed = file.exists()
             ensureWorkspace()
-            if (file.exists() && !overwrite) {
+            if (existed && !overwrite) {
                 throw IllegalArgumentException("Resource already exists: $path. Set overwrite=true to replace it.")
             }
             val parent = file.parentFile ?: throw IllegalArgumentException("Invalid path: $path")
@@ -513,6 +610,7 @@ class ConductorFileStore(
             } finally {
                 if (temp.exists()) temp.delete()
             }
+            if (!existed) markCreated(file)
             if (artifact) pruneArtifacts()
             storeEntry(file)
         }
@@ -525,6 +623,7 @@ class ConductorFileStore(
         } else if (!file.delete()) {
             throw IllegalArgumentException("Could not delete $path")
         }
+        sessionCreated -= relativePath(file)
         return entry
     }
 
