@@ -156,7 +156,7 @@ System prompt 的规则：
 Plan 工具与状态：
 
 - 只有一个 core capability `plan_update`，整份替换；不需要 `plan_create`、`plan_read`、`plan_clear`。`goal` 在非空计划时必填；`items[{step,status}]`，status 为 `pending` / `in_progress` / `done`；可选 `note` 记录阻塞或死路。最多 20 项，step/goal 200 字符，note 300 字符。
-- `PlanStore` 是权威状态；tool result 是历史快照，不能覆盖用户之后的编辑或清空。`PlanState` 存在 `ConductorSession.plan`，进程重启后恢复。清空会保留一个 cleared tombstone（空步骤、递增 version），尾部注入 `state: no active plan (cleared by the user)`，避免模型继续执行旧 plan_update 结果。UI 在消息流底部显示一张可折叠卡片；用户可改步骤、切状态、添加/删除、清空；输入非法或含敏感内容时不保存。
+- `PlanStore` 是权威状态；tool result 是历史快照，不能覆盖用户之后的编辑或清空。`PlanState` 存在 `ConductorSession.plan`，进程重启后恢复；`updatedBy` 标记当前版本由模型还是用户写入。`PlanStore` 同时保留最近 20 条 `PlanEvent`（version / time / actor / action / state），随会话持久化。清空会保留一个 cleared tombstone（空步骤、递增 version），尾部注入 `state: no active plan (cleared by the user)`，避免模型继续执行旧 plan_update 结果。UI 在消息流底部显示一张可折叠卡片；全部步骤 `done` 后卡片只读，不显示 Edit，要重排直接在对话里让 Agent 新建计划；还有未完成步骤时用户可改步骤、切状态、添加/删除、清空，输入非法或含敏感内容时不保存。Plain Transcript / Copy / Save / `.runtime/conversation.md` 的 `## Plan history` 按版本列出模型和用户的每次改动，当前 `## Plan` 仍保留快照。
 - turn 进行中不写完整 session（计划状态也等 turn 结束）；避免 UI items 领先 transcript 造成进程死亡后的半轮恢复。轮中只保留内存状态，turn 收尾后一次写入。
 - 模型每次请求只在尾部看到一份紧凑复诵：`goal`、进度、当前步、下一步、阻塞项。不要回放完整计划或历史版本。
 - 注入发生在请求构造时，不写回 transcript：始终在真正的尾部追加一条 ephemeral user message，不改写已有的 real user message。改用户消息会让下一次请求的前缀在 user 处失配，破坏缓存；独立尾消息只让复诵本身成为新的尾部 token。tool result 里的完整计划仍然可缓存。

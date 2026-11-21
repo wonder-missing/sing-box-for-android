@@ -2229,11 +2229,13 @@ private fun PlanCard(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
-                        enabled = editable,
-                        onClick = { editing = true },
-                    ) {
-                        Text(stringResource(R.string.edit))
+                    if (plan.hasOpenSteps()) {
+                        TextButton(
+                            enabled = editable,
+                            onClick = { editing = true },
+                        ) {
+                            Text(stringResource(R.string.edit))
+                        }
                     }
                     TextButton(
                         enabled = editable,
@@ -2245,7 +2247,7 @@ private fun PlanCard(
             }
         }
     }
-    if (editing) {
+    if (editing && plan.hasOpenSteps()) {
         PlanEditDialog(
             plan = plan,
             onDismiss = { editing = false },

@@ -26,6 +26,7 @@
 ### P2 数据面与能力
 
 - [ ] **plan_update 隐藏导致相邻思考卡**：一轮只有 `plan_update` 时，它只更新顶部计划卡、不插入对话流；前后两个模型调用的 reasoning 卡会贴在一起。可选轻量「计划已更新 · x/y」行，或合并同一 turn 内相邻 reasoning；两条路的视觉不同，待拍板。
+- [ ] **Plan 卡完成态与变更历史（AF 候选）**：全部 `done` 后隐藏 Edit；`PlanEvent` 记录模型/用户每次版本、来源和 action，Transcript 增加 `## Plan history`；`[runtime:plan]` 增加 `updated by`。735 用例绿。待真机确认 v3→v4 能在 transcript 看到 user 取消第 5 步，且全部完成时没有编辑入口。
 - [ ] **plan note / blocked / 备注命名统一**：`plan_update` schema 把 note 定义成 “current blocker or dead end”，recitation 渲染成 `blocked:`，计划卡 UI 却叫「备注」；模型会把同一字段当成三个概念。先定它是 blocker 还是自由备注，再统一三处文案。
 - [ ] **file_delete 目录递归确认**：`file_delete` 对目录是递归删除，确认卡只写 “deletes an item”，没有说明递归和子项数；结果也没有 `deletedFiles` 计数。补确认文案和结果字段前先定产品口径。
 - [ ] **Conductor 短时后台后的 prompt cache**：90 trace 显示离开约 8m48s 和 6m32s 后，首轮 cache hit 从约 95% 掉到 23–24%（hit 2304 / miss 7269、7585），延迟升到 6.8s / 3.7s。缓存 TTL 是分钟级，不是 w88 报告推测的“>1h”。评估是否需要在回到前台时提示，或压缩上下文降低首轮成本。

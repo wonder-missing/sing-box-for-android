@@ -2,6 +2,9 @@ package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.ApiTraceSummary
+import io.nekohasekai.sfa.agent.PlanClearedBy
+import io.nekohasekai.sfa.agent.PlanEvent
+import io.nekohasekai.sfa.agent.PlanEventAction
 import io.nekohasekai.sfa.agent.PlanItem
 import io.nekohasekai.sfa.agent.PlanItemStatus
 import io.nekohasekai.sfa.agent.PlanState
@@ -45,6 +48,21 @@ class ConductorSessionSerializationTest {
                         version = 2,
                         goal = "Check the plan",
                         items = listOf(PlanItem("step", PlanItemStatus.IN_PROGRESS)),
+                    ),
+                planEvents =
+                    listOf(
+                        PlanEvent(
+                            version = 2,
+                            at = 1_700_000_000_000L,
+                            actor = PlanClearedBy.MODEL,
+                            action = PlanEventAction.UPDATED,
+                            plan =
+                                PlanState(
+                                    version = 2,
+                                    goal = "Check the plan",
+                                    items = listOf(PlanItem("step", PlanItemStatus.IN_PROGRESS)),
+                                ),
+                        ),
                     ),
                 items =
                     listOf(

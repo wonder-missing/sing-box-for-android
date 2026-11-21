@@ -11,6 +11,7 @@ internal const val MAX_PLAN_ITEMS = 20
 internal const val MAX_PLAN_GOAL_CHARS = 200
 internal const val MAX_PLAN_STEP_CHARS = 200
 internal const val MAX_PLAN_NOTE_CHARS = 300
+internal const val MAX_PLAN_EVENTS = 20
 
 @Serializable
 enum class PlanItemStatus {
@@ -53,7 +54,45 @@ enum class PlanClearedBy {
 
     @SerialName("model")
     MODEL,
+    ;
+
+    val wire: String
+        get() =
+            when (this) {
+                USER -> "user"
+                MODEL -> "model"
+            }
 }
+
+@Serializable
+enum class PlanEventAction {
+    @SerialName("created")
+    CREATED,
+
+    @SerialName("updated")
+    UPDATED,
+
+    @SerialName("cleared")
+    CLEARED,
+    ;
+
+    val wire: String
+        get() =
+            when (this) {
+                CREATED -> "created"
+                UPDATED -> "updated"
+                CLEARED -> "cleared"
+            }
+}
+
+@Serializable
+data class PlanEvent(
+    val version: Long,
+    val at: Long,
+    val actor: PlanClearedBy,
+    val action: PlanEventAction,
+    val plan: PlanState,
+)
 
 @Serializable
 data class PlanState(
@@ -68,7 +107,11 @@ data class PlanState(
     val cleared: Boolean = false,
     /** Who cleared the plan; null on old snapshots that predate this field. */
     val clearedBy: PlanClearedBy? = null,
+    /** Who wrote this version; null on old snapshots that predate this field. */
+    val updatedBy: PlanClearedBy? = null,
 ) {
+    fun hasOpenSteps(): Boolean = items.any { it.status != PlanItemStatus.DONE }
+
     /**
      * A compact recitation for the end of the model request. The full plan
      * lives in the tool result; this block only keeps the current step,
@@ -98,6 +141,7 @@ data class PlanState(
             appendLine("[runtime:plan v=$version]")
             if (goal.isNotBlank()) appendLine("goal: ${modelText(goal)}")
             appendLine("progress: $done/${items.size} done")
+            updatedBy?.let { appendLine("updated by: ${it.wire}") }
             if (current == null) {
                 appendLine("all steps done")
             } else {
@@ -127,12 +171,18 @@ class PlanStore(
     private val lock = Any()
     private val _state = MutableStateFlow(normalized(initial))
     val state: StateFlow<PlanState?> = _state.asStateFlow()
+    private val _history = MutableStateFlow<List<PlanEvent>>(emptyList())
+    val history: StateFlow<List<PlanEvent>> = _history.asStateFlow()
 
     fun current(): PlanState? = _state.value
 
-    fun restore(value: PlanState?) {
+    fun restore(
+        value: PlanState?,
+        history: List<PlanEvent> = emptyList(),
+    ) {
         synchronized(lock) {
             _state.value = normalized(value)
+            _history.value = if (value == null) emptyList() else history.takeLast(MAX_PLAN_EVENTS)
         }
     }
 
@@ -140,7 +190,8 @@ class PlanStore(
         goal: String,
         items: List<PlanItem>,
         note: String,
-        clearedBy: PlanClearedBy = PlanClearedBy.MODEL,
+        updatedBy: PlanClearedBy = PlanClearedBy.MODEL,
+        clearedBy: PlanClearedBy = updatedBy,
     ): PlanUpdateResult =
         synchronized(lock) {
             val current = _state.value
@@ -159,6 +210,7 @@ class PlanStore(
                             cleared = true,
                             clearedBy = clearedBy,
                         )
+                    record(clearedState, clearedBy, PlanEventAction.CLEARED)
                     _state.value = clearedState
                     PlanUpdateResult(clearedState, changed = true, cleared = true)
                 }
@@ -180,14 +232,38 @@ class PlanStore(
                             goal = normalizedGoal,
                             items = normalizedItems,
                             note = normalizedNote,
+                            updatedBy = updatedBy,
                         )
+                    val action =
+                        if (current == null || current.cleared) {
+                            PlanEventAction.CREATED
+                        } else {
+                            PlanEventAction.UPDATED
+                        }
+                    record(next, updatedBy, action)
                     _state.value = next
                     PlanUpdateResult(next, changed = true, cleared = false)
                 }
             }
         }
 
-    fun clear(): PlanUpdateResult = update("", emptyList(), "", clearedBy = PlanClearedBy.USER)
+    fun clear(): PlanUpdateResult = update("", emptyList(), "", updatedBy = PlanClearedBy.USER, clearedBy = PlanClearedBy.USER)
+
+    private fun record(
+        state: PlanState,
+        actor: PlanClearedBy,
+        action: PlanEventAction,
+    ) {
+        val event =
+            PlanEvent(
+                version = state.version,
+                at = System.currentTimeMillis(),
+                actor = actor,
+                action = action,
+                plan = state,
+            )
+        _history.value = (_history.value + event).takeLast(MAX_PLAN_EVENTS)
+    }
 
     private fun normalized(value: PlanState?): PlanState? {
         if (value == null) return null

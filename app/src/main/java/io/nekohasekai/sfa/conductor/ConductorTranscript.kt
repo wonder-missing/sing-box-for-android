@@ -2,8 +2,12 @@ package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentJson
 import io.nekohasekai.sfa.agent.AgentSanitizer
+import io.nekohasekai.sfa.agent.PlanEvent
 import io.nekohasekai.sfa.agent.PlanState
 import io.nekohasekai.sfa.agent.markdownFence
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Renders the plain transcript for the clipboard export, Plain Transcript
@@ -16,6 +20,7 @@ internal fun conductorConversationMarkdown(
     sessionStartVersion: String = "",
     includeReasoning: Boolean = false,
     plan: PlanState? = null,
+    planEvents: List<PlanEvent> = emptyList(),
 ): String =
     buildString {
         appendLine("# Conductor transcript")
@@ -25,6 +30,34 @@ internal fun conductorConversationMarkdown(
             appendLine("- session started on: $sessionStartVersion")
         }
         appendLine()
+        if (planEvents.isNotEmpty()) {
+            appendLine("## Plan history")
+            appendLine()
+            planEvents.forEach { event ->
+                appendLine(
+                    "### v${event.version} · ${formatPlanEventTime(event.at)} · " +
+                        "${event.actor.wire} · ${event.action.wire}",
+                )
+                appendLine()
+                if (event.plan.cleared) {
+                    appendLine(
+                        "- state: no active plan (cleared by " +
+                            "${event.plan.clearedBy?.wire ?: event.actor.wire})",
+                    )
+                } else {
+                    if (event.plan.goal.isNotBlank()) {
+                        appendLine("- goal: ${AgentSanitizer.sanitizeText(event.plan.goal)}")
+                    }
+                    event.plan.items.forEach { item ->
+                        appendLine("- [${item.status.wire}] ${AgentSanitizer.sanitizeText(item.step)}")
+                    }
+                    if (event.plan.note.isNotBlank()) {
+                        appendLine("- note: ${AgentSanitizer.sanitizeText(event.plan.note)}")
+                    }
+                }
+                appendLine()
+            }
+        }
         if (plan != null) {
             appendLine("## Plan")
             appendLine()
@@ -146,3 +179,6 @@ internal fun conductorConversationMarkdown(
             }
         }
     }.trim().let { AgentSanitizer.scrubPersonalData(it) }
+
+private fun formatPlanEventTime(at: Long): String =
+    SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(at))

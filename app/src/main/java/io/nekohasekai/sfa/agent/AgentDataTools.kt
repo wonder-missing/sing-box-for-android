@@ -821,6 +821,8 @@ class AgentDataTools(
                             result.state?.let {
                                 put("version", it.version)
                                 put("goal", it.goal)
+                                it.updatedBy?.let { updatedBy -> put("updatedBy", updatedBy.wire) }
+                                it.clearedBy?.let { clearedBy -> put("clearedBy", clearedBy.wire) }
                                 put(
                                     "items",
                                     buildJsonArray {

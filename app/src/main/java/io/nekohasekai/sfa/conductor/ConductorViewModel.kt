@@ -2834,7 +2834,7 @@ class ConductorViewModel(
             )
             return
         }
-        planStore.update(goal, items, note, clearedBy = PlanClearedBy.USER)
+        planStore.update(goal, items, note, updatedBy = PlanClearedBy.USER)
     }
 
     fun clearPlan() {
@@ -2874,6 +2874,7 @@ class ConductorViewModel(
             appVersion = BuildConfig.VERSION_NAME,
             sessionStartVersion = sessionStartVersion,
             plan = _uiState.value.plan,
+            planEvents = planStore.history.value,
         )
 
     fun apiTraceMarkdown(lastEntries: Int? = null): String = AgentApiTrace.asMarkdown(lastEntries)
@@ -2887,7 +2888,7 @@ class ConductorViewModel(
     private fun applyRestoredSession(session: ConductorSession?) {
         if (session == null) return
         sessionStartVersion = session.appVersion.ifBlank { BuildConfig.VERSION_NAME }
-        planStore.restore(session.plan)
+        planStore.restore(session.plan, session.planEvents)
         val loadedTranscript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
         val repaired = repairRestoredTranscript(loadedTranscript, session.items)
         transcript = repaired.takeIf { validateTranscriptPairing(it) } ?: loadedTranscript
@@ -2962,6 +2963,7 @@ class ConductorViewModel(
                     appVersion = BuildConfig.VERSION_NAME,
                     trace = trace,
                     plan = plan,
+                    planEvents = planStore.history.value,
                 )
             }
         }

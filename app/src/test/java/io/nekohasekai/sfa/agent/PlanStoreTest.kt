@@ -179,4 +179,74 @@ class PlanStoreTest {
 
         assertTrue(state.recitation().contains("all steps done"))
     }
+
+    @Test
+    fun hasOpenStepsOnlyWhileWorkRemains() {
+        assertTrue(
+            PlanState(
+                items = listOf(
+                    PlanItem("one", PlanItemStatus.DONE),
+                    PlanItem("two", PlanItemStatus.PENDING),
+                ),
+            ).hasOpenSteps(),
+        )
+        assertFalse(
+            PlanState(
+                items = listOf(
+                    PlanItem("one", PlanItemStatus.DONE),
+                    PlanItem("two", PlanItemStatus.DONE),
+                ),
+            ).hasOpenSteps(),
+        )
+    }
+
+    @Test
+    fun historyRecordsVersionActorAndUpdatedBy() {
+        val store = PlanStore()
+        store.update("task", listOf(PlanItem("one", PlanItemStatus.IN_PROGRESS)), "")
+        store.update(
+            "task",
+            listOf(
+                PlanItem("one", PlanItemStatus.DONE),
+                PlanItem("two", PlanItemStatus.PENDING),
+            ),
+            "",
+            updatedBy = PlanClearedBy.USER,
+        )
+
+        val history = store.history.value
+        assertEquals(2, history.size)
+        assertEquals(1L, history[0].version)
+        assertEquals(PlanClearedBy.MODEL, history[0].actor)
+        assertEquals(PlanEventAction.CREATED, history[0].action)
+        assertEquals(2L, history[1].version)
+        assertEquals(PlanClearedBy.USER, history[1].actor)
+        assertEquals(PlanEventAction.UPDATED, history[1].action)
+        assertEquals(PlanClearedBy.USER, store.current()!!.updatedBy)
+        assertTrue(store.current()!!.recitation().contains("updated by: user"))
+
+        val cleared = store.clear()
+        assertTrue(cleared.changed)
+        assertEquals(PlanEventAction.CLEARED, store.history.value.last().action)
+        assertEquals(PlanClearedBy.USER, store.history.value.last().actor)
+        assertEquals(3, store.history.value.size)
+    }
+
+    @Test
+    fun historyIsBoundedAndNoOpsDoNotAppend() {
+        val store = PlanStore()
+        repeat(MAX_PLAN_EVENTS + 5) { index ->
+            store.update(
+                "task $index",
+                listOf(PlanItem("step $index", PlanItemStatus.PENDING)),
+                "",
+            )
+        }
+        assertEquals(MAX_PLAN_EVENTS, store.history.value.size)
+        val current = store.current()!!
+        val version = current.version
+        store.update(current.goal, current.items, current.note)
+        assertEquals(version, store.current()!!.version)
+        assertEquals(MAX_PLAN_EVENTS, store.history.value.size)
+    }
 }

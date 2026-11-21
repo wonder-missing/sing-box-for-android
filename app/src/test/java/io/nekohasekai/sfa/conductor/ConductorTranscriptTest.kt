@@ -1,7 +1,11 @@
 package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.ConfirmationRequest
+import io.nekohasekai.sfa.agent.PlanClearedBy
+import io.nekohasekai.sfa.agent.PlanEvent
+import io.nekohasekai.sfa.agent.PlanEventAction
 import io.nekohasekai.sfa.agent.PlanItem
+import io.nekohasekai.sfa.agent.PlanItemStatus
 import io.nekohasekai.sfa.agent.PlanState
 import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolResultView
@@ -199,6 +203,47 @@ class ConductorTranscriptTest {
         assertTrue(markdown.contains("api_key=***"))
         assertFalse(markdown.contains("secret"))
         assertFalse(markdown.contains("token=abc"))
+    }
+
+    @Test
+    fun planHistoryShowsModelAndUserChanges() {
+        val created =
+            PlanState(
+                version = 1,
+                goal = "task",
+                items =
+                    listOf(
+                        PlanItem("one", PlanItemStatus.DONE),
+                        PlanItem("two", PlanItemStatus.PENDING),
+                    ),
+                updatedBy = PlanClearedBy.MODEL,
+            )
+        val edited =
+            PlanState(
+                version = 2,
+                goal = "task",
+                items =
+                    listOf(
+                        PlanItem("one", PlanItemStatus.DONE),
+                        PlanItem("two", PlanItemStatus.PENDING),
+                    ),
+                updatedBy = PlanClearedBy.USER,
+            )
+        val events =
+            listOf(
+                PlanEvent(1, 1_700_000_000_000L, PlanClearedBy.MODEL, PlanEventAction.CREATED, created),
+                PlanEvent(2, 1_700_000_001_000L, PlanClearedBy.USER, PlanEventAction.UPDATED, edited),
+            )
+
+        val markdown = conductorConversationMarkdown(emptyList(), "1.0", plan = edited, planEvents = events)
+
+        assertTrue(markdown.contains("## Plan history"))
+        assertTrue(markdown.contains("### v1"))
+        assertTrue(markdown.contains("model · created"))
+        assertTrue(markdown.contains("### v2"))
+        assertTrue(markdown.contains("user · updated"))
+        assertTrue(markdown.contains("[pending] two"))
+        assertTrue(markdown.contains("## Plan"))
     }
 
     @Test

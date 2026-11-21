@@ -3,6 +3,8 @@ package io.nekohasekai.sfa.conductor
 import android.content.Context
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.ApiTraceSummary
+import io.nekohasekai.sfa.agent.MAX_PLAN_EVENTS
+import io.nekohasekai.sfa.agent.PlanEvent
 import io.nekohasekai.sfa.agent.PlanState
 import io.nekohasekai.sfa.agent.TurnEvent
 import io.nekohasekai.sfa.agent.trimTranscriptToLast
@@ -19,6 +21,7 @@ data class ConductorSession(
     val appVersion: String = "",
     val trace: List<ApiTraceSummary> = emptyList(),
     val plan: PlanState? = null,
+    val planEvents: List<PlanEvent> = emptyList(),
 )
 
 internal interface ConductorPreferenceStore {
@@ -78,8 +81,9 @@ class ConductorSessionStore internal constructor(
         appVersion: String = "",
         trace: List<ApiTraceSummary> = emptyList(),
         plan: PlanState? = null,
+        planEvents: List<PlanEvent> = emptyList(),
     ) {
-        val payload = encodeBounded(transcript, items, pendingEvent, appVersion, trace, plan)
+        val payload = encodeBounded(transcript, items, pendingEvent, appVersion, trace, plan, planEvents)
         runCatching {
             prefs.putString(KEY, payload)
         }
@@ -92,6 +96,7 @@ class ConductorSessionStore internal constructor(
         appVersion: String,
         trace: List<ApiTraceSummary>,
         plan: PlanState?,
+        planEvents: List<PlanEvent>,
     ): String {
         var transcriptLimit = MAX_TRANSCRIPT
         var itemsLimit = MAX_ITEMS
@@ -104,6 +109,7 @@ class ConductorSessionStore internal constructor(
                     appVersion = appVersion,
                     trace = trace,
                     plan = plan,
+                    planEvents = planEvents.takeLast(MAX_PLAN_EVENTS),
                 )
             val raw = json.encodeToString(session)
             if (raw.toByteArray(Charsets.UTF_8).size <= MAX_BYTES ||
