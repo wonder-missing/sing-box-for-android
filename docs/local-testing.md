@@ -6,7 +6,7 @@
 ## 边界
 
 - 本地跑编译检查和 JVM 单测；CI 仍是发布门。本地绿不代替 CI 绿。
-- `scripts/e2e-emulator.sh` 在无头 arm64 模拟器上装 debug APK、启动 `MainActivity`、处理首次更新提示，并断言 Dashboard/Profiles。它只覆盖启动和 Compose 渲染链路，不覆盖 VPN、服务启停、Tailscale/VFS 和真实网络。
+- `scripts/e2e-emulator.sh` 在无头 arm64 模拟器上装 debug APK、启动 `MainActivity`、处理首次更新提示，并断言 Dashboard/Profiles。它只覆盖启动和 Compose 渲染链路，不覆盖 VPN、服务启停、Tailscale/VFS 和真实网络。模拟器用 API 36（当前 SDK 没有 API 37 system image）；app 的 `targetSdk=37` 仍可安装并启动。
 - UI 交互和视觉仍以真机为准；模拟器用来提前发现启动崩溃、资源缺失和首屏断言回退。
 - 本地不签 release，见 [`signing.md`](signing.md)。
 - 本地不编 `libbox`；从 CI 的 artifact 取现成的 `libbox.aar`。
