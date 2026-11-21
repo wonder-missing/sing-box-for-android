@@ -95,33 +95,39 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 
 ## 磁盘预算与清理
 
-2026-11-15 实测基线：
+2026-11-21 实测基线（Mini，228 GB 卷）：
 
-| 路径 | 占用 |
-|---|---|
-| `~/.gradle` | 1.6 GB |
-| `~/Library/Android/sdk` | 704 MB |
-| `app/build` | 103 MB |
-| `app/libs` | 54 MB（两份 AAR） |
-| Homebrew `openjdk@17` | 306 MB |
+| 路径 | 当前 | 预算 | 超预算动作 |
+|---|---|---|---|
+| `app/build` | 0.5–1.2 GB（累积） | 1.5 GB | 下次运行 `--clean` |
+| `build/e2e-emulator` | 184 KB | 128 MB | 删除旧日志/截图 |
+| AVD `wondersing-e2e` 数据 | 2.2 GB | 4 GB | 下次启动加 `-wipe-data` |
+| AVD snapshots | 0 | 0 | 发现即删（始终 `-no-snapshot`） |
+| `~/.gradle` | 3.4 GB | 6 GB | 只报告，不自动清 |
+| Android SDK | 6.4 GB | 固定 | 只报告；升 SDK 时手动卸旧包 |
+| `app/libs` | 54 MB | 固定 | 两份 AAR |
 
-软上限：`~/.gradle` 3.3 GB，SDK 约 7 GB（含 emulator + system image），`app/build` 1.5 GB，AVD 约 2 GB，合计约 14 GB。`local-test.sh` 在可用空间低于 10 GB 时先跑 `--clean`，低于 5 GB 拒绝运行；`e2e-emulator.sh` 默认低于 20 GB 先清理，低于 10 GB 熔断。
+**日常清理只看自有足迹，不看整盘剩余空间。** `local-test.sh` 在 `app/build` 超过 1.5 GB 时自己跑 `--clean`；`e2e-emulator.sh` 还会删除超 128 MB 的 e2e 日志、清掉 AVD snapshots，并在 AVD 数据超过 4 GB 时用 `-wipe-data` 重置测试盘。Gradle 缓存、SDK/system image 和 `app/libs` 可复用，任何日常清理都不动。
 
-- 每个开发批次结束跑一次 `--size`；`app/build` 超过 1.5 GB 或可用空间低于 10 GB 时跑 `--clean`。模拟器日志和截图在 `build/e2e-emulator/`，不占长期空间。
+**可用空间只用于下一轮安全余量，不是日常清理阈值。** `local-test.sh` 需要 3 GB 余量，`e2e-emulator.sh` 需要 4 GB（首次安装 SDK 包时 8 GB）。低于余量时先清可再生产物，再检查一次；仍不足就失败，并说明是整卷空间不够，而不是 build 太大。总盘容量不参与判断：10 TB 盘上即使只剩 100 GB，只要 `app/build` 没超预算就不清；`app/build` 超预算时即使还有 1 TB 也清。整卷只剩 1 GB 时，清掉 1.2 GB build 也不会假装能救整块盘，脚本直接报错并指出空间被别处占用。
+
+预算都是 MB 整数，可用环境变量覆盖：`WONDERSING_BUILD_BUDGET_MB`（1536）、`WONDERSING_NEXT_RUN_RESERVE_MB`（3072）、`E2E_BUILD_BUDGET_MB`（1536）、`E2E_ARTIFACT_BUDGET_MB`（128）、`E2E_AVD_DATA_BUDGET_MB`（4096）、`E2E_NEXT_RUN_RESERVE_MB`（4096）、`E2E_SDK_INSTALL_RESERVE_MB`（8192）。
+
+- 每个开发批次结束跑一次 `./scripts/local-test.sh --size`；它会打印 `app/build`、预算、可用空间和“是否会清”的结论。`./scripts/e2e-emulator.sh --size` 还会打印 e2e 产物、AVD 数据、snapshots 和内存。
 - `./scripts/local-test.sh --clean` 会停 Gradle daemon、跑 `./gradlew clean`、删除根目录的 problems report 和 14 天前的 daemon 日志；不动依赖缓存，下次测试仍快。
 - 升 Gradle wrapper 后，旧的 `~/.gradle/wrapper/dists/gradle-*` 不会自动删除；确认没有其他项目共用该版本后手动删旧目录。
 - 依赖缓存 `~/.gradle/caches` 让 Gradle 自己淘汰闲置条目。只有确实需要时再删 `modules-2`，代价是重新下载约 1.5 GB。
 - Android SDK 只保留当前需要的包。升 `compileSdk` 后先 `sdkmanager --list_installed`，再用 `sdkmanager --uninstall` 卸掉旧 platform 和 build-tools。AGP 在 license 已接受时会自动补包，升 SDK 后要复查。
 - `app/libs` 只放当前两份 AAR；换 core 时直接覆盖，不留历史版本。
 - `gh run download` 的临时目录用 `mktemp -d` 加 `trap` 清理。
-- 如果本地跑过 `assemble`，装完或拷走 APK 后删 `app/build/outputs/apk`。
+- `e2e-emulator.sh` 默认会重建 APK；只有确定不再需要复用现有 APK 时，才手动删 `app/build/outputs/apk`。`--no-build` 会保留现有 APK，因此不会为超预算自动清 `app/build`。
 - CI artifact 的 14 天保留在 GitHub 侧，不占本机。
 
 ## 重建检查
 
 换机器或重装系统后，按「从零重装」执行，再确认：
 
-1. `./scripts/local-test.sh --size` 能打印占用，可用空间不低于 5 GB。
+1. `./scripts/local-test.sh --size` 和 `./scripts/e2e-emulator.sh --size` 显示各项在预算内，且可用空间不低于下一轮余量（local 3 GB / e2e 4 GB；首次装 SDK 8 GB）。
 2. `./scripts/local-test.sh` 全量 JVM 用例全绿。
 3. `./scripts/e2e-emulator.sh` 输出 `E2E OK`，并生成 `build/e2e-emulator/main.png`。
 4. 失败时依次查 `JAVA_HOME`、`ANDROID_HOME` 下的 platform 37.1/36、`app/libs` 两份 AAR。

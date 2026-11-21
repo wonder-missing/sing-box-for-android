@@ -1,20 +1,33 @@
 #!/bin/sh
 # Headless Android emulator smoke test on the Mini.
 #
-# Preflight: disk cleanup threshold, hard free-space floor, host memory floor.
+# Disk policy is footprint-driven, not driven by a fixed free-space floor:
+#   - app/build > 1.5GB: clean build output (unless --no-build).
+#   - build/e2e-emulator > 128MB: remove old artifacts.
+#   - AVD snapshots > 0: remove (this test always boots with -no-snapshot).
+#   - AVD data > 4GB: boot with -wipe-data.
+#   - Free space only has to cover the next run: 4GB reserve. Below that,
+#     reclaim disposable output once; if still below, fail and report that
+#     the volume, not this project, is full.
+#   - Gradle caches and SDK/system images are reused and never auto-deleted.
+#
 # Then boots an arm64 API 36 AVD, builds/installs the otherDebug APK, launches
 # MainActivity, dismisses the first-run update prompt, and asserts the
 # Dashboard/Profiles UI. Real VPN/service behavior still needs a physical device.
 #
 #   ./scripts/e2e-emulator.sh
 #   ./scripts/e2e-emulator.sh --no-build
+#   ./scripts/e2e-emulator.sh --size
 #   E2E_KEEP_EMULATOR=1 ./scripts/e2e-emulator.sh
 #
-# Thresholds:
-#   E2E_CLEAN_THRESHOLD_GB (default 20)  run cleanup below this free space
-#   E2E_MIN_FREE_GB        (default 10)  hard stop below this free space
-#   E2E_MIN_TOTAL_MEM_GB   (default 16)  host total memory floor
-#   E2E_MIN_FREE_MEM_GB    (default 4)   host free+inactive memory floor
+# Budgets:
+#   E2E_BUILD_BUDGET_MB        (default 1536)  app/build footprint budget
+#   E2E_ARTIFACT_BUDGET_MB     (default 128)   build/e2e-emulator budget
+#   E2E_AVD_DATA_BUDGET_MB     (default 4096)  AVD data budget; over -> -wipe-data
+#   E2E_NEXT_RUN_RESERVE_MB    (default 4096)  free space needed for one run
+#   E2E_SDK_INSTALL_RESERVE_MB (default 8192)  one-time SDK install reserve
+#   E2E_MIN_TOTAL_MEM_GB       (default 16)    host total memory floor
+#   E2E_MIN_FREE_MEM_GB        (default 4)     host free+inactive memory floor
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -24,12 +37,20 @@ AVD=${E2E_AVD:-wondersing-e2e}
 PORT=${E2E_PORT:-5556}
 SERIAL="emulator-$PORT"
 RAM_MB=${E2E_RAM_MB:-3072}
+BUILD_BUDGET_MB=${E2E_BUILD_BUDGET_MB:-1536}
+ARTIFACT_BUDGET_MB=${E2E_ARTIFACT_BUDGET_MB:-128}
+AVD_DATA_BUDGET_MB=${E2E_AVD_DATA_BUDGET_MB:-4096}
+NEXT_RUN_RESERVE_MB=${E2E_NEXT_RUN_RESERVE_MB:-4096}
+SDK_INSTALL_RESERVE_MB=${E2E_SDK_INSTALL_RESERVE_MB:-8192}
 SKIP_BUILD=0
+SIZE_ONLY=0
+WIPE_DATA=0
 for arg in "$@"; do
     case "$arg" in
         --no-build) SKIP_BUILD=1 ;;
+        --size) SIZE_ONLY=1 ;;
         -h|--help)
-            sed -n '2,20p' "$0"
+            sed -n '2,/^set -eu$/p' "$0"
             exit 0
             ;;
         *)
@@ -47,6 +68,8 @@ OUT="$ROOT/build/e2e-emulator"
 SCREEN="$OUT/main.png"
 WINDOW="$OUT/window.xml"
 LOG="$OUT/emulator.log"
+AVD_DIR="$HOME/.android/avd/$AVD.avd"
+SNAP_DIR="$AVD_DIR/snapshots"
 PKG=io.nekohasekai.sfa.wonder
 ACTIVITY="$PKG/io.nekohasekai.sfa.compose.MainActivity"
 IMAGE="system-images;android-36;google_apis;arm64-v8a"
@@ -59,12 +82,10 @@ EMULATOR="$ANDROID_HOME/emulator/emulator"
 EMU_PID=""
 cleanup() {
     status=$?
-    if [ "${E2E_KEEP_EMULATOR:-0}" != "1" ]; then
+    if [ -n "$EMU_PID" ] && [ "${E2E_KEEP_EMULATOR:-0}" != "1" ]; then
         "$ADB" -s "$SERIAL" emu kill >/dev/null 2>&1 || true
-        if [ -n "$EMU_PID" ]; then
-            kill "$EMU_PID" >/dev/null 2>&1 || true
-        fi
-    else
+        kill "$EMU_PID" >/dev/null 2>&1 || true
+    elif [ -n "$EMU_PID" ]; then
         echo "emulator kept: $SERIAL"
     fi
     exit "$status"
@@ -79,6 +100,10 @@ fail() {
 
 free_kb() {
     df -Pk "$ROOT" | awk 'NR==2 { print $4 }'
+}
+
+dir_kb() {
+    du -sk "$1" 2>/dev/null | awk 'NR==1 {print $1}'
 }
 
 total_mem_kb() {
@@ -113,30 +138,141 @@ check_memory() {
     echo "memory: total=$((total / 1024 / 1024))GB free+inactive=$((free / 1024 / 1024))GB"
 }
 
-check_disk() {
-    clean_kb=$(( ${E2E_CLEAN_THRESHOLD_GB:-20} * 1024 * 1024 ))
-    min_kb=$(( ${E2E_MIN_FREE_GB:-10} * 1024 * 1024 ))
+sdk_missing() {
+    [ ! -x "$SDKMANAGER" ] || [ ! -x "$AVDMANAGER" ] || [ ! -x "$ADB" ] || [ ! -x "$EMULATOR" ] ||
+        [ ! -d "$IMAGE_DIR" ]
+}
+
+reserve_mb() {
+    if sdk_missing; then
+        echo "$SDK_INSTALL_RESERVE_MB"
+    else
+        echo "$NEXT_RUN_RESERVE_MB"
+    fi
+}
+
+disk_report() {
+    build_kb=$(dir_kb "$ROOT/app/build"); build_kb=${build_kb:-0}
+    e2e_kb=$(dir_kb "$OUT"); e2e_kb=${e2e_kb:-0}
+    avd_kb=$(dir_kb "$AVD_DIR"); avd_kb=${avd_kb:-0}
+    snap_kb=$(dir_kb "$SNAP_DIR"); snap_kb=${snap_kb:-0}
     free=$(free_kb)
-    if [ "$free" -lt "$clean_kb" ]; then
-        echo "disk: ${free}KB free is below the cleanup threshold ${clean_kb}KB; cleaning build and AVD snapshots." >&2
+    reserve=$(reserve_mb)
+    total=$(total_mem_kb)
+    free_mem=$(free_mem_kb)
+    echo "disk: app/build=${build_kb}KB/${BUILD_BUDGET_MB}MB e2e=${e2e_kb}KB/${ARTIFACT_BUDGET_MB}MB avd=${avd_kb}KB/${AVD_DATA_BUDGET_MB}MB snapshots=${snap_kb}KB free=${free}KB/${reserve}MB-reserve"
+    echo "memory: total=$((total / 1024 / 1024))GB free+inactive=$((free_mem / 1024 / 1024))GB"
+    if [ "$build_kb" -gt "$((BUILD_BUDGET_MB * 1024))" ]; then
+        if [ "$SKIP_BUILD" = "1" ]; then
+            echo "disk: app/build over budget; --no-build keeps the existing APK"
+        else
+            echo "disk: app/build over budget; a run would clean it first"
+        fi
+    fi
+    if [ "$e2e_kb" -gt "$((ARTIFACT_BUDGET_MB * 1024))" ]; then
+        echo "disk: e2e artifacts over budget; a run would remove them first"
+    fi
+    if [ "$snap_kb" -gt 0 ]; then
+        echo "disk: AVD snapshots present; a run would remove them first"
+    fi
+    if [ "$avd_kb" -gt "$((AVD_DATA_BUDGET_MB * 1024))" ]; then
+        echo "disk: AVD data over budget; the next run would boot with -wipe-data"
+    fi
+    if [ "$free" -lt "$((reserve * 1024))" ]; then
+        echo "disk: free below the next-run reserve; a run would reclaim, then fail if still below"
+    fi
+    if [ "$build_kb" -le "$((BUILD_BUDGET_MB * 1024))" ] &&
+        [ "$e2e_kb" -le "$((ARTIFACT_BUDGET_MB * 1024))" ] &&
+        [ "$snap_kb" -eq 0 ] &&
+        [ "$avd_kb" -le "$((AVD_DATA_BUDGET_MB * 1024))" ] &&
+        [ "$free" -ge "$((reserve * 1024))" ]; then
+        echo "disk: no cleanup needed"
+    fi
+}
+
+clean_disposable() {
+    clean_build=$1
+    clean_artifacts=$2
+    clean_snapshots=$3
+    if [ "$clean_build" = "1" ] && [ "$SKIP_BUILD" != "1" ]; then
         "$ROOT/scripts/local-test.sh" --clean
-        rm -rf "$HOME/.android/avd/$AVD.avd/snapshots"
+    fi
+    if [ "$clean_artifacts" = "1" ]; then
+        rm -rf "$OUT"
+    fi
+    if [ "$clean_snapshots" = "1" ]; then
+        rm -rf "$SNAP_DIR"
+    fi
+}
+
+check_disk() {
+    build_kb=$(dir_kb "$ROOT/app/build"); build_kb=${build_kb:-0}
+    e2e_kb=$(dir_kb "$OUT"); e2e_kb=${e2e_kb:-0}
+    free=$(free_kb)
+    build_budget_kb=$((BUILD_BUDGET_MB * 1024))
+    artifact_budget_kb=$((ARTIFACT_BUDGET_MB * 1024))
+    reserve_kb=$(( $(reserve_mb) * 1024 ))
+    clean_build=0
+    clean_artifacts=0
+
+    if [ "$build_kb" -gt "$build_budget_kb" ]; then
+        if [ "$SKIP_BUILD" = "1" ]; then
+            echo "disk: app/build ${build_kb}KB is over the ${build_budget_kb}KB budget; --no-build keeps the existing APK." >&2
+        else
+            echo "disk: app/build ${build_kb}KB is over the ${build_budget_kb}KB budget; cleaning." >&2
+            clean_build=1
+        fi
+    fi
+    if [ "$e2e_kb" -gt "$artifact_budget_kb" ]; then
+        echo "disk: e2e artifacts ${e2e_kb}KB are over the ${artifact_budget_kb}KB budget; removing." >&2
+        clean_artifacts=1
+    fi
+    if [ "$free" -lt "$reserve_kb" ]; then
+        echo "disk: free ${free}KB is below the ${reserve_kb}KB next-run reserve; reclaiming disposable output." >&2
+        clean_build=1
+        clean_artifacts=1
+    fi
+    if [ "$clean_build" -eq 1 ] || [ "$clean_artifacts" -eq 1 ]; then
+        clean_disposable "$clean_build" "$clean_artifacts" 0
+        build_kb=$(dir_kb "$ROOT/app/build"); build_kb=${build_kb:-0}
+        e2e_kb=$(dir_kb "$OUT"); e2e_kb=${e2e_kb:-0}
         free=$(free_kb)
     fi
-    if [ "$free" -lt "$min_kb" ]; then
-        echo "E2E FAILED: ${free}KB free < hard minimum ${min_kb}KB." >&2
+
+    if [ "$free" -lt "$reserve_kb" ]; then
+        avd_kb=$(dir_kb "$AVD_DIR"); avd_kb=${avd_kb:-0}
+        echo "E2E FAILED: ${free}KB free is still below the ${reserve_kb}KB next-run reserve after cleanup." >&2
+        echo "Owned: app/build=${build_kb}KB e2e=${e2e_kb}KB avd=${avd_kb}KB; Gradle caches and SDK/system images were not deleted." >&2
+        echo "Free space on the volume, or lower E2E_NEXT_RUN_RESERVE_MB if a smaller run is intended." >&2
         exit 1
     fi
-    echo "disk: ${free}KB free"
+    echo "disk: app/build=${build_kb}KB e2e=${e2e_kb}KB free=${free}KB; next-run reserve=${reserve_kb}KB"
+}
+
+check_avd_disk() {
+    snap_kb=$(dir_kb "$SNAP_DIR"); snap_kb=${snap_kb:-0}
+    if [ "$snap_kb" -gt 0 ]; then
+        echo "disk: removing AVD snapshots (${snap_kb}KB); e2e always boots with -no-snapshot." >&2
+        rm -rf "$SNAP_DIR"
+    fi
+    avd_kb=$(dir_kb "$AVD_DIR"); avd_kb=${avd_kb:-0}
+    if [ "$avd_kb" -gt "$((AVD_DATA_BUDGET_MB * 1024))" ]; then
+        echo "disk: AVD data ${avd_kb}KB is over the ${AVD_DATA_BUDGET_MB}MB budget; adding -wipe-data." >&2
+        WIPE_DATA=1
+    fi
 }
 
 ensure_sdk() {
-    if [ ! -x "$SDKMANAGER" ] || [ ! -x "$AVDMANAGER" ] || [ ! -x "$ADB" ] || [ ! -x "$EMULATOR" ] ||
-        [ ! -d "$IMAGE_DIR" ]; then
+    if sdk_missing; then
         [ -x "$JAVA_HOME/bin/java" ] || {
             echo "E2E FAILED: JDK 17 not found at $JAVA_HOME." >&2
             exit 1
         }
+        need_kb=$((SDK_INSTALL_RESERVE_MB * 1024))
+        have=$(free_kb)
+        if [ "$have" -lt "$need_kb" ]; then
+            fail "installing emulator packages needs ~${SDK_INSTALL_RESERVE_MB}MB free; only ${have}KB available"
+        fi
         echo "installing Android emulator packages (first run)..." >&2
         yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
             "cmdline-tools;latest" "emulator" "$IMAGE" >&2 || true
@@ -198,6 +334,9 @@ kill_stale_emulator() {
             [ "$n" -ge 20 ] && break
             sleep 1
         done
+        if "$ADB" -s "$SERIAL" get-state >/dev/null 2>&1; then
+            fail "stale emulator $SERIAL did not stop within 20s"
+        fi
     fi
 }
 
@@ -257,19 +396,29 @@ assert_text() {
     }
 }
 
+if [ "$SIZE_ONLY" = "1" ]; then
+    disk_report
+    exit 0
+fi
+
 check_memory
 check_disk
 ensure_sdk
-check_disk
+kill_stale_emulator
 ensure_avd
+check_avd_disk
+check_disk
 mkdir -p "$OUT"
 : > "$LOG"
 
-kill_stale_emulator
 echo "booting $AVD on $SERIAL..." >&2
-"$EMULATOR" -avd "$AVD" -no-window -no-audio -no-boot-anim \
+set -- -avd "$AVD" -no-window -no-audio -no-boot-anim \
     -gpu swiftshader_indirect -no-snapshot -no-metrics \
-    -port "$PORT" -memory "$RAM_MB" >> "$LOG" 2>&1 &
+    -port "$PORT" -memory "$RAM_MB"
+if [ "$WIPE_DATA" = "1" ]; then
+    set -- "$@" -wipe-data
+fi
+"$EMULATOR" "$@" >> "$LOG" 2>&1 &
 EMU_PID=$!
 wait_boot
 echo "emulator: $("$ADB" -s "$SERIAL" shell getprop ro.build.version.release | tr -d '\r') / $("$ADB" -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r')"

@@ -1,6 +1,11 @@
 #!/bin/sh
 # Local JVM unit tests on the Mini. Setup and disk policy:
 # docs/local-testing.md.
+#
+# Disk cleanup is footprint-driven, not driven by a fixed free-space floor:
+# app/build above WONDERSING_BUILD_BUDGET_MB is regenerated; free space only
+# has to cover the next run (WONDERSING_NEXT_RUN_RESERVE_MB). Gradle caches
+# and the SDK are reused and are never cleaned automatically.
 set -e
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -15,15 +20,79 @@ sizes() {
     df -h "$ROOT" | tail -n 1
 }
 
+dir_kb() {
+    du -sk "$1" 2>/dev/null | awk 'NR==1 {print $1}'
+}
+
+free_kb() {
+    df -Pk "$ROOT" | awk 'NR==2 {print $4}'
+}
+
+build_budget_kb() {
+    echo $(( ${WONDERSING_BUILD_BUDGET_MB:-1536} * 1024 ))
+}
+
+next_run_reserve_kb() {
+    echo $(( ${WONDERSING_NEXT_RUN_RESERVE_MB:-3072} * 1024 ))
+}
+
+disk_plan() {
+    build_kb=$(dir_kb "$ROOT/app/build"); build_kb=${build_kb:-0}
+    budget_kb=$(build_budget_kb)
+    reserve_kb=$(next_run_reserve_kb)
+    free=$(free_kb)
+    echo "disk: app/build=${build_kb}KB budget=${budget_kb}KB; free=${free}KB next-run-reserve=${reserve_kb}KB"
+    if [ "$build_kb" -gt "$budget_kb" ]; then
+        echo "disk: app/build over budget; a test run would clean it first"
+    fi
+    if [ "$free" -lt "$reserve_kb" ]; then
+        echo "disk: free below the next-run reserve; a test run would clean, then fail if still below"
+    fi
+    if [ "$build_kb" -le "$budget_kb" ] && [ "$free" -ge "$reserve_kb" ]; then
+        echo "disk: no cleanup needed"
+    fi
+}
+
+check_disk() {
+    build_kb=$(dir_kb "$ROOT/app/build"); build_kb=${build_kb:-0}
+    budget_kb=$(build_budget_kb)
+    reserve_kb=$(next_run_reserve_kb)
+    free=$(free_kb)
+    clean=0
+
+    if [ "$build_kb" -gt "$budget_kb" ]; then
+        echo "disk: app/build ${build_kb}KB is over the ${budget_kb}KB budget; cleaning." >&2
+        clean=1
+    fi
+    if [ "$free" -lt "$reserve_kb" ]; then
+        echo "disk: free ${free}KB is below the ${reserve_kb}KB next-run reserve; cleaning disposable output." >&2
+        clean=1
+    fi
+    if [ "$clean" -eq 1 ]; then
+        "$0" --clean
+        build_kb=$(dir_kb "$ROOT/app/build"); build_kb=${build_kb:-0}
+        free=$(free_kb)
+    fi
+
+    if [ "$free" -lt "$reserve_kb" ]; then
+        echo "ERROR: ${free}KB free is still below the ${reserve_kb}KB next-run reserve." >&2
+        echo "The project now owns ${build_kb}KB in app/build; reusable Gradle/SDK data is not deleted automatically." >&2
+        echo "Free space on the volume, or lower WONDERSING_NEXT_RUN_RESERVE_MB if a smaller run is intended." >&2
+        exit 1
+    fi
+    echo "disk: app/build=${build_kb}KB free=${free}KB; next-run reserve=${reserve_kb}KB" >&2
+}
+
 case "${1:-}" in
     --size)
         sizes
+        disk_plan
         exit 0
         ;;
     --clean)
-        if [ -x "$JAVA_HOME/bin/java" ]; then
+        if [ -x "$JAVA_HOME/bin/java" ] && [ -d "$ANDROID_HOME/platforms/android-37.1" ]; then
             ./gradlew --stop >/dev/null 2>&1 || true
-            ./gradlew clean --console=plain
+            ./gradlew clean --console=plain || rm -rf "$ROOT/app/build"
         else
             rm -rf "$ROOT/app/build"
         fi
@@ -47,20 +116,6 @@ if [ ! -f "$ROOT/app/libs/libbox.aar" ] || [ ! -f "$ROOT/app/libs/libbox-legacy.
     exit 1
 fi
 
-clean_gb=${WONDERSING_CLEAN_THRESHOLD_GB:-10}
-min_gb=${WONDERSING_MIN_FREE_GB:-5}
-clean_kb=$((clean_gb * 1024 * 1024))
-min_kb=$((min_gb * 1024 * 1024))
-free_kb=$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')
-if [ "${free_kb:-0}" -lt "$clean_kb" ]; then
-    echo "Free space ${free_kb}KB is below the ${clean_gb}GB cleanup threshold; running --clean." >&2
-    "$0" --clean
-    free_kb=$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')
-fi
-if [ "${free_kb:-0}" -lt "$min_kb" ]; then
-    echo "Less than ${min_gb}GB free on this volume (${free_kb}KB). Free space first." >&2
-    exit 1
-fi
-
+check_disk
 ./gradlew :app:testOtherDebugUnitTest --console=plain "$@"
 sizes
