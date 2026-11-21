@@ -151,6 +151,13 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.agent.AgentImageRef
+import io.nekohasekai.sfa.agent.MAX_PLAN_GOAL_CHARS
+import io.nekohasekai.sfa.agent.MAX_PLAN_ITEMS
+import io.nekohasekai.sfa.agent.MAX_PLAN_NOTE_CHARS
+import io.nekohasekai.sfa.agent.MAX_PLAN_STEP_CHARS
+import io.nekohasekai.sfa.agent.PlanItem
+import io.nekohasekai.sfa.agent.PlanItemStatus
+import io.nekohasekai.sfa.agent.PlanState
 import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.telemetry.TelemetryEventLog
 import io.nekohasekai.sfa.telemetry.TelemetryEvents
@@ -687,7 +694,7 @@ fun ConductorScreen(
                 if (listState.canScrollForward) stickToBottom = false
             }
         }
-        LaunchedEffect(uiState.items.size, lastContentVersion) {
+        LaunchedEffect(uiState.items.size, uiState.plan?.version, lastContentVersion) {
             if (uiState.items.isNotEmpty() && stickToBottom) {
                 listState.animateScrollToItem(uiState.items.size)
             }
@@ -766,6 +773,16 @@ fun ConductorScreen(
                                 imageFile = viewModel::imageFile,
                                 resourceFile = viewModel::resourceFile,
                                 onLocalFile = ::openLocalFile,
+                            )
+                        }
+                    }
+                    uiState.plan?.takeIf { it.items.isNotEmpty() }?.let { plan ->
+                        item(key = "plan") {
+                            PlanCard(
+                                plan = plan,
+                                editable = !uiState.isRunning,
+                                onSave = viewModel::savePlan,
+                                onClear = viewModel::clearPlan,
                             )
                         }
                     }
@@ -1980,6 +1997,331 @@ private fun ReasoningItem(item: ConductorItem.Reasoning) {
             }
         }
     }
+}
+
+@Composable
+private fun PlanCard(
+    plan: PlanState,
+    editable: Boolean,
+    onSave: (String, List<PlanItem>, String) -> Unit,
+    onClear: () -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var showDone by rememberSaveable { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    val done = plan.items.count { it.status == PlanItemStatus.DONE }
+    val current =
+        plan.items.firstOrNull { it.status == PlanItemStatus.IN_PROGRESS }
+            ?: plan.items.firstOrNull { it.status == PlanItemStatus.PENDING }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Toc,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+                Text(
+                    text = stringResource(R.string.conductor_plan_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = stringResource(R.string.conductor_plan_progress, done, plan.items.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                IconButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector =
+                            if (expanded) {
+                                Icons.Default.KeyboardArrowUp
+                            } else {
+                                Icons.Default.KeyboardArrowDown
+                            },
+                        contentDescription =
+                            stringResource(
+                                if (expanded) R.string.conductor_plan_collapse else R.string.conductor_plan_expand,
+                            ),
+                    )
+                }
+            }
+            if (!expanded) {
+                if (current == null) {
+                    Text(
+                        text = stringResource(R.string.conductor_plan_all_done),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        PlanStatusIcon(
+                            status = current.status,
+                            contentDescription = stringResource(planStatusLabel(current.status)),
+                        )
+                        Text(
+                            text = current.step,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            } else {
+                if (plan.goal.isNotBlank()) {
+                    Text(
+                        text = plan.goal,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                plan.items.filter { it.status != PlanItemStatus.DONE }.forEach { item ->
+                    PlanStepRow(item)
+                }
+                if (done > 0) {
+                    TextButton(onClick = { showDone = !showDone }) {
+                        Text(stringResource(R.string.conductor_plan_completed, done))
+                    }
+                    if (showDone) {
+                        plan.items.filter { it.status == PlanItemStatus.DONE }.forEach { item ->
+                            PlanStepRow(item)
+                        }
+                    }
+                }
+                if (plan.note.isNotBlank()) {
+                    Text(
+                        text = stringResource(R.string.conductor_plan_note) + ": " + plan.note,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        enabled = editable,
+                        onClick = { editing = true },
+                    ) {
+                        Text(stringResource(R.string.edit))
+                    }
+                    TextButton(
+                        enabled = editable,
+                        onClick = onClear,
+                    ) {
+                        Text(stringResource(R.string.clear))
+                    }
+                }
+            }
+        }
+    }
+    if (editing) {
+        PlanEditDialog(
+            plan = plan,
+            onDismiss = { editing = false },
+            onSave = { goal, items, note ->
+                editing = false
+                onSave(goal, items, note)
+            },
+        )
+    }
+}
+
+@Composable
+private fun PlanStepRow(item: PlanItem) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        PlanStatusIcon(
+            status = item.status,
+            contentDescription = stringResource(planStatusLabel(item.status)),
+        )
+        Text(
+            text = item.step,
+            style = MaterialTheme.typography.bodyMedium,
+            color =
+                if (item.status == PlanItemStatus.DONE) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun PlanStatusIcon(
+    status: PlanItemStatus,
+    contentDescription: String,
+) {
+    Box(
+        modifier =
+            Modifier
+                .size(18.dp)
+                .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        when (status) {
+            PlanItemStatus.DONE ->
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+
+            PlanItemStatus.IN_PROGRESS ->
+                Box(
+                    modifier =
+                        Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
+                )
+
+            PlanItemStatus.PENDING ->
+                Box(
+                    modifier =
+                        Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant, CircleShape),
+                )
+        }
+    }
+}
+
+private fun planStatusLabel(status: PlanItemStatus): Int =
+    when (status) {
+        PlanItemStatus.PENDING -> R.string.conductor_plan_status_pending
+        PlanItemStatus.IN_PROGRESS -> R.string.conductor_plan_status_in_progress
+        PlanItemStatus.DONE -> R.string.conductor_plan_status_done
+    }
+
+@Composable
+private fun PlanEditDialog(
+    plan: PlanState,
+    onDismiss: () -> Unit,
+    onSave: (String, List<PlanItem>, String) -> Unit,
+) {
+    var goal by remember(plan.version) { mutableStateOf(plan.goal) }
+    var note by remember(plan.version) { mutableStateOf(plan.note) }
+    var items by remember(plan.version) { mutableStateOf(plan.items.toList()) }
+    val canSave =
+        goal.isNotBlank() &&
+            goal.length <= MAX_PLAN_GOAL_CHARS &&
+            note.length <= MAX_PLAN_NOTE_CHARS &&
+            items.isNotEmpty() &&
+            items.size <= MAX_PLAN_ITEMS &&
+            items.all { it.step.isNotBlank() && it.step.length <= MAX_PLAN_STEP_CHARS }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.conductor_plan_edit_title)) },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = goal,
+                    onValueChange = { goal = it },
+                    label = { Text(stringResource(R.string.conductor_plan_goal)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                items.forEachIndexed { index, item ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        IconButton(
+                            onClick = {
+                                items =
+                                    items.toMutableList().also {
+                                        it[index] = item.copy(status = item.status.next())
+                                    }
+                            },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            PlanStatusIcon(
+                                status = item.status,
+                                contentDescription = stringResource(planStatusLabel(item.status)),
+                            )
+                        }
+                        OutlinedTextField(
+                            value = item.step,
+                            onValueChange = { value ->
+                                items =
+                                    items.toMutableList().also {
+                                        it[index] = item.copy(step = value)
+                                    }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(
+                            onClick = { items = items.filterIndexed { itemIndex, _ -> itemIndex != index } },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = stringResource(R.string.conductor_plan_remove_step),
+                            )
+                        }
+                    }
+                }
+                TextButton(
+                    enabled = items.size < MAX_PLAN_ITEMS,
+                    onClick = { items = items + PlanItem("") },
+                ) {
+                    Text(stringResource(R.string.conductor_plan_add_step))
+                }
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text(stringResource(R.string.conductor_plan_note)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = canSave,
+                onClick = {
+                    onSave(
+                        goal.trim(),
+                        items.map { it.copy(step = it.step.trim()) },
+                        note.trim(),
+                    )
+                },
+            ) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable

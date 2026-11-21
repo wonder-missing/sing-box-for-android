@@ -18,8 +18,8 @@ data class TurnEvent(
     val message: String? = null,
 )
 
-internal const val RUNTIME_EVENT_PREFIX = "[conductor:event"
-private const val RUNTIME_METADATA_PREFIX = "[conductor:"
+internal const val RUNTIME_EVENT_PREFIX = "[runtime:event"
+private const val RUNTIME_METADATA_PREFIX = "[runtime:"
 
 /**
  * Prepends a runtime event to the user message and escapes user-authored lines
@@ -62,7 +62,7 @@ internal fun formatUserMessageWithAttachments(
             val path =
                 runCatching { InboxPaths.path(ref.id, ref.name, ref.mimeType) }.getOrNull()
                     ?: return@mapNotNull null
-            "[conductor:attachment id=${ref.id} path=$path " +
+            "[runtime:attachment id=${ref.id} path=$path " +
                 "mime=${ref.mimeType.replace('\n', ' ').take(120)} size=${ref.size}]"
         }
     if (attachments.isEmpty()) return base

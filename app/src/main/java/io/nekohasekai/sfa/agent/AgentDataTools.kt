@@ -28,6 +28,7 @@ class AgentDataTools(
     private val releaseNotes: ReleaseNotesSource? = null,
     private val vision: VisionPort? = null,
     private val chatImage: ((String) -> AgentImageData?)? = null,
+    private val planStore: PlanStore? = null,
 ) {
     private val fileList =
         object : AgentTool {
@@ -592,6 +593,138 @@ class AgentDataTools(
                     val deleted = fileStore.delete(path)
                     ToolExecution(output = fileEntryJson(deleted))
                 }
+        }
+
+    private val planUpdate =
+        object : AgentTool {
+            override val definition =
+                AgentToolDefinition(
+                    name = PLAN_UPDATE_TOOL,
+                    description =
+                        "Create or replace the current task plan. Send the full step list each time; " +
+                            "an empty items array clears it. Use it for multi-step tasks, and keep the " +
+                            "current step, completed steps and any blocker up to date. The plan is shown " +
+                            "to the user and re-injected after each tool result. " +
+                            "Args: goal, items[{step,status}], note.",
+                    permission = AgentPermission.UTILITY,
+                    parameters = emptyList(),
+                    confirmationPolicy = ConfirmationPolicy.NEVER,
+                    category = "utility",
+                    aliases = listOf("plan", "todo", "task list", "checklist", "steps"),
+                    core = true,
+                    passthroughArguments = true,
+                    parametersSchemaOverride =
+                        buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("goal") {
+                                    put("type", "string")
+                                    put("description", "One-line goal. Required when items is non-empty; at most $MAX_PLAN_GOAL_CHARS characters.")
+                                }
+                                putJsonObject("items") {
+                                    put("type", "array")
+                                    put("maxItems", MAX_PLAN_ITEMS)
+                                    put(
+                                        "description",
+                                        "The complete step list. Empty clears the plan. Each step must be one line.",
+                                    )
+                                    putJsonObject("items") {
+                                        put("type", "object")
+                                        putJsonObject("properties") {
+                                            putJsonObject("step") {
+                                                put("type", "string")
+                                                put("description", "One line of work; at most $MAX_PLAN_STEP_CHARS characters.")
+                                            }
+                                            putJsonObject("status") {
+                                                put("type", "string")
+                                                put("enum", buildJsonArray {
+                                                    add("pending")
+                                                    add("in_progress")
+                                                    add("done")
+                                                })
+                                            }
+                                        }
+                                        putJsonArray("required") {
+                                            add("step")
+                                            add("status")
+                                        }
+                                        put("additionalProperties", false)
+                                    }
+                                }
+                                putJsonObject("note") {
+                                    put("type", "string")
+                                    put("description", "Optional current blocker or dead end; at most $MAX_PLAN_NOTE_CHARS characters.")
+                                }
+                            }
+                            putJsonArray("required") { add("items") }
+                            put("additionalProperties", false)
+                        },
+                )
+
+            override suspend fun execute(
+                args: JsonObject,
+                cancellation: ToolCancellation,
+            ): ToolExecution {
+                val store = planStore ?: return unavailable("plan_update is not available in the current build")
+                val rawItems = args["items"] as? JsonArray ?: return invalid("items must be an array")
+                if (rawItems.size > MAX_PLAN_ITEMS) {
+                    return invalid("items must contain at most $MAX_PLAN_ITEMS steps")
+                }
+                val items = mutableListOf<PlanItem>()
+                for ((index, element) in rawItems.withIndex()) {
+                    val item = element as? JsonObject ?: return invalid("items[$index] must be an object")
+                    val step = planLine(AgentJson.string(item, "step"))
+                        ?: return invalid("items[$index].step must be one non-empty line")
+                    if (step.length > MAX_PLAN_STEP_CHARS) {
+                        return invalid("items[$index].step must be at most $MAX_PLAN_STEP_CHARS characters")
+                    }
+                    val status =
+                        when (AgentJson.string(item, "status")?.lowercase(Locale.US)) {
+                            "pending" -> PlanItemStatus.PENDING
+                            "in_progress" -> PlanItemStatus.IN_PROGRESS
+                            "done" -> PlanItemStatus.DONE
+                            else -> return invalid("items[$index].status must be pending, in_progress or done")
+                        }
+                    items += PlanItem(step, status)
+                }
+                val goal = planLine(AgentJson.string(args, "goal")).orEmpty()
+                if (goal.length > MAX_PLAN_GOAL_CHARS) {
+                    return invalid("goal must be at most $MAX_PLAN_GOAL_CHARS characters")
+                }
+                if (items.isNotEmpty() && goal.isEmpty()) {
+                    return invalid("goal is required when items is non-empty")
+                }
+                val note = planLine(AgentJson.string(args, "note")).orEmpty()
+                if (note.length > MAX_PLAN_NOTE_CHARS) {
+                    return invalid("note must be at most $MAX_PLAN_NOTE_CHARS characters")
+                }
+                val result = store.update(goal, items, note)
+                return ToolExecution(
+                    output =
+                        buildJsonObject {
+                            put("changed", result.changed)
+                            put("cleared", result.cleared)
+                            result.state?.let {
+                                put("version", it.version)
+                                put("goal", it.goal)
+                                put(
+                                    "items",
+                                    buildJsonArray {
+                                        it.items.forEach { item ->
+                                            add(
+                                                buildJsonObject {
+                                                    put("step", item.step)
+                                                    put("status", item.status.wire)
+                                                },
+                                            )
+                                        }
+                                    },
+                                )
+                                if (it.note.isNotBlank()) put("note", it.note)
+                            }
+                        },
+                )
+            }
         }
 
     private val diagnosticsExport =
@@ -1236,6 +1369,7 @@ class AgentDataTools(
                 add(fileAppend)
                 add(fileEdit)
                 add(fileDelete)
+                if (planStore != null) add(planUpdate)
                 if (diagnostics != null) add(diagnosticsExport)
                 if (releaseNotes != null) add(releaseNotesTool)
                 if (taildrop != null) {
@@ -1332,8 +1466,14 @@ class AgentDataTools(
 
     private fun invalid(message: String): ToolExecution = ToolExecution(errorCode = "invalid_parameter", errorMessage = message)
 
-    private fun unavailable(): ToolExecution =
-        ToolExecution(errorCode = "tool_unavailable", errorMessage = "this tool is not available in the current build")
+    private fun unavailable(message: String = "this tool is not available in the current build"): ToolExecution =
+        ToolExecution(errorCode = "tool_unavailable", errorMessage = message)
+
+    private fun planLine(value: String?): String? =
+        value
+            ?.trim()
+            ?.replace(Regex("\\s+"), " ")
+            ?.takeIf { it.isNotEmpty() }
 
     private fun failure(error: Throwable): ToolExecution =
         ToolExecution(

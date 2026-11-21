@@ -14,7 +14,7 @@ class ConductorSessionRepairTest {
             listOf(
                 AgentMessage.User("first"),
                 AgentMessage.Assistant("answer", emptyList()),
-                AgentMessage.User("[conductor:event turn_failed reason=model_unavailable]\nthird"),
+                AgentMessage.User("[runtime:event turn_failed reason=model_unavailable]\nthird"),
             )
         val items =
             listOf(
@@ -30,7 +30,7 @@ class ConductorSessionRepairTest {
         val repaired = reconcileAgentUserMessages(transcript, items)
 
         assertEquals(
-            listOf("first", "second", "[conductor:event turn_failed reason=model_unavailable]\nthird"),
+            listOf("first", "second", "[runtime:event turn_failed reason=model_unavailable]\nthird"),
             repaired.filterIsInstance<AgentMessage.User>().map { it.content },
         )
         assertTrue(validateTranscriptPairing(repaired))
@@ -131,7 +131,7 @@ class ConductorSessionRepairTest {
             listOf(
                 AgentMessage.User("first"),
                 AgentMessage.Assistant("a", emptyList()),
-                AgentMessage.User("[conductor:event turn_failed reason=model_unavailable]\nsecond"),
+                AgentMessage.User("[runtime:event turn_failed reason=model_unavailable]\nsecond"),
                 AgentMessage.Assistant("b", emptyList()),
             )
         val items =

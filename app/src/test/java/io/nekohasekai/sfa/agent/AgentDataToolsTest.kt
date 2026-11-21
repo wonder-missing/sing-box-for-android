@@ -600,6 +600,72 @@ class AgentDataToolsTest {
         }
     }
 
+    @Test
+    fun planUpdateCreatesReplacesAndClearsThePlan() {
+        val planStore = PlanStore()
+        val registry = AgentToolRegistry(AgentDataTools(store, planStore = planStore).all)
+        val createdJson =
+            """{"goal":"Crop the head","items":[
+                {"step":"read the source","status":"done"},
+                {"step":"crop","status":"in_progress"},
+                {"step":"deliver","status":"pending"}
+            ]}"""
+
+        val created = registry.exec("plan_update", createdJson)
+
+        assertTrue(created.errorMessage ?: "", created.ok)
+        assertTrue(created.output!!.boolean("changed"))
+        assertEquals(1L, created.output!!.long("version"))
+        assertEquals("Crop the head", planStore.current()!!.goal)
+        assertEquals(3, planStore.current()!!.items.size)
+
+        val unchanged = registry.exec("plan_update", createdJson)
+        assertFalse(unchanged.output!!.boolean("changed"))
+        assertEquals(1L, planStore.current()!!.version)
+
+        val replaced =
+            registry.exec(
+                "plan_update",
+                """{"goal":"Crop the head","items":[{"step":"read","status":"done"},{"step":"deliver","status":"in_progress"}],"note":"uploading"}""",
+            )
+        assertTrue(replaced.output!!.boolean("changed"))
+        assertEquals(2L, replaced.output!!.long("version"))
+        assertEquals("uploading", planStore.current()!!.note)
+
+        val cleared = registry.exec("plan_update", """{"items":[]}""")
+        assertTrue(cleared.output!!.boolean("cleared"))
+        assertTrue(planStore.current() == null)
+    }
+
+    @Test
+    fun planUpdateRejectsInvalidStepsAndMissingGoal() {
+        val planStore = PlanStore()
+        val registry = AgentToolRegistry(AgentDataTools(store, planStore = planStore).all)
+
+        val missingGoal =
+            registry.exec("plan_update", """{"items":[{"step":"one","status":"pending"}]}""")
+        assertFalse(missingGoal.ok)
+        assertEquals("invalid_parameter", missingGoal.errorCode)
+
+        val badStatus =
+            registry.exec(
+                "plan_update",
+                """{"goal":"x","items":[{"step":"one","status":"blocked"}]}""",
+            )
+        assertFalse(badStatus.ok)
+        assertEquals("invalid_parameter", badStatus.errorCode)
+
+        val blankStep =
+            registry.exec(
+                "plan_update",
+                """{"goal":"x","items":[{"step":"   ","status":"pending"}]}""",
+            )
+        assertFalse(blankStep.ok)
+        assertEquals("invalid_parameter", blankStep.errorCode)
+
+        assertTrue(planStore.current() == null)
+    }
+
     private fun AgentToolRegistry.exec(
         name: String,
         argsJson: String,

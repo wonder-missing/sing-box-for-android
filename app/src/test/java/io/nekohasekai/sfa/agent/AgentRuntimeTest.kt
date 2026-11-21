@@ -66,6 +66,49 @@ class AgentRuntimeTest {
     }
 
     @Test
+    fun planRecitationIsInjectedAtTheTailButNotPersisted() {
+        val plan = "[runtime:plan v=1]\ngoal: test\nnow: step one\n[/runtime:plan]"
+        val model = ScriptedModel(mutableListOf(response("hello")))
+        val executor = FakeExecutor(listOf(listNodes)) { _, _ -> ok("list_nodes") }
+        val runtime = runtime(model, executor, key = "sk-test", planBlock = { plan })
+
+        val result = runBlocking { runtime.runTurn("hi", emptyList(), onEvent = {}, confirm = { true }) }
+
+        val requestMessages = model.requests.single().messages
+        assertEquals(AgentMessage.User("hi"), requestMessages[requestMessages.lastIndex - 1])
+        val requestPlan = requestMessages.last() as AgentMessage.User
+        assertTrue(requestPlan.content.startsWith("[runtime:plan"))
+        assertTrue(requestPlan.content.endsWith("[/runtime:plan]"))
+        assertEquals(AgentMessage.User("hi"), result.messages.first())
+        assertFalse(result.messages.any { it is AgentMessage.User && it.content.contains("[runtime:plan") })
+    }
+
+    @Test
+    fun planRecitationFollowsTheLastToolResultAsItsOwnUserMessage() {
+        val plan = "[runtime:plan v=2]\ngoal: test\nnow: step one\n[/runtime:plan]"
+        val call = ToolCall("call_1", AgentMetaTools.ROUTE_CALL, """{"tool":"list_nodes","args":{}}""")
+        val model =
+            ScriptedModel(
+                mutableListOf(
+                    AgentModelResponse(null, listOf(call), FinishReason.TOOL_CALLS, null),
+                    response("done"),
+                ),
+            )
+        val executor = FakeExecutor(listOf(listNodes)) { call, _ -> ok(call.name) }
+        val runtime = runtime(model, executor, key = "sk-test", planBlock = { plan })
+
+        runBlocking { runtime.runTurn("nodes", emptyList(), onEvent = {}, confirm = { true }) }
+
+        val firstMessages = model.requests[0].messages
+        assertEquals(AgentMessage.User("nodes"), firstMessages[firstMessages.lastIndex - 1])
+        assertEquals(plan, (firstMessages.last() as AgentMessage.User).content)
+        val second = model.requests[1].messages
+        assertEquals(firstMessages.dropLast(1), second.take(firstMessages.size - 1))
+        assertEquals(plan, (second.last() as AgentMessage.User).content)
+        assertTrue(second[second.lastIndex - 1] is AgentMessage.Tool)
+    }
+
+    @Test
     fun userImagesReachTheModelRequest() {
         val image = AgentImageRef("img1", "shot.jpg", "image/jpeg", 10, 20, 3)
         val model = ScriptedModel(mutableListOf(response("done")))
@@ -152,7 +195,7 @@ class AgentRuntimeTest {
             runtime.runTurn("look", emptyList(), onEvent = {}, confirm = { true }, images = listOf(image))
 
             val user = model.requests.single().messages.last() as AgentMessage.User
-            assertTrue(user.content.contains("[conductor:attachment"))
+            assertTrue(user.content.contains("[runtime:attachment"))
             assertTrue(user.content.contains("conductor/resources/inbox/img1/shot.jpg"))
         }
 
@@ -215,7 +258,7 @@ class AgentRuntimeTest {
 
         val user = model.requests.single().messages.last() as AgentMessage.User
         assertEquals(
-            "[conductor:event turn_interrupted reason=user_stop]\nwhy did it stop?",
+            "[runtime:event turn_interrupted reason=user_stop]\nwhy did it stop?",
             user.content,
         )
         assertEquals(null, result.pendingEvent)
@@ -313,7 +356,7 @@ class AgentRuntimeTest {
         assertTrue(
             result.messages
                 .filterIsInstance<AgentMessage.System>()
-                .any { it.content.contains("tool_failure_loop") && it.content.contains("Do not call more tools") },
+                .any { it.content.contains("too many tool calls") && it.content.contains("Do not call more tools") },
         )
         assertTrue(validateTranscriptPairing(result.messages))
     }
@@ -1095,7 +1138,7 @@ class AgentRuntimeTest {
         assertTrue(
             secondRequest.any {
                 it is AgentMessage.User &&
-                    it.content.startsWith("[conductor:event turn_failed") &&
+                    it.content.startsWith("[runtime:event turn_failed") &&
                     it.content.endsWith("second")
             },
         )
@@ -1206,6 +1249,7 @@ class AgentRuntimeTest {
         modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
         imageLoader: (String) -> AgentImageData? = { null },
         offloadStore: ObservationOffloadStore? = null,
+        planBlock: () -> String? = { null },
     ): AgentRuntime =
         AgentRuntime(
             inputGuard = DefaultAgentInputGuard,
@@ -1218,6 +1262,7 @@ class AgentRuntimeTest {
             modelLimits = modelLimits,
             imageLoader = imageLoader,
             offloadStore = offloadStore,
+            planBlock = planBlock,
         )
 
     private fun response(text: String): AgentModelResponse =

@@ -55,6 +55,10 @@ import io.nekohasekai.sfa.agent.InputGuardResult
 import io.nekohasekai.sfa.agent.LibboxNodeSelectionPort
 import io.nekohasekai.sfa.agent.ObservationOffload
 import io.nekohasekai.sfa.agent.ObservationOffloadStore
+import io.nekohasekai.sfa.agent.PLAN_UPDATE_TOOL
+import io.nekohasekai.sfa.agent.PlanItem
+import io.nekohasekai.sfa.agent.PlanState
+import io.nekohasekai.sfa.agent.PlanStore
 import io.nekohasekai.sfa.agent.LibboxProbePort
 import io.nekohasekai.sfa.agent.ModelProviderSettings
 import io.nekohasekai.sfa.agent.OkHttpHttpFetchPort
@@ -108,6 +112,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -165,6 +170,8 @@ class ConductorViewModel(
         val sessionRestoring: Boolean = true,
         /** Transient developer tool output; never persisted into the session. */
         val toolConsole: ToolConsoleState? = null,
+        /** The current task plan; persisted with the session, not a message. */
+        val plan: PlanState? = null,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -738,6 +745,8 @@ class ConductorViewModel(
         }
     }
 
+    private val planStore = PlanStore()
+
     private val toolExecutor =
         DynamicToolExecutor(
             AgentTools(
@@ -760,6 +769,7 @@ class ConductorViewModel(
                     releaseNotes = releaseNotesSource,
                     vision = visionPort,
                     chatImage = { imageStore.load(it) },
+                    planStore = planStore,
                 ).all +
                 listOf(VfsConnectTool(vfsConnectionManager), AskUserTool(askUserPort)),
             toolTimeoutMs = agentConfig.toolTimeoutMs,
@@ -787,6 +797,7 @@ class ConductorViewModel(
             modelLimits = { ModelProviderSettings.limitsFor(ModelProviderSettings.endpoint()) },
             imageLoader = { id -> imageStore.load(id) },
             offloadStore = observationOffloadStore,
+            planBlock = { planStore.state.value?.recitation() },
         )
 
     private var transcript: List<AgentMessage> = emptyList()
@@ -844,6 +855,12 @@ class ConductorViewModel(
             File(getApplication<Application>().filesDir, "conductor/api-trace.json"),
         )
         _uiState.update { it.copy(agentSupported = apiKeyProvider.supported) }
+        viewModelScope.launch {
+            planStore.state.collect { plan ->
+                updateUi { copy(plan = plan) }
+                persistSession()
+            }
+        }
         viewModelScope.launch {
             // A cancelled restore leaves this false, so onCleared never saves
             // the empty startup state over the stored session.
@@ -1541,9 +1558,11 @@ class ConductorViewModel(
         sessionStartVersion = BuildConfig.VERSION_NAME
         toolStartedAt.clear()
         transcript = emptyList()
+        planStore.restore(null)
         updateUi {
             copy(
                 items = emptyList(),
+                plan = null,
                 isRunning = false,
                 canRetryLastTurn = false,
                 contextUsedTokens = 0,
@@ -1813,8 +1832,12 @@ class ConductorViewModel(
                 finishStreamingAssistant()
                 toolStartedAt[event.call.id] = SystemClock.uptimeMillis()
                 AppLog.info("conductor tool=${event.call.name} started")
-                append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
-                setTurnStatus("Running ${event.call.name}")
+                if (event.call.name == PLAN_UPDATE_TOOL) {
+                    setTurnStatus("Updating plan")
+                } else {
+                    append(ConductorItem.Tool(event.call, ToolStatus.RUNNING))
+                    setTurnStatus("Running ${event.call.name}")
+                }
             }
 
             is AgentEvent.ToolFinished -> {
@@ -1984,6 +2007,12 @@ class ConductorViewModel(
     }
 
     private fun updateToolResult(result: ToolResultView) {
+        if (result.name == PLAN_UPDATE_TOOL) {
+            if (!result.ok) {
+                append(ConductorItem.Notice("plan", result.message ?: "The plan could not be updated."))
+            }
+            return
+        }
         val status =
             when {
                 result.ok -> ToolStatus.SUCCEEDED
@@ -2710,6 +2739,20 @@ class ConductorViewModel(
         }
     }
 
+    fun savePlan(
+        goal: String,
+        items: List<PlanItem>,
+        note: String,
+    ) {
+        if (_uiState.value.isRunning) return
+        planStore.update(goal, items, note)
+    }
+
+    fun clearPlan() {
+        if (_uiState.value.isRunning) return
+        planStore.clear()
+    }
+
     fun conversationTranscript(): String =
         conductorConversationMarkdown(
             items = _uiState.value.items,
@@ -2728,6 +2771,7 @@ class ConductorViewModel(
     private fun applyRestoredSession(session: ConductorSession?) {
         if (session == null) return
         sessionStartVersion = session.appVersion.ifBlank { BuildConfig.VERSION_NAME }
+        planStore.restore(session.plan)
         val loadedTranscript = session.transcript.takeIf { validateTranscriptPairing(it) }.orEmpty()
         val repaired = repairRestoredTranscript(loadedTranscript, session.items)
         transcript = repaired.takeIf { validateTranscriptPairing(it) } ?: loadedTranscript
@@ -2780,7 +2824,8 @@ class ConductorViewModel(
         // startup would replace the stored conversation with the empty state.
         if (!sessionReady.isCompleted) return
         val items = _uiState.value.items.filterNot { it is ConductorItem.Confirmation }
-        if (transcript.isEmpty() && items.isEmpty() && pendingTurnEvent == null) {
+        val plan = _uiState.value.plan?.takeIf { it.items.isNotEmpty() }
+        if (transcript.isEmpty() && items.isEmpty() && pendingTurnEvent == null && plan == null) {
             runCatching { sessionWrites.execute { sessionStore.clear() } }
             return
         }
@@ -2796,6 +2841,7 @@ class ConductorViewModel(
                     pendingEvent = pendingEvent,
                     appVersion = BuildConfig.VERSION_NAME,
                     trace = trace,
+                    plan = plan,
                 )
             }
         }

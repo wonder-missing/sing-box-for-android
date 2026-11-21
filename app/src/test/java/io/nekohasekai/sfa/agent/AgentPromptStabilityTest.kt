@@ -38,7 +38,9 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("test the closest indirect tool once"))
         assertTrue(first.contains("snapshot, not the full set"))
         assertTrue(first.contains("Do not answer a capability question from the snapshot alone"))
-        assertTrue(first.contains("[conductor:event"))
+        assertTrue(first.contains("[runtime:...]"))
+        assertTrue(first.contains("A [runtime:...] user message is state"))
+        assertTrue(first.contains("plan_update"))
         assertTrue(first.contains("job_run(vfs=true)"))
         assertFalse(first.contains("docker_run(vfs=true)"))
         assertTrue(first.contains("headings sparingly"))
@@ -61,7 +63,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("228474389f35d414fec82022d168ad27391961ae2d133c0e093d1124a3c38498", digest)
+        assertEquals("a37a8a692e02f639e97adda4f5633b79cdc2c4eaa2daefd95abd9409bd48d45e", digest)
     }
 
     @Test

@@ -2,6 +2,9 @@ package io.nekohasekai.sfa.conductor
 
 import io.nekohasekai.sfa.agent.AgentMessage
 import io.nekohasekai.sfa.agent.ApiTraceSummary
+import io.nekohasekai.sfa.agent.PlanItem
+import io.nekohasekai.sfa.agent.PlanItemStatus
+import io.nekohasekai.sfa.agent.PlanState
 import io.nekohasekai.sfa.agent.ToolCallView
 import io.nekohasekai.sfa.agent.ToolResultView
 import io.nekohasekai.sfa.agent.ToolStatus
@@ -36,6 +39,12 @@ class ConductorSessionSerializationTest {
                             inputTokens = 100,
                             outputTokens = 20,
                         ),
+                    ),
+                plan =
+                    PlanState(
+                        version = 2,
+                        goal = "Check the plan",
+                        items = listOf(PlanItem("step", PlanItemStatus.IN_PROGRESS)),
                     ),
                 items =
                     listOf(

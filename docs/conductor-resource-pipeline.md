@@ -36,7 +36,7 @@
 3. 模型看到的 user message 追加一行元数据：
 
 ```text
-[conductor:attachment id=<id> path=conductor/resources/inbox/<id>/<name> mime=<mime> size=<bytes>]
+[runtime:attachment id=<id> path=conductor/resources/inbox/<id>/<name> mime=<mime> size=<bytes>]
 ```
 
 图片仍作为 image content 发给视觉模型；元数据只给工具和 VFS 用。UI 保留原始用户文本。
@@ -201,7 +201,7 @@ Consent：
 | `vfs/VfsScopedSource.kt` | `workdir` 不能读 inbox，必须 `CONDUCTOR` |
 | `agent/AgentDataTools.kt` | `request_files` 结果增加 `path`；`analyze_image` 支持聊天 id 和 `path`；`chatImage` 注入 |
 | `agent/AgentRuntime.kt` | user message 附件元数据；大文本 offload；保留旧压缩兜底 |
-| `agent/AgentRuntimeEvents.kt` | 附件元数据格式化；转义 `[conductor:` 前缀 |
+| `agent/AgentRuntimeEvents.kt` | 附件元数据格式化；转义 `[runtime:` 前缀 |
 | `agent/mcp/McpProtocol.kt` | `McpCallResult` 增加 blocks；解析标准 content blocks；不再 8k 截断 |
 | `agent/mcp/McpTools.kt` | 二进制物化、`resource_link` origin 校验、唯一命名、observation 只带元数据 |
 | `agent/mcp/McpArtifactSink.kt` | 纯接口 + `FileMcpArtifactSink`；流式下载、origin/HTTPS/no-redirect |
@@ -231,7 +231,7 @@ Consent：
 - `VfsScopedSource`：`workdir` 不能读 inbox；`conductor` 可以。
 - `McpProtocol`：text / image / embedded resource / resource_link / error 的解析；多 block；1 MiB 边界。
 - `McpTools`：二进制物化、无 base64 进入 observation、resource_link origin、重名 artifact。
-- `AgentRuntime`：大文本 offload（排除 `file_*`）、附件元数据、`[conductor:` 转义。
+- `AgentRuntime`：大文本 offload（排除 `file_*`）、附件元数据、`[runtime:` 转义。
 - `AgentDataTools`：`request_files` 返回 path；`analyze_image` 聊天 id/path。
 - `ConductorFileStore`：流式资源写入、artifact 配额、inbox 只读、`countFiles` 排除 resources、原子替换。
 

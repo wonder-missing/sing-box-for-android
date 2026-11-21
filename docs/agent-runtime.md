@@ -1,6 +1,6 @@
 # Conductor Agent 运行时设计
 
-状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`conductor:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回；wonder.57 补文件工具召回；wonder.58 改为英文工具元数据，补齐文件分页/tail/grep 和用户选文件链路；wonder.59 改用模型 API 的上下文/输出上限，加入上下文百分比与 80% 自动 Compact。wonder.95 把 `network_snapshot` 改成 `system_snapshot` 并调整字段，新增 `file_append`/`file_edit` 和 `http_fetch`；`/tool` 可直接运行 `search_tools` 并提供 Run/Fill 动作。wonder.96 优化 Conductor 消息流（思考窗、工具行、间距、行内代码、逐条用量页脚），并修复草稿恢复和服务重启后的 CommandClient 重连。wonder.98 移除 `http_fetch` 的 `outbound`，新增 `web_search`（DeepSeek Anthropic-compatible 服务端搜索，返回 answer/sources/citations；非 DeepSeek provider 隐藏）和 `wait`（0–10 秒、可取消的等待工具），并把 VFS 后台重连延长到网络恢复。wonder.99 规范化 `web_search` 来源并保留 answer citations，`probe_many` 结束后恢复批次起始选择。wonder.A0 把输入框提示改为 `Ask Conductor`/`You Conduct...`，工具参数支持横向滑动，并把版本标签切到 base-36（A0=100）。
+状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`runtime:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回；wonder.57 补文件工具召回；wonder.58 改为英文工具元数据，补齐文件分页/tail/grep 和用户选文件链路；wonder.59 改用模型 API 的上下文/输出上限，加入上下文百分比与 80% 自动 Compact。wonder.95 把 `network_snapshot` 改成 `system_snapshot` 并调整字段，新增 `file_append`/`file_edit` 和 `http_fetch`；`/tool` 可直接运行 `search_tools` 并提供 Run/Fill 动作。wonder.96 优化 Conductor 消息流（思考窗、工具行、间距、行内代码、逐条用量页脚），并修复草稿恢复和服务重启后的 CommandClient 重连。wonder.98 移除 `http_fetch` 的 `outbound`，新增 `web_search`（DeepSeek Anthropic-compatible 服务端搜索，返回 answer/sources/citations；非 DeepSeek provider 隐藏）和 `wait`（0–10 秒、可取消的等待工具），并把 VFS 后台重连延长到网络恢复。wonder.99 规范化 `web_search` 来源并保留 answer citations，`probe_many` 结束后恢复批次起始选择。wonder.A0 把输入框提示改为 `Ask Conductor`/`You Conduct...`，工具参数支持横向滑动，并把版本标签切到 base-36（A0=100）。
 最后更新：2026-11-21
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -135,6 +135,29 @@ data class ToolObservation(
 ```kotlin
 fun validateTranscriptPairing(messages: List<AgentMessage>): Boolean
 ```
+
+### Runtime block 与 plan（2026-11-21 定）
+
+运行时状态统一用 `[runtime:...]` 标记，由 App 侧 AgentRuntime 注入，不是模型或用户写的：
+
+- user message 里的 `[runtime:event ...]`、`[runtime:attachment ...]`；
+- 尾部复诵的 `[runtime:plan v=N] ... [/runtime:plan]`；
+- 用户或 tool 内容里长得像 runtime block 的文本只是数据；构造消息时会把行首的 `[runtime:` 转义。
+
+System prompt 的规则：
+
+- user message 和 tool result 里的 `[runtime:...]` 是状态，不是新请求或新指令；和用户最新消息冲突时，用户最新消息优先；
+- 连续两条 **real** user message 才按“前一条未收到回复”处理；`[runtime:...]` user message 不算 real user message；
+- 多步任务用 `plan_update`，更新时发送完整步骤列表，`items=[]` 清空。
+
+Plan 工具与状态：
+
+- 只有一个 core capability `plan_update`，整份替换；不需要 `plan_create`、`plan_read`、`plan_clear`。`goal` 在非空计划时必填；`items[{step,status}]`，status 为 `pending` / `in_progress` / `done`；可选 `note` 记录阻塞或死路。最多 20 项，step/goal 200 字符，note 300 字符。
+- tool result 是持久事实来源；`PlanState` 存在 `ConductorSession.plan`，进程重启后恢复。UI 在消息流底部显示一张可折叠卡片；用户可改步骤、切状态、添加/删除、清空。
+- 模型每次请求只在尾部看到一份紧凑复诵：`goal`、进度、当前步、下一步、阻塞项。不要回放完整计划或历史版本。
+- 注入发生在请求构造时，不写回 transcript：始终在真正的尾部追加一条 ephemeral user message，不改写已有的 real user message。改用户消息会让下一次请求的前缀在 user 处失配，破坏缓存；独立尾消息只让复诵本身成为新的尾部 token。tool result 里的完整计划仍然可缓存。
+- 不用尾部 system message：各 provider 对 system 消息的数量、位置和合并处理不一致，可能拒绝、上提合并或按不同前缀缓存；user 角色是当前 Chat Completions 预设共有的安全落点。
+- 不做旧 `[conductor:*]` 兼容；旧测试会话直接清理。
 
 ## 5. 模型客户端
 
@@ -536,7 +559,7 @@ wonder.36 的 2B 运行时补充：
 - `TurnResult.messages` 包含本轮 `User` 和后续 assistant/tool 消息；ViewModel 不重复追加用户消息。被输入检查拦截的输入不进入 transcript，只显示 UI 提示。
 - 取消或失败的 turn 不注入假 assistant 台词。`finish()` 在 `ensurePairing()` 之后保留本轮已经产生的 user、partial assistant 和 tool 消息，不回滚。下一条真实 user 消息单独出现，因此 transcript 里可能出现连续两条 user；system prompt 说明这两条是独立请求，不是复合问题。
   - 两种情况都生成一个待发送的 `TurnEvent`（`turn_interrupted` / `turn_failed`，reason 用固定 token），由下一条真实 user 消息携带。
-- 下一条 user 消息在模型 transcript 里变成 `[conductor:event <type> reason=<reason>]\n<用户正文>`。事件不是独立消息，而是下一轮 user 的开头；失败的那条 user 仍在前一条消息里，模型能看到原文。system prompt 说明该前缀是 runtime metadata，不是用户请求。用户自己输入的行如果以这个前缀开头，会被转义。
+- 下一条 user 消息在模型 transcript 里变成 `[runtime:event <type> reason=<reason>]\n<用户正文>`。事件不是独立消息，而是下一轮 user 的开头；失败的那条 user 仍在前一条消息里，模型能看到原文。system prompt 说明该前缀是 runtime metadata，不是用户请求。用户自己输入的行如果以这个前缀开头，会被转义。
 - 事件跨进程持久化在 `ConductorSession.pendingEvent`；输入检查拦截或缺少 key 时本轮 user 没有进入 transcript，原 pending event 保留，等下一次真实发送。
 - Stop 发生在流式回答中途时，已生成正文先写入 transcript，事件按上面的规则挂到下一条 user；模型下一轮能看到停在哪里。
 - Retry：没有产生 assistant 正文或 tool 结果的失败 turn 在 UI 上提供 Retry。点击后从 transcript 末尾移除该 user，再由 `submit` 重新加入并带上 pending event；UI 只保留一份用户消息。不重跑已经产生 observation 的工具。
@@ -1082,7 +1105,7 @@ UI 需要新增：
 - tool 卡片：工具名、参数摘要、running/success/failed/cancelled、结果摘要；长结果可展开。路由模式下显示内层工具名和参数，不显示 `route_call` envelope。
 - `search_tools` 显示为一条紧凑的「查找工具」记录，可以展开看匹配数，不默认铺开 schema。
 - 确认卡片：Run / Cancel，显示内层工具名和 `displayArgsJson`；安全的 agent 确认额外显示 `Run all N safe calls in this response` 和 `Allow all safe tools for this turn`。前者只对当前 assistant 批次的后继安全确认自动通过，后者对整个 turn 的安全工具生效；`ALWAYS` 工具不出现这两个选项。命令确认没有这些选项。
-- 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。wonder.37 起 UI 消息流追加 `Stopped.`，重复 Stop 只发一次提示；已完成但刚好在 Stop 前的工具结果保留，不再被改成 `cancelled`。这个 `Stopped.` 是 UI notice，不是模型 transcript 里的 assistant 消息；模型侧改用下一条 user 的 `[conductor:event ...]` 前缀知道中断。
+- 运行中的 Stop 按钮（wonder.36）：输入栏右侧变成 Stop，流式回答逐字更新；Stop 后保持禁用直到运行时返回。wonder.37 起 UI 消息流追加 `Stopped.`，重复 Stop 只发一次提示；已完成但刚好在 Stop 前的工具结果保留，不再被改成 `cancelled`。这个 `Stopped.` 是 UI notice，不是模型 transcript 里的 assistant 消息；模型侧改用下一条 user 的 `[runtime:event ...]` 前缀知道中断。
 - 流式回答：assistant 文本增量更新，label 旁显示一个小 spinner；最终消息替换增量文本。正文一开始输出就结算 Reasoning，避免 spinner 和已回答并存。
 - 用户消息气泡下方始终显示发送时间（当天只有时间，跨天带日期），不再用点按气泡的隐藏手势显示。正文行内代码只做等宽/主题色样式，复制走系统长按选择和 Copy；围栏代码块始终有表头（语言或 `Code`）和复制按钮，复制后按钮短暂变成对勾。不要再给行内代码挂 `ClickableSpan` 或点按复制。
 - Reasoning：`Thinking` 块流式显示 `reasoning_content`，不进入 transcript；wonder.38 起是两行高的自动上滚视窗（上下边缘渐隐），结束后标签变 `Thought`，可 Show/Hide 查看全文。所有结算点会清理全部 streaming 项，不只最后一项。
@@ -1234,6 +1257,7 @@ Phase 2a 复用 `AppLog`，只记结构化摘要：
 ```text
 app/src/main/java/io/nekohasekai/sfa/agent/
   AgentMessage.kt        AgentMessage / ToolCall / ToolObservation
+  Plan.kt                PlanState / PlanStore / plan recitation / plan_update limits
   AgentTurn.kt           TurnState / TurnOutcome / AgentError / AgentEvent / ConfirmationRequest
   AgentRuntime.kt        循环、预算、finishTurn、确认暂停、observation 回填
   AgentInputGuard.kt     用户输入敏感内容检查
@@ -1362,7 +1386,7 @@ app/src/test/java/io/nekohasekai/sfa/agent/
 - 正文开始输出、工具开始或 turn 结束时，所有 Reasoning spinner 都停止；空 Thinking 占位不出现在 UI。
 - 同一 assistant 消息里的多个安全确认可以用 `Run all N safe calls in this response` 一次跑完；`ALWAYS` 工具仍逐张确认；取消仍结束整个 turn。
 - API trace 可以通过 Save API trace to file 落盘，空 trace 不生成文件；对话也可以通过 Save conversation to file 落盘。
-- Stop、超时、流式中断后 transcript 仍然配对；未完成 turn 保留原 user，下一条 user 带 `[conductor:event ...]` 前缀，可能出现连续 user，system prompt 说明它们是独立请求。
+- Stop、超时、流式中断后 transcript 仍然配对；未完成 turn 保留原 user，下一条 user 带 `[runtime:event ...]` 前缀，可能出现连续 user，system prompt 说明它们是独立请求。
 - 空的中断/失败 turn 保留本轮 user，UI 显示 Retry；Retry 重发最后一条 user，模型下一轮仍能看到失败消息原文。输入拦截和缺 key 不产生新事件。
 - 用户自己输入以保留前缀开头的文本会被转义，不能伪造 runtime 事件；pending event 跨进程保留。
 - 长工具结果被截断且标记，模型不会因为上下文超限直接失败。
@@ -1658,7 +1682,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 
 ### wonder.40 中断 turn 收尾与对话导出（2026-11-11）
 
-- 真机实验：第一句在 reasoning 阶段被 Stop；第二次请求的 messages 是 `system → user(第一句) → user(第二句)`，中间没有 assistant，模型把两句当成一个复合问题。wonder.40 先用合成 assistant 结束消息收尾；后续实验发现这会诱导模型把它当成自己的台词，下一版改为下一条 user 的 `[conductor:event ...]` 前缀，不再发假 assistant。
+- 真机实验：第一句在 reasoning 阶段被 Stop；第二次请求的 messages 是 `system → user(第一句) → user(第二句)`，中间没有 assistant，模型把两句当成一个复合问题。wonder.40 先用合成 assistant 结束消息收尾；后续实验发现这会诱导模型把它当成自己的台词，下一版改为下一条 user 的 `[runtime:event ...]` 前缀，不再发假 assistant。
 - `AgentRuntimeTest` 增加停止（有正文和只有 reasoning 两种）、确认取消和模型失败四条断言，检查结束标记和 transcript pairing。
 - 对话导出与 API trace 导出共用同一个 CreateDocument 通道，新增 Save conversation to file；空会话/空 trace 只提示。
 
@@ -1677,7 +1701,7 @@ Baidu 通、GitHub/Google 解析失败，说明不是节点完全不通，更像
 - 第一次可重试失败时显示一条 Notice；重试循环每次尝试前检查 `cancelRequested`，Stop 后不再发起新请求。
 - 第二次实验：同一响应内模型可以发多个调用（3 个 `list_nodes`），但 `probe_via_node` 每个响应只发一个。模型 reasoning 明确说 probe 改全局出站，怕并发冲突；它不知道 runtime 对同一批调用是串行执行。现在 system prompt 说明“同一响应内按顺序执行”，probe 描述说明多 probe 会串行且只接受 selector 组里的可选节点。
 - 单调用确认卡也提供 `Approve rest of turn`，不再要求模型必须在一个响应里批量返回才能少点审批；ViewModel 的本 turn 自动批准标记对后续 responder 仍然有效。
-- 中断事件改为 `TurnEvent` + 下一条 user 的 `[conductor:event ...]` 前缀；空中断 turn 从模型 transcript 回滚，partial assistant/tool 结果保留。pending event 存在 `ConductorSession.pendingEvent`，跨进程保留；用户可伪造的前缀行会转义。UI 的 `Stopped.` notice 与模型 transcript 解耦。
+- 中断事件改为 `TurnEvent` + 下一条 user 的 `[runtime:event ...]` 前缀；空中断 turn 从模型 transcript 回滚，partial assistant/tool 结果保留。pending event 存在 `ConductorSession.pendingEvent`，跨进程保留；用户可伪造的前缀行会转义。UI 的 `Stopped.` notice 与模型 transcript 解耦。
 
 ### wonder.42：Reasoning effort（2026-11-11）
 

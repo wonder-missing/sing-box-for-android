@@ -75,6 +75,7 @@ class AgentRuntime(
     private val modelLimits: () -> ModelLimits = { ModelLimits.FALLBACK },
     private val imageLoader: (String) -> AgentImageData? = { null },
     private val offloadStore: ObservationOffloadStore? = null,
+    private val planBlock: () -> String? = { null },
 ) {
     private val confirmationIds = AtomicLong(0)
 
@@ -242,8 +243,13 @@ class AgentRuntime(
 
             val limits = modelLimits()
             val contextWindow = limits.contextWindow.coerceAtLeast(MIN_CONTEXT_WINDOW)
+            val planText = planBlock()?.takeIf { it.isNotBlank() }
+            val planTokens = planText?.let { AgentContext.estimateTokens(it) + 8 } ?: 0
             var estimatedContext =
-                maxOf(estimateRequestTokens(systemMessage, requestTools, transcript), lastPromptTokens)
+                maxOf(
+                    estimateRequestTokens(systemMessage, requestTools, transcript) + planTokens,
+                    lastPromptTokens,
+                )
             if (shouldCompact(estimatedContext, contextWindow)) {
                 val before = estimatedContext
                 val summary = compactTranscript(transcript, systemMessage, requestTools, apiKey, limits, onEvent)
@@ -253,7 +259,7 @@ class AgentRuntime(
                     startSize = 1
                     preparedHistoryForTurn = listOf(summary)
                     lastPromptTokens = 0
-                    estimatedContext = estimateRequestTokens(systemMessage, requestTools, transcript)
+                    estimatedContext = estimateRequestTokens(systemMessage, requestTools, transcript) + planTokens
                     onEvent(
                         AgentEvent.Notice(
                             "Context compacted from ${contextPercent(before, contextWindow)}% " +
@@ -274,7 +280,7 @@ class AgentRuntime(
             val outputReserve =
                 minOf(limits.maxOutputTokens ?: COMPACT_SUMMARY_TOKENS, COMPACTION_OUTPUT_RESERVE)
             val inputBudget = (contextWindow - outputReserve).coerceAtLeast(MIN_CONTEXT_WINDOW)
-            val messageBudget = (inputBudget - systemTokens - toolTokens).coerceAtLeast(256)
+            val messageBudget = (inputBudget - systemTokens - toolTokens - planTokens).coerceAtLeast(256)
             val fittedMessages = AgentContext.fitToBudget(trimmedMessages, messageBudget)
             if (fittedMessages.size < trimmedMessages.size) {
                 lastPromptTokens = 0
@@ -287,11 +293,12 @@ class AgentRuntime(
                     )
                 }
             }
-            val sentInput = systemTokens + toolTokens + AgentContext.estimateMessagesTokens(fittedMessages)
+            val sentInput =
+                systemTokens + toolTokens + AgentContext.estimateMessagesTokens(fittedMessages) + planTokens
             val capInput = maxOf(sentInput, lastPromptTokens)
             val request =
                 AgentModelRequest(
-                    messages = listOf(systemMessage) + fittedMessages,
+                    messages = injectPlanBlock(systemMessage, fittedMessages, planText),
                     tools = requestTools,
                     maxOutputTokens = outputTokenCap(limits, capInput),
                     timeoutMs = config.modelTimeoutMs,
@@ -550,9 +557,8 @@ class AgentRuntime(
                 }
                 transcript.add(
                     AgentMessage.System(
-                        "[conductor:event tool_failure_loop count=${config.maxRapidToolFailures} " +
-                            "window_ms=${config.rapidToolFailureWindowMs}]\n" +
-                            "Tool execution was stopped because too many tool calls failed too quickly. " +
+                        "Tool execution was stopped because too many tool calls failed too quickly " +
+                            "(max ${config.maxRapidToolFailures} failures in ${config.rapidToolFailureWindowMs} ms). " +
                             "Do not call more tools. Explain to the user what failed and answer with the " +
                             "information already collected.",
                     ),
@@ -1143,6 +1149,24 @@ class AgentRuntime(
             pendingEvent = event,
         )
     }
+
+    /**
+     * Puts the plan recitation at the true tail of the request as its own
+     * ephemeral user message. The block is request-only: it must not enter the
+     * persisted transcript. Do not append it to the real user message: the
+     * next request rebuilds that message without the block, which would break
+     * the cached prefix at the user turn.
+     */
+    private fun injectPlanBlock(
+        systemMessage: AgentMessage.System,
+        messages: List<AgentMessage>,
+        planText: String?,
+    ): List<AgentMessage> =
+        if (planText.isNullOrBlank()) {
+            listOf(systemMessage) + messages
+        } else {
+            listOf(systemMessage) + messages + AgentMessage.User(planText)
+        }
 
     private fun estimateRequestTokens(
         systemMessage: AgentMessage.System,
