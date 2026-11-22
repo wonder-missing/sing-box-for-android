@@ -1,7 +1,7 @@
 # AGENTS.md — WonderSing (fork of sing-box-for-android)
 
 Rules for any coding agent (Claude Code, Codex, etc.) working in this repo on clawdy-mini.
-Goal: given "check TODO and latest issues, do 1–2h of work", produce and test the change. Release only after the user explicitly asks for a release; a clean `dev` does not imply one.
+Goal: given "check TODO and latest issues, do 1–2h of work", produce and test the change. Batch non-urgent small tweaks on `dev`; ship a completed user-facing feature or large behavior change (see Release flow). A clean `dev` alone does not imply a release.
 General working style follows the owner's global working agreement; project-specific contracts below override.
 
 ## Repo facts
