@@ -1307,21 +1307,24 @@ object PerAppProxyScanner {
             // walk stale APKs and increased both time and memory pressure.
             val installedPackages = PackageQueryManager.getInstalledPackages(0)
             val chinaApps = mutableSetOf<String>()
-            installedPackages.map { packageInfo ->
-                async {
-                    if (scanPackageLimited(packageInfo)) {
-                        synchronized(chinaApps) {
-                            chinaApps.add(packageInfo.packageName)
-                        }
-                    }
+            for (packageInfo in installedPackages) {
+                if (scanPackageLimited(packageInfo)) {
+                    chinaApps.add(packageInfo.packageName)
                 }
-            }.awaitAll()
+            }
             chinaApps.toSet()
         }
     }
 
     suspend fun scanPackageLimited(packageInfo: PackageInfo): Boolean =
-        scanGate.withPermit { scanChinaPackage(packageInfo) }
+        scanGate.withPermit {
+            try {
+                scanChinaPackage(packageInfo)
+            } catch (e: OutOfMemoryError) {
+                Log.e("PerAppProxyScanner", "OOM scanning ${packageInfo.packageName}", e)
+                false
+            }
+        }
 
     fun scanChinaPackage(packageInfo: PackageInfo): Boolean {
         val packageName = packageInfo.packageName
