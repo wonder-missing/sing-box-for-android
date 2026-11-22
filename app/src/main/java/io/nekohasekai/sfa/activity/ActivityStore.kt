@@ -98,6 +98,16 @@ object ActivityLog {
         }
     }
 
+    fun serviceRunningAt(context: Context, at: Long): Boolean {
+        val app = context.applicationContext
+        synchronized(lock) {
+            ensureLoadedLocked(app)
+            ActivityReducer.prune(events, System.currentTimeMillis())
+            val last = events.filter { it.lane == ActivityLane.SERVICE && it.ts <= at }.maxByOrNull { it.ts }
+            return last?.type == "service_start"
+        }
+    }
+
     fun snapshot(context: Context, end: Long, windowMs: Long): List<ActivityEvent> {
         val app = context.applicationContext
         synchronized(lock) {

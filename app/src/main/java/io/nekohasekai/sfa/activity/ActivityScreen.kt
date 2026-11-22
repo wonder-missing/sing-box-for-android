@@ -66,6 +66,7 @@ fun ActivityScreen(onBack: () -> Unit) {
     var events by remember { mutableStateOf(emptyList<ActivityEvent>()) }
     var selected by remember { mutableStateOf<ActivityEvent?>(null) }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var serviceRunningAtStart by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     val scaffoldPadding = LocalScaffoldPadding.current
     val dayFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
@@ -77,10 +78,18 @@ fun ActivityScreen(onBack: () -> Unit) {
         while (true) {
             now = System.currentTimeMillis()
             val currentEnd = now - (offsetHours * 60f * 60f * 1000f).toLong()
-            events =
+            val loaded =
                 withContext(Dispatchers.IO) {
-                    if (enabled) ActivityLog.snapshot(context, currentEnd, WINDOW_MS) else emptyList()
+                    if (enabled) {
+                        val start = currentEnd - WINDOW_MS
+                        ActivityLog.serviceRunningAt(context, start) to
+                            ActivityLog.snapshot(context, currentEnd, WINDOW_MS)
+                    } else {
+                        false to emptyList()
+                    }
                 }
+            serviceRunningAtStart = loaded.first
+            events = loaded.second
             delay(30_000)
         }
     }
@@ -179,6 +188,7 @@ fun ActivityScreen(onBack: () -> Unit) {
                             windowStart = start,
                             windowEnd = end,
                             onEventTap = { selected = it },
+                            serviceRunningAtStart = serviceRunningAtStart,
                             height = 320,
                         )
                         if (events.isEmpty()) {

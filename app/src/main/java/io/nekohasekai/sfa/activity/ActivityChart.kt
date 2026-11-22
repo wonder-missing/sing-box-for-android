@@ -95,6 +95,7 @@ fun ActivityScatterChart(
     windowStart: Long,
     windowEnd: Long,
     onEventTap: (ActivityEvent) -> Unit,
+    serviceRunningAtStart: Boolean = false,
     modifier: Modifier = Modifier,
     height: Int = 300,
     showAxis: Boolean = true,
@@ -176,7 +177,7 @@ fun ActivityScatterChart(
 
         // Service is a continuous state: draw the session line, then its points.
         val service = events.filter { it.lane == ActivityLane.SERVICE }.sortedBy { it.ts }
-        var openAt: Long? = null
+        var openAt: Long? = if (serviceRunningAtStart) windowStart else null
         service.forEach { event ->
             when (event.type) {
                 "service_start" -> openAt = event.ts
