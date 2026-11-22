@@ -60,13 +60,14 @@ fun ActivityCard(
 
     val service = events.count { it.lane == ActivityLane.SERVICE }
     val network = events.count { it.lane == ActivityLane.NETWORK }
-    val subscription = events.count { it.lane == ActivityLane.SUBSCRIPTION }
+    val subscription = events.count { it.type == ActivityTypes.PROFILE_UPDATE }
+    val changed = events.count { it.type == ActivityTypes.PROFILE_UPDATE && it.changed == true }
     val group = events.count { it.lane == ActivityLane.GROUP }
     val line =
         listOf(
             stringResource(R.string.activity_summary_service, service),
             stringResource(R.string.activity_summary_network, network),
-            stringResource(R.string.activity_summary_subscription, subscription, events.count { it.lane == ActivityLane.SUBSCRIPTION && it.changed == true }),
+            stringResource(R.string.activity_summary_subscription, subscription, changed),
             stringResource(R.string.activity_summary_group, group),
             stringResource(R.string.activity_summary_events, events.size),
         ).joinToString(" · ")

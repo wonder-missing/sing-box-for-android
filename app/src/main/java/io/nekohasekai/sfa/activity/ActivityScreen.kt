@@ -327,8 +327,8 @@ fun ActivityScreen(
 private fun ActivitySummary(events: List<ActivityEvent>) {
     val service = events.count { it.lane == ActivityLane.SERVICE }
     val network = events.count { it.lane == ActivityLane.NETWORK }
-    val subscription = events.count { it.lane == ActivityLane.SUBSCRIPTION }
-    val changed = events.count { it.lane == ActivityLane.SUBSCRIPTION && it.changed == true }
+    val subscription = events.count { it.type == ActivityTypes.PROFILE_UPDATE }
+    val changed = events.count { it.type == ActivityTypes.PROFILE_UPDATE && it.changed == true }
     val urlTest = events.count { it.lane == ActivityLane.URLTEST }
     val group = events.count { it.lane == ActivityLane.GROUP }
     val connection = events.filter { it.lane == ActivityLane.CONNECTION }.sumOf { it.count }
