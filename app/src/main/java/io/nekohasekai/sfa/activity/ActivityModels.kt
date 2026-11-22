@@ -67,14 +67,22 @@ object ActivityTypes {
     const val PROCESS_EXIT = "process_exit"
 }
 
+/** Names the power state a user would notice first. */
+internal fun powerStateLabel(doze: Boolean, powerSave: Boolean, interactive: Boolean): String =
+    when {
+        doze -> "doze"
+        !interactive -> "screen off"
+        powerSave -> "power save"
+        else -> "awake"
+    }
+
 /**
  * One locally recorded activity. High-frequency lanes (telemetry and URLTest)
  * are coalesced into five-minute buckets by [ActivityReducer] so the chart can
  * draw one mark per bucket without forcing points apart.
  */
 @Serializable
-data class ActivityEvent(
-    val id: Long = 0,
+data class ActivityEvent(    val id: Long = 0,
     val ts: Long,
     val lastTs: Long = ts,
     val lane: ActivityLane,

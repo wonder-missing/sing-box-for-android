@@ -313,15 +313,29 @@ object ActivityLog {
     fun recordPower(context: Context, doze: Boolean, powerSave: Boolean, interactive: Boolean) {
         val key = "$doze/$powerSave/$interactive"
         if (key == lastPowerKey) return
+        val subject = powerStateLabel(doze, powerSave, interactive)
+        val detail = "power_save=$powerSave interactive=$interactive"
+        val app = context.applicationContext
+        if (ActivityPreferences.isEnabled(app)) {
+            synchronized(lock) {
+                ensureLoadedLocked(app)
+                // Service restarts re-snapshot the same state; store only changes.
+                val last = events.lastOrNull { it.type == ActivityTypes.POWER_STATE }
+                if (last?.subject == subject && last.detail == detail) {
+                    lastPowerKey = key
+                    return
+                }
+            }
+        }
         lastPowerKey = key
         record(
-            context,
+            app,
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.POWER,
                 type = ActivityTypes.POWER_STATE,
-                subject = if (doze) "doze" else "awake",
-                detail = "power_save=$powerSave interactive=$interactive",
+                subject = subject,
+                detail = detail,
             ),
         )
     }

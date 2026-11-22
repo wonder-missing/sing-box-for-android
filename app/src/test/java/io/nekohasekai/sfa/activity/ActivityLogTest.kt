@@ -117,6 +117,14 @@ class ActivityLogTest {
     }
 
     @Test
+    fun `power labels name the state a user notices first`() {
+        assertEquals("doze", powerStateLabel(doze = true, powerSave = false, interactive = false))
+        assertEquals("screen off", powerStateLabel(doze = false, powerSave = true, interactive = false))
+        assertEquals("power save", powerStateLabel(doze = false, powerSave = true, interactive = true))
+        assertEquals("awake", powerStateLabel(doze = false, powerSave = false, interactive = true))
+    }
+
+    @Test
     fun `retention drops events older than forty eight hours`() {
         val events = mutableListOf<ActivityEvent>()
         ActivityReducer.add(events, event(now - ActivityReducer.RETENTION_MS - 1, ActivityLane.NETWORK, "network_change"), now)
