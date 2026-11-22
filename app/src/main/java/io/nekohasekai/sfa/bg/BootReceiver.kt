@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import io.nekohasekai.sfa.BuildConfig
+import io.nekohasekai.sfa.activity.ActivityLog
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.telemetry.TelemetryEventLog
@@ -94,6 +95,13 @@ class BootReceiver : BroadcastReceiver() {
                 result = "exception"
                 error = TelemetryEvents.scrub(e.message.orEmpty(), 120)
             } finally {
+                ActivityLog.recordServiceRestore(
+                    app,
+                    action,
+                    result,
+                    startedByUser,
+                    restoreAfterUpdate,
+                )
                 TelemetryEventLog.record(
                     app,
                     "service_restore",

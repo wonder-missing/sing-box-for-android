@@ -12,6 +12,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import io.nekohasekai.sfa.activity.ActivityEvidenceKind
 import io.nekohasekai.sfa.activity.ActivityScreen
 import io.nekohasekai.sfa.conductor.ConductorScreen
 import io.nekohasekai.sfa.compose.screen.configuration.NewProfileScreen
@@ -144,7 +145,17 @@ fun NavHost(
         }
 
         composable(Screen.Activity.route) {
-            ActivityScreen(onBack = { navController.navigateUp() })
+            ActivityScreen(
+                onBack = { navController.navigateUp() },
+                onOpenEvidence = { evidence ->
+                    val route =
+                        when (evidence.kind) {
+                            ActivityEvidenceKind.CRASH -> "tools/crash_report/${evidence.id}"
+                            ActivityEvidenceKind.OOM -> "tools/oom_report/${evidence.id}"
+                        }
+                    navController.navigate(route)
+                },
+            )
         }
 
         composable(Screen.Conductor.route) {

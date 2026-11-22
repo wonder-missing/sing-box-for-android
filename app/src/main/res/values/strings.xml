@@ -1028,6 +1028,14 @@
     <string name="activity_range_start">Start %1$s</string>
     <string name="activity_range_end">End %1$s</string>
     <string name="activity_summary_events">Events %1$d</string>
+
+    <string name="activity_legend_connection">Connection error</string>
+    <string name="activity_legend_power">Power</string>
+    <string name="activity_legend_system">System</string>
+    <string name="activity_summary_connection">Conn errors %1$d</string>
+    <string name="activity_detail_focus">Focus ±15 min</string>
+    <string name="activity_detail_nearby">%1$d nearby events within ±10 min</string>
+    <string name="activity_detail_open_report">Open report</string>
     <string name="activity_legend_service">Service</string>
     <string name="activity_legend_network">Network</string>
     <string name="activity_legend_tailscale">Tailscale</string>
@@ -1038,6 +1046,17 @@
     <string name="activity_legend_version">Version</string>
     <string name="activity_legend_failed">Failed</string>
     <string name="activity_legend_obstacle">Issue</string>
+
+    <string name="activity_event_service_alert">Service alert · %1$s</string>
+    <string name="activity_event_vpn_revoked">VPN permission revoked</string>
+    <string name="activity_event_service_restore">Service restore · %1$s</string>
+    <string name="activity_event_config_reload">Config reload</string>
+    <string name="activity_event_connection_error">Connection errors</string>
+    <string name="activity_event_power">Power state · %1$s</string>
+    <string name="activity_event_profile_switch">Profile switch · %1$s</string>
+    <string name="activity_event_crash">App crash</string>
+    <string name="activity_event_oom">Out of memory</string>
+    <string name="activity_event_process_exit">Process exit · %1$s</string>
     <string name="activity_event_service_start">Service started</string>
     <string name="activity_event_service_stop">Service stopped</string>
     <string name="activity_event_network">Network · %1$s</string>

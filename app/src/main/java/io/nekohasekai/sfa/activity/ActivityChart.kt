@@ -44,6 +44,9 @@ internal data class ActivityColors(
     val urlTest: Color,
     val group: Color,
     val version: Color,
+    val connection: Color,
+    val power: Color,
+    val system: Color,
     val obstacle: Color,
     val axis: Color,
     val muted: Color,
@@ -62,6 +65,9 @@ internal fun activityColors(): ActivityColors {
         urlTest = scheme.onSurfaceVariant,
         group = scheme.secondary,
         version = scheme.onSurface,
+        connection = scheme.error,
+        power = scheme.outline,
+        system = scheme.error,
         obstacle = scheme.error,
         axis = scheme.outlineVariant,
         muted = scheme.onSurfaceVariant,
@@ -81,7 +87,8 @@ private const val COALESCE_MS = 5L * 60L * 1_000L
 /** Periodic marks represent their five-minute bucket, not the first flush inside it. */
 private fun displayTs(event: ActivityEvent): Long =
     if (event.lane == ActivityLane.TELEMETRY ||
-        (event.lane == ActivityLane.URLTEST && event.type == "urltest")
+        (event.lane == ActivityLane.URLTEST && event.type == ActivityTypes.URLTEST) ||
+        (event.lane == ActivityLane.CONNECTION && event.type == ActivityTypes.CONNECTION_ERROR)
     ) {
         event.ts / COALESCE_MS * COALESCE_MS
     } else {
@@ -97,6 +104,9 @@ private fun ActivityLane.color(colors: ActivityColors): Color = when (this) {
     ActivityLane.URLTEST -> colors.urlTest
     ActivityLane.GROUP -> colors.group
     ActivityLane.VERSION -> colors.version
+    ActivityLane.CONNECTION -> colors.connection
+    ActivityLane.POWER -> colors.power
+    ActivityLane.SYSTEM -> colors.system
 }
 
 @Composable
@@ -207,6 +217,18 @@ fun ActivityScatterChart(
             drawLine(colors.service, Offset(startX, laneY(0)), Offset(right, laneY(0)), 2.dp.toPx())
         }
 
+        selectedEventId?.let { id ->
+            plotPoints.firstOrNull { it.event.id == id }?.let { point ->
+                val cursorX = xAt(point.x)
+                drawLine(
+                    colors.service.copy(alpha = 0.22f),
+                    Offset(cursorX, top),
+                    Offset(cursorX, bottom),
+                    1.dp.toPx(),
+                )
+            }
+        }
+
         events.forEach { event ->
             val x = xAt(((displayTs(event) - windowStart).toFloat() / (windowEnd - windowStart).toFloat()).coerceIn(0f, 1f))
             val y = laneY(event.lane.ordinal)
@@ -294,33 +316,57 @@ private fun DrawScope.drawActivityMark(
                 )
             }
         }
-        ActivityLane.GROUP -> {
-            drawCircle(colors.surface, 4.6.dp.toPx(), center)
-            drawDiamond(center, 3.4.dp.toPx(), color)
-        }
-        ActivityLane.VERSION -> drawTriangle(center, 4.2.dp.toPx(), color)
+        ActivityLane.GROUP -> drawDiamondOutline(center, 3.6.dp.toPx(), color)
+        ActivityLane.VERSION -> drawTriangleOutline(center, 4.2.dp.toPx(), color)
+        ActivityLane.CONNECTION -> drawDownTriangle(center, 4.dp.toPx(), color)
+        ActivityLane.POWER -> drawCircle(color, 3.dp.toPx(), center, style = Stroke(1.2.dp.toPx()))
+        ActivityLane.SYSTEM -> drawSquare(center, 3.2.dp.toPx(), color)
     }
+}
+
+private fun diamondPath(center: Offset, radius: Float): Path = Path().apply {
+    moveTo(center.x, center.y - radius)
+    lineTo(center.x + radius, center.y)
+    lineTo(center.x, center.y + radius)
+    lineTo(center.x - radius, center.y)
+    close()
+}
+
+private fun trianglePath(center: Offset, radius: Float): Path = Path().apply {
+    moveTo(center.x, center.y - radius)
+    lineTo(center.x + radius * 0.9f, center.y + radius * 0.8f)
+    lineTo(center.x - radius * 0.9f, center.y + radius * 0.8f)
+    close()
 }
 
 private fun DrawScope.drawDiamond(center: Offset, radius: Float, color: Color) {
+    drawPath(diamondPath(center, radius), color)
+}
+
+private fun DrawScope.drawDiamondOutline(center: Offset, radius: Float, color: Color) {
+    drawPath(diamondPath(center, radius), color, style = Stroke(1.2.dp.toPx()))
+}
+
+private fun DrawScope.drawTriangle(center: Offset, radius: Float, color: Color) {
+    drawPath(trianglePath(center, radius), color)
+}
+
+private fun DrawScope.drawTriangleOutline(center: Offset, radius: Float, color: Color) {
+    drawPath(trianglePath(center, radius), color, style = Stroke(1.2.dp.toPx()))
+}
+
+private fun DrawScope.drawDownTriangle(center: Offset, radius: Float, color: Color) {
     val path = Path().apply {
-        moveTo(center.x, center.y - radius)
-        lineTo(center.x + radius, center.y)
-        lineTo(center.x, center.y + radius)
-        lineTo(center.x - radius, center.y)
+        moveTo(center.x, center.y + radius)
+        lineTo(center.x + radius * 0.9f, center.y - radius * 0.8f)
+        lineTo(center.x - radius * 0.9f, center.y - radius * 0.8f)
         close()
     }
     drawPath(path, color)
 }
 
-private fun DrawScope.drawTriangle(center: Offset, radius: Float, color: Color) {
-    val path = Path().apply {
-        moveTo(center.x, center.y - radius)
-        lineTo(center.x + radius * 0.9f, center.y + radius * 0.8f)
-        lineTo(center.x - radius * 0.9f, center.y + radius * 0.8f)
-        close()
-    }
-    drawPath(path, color)
+private fun DrawScope.drawSquare(center: Offset, radius: Float, color: Color) {
+    drawRect(color, topLeft = Offset(center.x - radius, center.y - radius), size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2))
 }
 
 private fun DrawScope.drawCross(center: Offset, radius: Float, color: Color) {
@@ -346,12 +392,15 @@ fun ActivityLegend(modifier: Modifier = Modifier) {
         listOf(
             ActivityLane.SERVICE to R.string.activity_legend_service,
             ActivityLane.NETWORK to R.string.activity_legend_network,
+            ActivityLane.CONNECTION to R.string.activity_legend_connection,
             ActivityLane.TAILSCALE to R.string.activity_legend_tailscale,
+            ActivityLane.POWER to R.string.activity_legend_power,
             ActivityLane.TELEMETRY to R.string.activity_legend_telemetry,
             ActivityLane.SUBSCRIPTION to R.string.activity_legend_subscription,
             ActivityLane.URLTEST to R.string.activity_legend_urltest,
             ActivityLane.GROUP to R.string.activity_legend_group,
             ActivityLane.VERSION to R.string.activity_legend_version,
+            ActivityLane.SYSTEM to R.string.activity_legend_system,
         )
     FlowRow(
         modifier = modifier.fillMaxWidth(),
@@ -417,7 +466,10 @@ private fun DrawScope.drawLegendMark(
                 Offset(center.x, center.y + 2.2.dp.toPx()),
                 1.dp.toPx(),
             )
-        ActivityLane.GROUP -> drawDiamond(center, 3.4.dp.toPx(), color)
-        ActivityLane.VERSION -> drawTriangle(center, 4.dp.toPx(), color)
+        ActivityLane.GROUP -> drawDiamondOutline(center, 3.4.dp.toPx(), color)
+        ActivityLane.VERSION -> drawTriangleOutline(center, 4.dp.toPx(), color)
+        ActivityLane.CONNECTION -> drawDownTriangle(center, 4.dp.toPx(), color)
+        ActivityLane.POWER -> drawCircle(color, 3.dp.toPx(), center, style = Stroke(1.2.dp.toPx()))
+        ActivityLane.SYSTEM -> drawSquare(center, 3.dp.toPx(), color)
     }
 }

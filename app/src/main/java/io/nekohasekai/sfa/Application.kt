@@ -15,6 +15,7 @@ import androidx.core.content.getSystemService
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.sfa.activity.ActivityLog
+import io.nekohasekai.sfa.activity.ProcessExitRecorder
 import io.nekohasekai.sfa.bg.AppChangeReceiver
 import io.nekohasekai.sfa.bg.CrashReportManager
 import io.nekohasekai.sfa.bg.OOMReportManager
@@ -81,6 +82,7 @@ class Application : Application() {
             }.onFailure {
                 Log.w("Application", "setup libbox: ${it.message}")
             }
+            runCatching { ProcessExitRecorder.recordRecent(this@Application) }
             UpdateProfileWork.reconfigureUpdater()
             HookModuleUpdateNotifier.sync(this@Application)
             TaildropFiles.cleanCache()

@@ -387,6 +387,15 @@ internal object TelemetryRuntime {
                 }
             }
             TelemetrySignals.startNetworkWatch(context)
+            val power = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+            if (power != null) {
+                ActivityLog.recordPower(
+                    context,
+                    doze = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) power.isDeviceIdleMode else false,
+                    powerSave = power.isPowerSaveMode,
+                    interactive = power.isInteractive,
+                )
+            }
             ActivityLog.recordService(context, started = true)
             runCatching {
                 TelemetryEventLog.record(
@@ -846,10 +855,16 @@ internal object TelemetryRuntime {
 
     private fun drainDialAttempts() {
         val context = appContext ?: return
-        if (!TelemetryPreferences.isEnabled(context)) return
+        val telemetryEnabled = TelemetryPreferences.isEnabled(context)
+        val activityEnabled = ActivityPreferences.isEnabled(context)
+        if (!telemetryEnabled && !activityEnabled) return
         val raw = runCatching { Libbox.readDialAttempts() }.getOrNull() ?: return
         val attempts = DialAttemptJson.parse(raw)
         if (attempts.isEmpty()) return
+        if (activityEnabled) {
+            ActivityLog.recordConnectionErrors(context, attempts)
+        }
+        if (!telemetryEnabled) return
         val uplink = TelemetrySignals.currentUplink(context)
         for (attempt in attempts) {
             val fields = LinkedHashMap(attempt)

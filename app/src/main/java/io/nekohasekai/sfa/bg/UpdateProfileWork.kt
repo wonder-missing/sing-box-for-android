@@ -137,6 +137,9 @@ class UpdateProfileWork {
             }
             if (selectedProfileUpdated) {
                 runCatching {
+                    ActivityLog.recordConfigReload(applicationContext, "profile_update")
+                }
+                runCatching {
                     Libbox.newStandaloneCommandClient().serviceReload()
                 }
             }

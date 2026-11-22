@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.bg
 
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.Application
+import io.nekohasekai.sfa.activity.ActivityLog
 import io.nekohasekai.sfa.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,6 +98,9 @@ object CrashReportManager {
         val reports = scanCrashReports()
         _reports.value = reports
         _unreadCount.value = reports.count { !it.isRead }
+        reports.forEach { report ->
+            ActivityLog.recordCrash(Application.application, report.id, report.date.time)
+        }
     }
 
     /** Local reports on disk, newest first. Safe before the list screen was opened. */

@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.activity
 
+import android.app.ApplicationExitInfo
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +55,65 @@ class ActivityLogTest {
         assertEquals(3, events.size)
         assertEquals(2, events.count { it.group == "auto" })
         assertEquals(1, events.count { it.group == "proxy" })
+    }
+
+    @Test
+    fun `connection errors merge inside their five minute bucket`() {
+        val events = mutableListOf<ActivityEvent>()
+        ActivityReducer.add(
+            events,
+            ActivityEvent(
+                ts = now - 4_000,
+                lane = ActivityLane.CONNECTION,
+                type = ActivityTypes.CONNECTION_ERROR,
+                group = "timeout",
+                severity = ActivitySeverity.WARN,
+                obstacle = true,
+                count = 1,
+            ),
+            now,
+        )
+        ActivityReducer.add(
+            events,
+            ActivityEvent(
+                ts = now - 1_000,
+                lane = ActivityLane.CONNECTION,
+                type = ActivityTypes.CONNECTION_ERROR,
+                group = "timeout",
+                severity = ActivitySeverity.ERROR,
+                obstacle = true,
+                count = 2,
+            ),
+            now,
+        )
+
+        assertEquals(1, events.size)
+        assertEquals(3, events.single().count)
+        assertEquals(ActivitySeverity.ERROR, events.single().severity)
+        assertTrue(events.single().obstacle)
+    }
+
+    @Test
+    fun `evidence survives a coalesced merge`() {
+        val first =
+            ActivityEvent(
+                ts = now,
+                lane = ActivityLane.SYSTEM,
+                type = ActivityTypes.CRASH,
+                evidence = ActivityEvidence(ActivityEvidenceKind.CRASH, "report-1"),
+            )
+        val merged = first.merge(first.copy(evidence = null, severity = ActivitySeverity.ERROR))
+
+        assertEquals(ActivityEvidence(ActivityEvidenceKind.CRASH, "report-1"), merged.evidence)
+        assertEquals(ActivitySeverity.ERROR, merged.severity)
+    }
+
+    @Test
+    fun `process exit reasons map to stable names`() {
+        assertEquals("anr", ProcessExitRecorder.reasonName(ApplicationExitInfo.REASON_ANR))
+        assertEquals("low_memory", ProcessExitRecorder.reasonName(ApplicationExitInfo.REASON_LOW_MEMORY))
+        assertEquals("native_crash", ProcessExitRecorder.reasonName(ApplicationExitInfo.REASON_CRASH_NATIVE))
+        assertEquals("reason_999", ProcessExitRecorder.reasonName(999))
     }
 
     @Test

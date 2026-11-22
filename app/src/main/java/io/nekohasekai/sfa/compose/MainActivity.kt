@@ -105,6 +105,7 @@ import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.activity.ActivityLog
 import io.nekohasekai.sfa.bg.BoxService
 import io.nekohasekai.sfa.bg.CrashReportManager
 import io.nekohasekai.sfa.bg.LauncherShortcuts
@@ -391,6 +392,13 @@ class MainActivity :
             if (CrashReportManager.unreadCount.value > 0) {
                 Settings.startedByUser = false
                 Settings.restoreServiceAfterUpdate = false
+                ActivityLog.recordServiceRestore(
+                    app,
+                    "activity",
+                    "blocked_crash",
+                    startedByUser = false,
+                    restoreAfterUpdate = true,
+                )
                 TelemetryEventLog.record(
                     app,
                     "service_restore",
@@ -404,6 +412,13 @@ class MainActivity :
                 AppLog.info("Service restore on launch blocked by unread crash report")
                 return
             }
+            io.nekohasekai.sfa.activity.ActivityLog.recordServiceRestore(
+                app,
+                "activity",
+                "requested",
+                startedByUser = Settings.startedByUser,
+                restoreAfterUpdate = true,
+            )
             TelemetryEventLog.record(
                 app,
                 "service_restore",
@@ -417,6 +432,13 @@ class MainActivity :
             AppLog.info("Service restore requested on launch")
             startService()
         } catch (e: Exception) {
+            io.nekohasekai.sfa.activity.ActivityLog.recordServiceRestore(
+                app,
+                "activity",
+                "failed",
+                startedByUser = Settings.startedByUser,
+                restoreAfterUpdate = true,
+            )
             TelemetryEventLog.record(
                 app,
                 "service_restore",

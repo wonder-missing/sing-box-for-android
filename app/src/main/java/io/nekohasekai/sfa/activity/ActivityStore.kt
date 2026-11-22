@@ -32,6 +32,8 @@ object ActivityLog {
     private var nextId = 1L
     private var dirty = false
     private var persistScheduled = false
+    @Volatile
+    private var lastPowerKey: String? = null
 
     private fun ensureLoadedLocked(context: Context): File {
         file?.let { return it }
@@ -78,6 +80,19 @@ object ActivityLog {
         if (!ActivityPreferences.isEnabled(context)) return
         val app = context.applicationContext
         runCatching { writer.execute { record(app, event) } }
+    }
+
+    /** Records at most once for a stable (type, timestamp, subject) identity. */
+    private fun recordOnce(context: Context, event: ActivityEvent): Boolean {
+        if (!ActivityPreferences.isEnabled(context)) return false
+        val app = context.applicationContext
+        synchronized(lock) {
+            ensureLoadedLocked(app)
+            if (events.any { it.type == event.type && it.ts == event.ts && it.subject == event.subject }) {
+                return false
+            }
+        }
+        return record(app, event)
     }
 
     fun observeCoreLogs(context: Context, lines: List<String>) {
@@ -147,7 +162,7 @@ object ActivityLog {
                 ActivityEvent(
                     ts = if (updated) lastUpdate else firstInstall,
                     lane = ActivityLane.VERSION,
-                    type = if (updated) "app_update" else "app_install",
+                    type = if (updated) ActivityTypes.APP_UPDATE else ActivityTypes.APP_INSTALL,
                     subject = BuildConfig.VERSION_NAME,
                     detail = if (updated) "installed / updated" else "first install",
                 ),
@@ -158,7 +173,7 @@ object ActivityLog {
                 ActivityEvent(
                     ts = lastUpdate,
                     lane = ActivityLane.VERSION,
-                    type = "app_update",
+                    type = ActivityTypes.APP_UPDATE,
                     subject = BuildConfig.VERSION_NAME,
                     detail = "${ActivityPreferences.lastVersionName(app)} → ${BuildConfig.VERSION_NAME}",
                     from = ActivityPreferences.lastVersionName(app).ifBlank { null },
@@ -175,9 +190,73 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.SERVICE,
-                type = if (started) "service_start" else "service_stop",
+                type = if (started) ActivityTypes.SERVICE_START else ActivityTypes.SERVICE_STOP,
                 detail = reason,
+                severity = if (!started && reason != null && reason != "stop") ActivitySeverity.WARN else ActivitySeverity.INFO,
                 obstacle = !started && reason != null && reason != "stop",
+            ),
+        )
+    }
+
+    fun recordServiceAlert(context: Context, alert: String, detail: String? = null) {
+        record(
+            context,
+            ActivityEvent(
+                ts = System.currentTimeMillis(),
+                lane = ActivityLane.SERVICE,
+                type = ActivityTypes.SERVICE_ALERT,
+                subject = alert,
+                detail = detail,
+                severity = ActivitySeverity.ERROR,
+                obstacle = true,
+            ),
+        )
+    }
+
+    fun recordVpnRevoked(context: Context) {
+        record(
+            context,
+            ActivityEvent(
+                ts = System.currentTimeMillis(),
+                lane = ActivityLane.SERVICE,
+                type = ActivityTypes.VPN_REVOKED,
+                severity = ActivitySeverity.ERROR,
+                obstacle = true,
+            ),
+        )
+    }
+
+    fun recordServiceRestore(
+        context: Context,
+        action: String,
+        result: String,
+        startedByUser: Boolean,
+        restoreAfterUpdate: Boolean,
+    ) {
+        val bad = result == "blocked_crash" || result == "failed" || result == "start_failed" || result == "exception"
+        record(
+            context,
+            ActivityEvent(
+                ts = System.currentTimeMillis(),
+                lane = ActivityLane.SERVICE,
+                type = ActivityTypes.SERVICE_RESTORE,
+                subject = result,
+                detail = "action=$action started_by_user=$startedByUser restore_after_update=$restoreAfterUpdate",
+                severity = if (bad) ActivitySeverity.ERROR else ActivitySeverity.INFO,
+                obstacle = bad,
+            ),
+        )
+    }
+
+    fun recordConfigReload(context: Context, reason: String? = null) {
+        record(
+            context,
+            ActivityEvent(
+                ts = System.currentTimeMillis(),
+                lane = ActivityLane.SERVICE,
+                type = ActivityTypes.CONFIG_RELOAD,
+                subject = reason,
+                severity = ActivitySeverity.INFO,
             ),
         )
     }
@@ -188,7 +267,7 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.NETWORK,
-                type = "network_change",
+                type = ActivityTypes.NETWORK_CHANGE,
                 subject = transport,
                 detail =
                     buildString {
@@ -205,7 +284,8 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.NETWORK,
-                type = "network_lost",
+                type = ActivityTypes.NETWORK_LOST,
+                severity = ActivitySeverity.ERROR,
                 obstacle = true,
             ),
         )
@@ -218,15 +298,73 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.TAILSCALE,
-                type = "tailscale_state",
+                type = ActivityTypes.TAILSCALE_STATE,
                 subject = to,
                 detail = "$from → $to",
                 from = from,
                 to = to,
                 ok = to == "Running",
+                severity = if (down) ActivitySeverity.WARN else ActivitySeverity.INFO,
                 obstacle = down,
             ),
         )
+    }
+
+    fun recordPower(context: Context, doze: Boolean, powerSave: Boolean, interactive: Boolean) {
+        val key = "$doze/$powerSave/$interactive"
+        if (key == lastPowerKey) return
+        lastPowerKey = key
+        record(
+            context,
+            ActivityEvent(
+                ts = System.currentTimeMillis(),
+                lane = ActivityLane.POWER,
+                type = ActivityTypes.POWER_STATE,
+                subject = if (doze) "doze" else "awake",
+                detail = "power_save=$powerSave interactive=$interactive",
+            ),
+        )
+    }
+
+    fun recordConnectionErrors(
+        context: Context,
+        attempts: List<Map<String, Any?>>,
+        now: Long = System.currentTimeMillis(),
+    ) {
+        if (attempts.isEmpty()) return
+        data class Agg(var count: Int, var lastOutbound: String?, var cause: String?)
+        val buckets = LinkedHashMap<String, Agg>()
+        for (attempt in attempts) {
+            if (attempt["result"] != "fail") continue
+            val errorClass = attempt["error_class"]?.toString()?.take(32)?.ifBlank { null } ?: "other"
+            val rawTs = (attempt["dial_ts"] as? Number)?.toLong()
+            val ts = rawTs?.takeIf { it in now - ActivityReducer.RETENTION_MS..now + 5 * 60_000L } ?: now
+            val bucket = ts / ActivityReducer.COALESCE_MS * ActivityReducer.COALESCE_MS
+            val key = "$bucket|$errorClass"
+            val agg = buckets.getOrPut(key) { Agg(0, null, null) }
+            agg.count++
+            agg.lastOutbound = attempt["outbound"]?.toString()?.take(80)
+            agg.cause = attempt["cause"]?.toString()?.take(32) ?: attempt["error_class"]?.toString()?.take(32)
+        }
+        for ((key, agg) in buckets) {
+            val parts = key.split('|', limit = 2)
+            val bucket = parts[0].toLongOrNull() ?: now
+            val errorClass = parts.getOrNull(1) ?: "other"
+            record(
+                context,
+                ActivityEvent(
+                    ts = bucket,
+                    lane = ActivityLane.CONNECTION,
+                    type = ActivityTypes.CONNECTION_ERROR,
+                    group = errorClass,
+                    subject = agg.lastOutbound,
+                    detail = agg.cause,
+                    severity = ActivitySeverity.WARN,
+                    obstacle = true,
+                    count = agg.count,
+                ),
+            )
+        }
     }
 
     fun recordTelemetry(
@@ -247,9 +385,10 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.TELEMETRY,
-                type = "telemetry_upload",
+                type = ActivityTypes.TELEMETRY_UPLOAD,
                 detail = detail,
                 ok = ok,
+                severity = if (ok) ActivitySeverity.INFO else ActivitySeverity.WARN,
                 obstacle = !ok,
             ),
         )
@@ -267,13 +406,26 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.SUBSCRIPTION,
-                type = "profile_update",
+                type = ActivityTypes.PROFILE_UPDATE,
                 subject = name,
                 detail = error ?: if (changed) "changed" else "unchanged",
                 ms = ms.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                 ok = error == null,
                 changed = changed,
+                severity = if (error == null) ActivitySeverity.INFO else ActivitySeverity.WARN,
                 obstacle = error != null,
+            ),
+        )
+    }
+
+    fun recordProfileSwitch(context: Context, name: String) {
+        record(
+            context,
+            ActivityEvent(
+                ts = System.currentTimeMillis(),
+                lane = ActivityLane.SUBSCRIPTION,
+                type = ActivityTypes.PROFILE_SWITCH,
+                subject = name,
             ),
         )
     }
@@ -290,12 +442,13 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.URLTEST,
-                type = "urltest",
+                type = ActivityTypes.URLTEST,
                 subject = outbound,
                 group = group,
                 to = outbound,
                 ms = ms,
                 ok = ok,
+                severity = if (ok) ActivitySeverity.INFO else ActivitySeverity.WARN,
                 obstacle = !ok,
             ),
         )
@@ -313,12 +466,13 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.URLTEST,
-                type = "urltest_health",
+                type = ActivityTypes.URLTEST_HEALTH,
                 subject = outbound,
                 group = group,
                 to = outbound,
                 ms = delayMs,
                 ok = up,
+                severity = if (up) ActivitySeverity.INFO else ActivitySeverity.WARN,
                 obstacle = !up,
             ),
         )
@@ -339,7 +493,7 @@ object ActivityLog {
             ActivityEvent(
                 ts = System.currentTimeMillis(),
                 lane = ActivityLane.GROUP,
-                type = "group_switch",
+                type = ActivityTypes.GROUP_SWITCH,
                 subject = group,
                 group = group,
                 from = from,
@@ -348,6 +502,58 @@ object ActivityLog {
                 ms = ms,
                 available = available.takeIf { it > 0 },
                 total = total.takeIf { it > 0 },
+            ),
+        )
+    }
+
+    fun recordCrash(context: Context, id: String, ts: Long, detail: String? = null) {
+        recordOnce(
+            context,
+            ActivityEvent(
+                ts = ts,
+                lane = ActivityLane.SYSTEM,
+                type = ActivityTypes.CRASH,
+                subject = id,
+                detail = detail,
+                severity = ActivitySeverity.ERROR,
+                evidence = ActivityEvidence(ActivityEvidenceKind.CRASH, id),
+                obstacle = true,
+            ),
+        )
+    }
+
+    fun recordOom(context: Context, id: String, ts: Long, detail: String? = null) {
+        recordOnce(
+            context,
+            ActivityEvent(
+                ts = ts,
+                lane = ActivityLane.SYSTEM,
+                type = ActivityTypes.OOM,
+                subject = id,
+                detail = detail,
+                severity = ActivitySeverity.ERROR,
+                evidence = ActivityEvidence(ActivityEvidenceKind.OOM, id),
+                obstacle = true,
+            ),
+        )
+    }
+
+    fun recordProcessExit(
+        context: Context,
+        ts: Long,
+        reason: String,
+        detail: String?,
+    ) {
+        recordOnce(
+            context,
+            ActivityEvent(
+                ts = ts,
+                lane = ActivityLane.SYSTEM,
+                type = ActivityTypes.PROCESS_EXIT,
+                subject = reason,
+                detail = detail,
+                severity = ActivitySeverity.ERROR,
+                obstacle = true,
             ),
         )
     }

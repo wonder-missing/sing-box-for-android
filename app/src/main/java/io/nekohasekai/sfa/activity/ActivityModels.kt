@@ -7,12 +7,64 @@ import kotlinx.serialization.Serializable
 enum class ActivityLane {
     SERVICE,
     NETWORK,
+    CONNECTION,
     TAILSCALE,
+    POWER,
     TELEMETRY,
     SUBSCRIPTION,
     URLTEST,
     GROUP,
     VERSION,
+    SYSTEM,
+}
+
+@Serializable
+enum class ActivitySeverity {
+    INFO,
+    WARN,
+    ERROR,
+}
+
+@Serializable
+enum class ActivityEvidenceKind {
+    CRASH,
+    OOM,
+}
+
+@Serializable
+data class ActivityEvidence(
+    val kind: ActivityEvidenceKind,
+    val id: String,
+)
+
+/** Wire names shared by the store, chart and detail sheet. */
+object ActivityTypes {
+    const val SERVICE_START = "service_start"
+    const val SERVICE_STOP = "service_stop"
+    const val SERVICE_ALERT = "service_alert"
+    const val VPN_REVOKED = "vpn_revoked"
+    const val SERVICE_RESTORE = "service_restore"
+    const val CONFIG_RELOAD = "config_reload"
+
+    const val NETWORK_CHANGE = "network_change"
+    const val NETWORK_LOST = "network_lost"
+    const val CONNECTION_ERROR = "connection_error"
+
+    const val TAILSCALE_STATE = "tailscale_state"
+    const val POWER_STATE = "power_state"
+
+    const val TELEMETRY_UPLOAD = "telemetry_upload"
+    const val PROFILE_UPDATE = "profile_update"
+    const val PROFILE_SWITCH = "profile_switch"
+    const val URLTEST = "urltest"
+    const val URLTEST_HEALTH = "urltest_health"
+    const val GROUP_SWITCH = "group_switch"
+    const val APP_INSTALL = "app_install"
+    const val APP_UPDATE = "app_update"
+
+    const val CRASH = "crash"
+    const val OOM = "oom"
+    const val PROCESS_EXIT = "process_exit"
 }
 
 /**
@@ -38,6 +90,8 @@ data class ActivityEvent(
     val total: Int? = null,
     val ok: Boolean? = null,
     val changed: Boolean? = null,
+    val severity: ActivitySeverity = ActivitySeverity.INFO,
+    val evidence: ActivityEvidence? = null,
     val obstacle: Boolean = false,
     val count: Int = 1,
 ) {
@@ -49,6 +103,8 @@ data class ActivityEvent(
             else -> true
         },
         changed = if (changed == true || other.changed == true) true else changed ?: other.changed,
+        severity = if (other.severity.ordinal > severity.ordinal) other.severity else severity,
+        evidence = other.evidence ?: evidence,
         obstacle = obstacle || other.obstacle,
         ms = other.ms ?: ms,
         detail = other.detail ?: detail,
@@ -67,11 +123,12 @@ internal object ActivityReducer {
 
     fun add(events: MutableList<ActivityEvent>, event: ActivityEvent, now: Long) {
         prune(events, now)
-        if (event.lane == ActivityLane.TELEMETRY || event.lane == ActivityLane.URLTEST) {
+        if (isCoalescible(event)) {
             val bucket = event.ts / COALESCE_MS
             val index =
                 events.indexOfLast {
-                    it.lane == event.lane &&
+                    isCoalescible(it) &&
+                        it.lane == event.lane &&
                         it.type == event.type &&
                         it.group == event.group &&
                         it.ts / COALESCE_MS == bucket
@@ -96,4 +153,9 @@ internal object ActivityReducer {
 
     fun window(events: List<ActivityEvent>, start: Long, end: Long): List<ActivityEvent> =
         events.filter { it.ts in start..end }.sortedBy { it.ts }
+
+    private fun isCoalescible(event: ActivityEvent): Boolean =
+        event.lane == ActivityLane.TELEMETRY ||
+            (event.lane == ActivityLane.URLTEST && event.type == ActivityTypes.URLTEST) ||
+            (event.lane == ActivityLane.CONNECTION && event.type == ActivityTypes.CONNECTION_ERROR)
 }

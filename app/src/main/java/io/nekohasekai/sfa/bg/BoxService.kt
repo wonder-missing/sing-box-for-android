@@ -28,6 +28,7 @@ import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.activity.ActivityLog
 import io.nekohasekai.sfa.compose.MainActivity
 import io.nekohasekai.sfa.constant.Action
 import io.nekohasekai.sfa.constant.Alert
@@ -107,10 +108,15 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                         stopService()
                     }
 
-                    PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
+                    PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED,
+                    PowerManager.ACTION_POWER_SAVE_MODE_CHANGED,
+                    Intent.ACTION_SCREEN_ON,
+                    Intent.ACTION_SCREEN_OFF,
+                    -> {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             serviceUpdateIdleMode()
                         }
+                        recordPowerState()
                     }
                 }
             }
@@ -219,6 +225,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     suspend fun serviceReload0() {
+        runCatching {
+            ActivityLog.recordConfigReload(service, "service_reload")
+        }
         val selectedProfileId = Settings.selectedProfile
         if (selectedProfileId == -1L) {
             stopAndAlert(Alert.EmptyConfiguration)
@@ -292,6 +301,16 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         }
     }
 
+    private fun recordPowerState() {
+        val pm = Application.powerManager
+        ActivityLog.recordPower(
+            service,
+            doze = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pm.isDeviceIdleMode else false,
+            powerSave = pm.isPowerSaveMode,
+            interactive = pm.isInteractive,
+        )
+    }
+
     @OptIn(DelicateCoroutinesApi::class)
     private fun stopService() {
         if (status.value != Status.Started) return
@@ -345,6 +364,13 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
+        runCatching {
+            ActivityLog.recordServiceAlert(
+                service,
+                type.name,
+                message?.let { io.nekohasekai.sfa.telemetry.TelemetryEvents.scrub(it).take(120) },
+            )
+        }
         runCatching {
             io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(
                 service,
@@ -401,6 +427,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 receiver,
                 IntentFilter().apply {
                     addAction(Action.SERVICE_CLOSE)
+                    addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+                    addAction(Intent.ACTION_SCREEN_ON)
+                    addAction(Intent.ACTION_SCREEN_OFF)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
                     }
@@ -442,6 +471,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     internal fun onRevoke() {
+        runCatching { ActivityLog.recordVpnRevoked(service) }
         runCatching { io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(service, "vpn_revoked") }
         stopService()
     }

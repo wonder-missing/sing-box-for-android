@@ -306,6 +306,7 @@ class DashboardViewModel :
                 val profile = ProfileManager.get(profileId) ?: return@launch
 
                 Settings.selectedProfile = profileId
+                ActivityLog.recordProfileSwitch(Application.application, profile.name)
                 applySelectedProfile()
 
                 withContext(Dispatchers.Main) {

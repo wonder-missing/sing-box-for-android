@@ -65,7 +65,10 @@ private const val HOUR_MS = 60L * 60L * 1_000L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ActivityScreen(onBack: () -> Unit) {
+fun ActivityScreen(
+    onBack: () -> Unit,
+    onOpenEvidence: (ActivityEvidence) -> Unit = {},
+) {
     val context = LocalContext.current
     var anchorNow by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
     var rangeStart by rememberSaveable { mutableStateOf(DEFAULT_START_HOUR) }
@@ -90,7 +93,7 @@ fun ActivityScreen(onBack: () -> Unit) {
             RangeSliderState(
                 activeRangeStart = DEFAULT_START_HOUR,
                 activeRangeEnd = DEFAULT_END_HOUR,
-                steps = 47,
+                steps = 0,
                 valueRange = 0f..RETENTION_HOURS,
             )
         }
@@ -121,6 +124,15 @@ fun ActivityScreen(onBack: () -> Unit) {
             events = loaded.second
             delay(30_000)
         }
+    }
+
+    fun focusAround(event: ActivityEvent) {
+        val focusStart = (event.ts - 15L * 60_000L).coerceAtLeast(retentionStart)
+        val focusEnd = (event.ts + 15L * 60_000L).coerceAtMost(anchorNow)
+        val safeEnd = maxOf(focusEnd, focusStart + 30L * 60_000L)
+        rangeStart = ((focusStart - retentionStart).toFloat() / HOUR_MS).coerceIn(0f, RETENTION_HOURS)
+        rangeEnd = ((safeEnd - retentionStart).toFloat() / HOUR_MS).coerceIn(0f, RETENTION_HOURS)
+        selected = null
     }
 
     OverrideTopBar {
@@ -260,9 +272,28 @@ fun ActivityScreen(onBack: () -> Unit) {
         }
     }
 
+    var nearbyCount by remember { mutableStateOf(0) }
+    LaunchedEffect(selected?.id) {
+        val current = selected ?: return@LaunchedEffect
+        nearbyCount =
+            withContext(Dispatchers.IO) {
+                ActivityLog.snapshot(context, current.ts + 10L * 60_000L, 20L * 60_000L)
+                    .count { it.id != current.id }
+            }
+    }
+
     if (selected != null) {
+        val current = selected!!
         ModalBottomSheet(onDismissRequest = { selected = null }) {
-            ActivityDetailContent(selected!!)
+            ActivityDetailContent(
+                event = current,
+                nearbyCount = nearbyCount,
+                onFocus = { focusAround(current) },
+                onOpenEvidence = {
+                    selected = null
+                    onOpenEvidence(it)
+                },
+            )
         }
     }
 
@@ -300,6 +331,7 @@ private fun ActivitySummary(events: List<ActivityEvent>) {
     val changed = events.count { it.lane == ActivityLane.SUBSCRIPTION && it.changed == true }
     val urlTest = events.count { it.lane == ActivityLane.URLTEST }
     val group = events.count { it.lane == ActivityLane.GROUP }
+    val connection = events.filter { it.lane == ActivityLane.CONNECTION }.sumOf { it.count }
     val obstacles = events.count { it.obstacle }
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
@@ -311,6 +343,7 @@ private fun ActivitySummary(events: List<ActivityEvent>) {
         ActivitySummaryChip(stringResource(R.string.activity_summary_subscription, subscription, changed))
         ActivitySummaryChip(stringResource(R.string.activity_summary_urltest, urlTest))
         ActivitySummaryChip(stringResource(R.string.activity_summary_group, group))
+        ActivitySummaryChip(stringResource(R.string.activity_summary_connection, connection))
         ActivitySummaryChip(stringResource(R.string.activity_summary_obstacle, obstacles))
     }
 }
@@ -331,7 +364,12 @@ private fun ActivitySummaryChip(text: String) {
 }
 
 @Composable
-private fun ActivityDetailContent(event: ActivityEvent) {
+private fun ActivityDetailContent(
+    event: ActivityEvent,
+    nearbyCount: Int,
+    onFocus: () -> Unit,
+    onOpenEvidence: (ActivityEvidence) -> Unit,
+) {
     val format = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
     Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
         Text(
@@ -360,7 +398,26 @@ private fun ActivityDetailContent(event: ActivityEvent) {
             DetailRow(stringResource(R.string.activity_detail_count), event.count.toString())
         }
         event.detail?.let { DetailRow(stringResource(R.string.activity_detail_note), it) }
-        Spacer(Modifier.height(16.dp))
+        if (nearbyCount > 0) {
+            Text(
+                text = stringResource(R.string.activity_detail_nearby, nearbyCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onFocus) {
+                Text(stringResource(R.string.activity_detail_focus))
+            }
+            event.evidence?.let { evidence ->
+                TextButton(onClick = { onOpenEvidence(evidence) }) {
+                    Text(stringResource(R.string.activity_detail_open_report))
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -384,36 +441,46 @@ private fun DetailRow(label: String, value: String) {
 @Composable
 private fun activityEventTitle(event: ActivityEvent): String =
     when (event.type) {
-        "service_start" -> stringResource(R.string.activity_event_service_start)
-        "service_stop" -> stringResource(R.string.activity_event_service_stop)
-        "network_change" ->
+        ActivityTypes.SERVICE_START -> stringResource(R.string.activity_event_service_start)
+        ActivityTypes.SERVICE_STOP -> stringResource(R.string.activity_event_service_stop)
+        ActivityTypes.SERVICE_ALERT -> stringResource(R.string.activity_event_service_alert, event.subject.orEmpty())
+        ActivityTypes.VPN_REVOKED -> stringResource(R.string.activity_event_vpn_revoked)
+        ActivityTypes.SERVICE_RESTORE -> stringResource(R.string.activity_event_service_restore, event.subject.orEmpty())
+        ActivityTypes.CONFIG_RELOAD -> stringResource(R.string.activity_event_config_reload)
+        ActivityTypes.NETWORK_CHANGE ->
             stringResource(
                 R.string.activity_event_network,
                 event.subject ?: stringResource(R.string.activity_legend_network),
             )
-        "network_lost" -> stringResource(R.string.activity_event_network_lost)
-        "tailscale_state" ->
+        ActivityTypes.NETWORK_LOST -> stringResource(R.string.activity_event_network_lost)
+        ActivityTypes.CONNECTION_ERROR -> stringResource(R.string.activity_event_connection_error)
+        ActivityTypes.TAILSCALE_STATE ->
             stringResource(
                 R.string.activity_event_tailscale,
                 event.subject ?: stringResource(R.string.activity_legend_tailscale),
             )
-        "telemetry_upload" -> stringResource(R.string.activity_event_telemetry)
-        "profile_update" ->
+        ActivityTypes.POWER_STATE -> stringResource(R.string.activity_event_power, event.subject.orEmpty())
+        ActivityTypes.TELEMETRY_UPLOAD -> stringResource(R.string.activity_event_telemetry)
+        ActivityTypes.PROFILE_UPDATE ->
             stringResource(
                 R.string.activity_event_subscription,
                 event.subject ?: stringResource(R.string.activity_legend_subscription),
             )
-        "urltest", "urltest_health" ->
+        ActivityTypes.PROFILE_SWITCH -> stringResource(R.string.activity_event_profile_switch, event.subject.orEmpty())
+        ActivityTypes.URLTEST, ActivityTypes.URLTEST_HEALTH ->
             stringResource(
                 R.string.activity_event_urltest,
                 event.group ?: event.subject ?: stringResource(R.string.activity_legend_urltest),
             )
-        "group_switch" ->
+        ActivityTypes.GROUP_SWITCH ->
             stringResource(
                 R.string.activity_event_group,
                 event.group ?: event.subject ?: stringResource(R.string.activity_legend_group),
             )
-        "app_install" -> stringResource(R.string.activity_event_install, event.subject.orEmpty())
-        "app_update" -> stringResource(R.string.activity_event_update, event.subject.orEmpty())
+        ActivityTypes.APP_INSTALL -> stringResource(R.string.activity_event_install, event.subject.orEmpty())
+        ActivityTypes.APP_UPDATE -> stringResource(R.string.activity_event_update, event.subject.orEmpty())
+        ActivityTypes.CRASH -> stringResource(R.string.activity_event_crash)
+        ActivityTypes.OOM -> stringResource(R.string.activity_event_oom)
+        ActivityTypes.PROCESS_EXIT -> stringResource(R.string.activity_event_process_exit, event.subject.orEmpty())
         else -> event.type
     }
