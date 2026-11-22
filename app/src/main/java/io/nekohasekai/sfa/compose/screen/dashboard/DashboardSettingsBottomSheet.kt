@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.outlined.Article
+import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cable
 import androidx.compose.material.icons.outlined.Download
@@ -389,6 +390,7 @@ fun DashboardItemCard(
                     CardGroup.ClashMode -> Icons.Outlined.Route
                     CardGroup.SystemProxy -> Icons.Outlined.SettingsEthernet
                     CardGroup.Profiles -> Icons.Outlined.Person
+                    CardGroup.Activity -> Icons.Outlined.Timeline
                     CardGroup.Logs -> Icons.Outlined.Article
                 },
                 contentDescription = null,
@@ -421,6 +423,7 @@ fun DashboardItemCard(
                         CardGroup.ClashMode -> stringResource(R.string.clash_mode)
                         CardGroup.SystemProxy -> stringResource(R.string.system_proxy)
                         CardGroup.Profiles -> stringResource(R.string.title_configuration)
+                        CardGroup.Activity -> stringResource(R.string.activity_title)
                         CardGroup.Logs -> stringResource(R.string.title_log)
                     },
                     style = MaterialTheme.typography.titleMedium,

@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.PowerManager
+import io.nekohasekai.sfa.activity.ActivityLog
 
 /**
  * Cheap, privacy-safe device signals for telemetry events: default network
@@ -111,6 +112,7 @@ internal object TelemetrySignals {
                 val key = "${uplink.networkId}/${uplink.validated}/${uplink.metered}"
                 if (key == lastNetwork) return
                 lastNetwork = key
+                ActivityLog.recordNetwork(app, uplink.transport, uplink.validated, uplink.metered)
                 TelemetryEventLog.record(
                     app,
                     "network_change",
@@ -128,6 +130,7 @@ internal object TelemetrySignals {
                 // A handover will be reported by the next onCapabilitiesChanged.
                 if (currentUplink(app) == null && lastNetwork != null) {
                     lastNetwork = null
+                    ActivityLog.recordNetworkLost(app)
                     TelemetryEventLog.record(app, "network_lost")
                 }
             }

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
+import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
@@ -86,6 +87,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.Application
+import io.nekohasekai.sfa.activity.ActivityPreferences
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.base.UiEvent
@@ -95,6 +97,7 @@ import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.update.DownloadErrorDetails
 import io.nekohasekai.sfa.update.UpdateCheckException
@@ -172,6 +175,7 @@ fun AppSettingsScreen(
 
     var cacheSize by remember { mutableStateOf(0L) }
     var cacheSizeText by remember { mutableStateOf("") }
+    var activityLogEnabled by remember { mutableStateOf(ActivityPreferences.isEnabled(context)) }
 
     fun refreshCacheSize() {
         scope.launch(Dispatchers.IO) {
@@ -603,7 +607,7 @@ fun AppSettingsScreen(
                         },
                         modifier =
                         Modifier
-                            .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+                            .clip(RoundedCornerShape(0.dp))
                             .clickable {
                                 scope.launch(Dispatchers.IO) {
                                     context.cacheDir?.listFiles()?.forEach { it.deleteRecursively() }
@@ -619,6 +623,45 @@ fun AppSettingsScreen(
                         ),
                     )
                 }
+
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            stringResource(R.string.activity_enabled),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            stringResource(R.string.activity_enabled_summary),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Timeline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = activityLogEnabled,
+                            onCheckedChange = { checked ->
+                                activityLogEnabled = checked
+                                ActivityPreferences.setEnabled(context, checked)
+                                TelemetryRuntime.onSettingsChanged(context)
+                            },
+                        )
+                    },
+                    modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)),
+                    colors =
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
+                )
             }
         }
 

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.DeviceHub
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.ui.graphics.vector.ImageVector
 import io.nekohasekai.sfa.R
@@ -23,6 +24,12 @@ sealed class Screen(val route: String, @StringRes val titleRes: Int, val icon: I
         route = "log",
         titleRes = R.string.title_log,
         icon = Icons.AutoMirrored.Default.TextSnippet,
+    )
+
+    object Activity : Screen(
+        route = "activity",
+        titleRes = R.string.activity_title,
+        icon = Icons.Default.Timeline,
     )
 
     object Conductor : Screen(

@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.content.getSystemService
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.SetupOptions
+import io.nekohasekai.sfa.activity.ActivityLog
 import io.nekohasekai.sfa.bg.AppChangeReceiver
 import io.nekohasekai.sfa.bg.CrashReportManager
 import io.nekohasekai.sfa.bg.OOMReportManager
@@ -68,6 +69,7 @@ class Application : Application() {
         installWorkingDir()
         AppLog.initialize(File(filesDir, "logs/app.log"))
         AppLog.info("App started, version ${BuildConfig.VERSION_NAME}")
+        ActivityLog.recordVersionIfNeeded(this)
 
         @Suppress("OPT_IN_USAGE")
         GlobalScope.launch(Dispatchers.IO) {

@@ -1,0 +1,368 @@
+package io.nekohasekai.sfa.activity
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
+import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private const val WINDOW_MS = 24L * 60L * 60L * 1_000L
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun ActivityScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var offsetHours by rememberSaveable { mutableStateOf(0f) }
+    var events by remember { mutableStateOf(emptyList<ActivityEvent>()) }
+    var selected by remember { mutableStateOf<ActivityEvent?>(null) }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var showClearDialog by remember { mutableStateOf(false) }
+    val scaffoldPadding = LocalScaffoldPadding.current
+    val dayFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
+    val enabled = ActivityPreferences.isEnabled(context)
+    val end = now - (offsetHours * 60f * 60f * 1000f).toLong()
+    val start = end - WINDOW_MS
+
+    LaunchedEffect(offsetHours, enabled) {
+        while (true) {
+            now = System.currentTimeMillis()
+            val currentEnd = now - (offsetHours * 60f * 60f * 1000f).toLong()
+            events =
+                withContext(Dispatchers.IO) {
+                    if (enabled) ActivityLog.snapshot(context, currentEnd, WINDOW_MS) else emptyList()
+                }
+            delay(30_000)
+        }
+    }
+
+    OverrideTopBar {
+        TopAppBar(
+            title = { Text(stringResource(R.string.activity_title)) },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.content_description_back),
+                    )
+                }
+            },
+            actions = {
+                IconButton(onClick = { showClearDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteSweep,
+                        contentDescription = stringResource(R.string.activity_clear),
+                    )
+                }
+            },
+        )
+    }
+
+    Column(
+        modifier =
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .verticalScroll(rememberScrollState())
+            .padding(
+                top = scaffoldPadding.calculateTopPadding() + 8.dp,
+                bottom = scaffoldPadding.calculateBottomPadding() + 16.dp,
+                start = 16.dp,
+                end = 16.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = "${dayFormat.format(Date(start))} — ${dayFormat.format(Date(end))}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text =
+                    if (offsetHours < 0.5f) {
+                        stringResource(R.string.activity_window_now)
+                    } else {
+                        stringResource(R.string.activity_window_hours_ago, offsetHours.toInt())
+                    },
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { offsetHours = 0f }, enabled = offsetHours > 0.5f) {
+                Text(stringResource(R.string.activity_window_reset))
+            }
+        }
+        Slider(
+            value = offsetHours,
+            onValueChange = { offsetHours = it },
+            valueRange = 0f..24f,
+            steps = 23,
+            colors = SliderDefaults.colors(
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+            ),
+        )
+
+        if (!enabled) {
+            Text(
+                text = stringResource(R.string.activity_disabled),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            ActivitySummary(events)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    ActivityLegend()
+                    Spacer(Modifier.height(8.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        ActivityScatterChart(
+                            events = events,
+                            windowStart = start,
+                            windowEnd = end,
+                            onEventTap = { selected = it },
+                            height = 320,
+                        )
+                        if (events.isEmpty()) {
+                            Column(
+                                modifier = Modifier.align(Alignment.Center),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.activity_empty),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = stringResource(R.string.activity_empty_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Text(
+                text = stringResource(R.string.activity_tap_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    if (selected != null) {
+        ModalBottomSheet(onDismissRequest = { selected = null }) {
+            ActivityDetailContent(selected!!)
+        }
+    }
+
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text(stringResource(R.string.activity_clear)) },
+            text = { Text(stringResource(R.string.activity_clear_confirm)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearDialog = false
+                        ActivityLog.clear(context)
+                        events = emptyList()
+                    },
+                ) {
+                    Text(stringResource(R.string.activity_clear))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ActivitySummary(events: List<ActivityEvent>) {
+    val service = events.count { it.lane == ActivityLane.SERVICE }
+    val network = events.count { it.lane == ActivityLane.NETWORK }
+    val subscription = events.count { it.lane == ActivityLane.SUBSCRIPTION }
+    val changed = events.count { it.lane == ActivityLane.SUBSCRIPTION && it.changed == true }
+    val urlTest = events.count { it.lane == ActivityLane.URLTEST }
+    val group = events.count { it.lane == ActivityLane.GROUP }
+    val obstacles = events.count { it.obstacle }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ActivitySummaryChip(stringResource(R.string.activity_summary_service, service))
+        ActivitySummaryChip(stringResource(R.string.activity_summary_network, network))
+        ActivitySummaryChip(stringResource(R.string.activity_summary_subscription, subscription, changed))
+        ActivitySummaryChip(stringResource(R.string.activity_summary_urltest, urlTest))
+        ActivitySummaryChip(stringResource(R.string.activity_summary_group, group))
+        ActivitySummaryChip(stringResource(R.string.activity_summary_obstacle, obstacles))
+    }
+}
+
+@Composable
+private fun ActivitySummaryChip(text: String) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun ActivityDetailContent(event: ActivityEvent) {
+    val format = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
+    Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+        Text(
+            text = activityEventTitle(event),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = format.format(Date(event.ts)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        event.group?.let { DetailRow(stringResource(R.string.activity_detail_group), it) }
+        event.from?.let { DetailRow(stringResource(R.string.activity_detail_from), it) }
+        event.to?.let { DetailRow(stringResource(R.string.activity_detail_to), it) }
+        event.reason?.let { DetailRow(stringResource(R.string.activity_detail_reason), it) }
+        event.ms?.let { DetailRow(stringResource(R.string.activity_detail_delay), "$it ms") }
+        if (event.available != null && event.total != null) {
+            DetailRow(
+                stringResource(R.string.activity_detail_available),
+                "${event.available} / ${event.total}",
+            )
+        }
+        if (event.count > 1) {
+            DetailRow(stringResource(R.string.activity_detail_count), event.count.toString())
+        }
+        event.detail?.let { DetailRow(stringResource(R.string.activity_detail_note), it) }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun activityEventTitle(event: ActivityEvent): String =
+    when (event.type) {
+        "service_start" -> stringResource(R.string.activity_event_service_start)
+        "service_stop" -> stringResource(R.string.activity_event_service_stop)
+        "network_change" ->
+            stringResource(
+                R.string.activity_event_network,
+                event.subject ?: stringResource(R.string.activity_legend_network),
+            )
+        "network_lost" -> stringResource(R.string.activity_event_network_lost)
+        "tailscale_state" ->
+            stringResource(
+                R.string.activity_event_tailscale,
+                event.subject ?: stringResource(R.string.activity_legend_tailscale),
+            )
+        "telemetry_upload" -> stringResource(R.string.activity_event_telemetry)
+        "profile_update" ->
+            stringResource(
+                R.string.activity_event_subscription,
+                event.subject ?: stringResource(R.string.activity_legend_subscription),
+            )
+        "urltest", "urltest_health" ->
+            stringResource(
+                R.string.activity_event_urltest,
+                event.group ?: event.subject ?: stringResource(R.string.activity_legend_urltest),
+            )
+        "group_switch" ->
+            stringResource(
+                R.string.activity_event_group,
+                event.group ?: event.subject ?: stringResource(R.string.activity_legend_group),
+            )
+        "app_install" -> stringResource(R.string.activity_event_install, event.subject.orEmpty())
+        "app_update" -> stringResource(R.string.activity_event_update, event.subject.orEmpty())
+        else -> event.type
+    }

@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.activity.ActivityLog
 import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
@@ -256,11 +257,13 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
 
         if (profile.typed.type != TypedProfile.Type.Remote) return
 
+        val startedAt = System.currentTimeMillis()
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isUpdating = true) }
 
             try {
                 var selectedProfileUpdated = false
+                var contentChanged = false
 
                 // Fetch remote config
                 val content = HTTPClient().use { it.getString(profile.typed.remoteURL) }
@@ -270,6 +273,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 val file = File(profile.typed.path)
                 if (!file.exists() || file.readText() != content) {
                     file.writeText(content)
+                    contentChanged = true
                     if (profile.id == Settings.selectedProfile) {
                         selectedProfileUpdated = true
                     }
@@ -279,6 +283,13 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 profile.typed.lastUpdated = Date()
                 ProfileManager.update(profile)
                 AppLog.info("Profile updated: ${profile.name}")
+                ActivityLog.recordProfileUpdate(
+                    getApplication<Application>(),
+                    profile.name,
+                    contentChanged,
+                    System.currentTimeMillis() - startedAt,
+                    null,
+                )
 
                 // Update UI state with success indicator
                 _uiState.update {
@@ -307,6 +318,13 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 }
             } catch (e: Exception) {
                 AppLog.warning("Profile update failed: ${profile.name}: ${e.javaClass.simpleName}")
+                ActivityLog.recordProfileUpdate(
+                    getApplication<Application>(),
+                    profile.name,
+                    false,
+                    System.currentTimeMillis() - startedAt,
+                    e.javaClass.simpleName,
+                )
                 _uiState.update {
                     it.copy(
                         isUpdating = false,

@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.Application
+import io.nekohasekai.sfa.activity.ActivityLog
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
@@ -99,12 +100,26 @@ class UpdateProfileWork {
                     profile.typed.lastUpdated = Date()
                     ProfileManager.update(profile)
                     AppLog.info("Profile updated: ${profile.name}")
+                    ActivityLog.recordProfileUpdate(
+                        applicationContext,
+                        profile.name,
+                        changed,
+                        System.currentTimeMillis() - updateStarted,
+                        null,
+                    )
                     if (profile.typed.refreshRemoteLastModified()) {
                         ProfileManager.update(profile)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "update profile ${profile.name}", e)
                     AppLog.warning("Profile update failed: ${profile.name}: ${e.javaClass.simpleName}")
+                    ActivityLog.recordProfileUpdate(
+                        applicationContext,
+                        profile.name,
+                        false,
+                        System.currentTimeMillis() - updateStarted,
+                        e.javaClass.simpleName,
+                    )
                     runCatching {
                         io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(
                             applicationContext,

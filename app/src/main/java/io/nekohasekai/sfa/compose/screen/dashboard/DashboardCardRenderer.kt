@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import io.nekohasekai.sfa.activity.ActivityCard
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.screen.log.LogEntryData
 import io.nekohasekai.sfa.constant.Status
@@ -39,6 +40,7 @@ fun DashboardCardRenderer(
     commandClient: CommandClient? = null,
     recentLogs: StateFlow<List<LogEntryData>>,
     onOpenLogs: () -> Unit,
+    onOpenActivity: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when (cardGroup) {
@@ -127,6 +129,13 @@ fun DashboardCardRenderer(
                 onShowProfilePickerSheet = onShowProfilePickerSheet,
                 onHideProfilePickerSheet = onHideProfilePickerSheet,
                 onOpenNewProfile = onOpenNewProfile,
+            )
+        }
+
+        CardGroup.Activity -> {
+            ActivityCard(
+                onOpen = onOpenActivity,
+                modifier = modifier,
             )
         }
 

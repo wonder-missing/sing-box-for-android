@@ -6,6 +6,7 @@ import io.nekohasekai.libbox.LogEntry
 import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.sfa.Application
+import io.nekohasekai.sfa.activity.ActivityLog
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.BoxService
 import io.nekohasekai.sfa.compose.base.BaseViewModel
@@ -52,6 +53,7 @@ enum class CardGroup(val pairGroup: CardPairGroup? = null) {
     Connections(CardPairGroup.Statistics),
     SystemProxy,
     Profiles,
+    Activity,
     Logs,
 }
 
@@ -108,6 +110,7 @@ data class DashboardUiState(
             CardGroup.Connections,
             CardGroup.SystemProxy,
             CardGroup.Profiles,
+            CardGroup.Activity,
             CardGroup.Logs,
         ),
     val cardOrder: List<CardGroup> =
@@ -119,6 +122,7 @@ data class DashboardUiState(
             CardGroup.SystemProxy,
             CardGroup.ClashMode,
             CardGroup.Profiles,
+            CardGroup.Activity,
             CardGroup.Logs,
         ),
     val showCardSettingsDialog: Boolean = false,
@@ -368,6 +372,7 @@ class DashboardViewModel :
     fun updateProfile(profile: Profile) {
         if (profile.typed.type != TypedProfile.Type.Remote) return
 
+        val startedAt = System.currentTimeMillis()
         viewModelScope.launch(Dispatchers.IO) {
             // Set updating state
             withContext(Dispatchers.Main) {
@@ -391,6 +396,13 @@ class DashboardViewModel :
                 profile.typed.lastUpdated = Date()
                 ProfileManager.update(profile)
                 AppLog.info("Profile updated: ${profile.name}")
+                ActivityLog.recordProfileUpdate(
+                    Application.application,
+                    profile.name,
+                    contentChanged,
+                    System.currentTimeMillis() - startedAt,
+                    null,
+                )
 
                 if (contentChanged && profile.id == Settings.selectedProfile) {
                     try {
@@ -420,6 +432,13 @@ class DashboardViewModel :
                 }
             } catch (e: Exception) {
                 AppLog.warning("Profile update failed: ${profile.name}: ${e.javaClass.simpleName}")
+                ActivityLog.recordProfileUpdate(
+                    Application.application,
+                    profile.name,
+                    false,
+                    System.currentTimeMillis() - startedAt,
+                    e.javaClass.simpleName,
+                )
                 sendErrorMessage(Application.application.getString(R.string.failed_update_profile, e.message))
                 // Clear updating state on error
                 withContext(Dispatchers.Main) {
@@ -776,6 +795,7 @@ class DashboardViewModel :
         CardGroup.SystemProxy,
         CardGroup.ClashMode,
         CardGroup.Profiles,
+        CardGroup.Activity,
         CardGroup.Logs,
     )
 
@@ -800,6 +820,11 @@ class DashboardViewModel :
             val newItems = allItems - savedItems
 
             order.addAll(newItems)
+            if (CardGroup.Activity in newItems) {
+                order.remove(CardGroup.Activity)
+                val logsIndex = order.indexOf(CardGroup.Logs)
+                order.add(if (logsIndex >= 0) logsIndex else order.size, CardGroup.Activity)
+            }
             order
         } catch (e: JSONException) {
             getDefaultItemOrder()

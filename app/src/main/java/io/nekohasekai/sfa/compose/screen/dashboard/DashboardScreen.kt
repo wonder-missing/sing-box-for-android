@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.activity.ActivityPreferences
 import io.nekohasekai.sfa.compose.component.RemoteControlMenuItems
 import io.nekohasekai.sfa.compose.component.rememberRemoteServers
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
@@ -55,6 +56,7 @@ fun DashboardScreen(
     showStatusBar: Boolean = false,
     onOpenNewProfile: (NewProfileArgs) -> Unit = {},
     onOpenLogs: () -> Unit = {},
+    onOpenActivity: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -168,11 +170,13 @@ fun DashboardScreen(
                         isRemote ->
                             cardGroup != CardGroup.Profiles &&
                                 cardGroup != CardGroup.SystemProxy &&
+                                cardGroup != CardGroup.Activity &&
                                 serviceRunning &&
                                 isCardAvailableWhenServiceRunning(cardGroup, uiState)
 
                         cardGroup == CardGroup.Profiles -> true // Profiles card is always available
                         cardGroup == CardGroup.Logs -> true // Logs preview is a stable entry
+                        cardGroup == CardGroup.Activity -> ActivityPreferences.isEnabled(context)
                         else -> serviceRunning && isCardAvailableWhenServiceRunning(cardGroup, uiState)
                     }
                 }.toSet()
@@ -220,6 +224,7 @@ fun DashboardScreen(
                                 commandClient = viewModel.commandClient,
                                 recentLogs = viewModel.recentLogs,
                                 onOpenLogs = onOpenLogs,
+                                onOpenActivity = onOpenActivity,
                                 modifier =
                                 Modifier
                                     .weight(1f)
@@ -259,6 +264,7 @@ fun DashboardScreen(
                             commandClient = viewModel.commandClient,
                             recentLogs = viewModel.recentLogs,
                             onOpenLogs = onOpenLogs,
+                            onOpenActivity = onOpenActivity,
                         )
                     }
                 }
@@ -319,5 +325,6 @@ fun isCardAvailableWhenServiceRunning(cardGroup: CardGroup, uiState: DashboardUi
     CardGroup.Connections -> uiState.trafficVisible
     CardGroup.SystemProxy -> uiState.systemProxyVisible
     CardGroup.Profiles -> true // This shouldn't be called for Profiles, but return true for safety
+    CardGroup.Activity -> true
     CardGroup.Logs -> true
 }

@@ -9,6 +9,8 @@ import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogEntry
 import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.sfa.BuildConfig
+import io.nekohasekai.sfa.activity.ActivityLog
+import io.nekohasekai.sfa.activity.ActivityPreferences
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.utils.CommandClient
 import kotlinx.coroutines.CancellationException
@@ -219,6 +221,9 @@ internal object TelemetryRuntime {
         override fun appendLogs(message: List<LogEntry>) {
             if (!attached) return
             val context = appContext ?: return
+            if (ActivityPreferences.isEnabled(context)) {
+                ActivityLog.observeCoreLogs(context, message.mapNotNull { it.message })
+            }
             if (!uploadReady) return
             val receivedAt = System.currentTimeMillis()
             val lines = message.mapNotNull { entry ->
@@ -258,9 +263,10 @@ internal object TelemetryRuntime {
             // query channel. Any conversion error is telemetry's problem only.
             if (!attached) return
             val context = appContext ?: return
-            // The Groups stream is hot; skip conversion and diffs entirely when
-            // telemetry cannot upload.
-            if (!uploadReady) return
+            // The Groups stream is hot; when neither telemetry nor the local
+            // activity log needs it, keep the existing early return.
+            val activityEnabled = ActivityPreferences.isEnabled(context)
+            if (!uploadReady && !activityEnabled) return
             val groups = runCatching {
                 newGroups.map { group ->
                     val selected = group.selected
@@ -290,7 +296,19 @@ internal object TelemetryRuntime {
                     }.getOrDefault(emptyMap())
                 }
             for (change in update.changes) {
-                TelemetryEventLog.recordAsync(
+                if (activityEnabled && change.reason != SwitchReason.START) {
+                    ActivityLog.recordGroupSwitch(
+                        context,
+                        change.group,
+                        change.from,
+                        change.to,
+                        change.reason.wireValue,
+                        change.ms,
+                        change.availableCount,
+                        change.itemCount,
+                    )
+                }
+                if (uploadReady) TelemetryEventLog.recordAsync(
                     context,
                     "outbound_selected",
                     buildMap {
@@ -311,7 +329,10 @@ internal object TelemetryRuntime {
             }
             for (health in update.healthChanges) {
                 val summary = healthSummaries[health.group]
-                TelemetryEventLog.recordAsync(
+                if (activityEnabled) {
+                    ActivityLog.recordUrlTestHealth(context, health.group, health.outbound, health.up, health.delayMs)
+                }
+                if (uploadReady) TelemetryEventLog.recordAsync(
                     context,
                     "urltest_health",
                     buildMap {
@@ -330,7 +351,7 @@ internal object TelemetryRuntime {
         }
 
         override fun writeConnectionEvents(events: ConnectionEvents) {
-            if (!attached) return
+            if (!attached || !uploadReady) return
             val observedAt = System.currentTimeMillis()
             val samples = runCatching { events.collectSamples() }.getOrDefault(emptyList())
             for (sample in samples) {
@@ -366,6 +387,7 @@ internal object TelemetryRuntime {
                 }
             }
             TelemetrySignals.startNetworkWatch(context)
+            ActivityLog.recordService(context, started = true)
             runCatching {
                 TelemetryEventLog.record(
                     context,
@@ -498,6 +520,7 @@ internal object TelemetryRuntime {
                 runCatching { drainDialAttempts() }
                 runCatching { flushMinutes(includeCurrent = true) }
                 runCatching { TelemetrySignals.stopNetworkWatch(context) }
+                ActivityLog.recordService(context, started = false, reason = reason)
                 runCatching { TelemetryEventLog.record(context, "service_stop", mapOf("reason" to reason)) }
                 if (TelemetryPreferences.canUpload(context)) {
                     runCatching { queue?.append(listOf("INFO[0000] WONDER service stop")) }
@@ -598,7 +621,7 @@ internal object TelemetryRuntime {
         try {
             val context = appContext ?: return
             val client = commandClient ?: return
-            val want = TelemetryPreferences.canUpload(context)
+            val want = TelemetryPreferences.canUpload(context) || ActivityPreferences.isEnabled(context)
             if (want && !collectorConnected && !connectInFlight) {
                 connectInFlight = true
                 suppressDisconnect = true
@@ -635,12 +658,22 @@ internal object TelemetryRuntime {
             FlushContext(context, queue, currentUploader, coreVersion, sessionEpoch, session.current)
         }
         try {
-            uploadContext(
-                flush,
-                reason,
-                finalFlush,
-                if (finalFlush) TelemetryPayload.MAX_STOP_BATCHES else TelemetryPayload.MAX_DRAIN_BATCHES,
-            )
+            val outcome =
+                uploadContext(
+                    flush,
+                    reason,
+                    finalFlush,
+                    if (finalFlush) TelemetryPayload.MAX_STOP_BATCHES else TelemetryPayload.MAX_DRAIN_BATCHES,
+                )
+            if (TelemetryPreferences.isEnabled(flush.context) && (outcome.hadPending || outcome.failure != null)) {
+                ActivityLog.recordTelemetry(
+                    flush.context,
+                    ok = outcome.failure == null && (outcome.batches > 0 || !outcome.hadPending),
+                    hadPending = outcome.hadPending,
+                    lines = outcome.lines,
+                    failure = outcome.failure,
+                )
+            }
             persistIfCurrent(flush)
         } catch (e: CancellationException) {
             throw e

@@ -12,6 +12,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import io.nekohasekai.sfa.activity.ActivityScreen
 import io.nekohasekai.sfa.conductor.ConductorScreen
 import io.nekohasekai.sfa.compose.screen.configuration.NewProfileScreen
 import io.nekohasekai.sfa.compose.screen.connections.ConnectionDetailsRoute
@@ -127,6 +128,7 @@ fun NavHost(
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
                     onOpenLogs = { navController.navigate(Screen.Log.route) },
+                    onOpenActivity = { navController.navigate(Screen.Activity.route) },
                     viewModel = dashboardViewModel,
                 )
             } else {
@@ -136,8 +138,13 @@ fun NavHost(
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
                     onOpenLogs = { navController.navigate(Screen.Log.route) },
+                    onOpenActivity = { navController.navigate(Screen.Activity.route) },
                 )
             }
+        }
+
+        composable(Screen.Activity.route) {
+            ActivityScreen(onBack = { navController.navigateUp() })
         }
 
         composable(Screen.Conductor.route) {
