@@ -1010,6 +1010,7 @@
     <string name="conductor_viewer_toc">Contents</string>
     <string name="conductor_viewer_toc_empty">No headings</string>
 
+    <string name="activity_screen_title">Activity</string>
     <string name="activity_title">Last 24 hours</string>
     <string name="activity_now">Now</string>
     <string name="activity_window_now">Showing the last 24 hours</string>
@@ -1017,10 +1018,15 @@
     <string name="activity_window_reset">Now</string>
     <string name="activity_summary_service">Service %1$d</string>
     <string name="activity_summary_network">Network %1$d</string>
-    <string name="activity_summary_subscription">Subs %1$d / %2$d changed</string>
+    <string name="activity_summary_subscription">Subs %1$d checks · %2$d changed</string>
     <string name="activity_summary_urltest">URLTest %1$d</string>
     <string name="activity_summary_group">Group switches %1$d</string>
     <string name="activity_summary_obstacle">Issues %1$d</string>
+
+    <string name="activity_range_hint">48 h retained · drag both ends</string>
+    <string name="activity_range_reset">Last 24 h</string>
+    <string name="activity_range_start">Start %1$s</string>
+    <string name="activity_range_end">End %1$s</string>
     <string name="activity_summary_events">Events %1$d</string>
     <string name="activity_legend_service">Service</string>
     <string name="activity_legend_network">Network</string>

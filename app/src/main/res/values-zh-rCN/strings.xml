@@ -909,6 +909,7 @@
     <string name="conductor_viewer_toc">目录</string>
     <string name="conductor_viewer_toc_empty">没有标题</string>
 
+    <string name="activity_screen_title">活动</string>
     <string name="activity_title">最近 24 小时</string>
     <string name="activity_now">现在</string>
     <string name="activity_window_now">显示最近 24 小时</string>
@@ -916,10 +917,15 @@
     <string name="activity_window_reset">回到现在</string>
     <string name="activity_summary_service">服务 %1$d</string>
     <string name="activity_summary_network">网络 %1$d</string>
-    <string name="activity_summary_subscription">订阅 %1$d / 变化 %2$d</string>
+    <string name="activity_summary_subscription">订阅检查 %1$d 次 · 变化 %2$d 次</string>
     <string name="activity_summary_urltest">测速 %1$d</string>
     <string name="activity_summary_group">组切换 %1$d</string>
     <string name="activity_summary_obstacle">异常 %1$d</string>
+
+    <string name="activity_range_hint">保留 48 小时 · 拖动两端选择范围</string>
+    <string name="activity_range_reset">最近 24 小时</string>
+    <string name="activity_range_start">开始 %1$s</string>
+    <string name="activity_range_end">截止 %1$s</string>
     <string name="activity_summary_events">活动 %1$d</string>
     <string name="activity_legend_service">服务</string>
     <string name="activity_legend_network">网络</string>

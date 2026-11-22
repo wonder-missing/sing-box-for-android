@@ -15,10 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -95,6 +92,7 @@ fun ActivityScatterChart(
     windowStart: Long,
     windowEnd: Long,
     onEventTap: (ActivityEvent) -> Unit,
+    selectedEventId: Long? = null,
     serviceRunningAtStart: Boolean = false,
     modifier: Modifier = Modifier,
     height: Int = 300,
@@ -115,7 +113,6 @@ fun ActivityScatterChart(
             }
         }
     val labelFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    var selectedId by remember { mutableStateOf<Long?>(null) }
     val laneCount = ActivityLane.entries.size + 1
     val nowLabel = stringResource(R.string.activity_now)
 
@@ -156,7 +153,6 @@ fun ActivityScatterChart(
                     if (hit != null) {
                         val position = hit.position(area, this)
                         if ((position - tap).getDistance() <= 22.dp.toPx()) {
-                            selectedId = hit.event.id
                             onEventTap(hit.event)
                         }
                     }
@@ -206,11 +202,16 @@ fun ActivityScatterChart(
             }
         }
 
-        selectedId?.let { id ->
+        selectedEventId?.let { id ->
             plotPoints.firstOrNull { it.event.id == id }?.let { point ->
                 val position = point.position(size, this)
-                drawCircle(colors.surface, 6.dp.toPx(), position)
-                drawCircle(colors.service, 4.dp.toPx(), position, style = Stroke(1.5.dp.toPx()))
+                // Ring only: the original marker shape must stay readable.
+                drawCircle(
+                    colors.service,
+                    7.dp.toPx(),
+                    position,
+                    style = Stroke(1.5.dp.toPx()),
+                )
             }
         }
 

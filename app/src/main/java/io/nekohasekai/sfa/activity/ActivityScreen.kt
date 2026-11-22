@@ -26,7 +26,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
+import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.RangeSliderState
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,34 +58,61 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private const val WINDOW_MS = 24L * 60L * 60L * 1_000L
+private const val RETENTION_HOURS = 48f
+private const val DEFAULT_START_HOUR = 24f
+private const val DEFAULT_END_HOUR = 48f
+private const val HOUR_MS = 60L * 60L * 1_000L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ActivityScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var offsetHours by rememberSaveable { mutableStateOf(0f) }
+    var anchorNow by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
+    var rangeStart by rememberSaveable { mutableStateOf(DEFAULT_START_HOUR) }
+    var rangeEnd by rememberSaveable { mutableStateOf(DEFAULT_END_HOUR) }
     var events by remember { mutableStateOf(emptyList<ActivityEvent>()) }
     var selected by remember { mutableStateOf<ActivityEvent?>(null) }
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
     var serviceRunningAtStart by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     val scaffoldPadding = LocalScaffoldPadding.current
     val dayFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
     val enabled = ActivityPreferences.isEnabled(context)
-    val end = now - (offsetHours * 60f * 60f * 1000f).toLong()
-    val start = end - WINDOW_MS
+    val retentionStart = anchorNow - (RETENTION_HOURS * HOUR_MS).toLong()
+    val start = retentionStart + (rangeStart * HOUR_MS).toLong()
+    val end = retentionStart + (rangeEnd * HOUR_MS).toLong()
+    val sliderColors =
+        SliderDefaults.colors(
+            activeTickColor = Color.Transparent,
+            inactiveTickColor = Color.Transparent,
+        )
+    val sliderState =
+        remember {
+            RangeSliderState(
+                activeRangeStart = DEFAULT_START_HOUR,
+                activeRangeEnd = DEFAULT_END_HOUR,
+                steps = 47,
+                valueRange = 0f..RETENTION_HOURS,
+            )
+        }
+    LaunchedEffect(sliderState) {
+        snapshotFlow { sliderState.activeRangeStart to sliderState.activeRangeEnd }
+            .collect { (newStart, newEnd) ->
+                rangeStart = newStart
+                rangeEnd = newEnd
+            }
+    }
+    LaunchedEffect(rangeStart, rangeEnd) {
+        if (sliderState.activeRangeStart != rangeStart) sliderState.activeRangeStart = rangeStart
+        if (sliderState.activeRangeEnd != rangeEnd) sliderState.activeRangeEnd = rangeEnd
+    }
 
-    LaunchedEffect(offsetHours, enabled) {
+    LaunchedEffect(rangeStart, rangeEnd, anchorNow, enabled) {
         while (true) {
-            now = System.currentTimeMillis()
-            val currentEnd = now - (offsetHours * 60f * 60f * 1000f).toLong()
             val loaded =
                 withContext(Dispatchers.IO) {
                     if (enabled) {
-                        val start = currentEnd - WINDOW_MS
                         ActivityLog.serviceRunningAt(context, start) to
-                            ActivityLog.snapshot(context, currentEnd, WINDOW_MS)
+                            ActivityLog.snapshot(context, end, end - start)
                     } else {
                         false to emptyList()
                     }
@@ -96,7 +125,7 @@ fun ActivityScreen(onBack: () -> Unit) {
 
     OverrideTopBar {
         TopAppBar(
-            title = { Text(stringResource(R.string.activity_title)) },
+            title = { Text(stringResource(R.string.activity_screen_title)) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(
@@ -130,38 +159,49 @@ fun ActivityScreen(onBack: () -> Unit) {
             ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = "${dayFormat.format(Date(start))} — ${dayFormat.format(Date(end))}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text =
-                    if (offsetHours < 0.5f) {
-                        stringResource(R.string.activity_window_now)
-                    } else {
-                        stringResource(R.string.activity_window_hours_ago, offsetHours.toInt())
-                    },
-                style = MaterialTheme.typography.labelLarge,
+                text = stringResource(R.string.activity_range_hint),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = { offsetHours = 0f }, enabled = offsetHours > 0.5f) {
-                Text(stringResource(R.string.activity_window_reset))
+            TextButton(
+                onClick = {
+                    anchorNow = System.currentTimeMillis()
+                    rangeStart = DEFAULT_START_HOUR
+                    rangeEnd = DEFAULT_END_HOUR
+                },
+            ) {
+                Text(stringResource(R.string.activity_range_reset))
             }
         }
-        Slider(
-            value = offsetHours,
-            onValueChange = { offsetHours = it },
-            valueRange = 0f..24f,
-            steps = 23,
-            colors = SliderDefaults.colors(
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-            ),
+        RangeSlider(
+            state = sliderState,
+            modifier = Modifier.fillMaxWidth(),
+            colors = sliderColors,
+            track = { state ->
+                SliderDefaults.Track(
+                    rangeSliderState = state,
+                    colors = sliderColors,
+                    enabled = true,
+                    drawStopIndicator = {},
+                )
+            },
         )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.activity_range_start, dayFormat.format(Date(start))),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.activity_range_end, dayFormat.format(Date(end))),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         if (!enabled) {
             Text(
@@ -188,6 +228,7 @@ fun ActivityScreen(onBack: () -> Unit) {
                             windowStart = start,
                             windowEnd = end,
                             onEventTap = { selected = it },
+                            selectedEventId = selected?.id,
                             serviceRunningAtStart = serviceRunningAtStart,
                             height = 320,
                         )
