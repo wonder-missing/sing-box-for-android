@@ -55,7 +55,8 @@ General working style follows the owner's global working agreement; project-spec
 - Do not add localized aliases or a build-time multilingual keyword pipeline. Regression prompts live in [`docs/conductor-eval.md`](docs/conductor-eval.md).
 
 ## Release flow
-Default: do not release unless the user explicitly asks. Do not bump `WONDER_BUILD` or create tags as routine close-out; advance the label only for a release. Release is a five-step close-out: check promises, align docs, run full local verification, push, and deploy to the owner's install entry (GitHub release + Feishu notice); report evidence for each.
+Release cadence: batch non-urgent small adjustments on `dev` without a release; ship when a user-facing feature or large behavior change is complete, when the owner needs an APK to use/test it, or when the owner explicitly asks. A completed feature must not sit on `dev` silently: if it is held, say so and list what is batched. Routine small changes do not bump `WONDER_BUILD` or create tags.
+Release is a five-step close-out: check promises, align docs, run full local verification, push, and deploy to the owner's install entry (GitHub release + Feishu notice); report evidence for each.
 Deterministic steps live in [`scripts/release.sh`](scripts/release.sh): `--check` prints the plan, `--watch <tag>` rechecks a published release. It never force-pushes and never moves/deletes a tag.
 1. Set `WONDER_BUILD` to the next unused two-character label. `VERSION_CODE`/`VERSION_NAME` derive from `CORE_VERSION` and `WONDER_BUILD`; change `CORE_VERSION` only for a new upstream core.
 2. Commit, `git push origin dev`, and wait for green Test CI.
