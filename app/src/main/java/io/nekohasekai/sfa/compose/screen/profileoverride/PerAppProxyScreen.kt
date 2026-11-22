@@ -95,7 +95,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -212,7 +214,7 @@ fun PerAppProxyScreen(
                         val progressInt = AtomicInteger()
                         scanPackages.map { packageCache ->
                             async {
-                                if (PerAppProxyScanner.scanChinaPackage(packageCache.info)) {
+                                if (PerAppProxyScanner.scanPackageLimited(packageCache.info)) {
                                     synchronized(found) {
                                         found[packageCache.packageName] = packageCache
                                     }
@@ -1235,7 +1237,11 @@ private fun PerAppProxyMenus(
 }
 
 object PerAppProxyScanner {
-    private const val SCAN_CONCURRENCY = 2
+    // Dex parsing buffers a whole dex in memory. Serialise it: two concurrent
+    // large dex files were enough to OOM a 256 MB heap (wonder.AF crash report).
+    private const val SCAN_CONCURRENCY = 1
+    private val scanGate = Semaphore(SCAN_CONCURRENCY)
+    private val fullScanMutex = Mutex()
 
     private val skipPrefixList =
         listOf(
@@ -1295,31 +1301,27 @@ object PerAppProxyScanner {
         ("(" + chinaAppPrefixList.joinToString("|").replace(".", "\\.") + ").*").toRegex()
     }
 
-    suspend fun scanAllChinaApps(): Set<String> = withContext(Dispatchers.Default) {
-        val packageManagerFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            PackageManager.MATCH_UNINSTALLED_PACKAGES
-        } else {
-            @Suppress("DEPRECATION")
-            PackageManager.GET_UNINSTALLED_PACKAGES
-        }
-        val installedPackages = PackageQueryManager.getInstalledPackages(packageManagerFlags)
-        val chinaApps = mutableSetOf<String>()
-        // Each scan can materialise a dex file and package archive. Bounding
-        // this prevents a large installed-app set from exhausting the heap.
-        val scanGate = Semaphore(SCAN_CONCURRENCY)
-        installedPackages.map { packageInfo ->
-            async {
-                scanGate.withPermit {
-                    if (scanChinaPackage(packageInfo)) {
+    suspend fun scanAllChinaApps(): Set<String> = fullScanMutex.withLock {
+        withContext(Dispatchers.Default) {
+            // Installed apps only: MATCH_UNINSTALLED_PACKAGES made the scanner
+            // walk stale APKs and increased both time and memory pressure.
+            val installedPackages = PackageQueryManager.getInstalledPackages(0)
+            val chinaApps = mutableSetOf<String>()
+            installedPackages.map { packageInfo ->
+                async {
+                    if (scanPackageLimited(packageInfo)) {
                         synchronized(chinaApps) {
                             chinaApps.add(packageInfo.packageName)
                         }
                     }
                 }
-            }
-        }.awaitAll()
-        chinaApps.toSet()
+            }.awaitAll()
+            chinaApps.toSet()
+        }
     }
+
+    suspend fun scanPackageLimited(packageInfo: PackageInfo): Boolean =
+        scanGate.withPermit { scanChinaPackage(packageInfo) }
 
     fun scanChinaPackage(packageInfo: PackageInfo): Boolean {
         val packageName = packageInfo.packageName
@@ -1399,17 +1401,26 @@ object PerAppProxyScanner {
                         Runtime.getRuntime().let { runtime ->
                             runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
                         }
-                    if (packageEntry.size.toLong() * 2L > availableHeap) {
+                    // fromInputStream materialises the dex; 2x was not enough
+                    // when the rest of the app was already near the heap cap.
+                    if (!DexScanBudget.canParse(packageEntry.size.toLong(), availableHeap)) {
                         Log.d(
                             "PerAppProxyScanner",
-                            "Skip $packageName dex=${packageEntry.size} available=$availableHeap",
+                            "Skip $packageName dex=${packageEntry.size} required=${DexScanBudget.requiredHeapFor(packageEntry.size.toLong())} available=$availableHeap",
                         )
                         continue
                     }
-                    val input = it.getInputStream(packageEntry).buffered()
                     val dexFile =
                         try {
-                            DexBackedDexFile.fromInputStream(null, input)
+                            it.getInputStream(packageEntry).buffered().use { input ->
+                                DexBackedDexFile.fromInputStream(null, input)
+                            }
+                        } catch (e: OutOfMemoryError) {
+                            Log.e(
+                                "PerAppProxyScanner",
+                                "OOM reading dex ${packageName}/${packageEntry.name}",
+                            )
+                            return false
                         } catch (e: Exception) {
                             Log.e("PerAppProxyScanner", "Error reading dex file", e)
                             return false
