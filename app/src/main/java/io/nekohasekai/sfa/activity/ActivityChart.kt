@@ -73,7 +73,20 @@ private data class PlotPoint(
     val event: ActivityEvent,
     val x: Float,
     val lane: Int,
+    val axis: Boolean = false,
 )
+
+private const val COALESCE_MS = 5L * 60L * 1_000L
+
+/** Periodic marks represent their five-minute bucket, not the first flush inside it. */
+private fun displayTs(event: ActivityEvent): Long =
+    if (event.lane == ActivityLane.TELEMETRY ||
+        (event.lane == ActivityLane.URLTEST && event.type == "urltest")
+    ) {
+        event.ts / COALESCE_MS * COALESCE_MS
+    } else {
+        event.ts
+    }
 
 private fun ActivityLane.color(colors: ActivityColors): Color = when (this) {
     ActivityLane.SERVICE -> colors.service
@@ -113,7 +126,7 @@ fun ActivityScatterChart(
             }
         }
     val labelFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    val laneCount = ActivityLane.entries.size + 1
+    val laneCount = ActivityLane.entries.size
     val nowLabel = stringResource(R.string.activity_now)
 
     fun PlotPoint.position(size: androidx.compose.ui.geometry.Size, density: Density): Offset = with(density) {
@@ -122,7 +135,8 @@ fun ActivityScatterChart(
         val top = 6.dp.toPx()
         val bottom = if (showAxis) size.height - 22.dp.toPx() else size.height - 6.dp.toPx()
         val laneHeight = (bottom - top) / laneCount
-        Offset(left + x * (right - left), top + (lane + 0.5f) * laneHeight)
+        val y = if (axis) bottom else top + (lane + 0.5f) * laneHeight
+        Offset(left + x * (right - left), y)
     }
 
     val plotPoints =
@@ -130,9 +144,9 @@ fun ActivityScatterChart(
             val span = (windowEnd - windowStart).coerceAtLeast(1L)
             buildList {
                 events.forEach { event ->
-                    val x = ((event.ts - windowStart).toFloat() / span).coerceIn(0f, 1f)
+                    val x = ((displayTs(event) - windowStart).toFloat() / span).coerceIn(0f, 1f)
                     add(PlotPoint(event, x, event.lane.ordinal))
-                    if (event.obstacle) add(PlotPoint(event, x, laneCount - 1))
+                    if (event.obstacle) add(PlotPoint(event, x, -1, axis = true))
                 }
             }
         }
@@ -194,16 +208,17 @@ fun ActivityScatterChart(
         }
 
         events.forEach { event ->
-            val x = xAt(((event.ts - windowStart).toFloat() / (windowEnd - windowStart).toFloat()).coerceIn(0f, 1f))
+            val x = xAt(((displayTs(event) - windowStart).toFloat() / (windowEnd - windowStart).toFloat()).coerceIn(0f, 1f))
             val y = laneY(event.lane.ordinal)
             drawActivityMark(event, Offset(x, y), event.lane, colors)
             if (event.obstacle) {
-                drawCircle(colors.obstacle, 2.6.dp.toPx(), Offset(x, laneY(laneCount - 1)))
+                // Issues are a rug plot on the time axis, not a separate lane.
+                drawDiamond(Offset(x, bottom), 3.2.dp.toPx(), colors.obstacle)
             }
         }
 
         selectedEventId?.let { id ->
-            plotPoints.firstOrNull { it.event.id == id }?.let { point ->
+            plotPoints.filter { it.event.id == id }.forEach { point ->
                 val position = point.position(size, this)
                 // Ring only: the original marker shape must stay readable.
                 drawCircle(
@@ -370,7 +385,7 @@ fun ActivityLegend(modifier: Modifier = Modifier) {
         }
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Canvas(Modifier.size(10.dp)) {
-                drawCircle(colors.obstacle, 3.dp.toPx(), Offset(size.width / 2f, size.height / 2f))
+                drawDiamond(Offset(size.width / 2f, size.height / 2f), 3.2.dp.toPx(), colors.obstacle)
             }
             Spacer(Modifier.width(3.dp))
             Text(
