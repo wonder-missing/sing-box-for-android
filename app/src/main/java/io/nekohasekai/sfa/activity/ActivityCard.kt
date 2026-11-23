@@ -62,7 +62,7 @@ fun ActivityCard(
     val network = events.count { it.lane == ActivityLane.NETWORK }
     val subscription = events.count { it.type == ActivityTypes.PROFILE_UPDATE }
     val changed = events.count { it.type == ActivityTypes.PROFILE_UPDATE && it.changed == true }
-    val group = events.count { it.lane == ActivityLane.GROUP }
+    val group = events.count { it.type == ActivityTypes.GROUP_SWITCH }
     val line =
         listOf(
             stringResource(R.string.activity_summary_service, service),

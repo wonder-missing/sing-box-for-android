@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -232,7 +233,7 @@ fun ActivityScreen(
                 shape = RoundedCornerShape(16.dp),
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    ActivityLegend()
+                    ActivityLegend(showPowerStates = events.any { it.lane == ActivityLane.POWER })
                     Spacer(Modifier.height(8.dp))
                     Box(modifier = Modifier.fillMaxWidth()) {
                         ActivityScatterChart(
@@ -330,7 +331,7 @@ private fun ActivitySummary(events: List<ActivityEvent>) {
     val subscription = events.count { it.type == ActivityTypes.PROFILE_UPDATE }
     val changed = events.count { it.type == ActivityTypes.PROFILE_UPDATE && it.changed == true }
     val urlTest = events.count { it.lane == ActivityLane.URLTEST }
-    val group = events.count { it.lane == ActivityLane.GROUP }
+    val group = events.count { it.type == ActivityTypes.GROUP_SWITCH }
     val connection = events.filter { it.lane == ActivityLane.CONNECTION }.sumOf { it.count }
     val obstacles = events.count { it.obstacle }
     FlowRow(
@@ -371,7 +372,36 @@ private fun ActivityDetailContent(
     onOpenEvidence: (ActivityEvidence) -> Unit,
 ) {
     val format = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
-    Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+    val connection = event.type == ActivityTypes.CONNECTION_ERROR
+    val result =
+        when (event.type) {
+            ActivityTypes.URLTEST ->
+                if (event.ok == false) {
+                    stringResource(R.string.activity_result_unavailable)
+                } else {
+                    stringResource(R.string.activity_result_available)
+                }
+            ActivityTypes.URLTEST_HEALTH ->
+                if (event.ok == false) {
+                    stringResource(R.string.activity_result_down)
+                } else {
+                    stringResource(R.string.activity_result_up)
+                }
+            ActivityTypes.PROFILE_UPDATE ->
+                if (event.ok == false) {
+                    stringResource(R.string.activity_result_failed)
+                } else {
+                    stringResource(R.string.activity_result_ok)
+                }
+            else -> null
+        }
+    Column(
+        modifier =
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+    ) {
         Text(
             text = activityEventTitle(event),
             style = MaterialTheme.typography.titleMedium,
@@ -382,19 +412,40 @@ private fun ActivityDetailContent(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (event.lastTs > event.ts + 60_000L) {
+            Text(
+                text =
+                stringResource(
+                    R.string.activity_detail_last_seen,
+                    format.format(Date(event.lastTs)),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(8.dp))
         event.group?.let { DetailRow(stringResource(R.string.activity_detail_group), it) }
         event.from?.let { DetailRow(stringResource(R.string.activity_detail_from), it) }
-        event.to?.let { DetailRow(stringResource(R.string.activity_detail_to), it) }
-        event.reason?.let { DetailRow(stringResource(R.string.activity_detail_reason), it) }
-        event.ms?.let { DetailRow(stringResource(R.string.activity_detail_delay), "$it ms") }
+        if (event.to != null && !(event.type == ActivityTypes.URLTEST && event.count > 1)) {
+            DetailRow(stringResource(R.string.activity_detail_to), event.to)
+        }
+        if (connection) {
+            event.subject?.let { DetailRow(stringResource(R.string.activity_detail_outbound), it) }
+            event.reason?.let { DetailRow(stringResource(R.string.activity_detail_error_class), it) }
+        } else {
+            event.reason?.let { DetailRow(stringResource(R.string.activity_detail_reason), it) }
+        }
+        result?.let { DetailRow(stringResource(R.string.activity_detail_result), it) }
+        if (event.ms != null && !(event.type == ActivityTypes.URLTEST && event.count > 1)) {
+            DetailRow(stringResource(R.string.activity_detail_delay), "${event.ms} ms")
+        }
         if (event.available != null && event.total != null) {
             DetailRow(
                 stringResource(R.string.activity_detail_available),
                 "${event.available} / ${event.total}",
             )
         }
-        if (event.count > 1) {
+        if (connection || event.count > 1) {
             DetailRow(stringResource(R.string.activity_detail_count), event.count.toString())
         }
         event.detail?.let { DetailRow(stringResource(R.string.activity_detail_note), it) }
@@ -423,17 +474,18 @@ private fun ActivityDetailContent(
 
 @Composable
 private fun DetailRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.width(96.dp).padding(end = 12.dp),
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -477,6 +529,10 @@ private fun activityEventTitle(event: ActivityEvent): String =
                 R.string.activity_event_group,
                 event.group ?: event.subject ?: stringResource(R.string.activity_legend_group),
             )
+        ActivityTypes.GROUP_UNAVAILABLE ->
+            stringResource(R.string.activity_event_group_unavailable, event.subject.orEmpty())
+        ActivityTypes.GROUP_STUCK ->
+            stringResource(R.string.activity_event_group_stuck, event.subject.orEmpty())
         ActivityTypes.APP_INSTALL -> stringResource(R.string.activity_event_install, event.subject.orEmpty())
         ActivityTypes.APP_UPDATE -> stringResource(R.string.activity_event_update, event.subject.orEmpty())
         ActivityTypes.CRASH -> stringResource(R.string.activity_event_crash)

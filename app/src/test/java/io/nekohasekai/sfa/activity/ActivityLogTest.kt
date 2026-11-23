@@ -66,7 +66,7 @@ class ActivityLogTest {
                 ts = now - 4_000,
                 lane = ActivityLane.CONNECTION,
                 type = ActivityTypes.CONNECTION_ERROR,
-                group = "timeout",
+                reason = "timeout",
                 severity = ActivitySeverity.WARN,
                 obstacle = true,
                 count = 1,
@@ -79,7 +79,7 @@ class ActivityLogTest {
                 ts = now - 1_000,
                 lane = ActivityLane.CONNECTION,
                 type = ActivityTypes.CONNECTION_ERROR,
-                group = "timeout",
+                reason = "timeout",
                 severity = ActivitySeverity.ERROR,
                 obstacle = true,
                 count = 2,
@@ -91,6 +91,36 @@ class ActivityLogTest {
         assertEquals(3, events.single().count)
         assertEquals(ActivitySeverity.ERROR, events.single().severity)
         assertTrue(events.single().obstacle)
+    }
+
+    @Test
+    fun `connection errors of different classes stay separate`() {
+        val events = mutableListOf<ActivityEvent>()
+        ActivityReducer.add(
+            events,
+            ActivityEvent(
+                ts = now - 2_000,
+                lane = ActivityLane.CONNECTION,
+                type = ActivityTypes.CONNECTION_ERROR,
+                reason = "timeout",
+                obstacle = true,
+            ),
+            now,
+        )
+        ActivityReducer.add(
+            events,
+            ActivityEvent(
+                ts = now - 1_000,
+                lane = ActivityLane.CONNECTION,
+                type = ActivityTypes.CONNECTION_ERROR,
+                reason = "refused",
+                obstacle = true,
+            ),
+            now,
+        )
+
+        assertEquals(2, events.size)
+        assertEquals(setOf("timeout", "refused"), events.mapNotNull { it.reason }.toSet())
     }
 
     @Test

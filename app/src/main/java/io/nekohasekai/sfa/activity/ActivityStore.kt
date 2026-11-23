@@ -46,7 +46,7 @@ object ActivityLog {
                         lines.forEach { line ->
                             runCatching { json.decodeFromString<ActivityEvent>(line) }
                                 .getOrNull()
-                                ?.let { events.add(it) }
+                                ?.let { events.add(normalizeEvent(it)) }
                         }
                     }
                 }
@@ -93,6 +93,26 @@ object ActivityLog {
             }
         }
         return record(app, event)
+    }
+
+    /** Applies current semantics to rows written by older builds. */
+    private fun normalizeEvent(event: ActivityEvent): ActivityEvent {
+        var normalized = event
+        if (normalized.lane == ActivityLane.CONNECTION &&
+            normalized.type == ActivityTypes.CONNECTION_ERROR &&
+            normalized.reason == null &&
+            normalized.group != null
+        ) {
+            // Older builds stored the connection error class in `group`.
+            normalized = normalized.copy(group = null, reason = normalized.group)
+        }
+        if (normalized.type == ActivityTypes.URLTEST) {
+            // A node test is not a group-level anomaly.
+            normalized = normalized.copy(severity = ActivitySeverity.INFO, obstacle = false)
+        } else if (normalized.type == ActivityTypes.URLTEST_HEALTH) {
+            normalized = normalized.copy(obstacle = false)
+        }
+        return normalized
     }
 
     fun observeCoreLogs(context: Context, lines: List<String>) {
@@ -370,7 +390,7 @@ object ActivityLog {
                     ts = bucket,
                     lane = ActivityLane.CONNECTION,
                     type = ActivityTypes.CONNECTION_ERROR,
-                    group = errorClass,
+                    reason = errorClass,
                     subject = agg.lastOutbound,
                     detail = agg.cause,
                     severity = ActivitySeverity.WARN,
@@ -462,8 +482,9 @@ object ActivityLog {
                 to = outbound,
                 ms = ms,
                 ok = ok,
-                severity = if (ok) ActivitySeverity.INFO else ActivitySeverity.WARN,
-                obstacle = !ok,
+                // A single node failing its test is how the group chooses a
+                // better one. Group-level outages are recorded separately.
+                severity = ActivitySeverity.INFO,
             ),
         )
     }
@@ -487,7 +508,6 @@ object ActivityLog {
                 ms = delayMs,
                 ok = up,
                 severity = if (up) ActivitySeverity.INFO else ActivitySeverity.WARN,
-                obstacle = !up,
             ),
         )
     }
@@ -516,6 +536,61 @@ object ActivityLog {
                 ms = ms,
                 available = available.takeIf { it > 0 },
                 total = total.takeIf { it > 0 },
+            ),
+        )
+    }
+
+    /** The whole URLTest group has no node passing its last check. */
+    fun recordGroupUnavailable(
+        context: Context,
+        group: String,
+        selected: String?,
+        total: Int,
+        since: Long,
+        observedAt: Long,
+    ) {
+        recordOnce(
+            context,
+            ActivityEvent(
+                ts = since,
+                lastTs = observedAt,
+                lane = ActivityLane.GROUP,
+                type = ActivityTypes.GROUP_UNAVAILABLE,
+                subject = group,
+                to = selected,
+                reason = "no_available_nodes",
+                available = 0,
+                total = total.takeIf { it > 0 },
+                severity = ActivitySeverity.ERROR,
+                obstacle = true,
+            ),
+        )
+    }
+
+    /** The group keeps routing through a node that is failing its health check. */
+    fun recordGroupStuck(
+        context: Context,
+        group: String,
+        selected: String?,
+        available: Int?,
+        total: Int,
+        since: Long,
+        observedAt: Long,
+    ) {
+        recordOnce(
+            context,
+            ActivityEvent(
+                ts = since,
+                lastTs = observedAt,
+                lane = ActivityLane.GROUP,
+                type = ActivityTypes.GROUP_STUCK,
+                subject = group,
+                to = selected,
+                reason = "selected_unhealthy",
+                available = available,
+                total = total.takeIf { it > 0 },
+                severity = ActivitySeverity.WARN,
+                obstacle = true,
             ),
         )
     }

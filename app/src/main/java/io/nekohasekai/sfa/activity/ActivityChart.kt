@@ -4,12 +4,14 @@ import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -37,17 +39,24 @@ import java.util.Locale
 
 internal data class ActivityColors(
     val service: Color,
+    val serviceStop: Color,
     val network: Color,
     val tailscale: Color,
     val telemetry: Color,
     val subscription: Color,
     val urlTest: Color,
+    val urlTestUnavailable: Color,
+    val urlTestDown: Color,
     val group: Color,
     val version: Color,
     val connection: Color,
-    val power: Color,
+    val powerAwake: Color,
+    val powerScreenOff: Color,
+    val powerDoze: Color,
+    val powerSave: Color,
     val system: Color,
     val obstacle: Color,
+    val selection: Color,
     val axis: Color,
     val muted: Color,
     val surface: Color,
@@ -58,17 +67,24 @@ internal fun activityColors(): ActivityColors {
     val scheme = MaterialTheme.colorScheme
     return ActivityColors(
         service = scheme.primary,
+        serviceStop = scheme.outline,
         network = scheme.secondary,
         tailscale = scheme.tertiary,
         telemetry = scheme.primary.copy(alpha = 0.55f),
         subscription = scheme.tertiary,
         urlTest = scheme.onSurfaceVariant,
+        urlTestUnavailable = scheme.outline,
+        urlTestDown = scheme.tertiary,
         group = scheme.secondary,
         version = scheme.onSurface,
         connection = scheme.error,
-        power = scheme.outline,
+        powerAwake = scheme.outline,
+        powerScreenOff = scheme.tertiary,
+        powerDoze = scheme.primary,
+        powerSave = scheme.secondary,
         system = scheme.error,
         obstacle = scheme.error,
+        selection = scheme.onSurface,
         axis = scheme.outlineVariant,
         muted = scheme.onSurfaceVariant,
         surface = scheme.surface,
@@ -105,9 +121,43 @@ private fun ActivityLane.color(colors: ActivityColors): Color = when (this) {
     ActivityLane.GROUP -> colors.group
     ActivityLane.VERSION -> colors.version
     ActivityLane.CONNECTION -> colors.connection
-    ActivityLane.POWER -> colors.power
+    ActivityLane.POWER -> colors.powerAwake
     ActivityLane.SYSTEM -> colors.system
 }
+
+/**
+ * Color carries the state inside a lane; the glyph still carries the lane.
+ * Red is reserved for events that also project onto the issue axis.
+ */
+private fun markColor(event: ActivityEvent, lane: ActivityLane, colors: ActivityColors): Color =
+    when (lane) {
+        ActivityLane.SERVICE ->
+            when {
+                event.obstacle -> colors.obstacle
+                event.type == ActivityTypes.SERVICE_STOP -> colors.serviceStop
+                else -> colors.service
+            }
+        ActivityLane.NETWORK ->
+            if (event.type == ActivityTypes.NETWORK_LOST) colors.obstacle else colors.network
+        ActivityLane.TAILSCALE ->
+            if (event.ok == false) colors.obstacle else colors.tailscale
+        ActivityLane.URLTEST ->
+            when {
+                event.ok == false && event.type == ActivityTypes.URLTEST_HEALTH -> colors.urlTestDown
+                event.ok == false -> colors.urlTestUnavailable
+                else -> colors.urlTest
+            }
+        ActivityLane.GROUP ->
+            if (event.obstacle) colors.obstacle else colors.group
+        ActivityLane.POWER ->
+            when (event.subject) {
+                "screen off" -> colors.powerScreenOff
+                "doze" -> colors.powerDoze
+                "power save" -> colors.powerSave
+                else -> colors.powerAwake
+            }
+        else -> lane.color(colors)
+    }
 
 @Composable
 fun ActivityScatterChart(
@@ -221,7 +271,7 @@ fun ActivityScatterChart(
             plotPoints.firstOrNull { it.event.id == id }?.let { point ->
                 val cursorX = xAt(point.x)
                 drawLine(
-                    colors.service.copy(alpha = 0.22f),
+                    colors.selection.copy(alpha = 0.18f),
                     Offset(cursorX, top),
                     Offset(cursorX, bottom),
                     1.dp.toPx(),
@@ -244,7 +294,7 @@ fun ActivityScatterChart(
                 val position = point.position(size, this)
                 // Ring only: the original marker shape must stay readable.
                 drawCircle(
-                    colors.service,
+                    colors.selection,
                     7.dp.toPx(),
                     position,
                     style = Stroke(1.5.dp.toPx()),
@@ -285,7 +335,7 @@ private fun DrawScope.drawActivityMark(
     lane: ActivityLane,
     colors: ActivityColors,
 ) {
-    val color = lane.color(colors)
+    val color = markColor(event, lane, colors)
     when (lane) {
         ActivityLane.SERVICE -> {
             drawCircle(colors.surface, 4.6.dp.toPx(), center)
@@ -298,28 +348,30 @@ private fun DrawScope.drawActivityMark(
         ActivityLane.SUBSCRIPTION -> {
             if (event.ok == false) {
                 drawCross(center, 3.dp.toPx(), colors.obstacle)
-            } else if (event.changed == true) {
+            } else if (event.changed == true || event.type == ActivityTypes.PROFILE_SWITCH) {
                 drawCircle(color, 3.2.dp.toPx(), center)
             } else {
                 drawCircle(color, 3.2.dp.toPx(), center, style = Stroke(1.2.dp.toPx()))
+                drawCircle(color, 1.dp.toPx(), center)
             }
         }
         ActivityLane.URLTEST -> {
-            if (event.ok == false) {
-                drawCross(center, 2.8.dp.toPx(), colors.obstacle)
-            } else {
-                drawLine(
-                    color,
-                    Offset(center.x, center.y - 2.2.dp.toPx()),
-                    Offset(center.x, center.y + 2.2.dp.toPx()),
-                    1.dp.toPx(),
-                )
-            }
+            drawLine(
+                color,
+                Offset(center.x, center.y - 2.2.dp.toPx()),
+                Offset(center.x, center.y + 2.2.dp.toPx()),
+                1.dp.toPx(),
+            )
         }
-        ActivityLane.GROUP -> drawDiamondOutline(center, 3.6.dp.toPx(), color)
+        ActivityLane.GROUP ->
+            if (event.obstacle) {
+                drawDiamond(center, 3.6.dp.toPx(), color)
+            } else {
+                drawDiamondOutline(center, 3.6.dp.toPx(), color)
+            }
         ActivityLane.VERSION -> drawTriangleOutline(center, 4.2.dp.toPx(), color)
         ActivityLane.CONNECTION -> drawDownTriangle(center, 4.dp.toPx(), color)
-        ActivityLane.POWER -> drawCircle(color, 3.dp.toPx(), center, style = Stroke(1.2.dp.toPx()))
+        ActivityLane.POWER -> drawCircle(color, 3.2.dp.toPx(), center, style = Stroke(1.2.dp.toPx()))
         ActivityLane.SYSTEM -> drawSquare(center, 3.2.dp.toPx(), color)
     }
 }
@@ -386,7 +438,10 @@ private fun DrawScope.drawCross(center: Offset, radius: Float, color: Color) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ActivityLegend(modifier: Modifier = Modifier) {
+fun ActivityLegend(
+    showPowerStates: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
     val colors = activityColors()
     val items =
         listOf(
@@ -402,47 +457,74 @@ fun ActivityLegend(modifier: Modifier = Modifier) {
             ActivityLane.VERSION to R.string.activity_legend_version,
             ActivityLane.SYSTEM to R.string.activity_legend_system,
         )
-    FlowRow(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        items.forEach { (lane, label) ->
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Canvas(Modifier.size(10.dp)) {
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    drawLegendMark(lane, colors, center)
-                }
-                Spacer(Modifier.width(3.dp))
+    Column(modifier = modifier.fillMaxWidth()) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            items.forEach { (lane, label) ->
+                LegendItem(label) { center -> drawLegendMark(lane, colors, center) }
+            }
+            LegendItem(R.string.activity_legend_failed) { center ->
+                drawCross(center, 3.2.dp.toPx(), colors.obstacle)
+            }
+            LegendItem(R.string.activity_legend_obstacle) { center ->
+                drawDiamond(center, 3.2.dp.toPx(), colors.obstacle)
+            }
+        }
+        if (showPowerStates) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 Text(
-                    text = stringResource(label),
+                    text = stringResource(R.string.activity_legend_power_states),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                PowerStateItem(colors.powerAwake, R.string.activity_power_awake)
+                PowerStateItem(colors.powerScreenOff, R.string.activity_power_screen_off)
+                PowerStateItem(colors.powerDoze, R.string.activity_power_doze)
+                PowerStateItem(colors.powerSave, R.string.activity_power_save)
             }
         }
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Canvas(Modifier.size(10.dp)) {
-                drawCross(Offset(size.width / 2f, size.height / 2f), 3.2.dp.toPx(), colors.obstacle)
-            }
-            Spacer(Modifier.width(3.dp))
-            Text(
-                text = stringResource(R.string.activity_legend_failed),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    }
+}
+
+@Composable
+private fun LegendItem(label: Int, draw: DrawScope.(Offset) -> Unit) {
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Canvas(Modifier.size(10.dp)) {
+            draw(Offset(size.width / 2f, size.height / 2f))
+        }
+        Spacer(Modifier.width(3.dp))
+        Text(
+            text = stringResource(label),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PowerStateItem(color: Color, label: Int) {
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Canvas(Modifier.size(10.dp)) {
+            drawCircle(
+                color,
+                3.dp.toPx(),
+                Offset(size.width / 2f, size.height / 2f),
+                style = Stroke(1.2.dp.toPx()),
             )
         }
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Canvas(Modifier.size(10.dp)) {
-                drawDiamond(Offset(size.width / 2f, size.height / 2f), 3.2.dp.toPx(), colors.obstacle)
-            }
-            Spacer(Modifier.width(3.dp))
-            Text(
-                text = stringResource(R.string.activity_legend_obstacle),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Spacer(Modifier.width(3.dp))
+        Text(
+            text = stringResource(label),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -457,8 +539,10 @@ private fun DrawScope.drawLegendMark(
         ActivityLane.NETWORK -> drawDiamond(center, 3.4.dp.toPx(), color)
         ActivityLane.TAILSCALE -> drawTriangle(center, 4.dp.toPx(), color)
         ActivityLane.TELEMETRY -> drawCircle(color, 1.8.dp.toPx(), center)
-        ActivityLane.SUBSCRIPTION ->
+        ActivityLane.SUBSCRIPTION -> {
             drawCircle(color, 3.2.dp.toPx(), center, style = Stroke(1.2.dp.toPx()))
+            drawCircle(color, 1.dp.toPx(), center)
+        }
         ActivityLane.URLTEST ->
             drawLine(
                 color,

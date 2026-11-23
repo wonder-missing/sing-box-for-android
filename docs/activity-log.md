@@ -56,15 +56,28 @@
 | `service_restore` | SERVICE | `MainActivity` 启动恢复、`BootReceiver` |
 | `config_reload` | SERVICE | 服务重载、订阅更新后重载 |
 | `network_change` / `network_lost` | NETWORK | `TelemetrySignals` 网络回调 |
-| `connection_error` | CONNECTION | 拨号尝试按 5 分钟桶 + 错误类别聚合 |
+| `connection_error` | CONNECTION | 拨号尝试按 5 分钟桶 + 错误类型（`reason`）聚合 |
 | `tailscale_state` | TAILSCALE | 内核日志 `Switching ipn state A -> B` |
 | `power_state` | POWER | 电源广播；只在状态变化时落盘 |
-| `telemetry_upload` | TELEMETRY | 每次上传尝试（成功或失败） |
+| `telemetry_upload` | TELEMETRY | 每次上传尝试（成功或失败）；没有物理上行时不尝试 |
 | `profile_update` / `profile_switch` | SUBSCRIPTION | 订阅检查完成、用户切换配置 |
 | `urltest` / `urltest_health` | URLTEST | 内核日志、Groups 快照健康翻转 |
 | `group_switch` | GROUP | Groups 流的前后快照差异 |
+| `group_unavailable` / `group_stuck` | GROUP | Groups 快照的组级健康判断 |
 | `app_install` / `app_update` | VERSION | 启动时版本码变化，时间取 PackageManager |
 | `crash` / `oom` / `process_exit` | SYSTEM | 报告刷新、`ActivityManager` 退出历史 |
+
+## 什么算异常
+
+- 单个节点在 URLTest 里失败或延迟高，不算异常。测试就是为了比较并选出好节点；
+  图上用淡色刻度表示，不投影到问题轴。
+- 组内没有任何可用节点（`availableCount == 0`）立即记一次 `group_unavailable`，
+  这是组级异常。
+- 选中的节点持续失败 10 分钟仍未切换，记一次 `group_stuck`；组内没有可用节点
+  期间不重复记 stuck，避免同一段故障两个标记。
+- 连接错误按 5 分钟桶和错误类型聚合；没有物理上行网络时不上传遥测、不记失败
+  事件。队列留在磁盘，网络恢复后的下一轮再传。
+- 单选组（selector）没有测试语义，不参与组级健康判断。
 
 ## 图表规则（事件点阵图）
 
@@ -72,16 +85,21 @@
 时间轴的 rug plot。目标是密度和指向性，不做装饰：
 
 - X 轴是时间，Y 轴是事件所在轨道的垂直深度；不画网格，左侧不画标签。
-- 顶部图例是唯一的形状说明；形状标识轨道，颜色只做强化。轨道顺序与图例
-  顺序一致。
+- 顶部图例是唯一的形状说明；形状标识轨道，颜色标识状态。轨道顺序与图例
+  顺序一致。电源轨道在图例下多一行状态色标（awake / screen off / doze /
+  power save），只在窗口里有电源事件时出现。
+- 同一轨道内状态用颜色区分：服务停止是灰色、网络丢失是红色、URLTest 失败
+  刻度更淡、健康翻转为紫色、组异常是红色实心菱形、电源四种状态各有颜色。
+  红色只留给同时投影到问题轴的事件。
 - 周期性事件画在所属 5 分钟桶的起点，而不是桶内第一次上传的时间，避免
   上传触发间隔造成虚假的不均匀。
 - `SERVICE` 轨道先画会话线，再画点；窗口开始前已运行的服务从窗口左边开始。
 - `obstacle` 事件在 X 轴上额外投射一个红色菱形；原轨道标记保留。
-- 选中标记只加描边圆环和一条贯穿所有轨道的竖线，不覆盖原形状；同一事件的
-  轴投影也加环。
-- 点击半径 22dp；详情底部表显示时间、组、前后值、原因、耗时、可用数、
-  计数和备注。
+- 选中标记只加描边圆环（`onSurface`，不依赖标记颜色）和一条贯穿所有轨道的
+  竖线，不覆盖原形状；同一事件的轴投影也加环。
+- 点击半径 22dp；详情用左对齐的两列（标签固定宽度，值紧随其后），显示时间、
+  最近时间、组、前后值、原因、结果、耗时、可用数、计数和备注。连接错误的
+  错误类型放 `reason`，`group` 只表示组名；聚合事件总是显示 Count。
 - 「聚焦 ±15 分钟」把范围连续地设为事件前后 15 分钟；「±10 分钟内另有
   N 个事件」从存储查询，不受当前可见窗口裁剪。
 
@@ -93,6 +111,8 @@
 4. 从最窄的既有钩子调用，避免在热循环里分配。
 5. 在 `ActivityScreen` 加标题映射，`values/` 与 `values-zh-rCN/` 同步。
 6. 可合并事件补 reducer 单元测试；纯函数补纯函数测试。
+7. 组级健康规则放进 `GroupHealthMonitor`，用快照序列写测试，再由
+   `TelemetryRuntime.updateGroups` 落事件。
 
 ## 明确不做
 

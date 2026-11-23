@@ -59,6 +59,8 @@ object ActivityTypes {
     const val URLTEST = "urltest"
     const val URLTEST_HEALTH = "urltest_health"
     const val GROUP_SWITCH = "group_switch"
+    const val GROUP_UNAVAILABLE = "group_unavailable"
+    const val GROUP_STUCK = "group_stuck"
     const val APP_INSTALL = "app_install"
     const val APP_UPDATE = "app_update"
 
@@ -138,7 +140,7 @@ internal object ActivityReducer {
                     isCoalescible(it) &&
                         it.lane == event.lane &&
                         it.type == event.type &&
-                        it.group == event.group &&
+                        coalesceKey(it) == coalesceKey(event) &&
                         it.ts / COALESCE_MS == bucket
                 }
             if (index >= 0) {
@@ -166,4 +168,8 @@ internal object ActivityReducer {
         event.lane == ActivityLane.TELEMETRY ||
             (event.lane == ActivityLane.URLTEST && event.type == ActivityTypes.URLTEST) ||
             (event.lane == ActivityLane.CONNECTION && event.type == ActivityTypes.CONNECTION_ERROR)
+
+    /** Connection errors batch by error class; URLTest batches by group. */
+    private fun coalesceKey(event: ActivityEvent): String? =
+        if (event.lane == ActivityLane.CONNECTION) event.reason else event.group
 }

@@ -15,6 +15,8 @@ internal data class OutboundGroupSelection(
     val itemCount: Int = 0,
     /** Items whose last URLTest returned a positive delay. */
     val availableCount: Int = 0,
+    /** True when [availableCount] and [selectedDelayMs] came from a full item scan. */
+    val hasItemSummary: Boolean = false,
     /** Fastest item at the last snapshot, when it is a URLTest group. */
     val fastestTag: String? = null,
     val fastestDelayMs: Int? = null,

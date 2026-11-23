@@ -76,6 +76,7 @@ private fun OutboundGroup.toSelection(
         itemTags = itemTags,
         itemCount = if (urlTest) itemTags.size else 0,
         availableCount = availableCount,
+        hasItemSummary = withSummary,
         fastestTag = fastestTag,
         fastestDelayMs = fastestDelay.takeIf { it != Int.MAX_VALUE },
         selectedAvailable = selectedAvailable,
@@ -96,6 +97,8 @@ internal object TelemetryRuntime {
     private const val FINAL_ATTEMPTS = 1
     private const val DIAL_POLL_MS = 2_000L
     private const val HEARTBEAT_INTERVAL_MS = 15L * 60L * 1000L
+    /** Full URLTest item summaries are read at most this often for activity alerts. */
+    private const val GROUP_SUMMARY_INTERVAL_MS = 60_000L
 
     /** Manual upload gets a short budget so the settings button cannot hang forever. */
     private const val MANUAL_UPLOAD_BUDGET_MS = 30_000L
@@ -140,6 +143,11 @@ internal object TelemetryRuntime {
     /** Replaced on every attach so the first Groups snapshot is reported as `start`. */
     @Volatile
     private var outboundTracker = OutboundSelectionTracker()
+    @Volatile
+    private var groupHealth = GroupHealthMonitor()
+
+    @Volatile
+    private var lastGroupSummaryAt = 0L
 
     private val logClock = TelemetryLogClock()
     private val minutes = ConnectionMinuteAggregator()
@@ -267,18 +275,46 @@ internal object TelemetryRuntime {
             // activity log needs it, keep the existing early return.
             val activityEnabled = ActivityPreferences.isEnabled(context)
             if (!uploadReady && !activityEnabled) return
+            val now = System.currentTimeMillis()
+            val summarizeAll = activityEnabled && now - lastGroupSummaryAt >= GROUP_SUMMARY_INTERVAL_MS
             val groups = runCatching {
                 newGroups.map { group ->
                     val selected = group.selected
                     group.toSelection(
                         selectedTag = selected,
-                        // Full item summary is only needed when the selection
-                        // changes; health checks need only the selected item.
-                        withSummary = outboundTracker.selected(group.tag) != selected,
+                        // Full item summary is needed when the selection changes,
+                        // and periodically for group-level activity alerts.
+                        withSummary = summarizeAll || outboundTracker.selected(group.tag) != selected,
                     )
                 }
             }.getOrDefault(emptyList())
             if (groups.isEmpty()) return
+            if (summarizeAll) lastGroupSummaryAt = now
+            if (activityEnabled) {
+                for (alert in groupHealth.observe(groups, now)) {
+                    when (alert.kind) {
+                        GroupHealthAlertKind.NO_AVAILABLE_NODES ->
+                            ActivityLog.recordGroupUnavailable(
+                                context,
+                                alert.group,
+                                alert.selected,
+                                alert.itemCount,
+                                alert.since,
+                                now,
+                            )
+                        GroupHealthAlertKind.STUCK_ON_UNHEALTHY ->
+                            ActivityLog.recordGroupStuck(
+                                context,
+                                alert.group,
+                                alert.selected,
+                                alert.availableCount,
+                                alert.itemCount,
+                                alert.since,
+                                now,
+                            )
+                    }
+                }
+            }
             val update =
                 runCatching { outboundTracker.update(groups) }
                     .getOrDefault(SelectionUpdate(emptyList()))
@@ -378,6 +414,8 @@ internal object TelemetryRuntime {
             // even if the previous session had the same selection.
             session.start()
             outboundTracker = OutboundSelectionTracker()
+            groupHealth = GroupHealthMonitor()
+            lastGroupSummaryAt = 0L
             logClock.reset()
             minutes.reset()
             coreVersion = runCatching { Libbox.version() }.getOrDefault("")
@@ -559,6 +597,10 @@ internal object TelemetryRuntime {
             val flush = detached.second ?: return@thread
             runCatching {
                 runBlocking(Dispatchers.IO) {
+                    if (TelemetrySignals.currentUplink(flush.context) == null) {
+                        persistIfCurrent(flush)
+                        return@runBlocking
+                    }
                     val outcome = uploadContext(
                         flush,
                         reason,
@@ -667,6 +709,12 @@ internal object TelemetryRuntime {
             FlushContext(context, queue, currentUploader, coreVersion, sessionEpoch, session.current)
         }
         try {
+            if (TelemetrySignals.currentUplink(flush.context) == null) {
+                // Offline: keep the queue on disk and record nothing. The
+                // NETWORK lane already explains the gap; a failed upload
+                // attempt here is not an app anomaly.
+                return
+            }
             val outcome =
                 uploadContext(
                     flush,
@@ -699,6 +747,7 @@ internal object TelemetryRuntime {
         val app = context.applicationContext
         if (!TelemetryPreferences.isEnabled(app)) return "Upload is off."
         if (!TelemetryPreferences.canUpload(app)) return "Save an https endpoint and token first."
+        if (TelemetrySignals.currentUplink(app) == null) return "No network; nothing was sent."
         val flush = synchronized(stateLock) {
             val liveContext = appContext
             val queue = buffer
