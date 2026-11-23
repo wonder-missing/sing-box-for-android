@@ -106,12 +106,6 @@ object ActivityLog {
             // Older builds stored the connection error class in `group`.
             normalized = normalized.copy(group = null, reason = normalized.group)
         }
-        if (normalized.type == ActivityTypes.URLTEST) {
-            // A node test is not a group-level anomaly.
-            normalized = normalized.copy(severity = ActivitySeverity.INFO, obstacle = false)
-        } else if (normalized.type == ActivityTypes.URLTEST_HEALTH) {
-            normalized = normalized.copy(obstacle = false)
-        }
         return normalized
     }
 
@@ -121,14 +115,6 @@ object ActivityLog {
         for (line in lines) {
             IPN_STATE.find(line)?.let { match ->
                 recordTailscale(app, match.groupValues[1], match.groupValues[2])
-            }
-            URLTEST.find(line)?.let { match ->
-                val group = match.groupValues[1]
-                val outbound = match.groupValues[2]
-                val ok = match.groupValues[3] == "available"
-                val detail = match.groupValues[4]
-                val ms = LEADING_INT.find(detail)?.value?.toIntOrNull()
-                recordUrlTest(app, group, outbound, ok, ms)
             }
         }
     }
@@ -464,54 +450,6 @@ object ActivityLog {
         )
     }
 
-    fun recordUrlTest(
-        context: Context,
-        group: String,
-        outbound: String,
-        ok: Boolean,
-        ms: Int?,
-    ) {
-        record(
-            context,
-            ActivityEvent(
-                ts = System.currentTimeMillis(),
-                lane = ActivityLane.URLTEST,
-                type = ActivityTypes.URLTEST,
-                subject = outbound,
-                group = group,
-                to = outbound,
-                ms = ms,
-                ok = ok,
-                // A single node failing its test is how the group chooses a
-                // better one. Group-level outages are recorded separately.
-                severity = ActivitySeverity.INFO,
-            ),
-        )
-    }
-
-    fun recordUrlTestHealth(
-        context: Context,
-        group: String,
-        outbound: String,
-        up: Boolean,
-        delayMs: Int?,
-    ) {
-        record(
-            context,
-            ActivityEvent(
-                ts = System.currentTimeMillis(),
-                lane = ActivityLane.URLTEST,
-                type = ActivityTypes.URLTEST_HEALTH,
-                subject = outbound,
-                group = group,
-                to = outbound,
-                ms = delayMs,
-                ok = up,
-                severity = if (up) ActivitySeverity.INFO else ActivitySeverity.WARN,
-            ),
-        )
-    }
-
     fun recordGroupSwitch(
         context: Context,
         group: String,
@@ -676,6 +614,4 @@ object ActivityLog {
     }
 
     private val IPN_STATE = Regex("Switching ipn state (\\w+) -> (\\w+)")
-    private val URLTEST = Regex("outbound/urltest\\[([^\\]]+)\\]: outbound (.+?) (available|unavailable): (.*)$")
-    private val LEADING_INT = Regex("^\\d+")
 }

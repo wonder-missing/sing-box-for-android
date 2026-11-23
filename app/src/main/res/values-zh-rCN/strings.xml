@@ -918,7 +918,6 @@
     <string name="activity_summary_service">服务 %1$d</string>
     <string name="activity_summary_network">网络 %1$d</string>
     <string name="activity_summary_subscription">订阅检查 %1$d 次 · 变化 %2$d 次</string>
-    <string name="activity_summary_urltest">测速 %1$d</string>
     <string name="activity_summary_group">组切换 %1$d</string>
     <string name="activity_summary_obstacle">异常 %1$d</string>
 
@@ -944,10 +943,6 @@
     <string name="activity_power_screen_off">熄屏</string>
     <string name="activity_power_doze">休眠</string>
     <string name="activity_power_save">省电</string>
-    <string name="activity_result_available">可用</string>
-    <string name="activity_result_unavailable">不可用</string>
-    <string name="activity_result_up">正常</string>
-    <string name="activity_result_down">失败</string>
     <string name="activity_result_ok">成功</string>
     <string name="activity_result_failed">失败</string>
     <string name="activity_legend_service">服务</string>
@@ -955,7 +950,6 @@
     <string name="activity_legend_tailscale">Tailscale</string>
     <string name="activity_legend_telemetry">遥测</string>
     <string name="activity_legend_subscription">订阅</string>
-    <string name="activity_legend_urltest">URLTest</string>
     <string name="activity_legend_group">组切换</string>
     <string name="activity_legend_version">版本</string>
     <string name="activity_legend_failed">失败</string>
@@ -978,7 +972,6 @@
     <string name="activity_event_tailscale">Tailscale · %1$s</string>
     <string name="activity_event_telemetry">遥测上传</string>
     <string name="activity_event_subscription">订阅 · %1$s</string>
-    <string name="activity_event_urltest">URLTest · %1$s</string>
     <string name="activity_event_group">组切换 · %1$s</string>
     <string name="activity_event_group_unavailable">组内没有可用节点 · %1$s</string>
     <string name="activity_event_group_stuck">持续停留在异常节点 · %1$s</string>

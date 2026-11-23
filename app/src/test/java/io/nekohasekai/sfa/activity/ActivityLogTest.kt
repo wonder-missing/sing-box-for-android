@@ -46,18 +46,6 @@ class ActivityLogTest {
     }
 
     @Test
-    fun `different url test groups and buckets stay separate`() {
-        val events = mutableListOf<ActivityEvent>()
-        ActivityReducer.add(events, event(now - 4_000, ActivityLane.URLTEST, "urltest", group = "auto"), now)
-        ActivityReducer.add(events, event(now - 3_000, ActivityLane.URLTEST, "urltest", group = "proxy"), now)
-        ActivityReducer.add(events, event(now - 6 * 60_000, ActivityLane.URLTEST, "urltest", group = "auto"), now)
-
-        assertEquals(3, events.size)
-        assertEquals(2, events.count { it.group == "auto" })
-        assertEquals(1, events.count { it.group == "proxy" })
-    }
-
-    @Test
     fun `connection errors merge inside their five minute bucket`() {
         val events = mutableListOf<ActivityEvent>()
         ActivityReducer.add(

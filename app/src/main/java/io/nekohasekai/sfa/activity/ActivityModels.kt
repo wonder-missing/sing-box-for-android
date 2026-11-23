@@ -12,7 +12,6 @@ enum class ActivityLane {
     POWER,
     TELEMETRY,
     SUBSCRIPTION,
-    URLTEST,
     GROUP,
     VERSION,
     SYSTEM,
@@ -56,8 +55,6 @@ object ActivityTypes {
     const val TELEMETRY_UPLOAD = "telemetry_upload"
     const val PROFILE_UPDATE = "profile_update"
     const val PROFILE_SWITCH = "profile_switch"
-    const val URLTEST = "urltest"
-    const val URLTEST_HEALTH = "urltest_health"
     const val GROUP_SWITCH = "group_switch"
     const val GROUP_UNAVAILABLE = "group_unavailable"
     const val GROUP_STUCK = "group_stuck"
@@ -166,10 +163,9 @@ internal object ActivityReducer {
 
     private fun isCoalescible(event: ActivityEvent): Boolean =
         event.lane == ActivityLane.TELEMETRY ||
-            (event.lane == ActivityLane.URLTEST && event.type == ActivityTypes.URLTEST) ||
             (event.lane == ActivityLane.CONNECTION && event.type == ActivityTypes.CONNECTION_ERROR)
 
-    /** Connection errors batch by error class; URLTest batches by group. */
+    /** Connection errors batch by error class; other coalescible events by group. */
     private fun coalesceKey(event: ActivityEvent): String? =
         if (event.lane == ActivityLane.CONNECTION) event.reason else event.group
 }

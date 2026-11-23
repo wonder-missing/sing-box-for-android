@@ -1019,7 +1019,6 @@
     <string name="activity_summary_service">Service %1$d</string>
     <string name="activity_summary_network">Network %1$d</string>
     <string name="activity_summary_subscription">Subs %1$d checks · %2$d changed</string>
-    <string name="activity_summary_urltest">URLTest %1$d</string>
     <string name="activity_summary_group">Group switches %1$d</string>
     <string name="activity_summary_obstacle">Issues %1$d</string>
 
@@ -1045,10 +1044,6 @@
     <string name="activity_power_screen_off">screen off</string>
     <string name="activity_power_doze">doze</string>
     <string name="activity_power_save">power save</string>
-    <string name="activity_result_available">available</string>
-    <string name="activity_result_unavailable">unavailable</string>
-    <string name="activity_result_up">up</string>
-    <string name="activity_result_down">down</string>
     <string name="activity_result_ok">ok</string>
     <string name="activity_result_failed">failed</string>
     <string name="activity_legend_service">Service</string>
@@ -1056,7 +1051,6 @@
     <string name="activity_legend_tailscale">Tailscale</string>
     <string name="activity_legend_telemetry">Telemetry</string>
     <string name="activity_legend_subscription">Subscription</string>
-    <string name="activity_legend_urltest">URLTest</string>
     <string name="activity_legend_group">Group switch</string>
     <string name="activity_legend_version">Version</string>
     <string name="activity_legend_failed">Failed</string>
@@ -1079,7 +1073,6 @@
     <string name="activity_event_tailscale">Tailscale · %1$s</string>
     <string name="activity_event_telemetry">Telemetry upload</string>
     <string name="activity_event_subscription">Subscription · %1$s</string>
-    <string name="activity_event_urltest">URLTest · %1$s</string>
     <string name="activity_event_group">Group switch · %1$s</string>
     <string name="activity_event_group_unavailable">No available node · %1$s</string>
     <string name="activity_event_group_stuck">Stuck on unhealthy node · %1$s</string>

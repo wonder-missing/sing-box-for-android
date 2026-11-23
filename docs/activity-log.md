@@ -1,6 +1,7 @@
 # 本地活动日志与事件点阵图（2026-11-22）
 
-状态：wonder.AG 起有本地活动页，wonder.AK 完成点阵图分诊版。实现位于
+状态：wonder.AG 起有本地活动页，wonder.AK 完成点阵图分诊版，wonder.AL
+按状态着色并加入组级异常，wonder.AM 移除节点级 URLTest 标记。实现位于
 `app/src/main/java/io/nekohasekai/sfa/activity/`。
 
 ## 要回答的问题
@@ -27,7 +28,7 @@
 | `lane`, `type` | 纵向轨道和事件类型；`ActivityTypes` 的常量是唯一 wire name |
 | `subject`, `detail` | 主体和自由说明（节点、订阅、网络、错误类别等） |
 | `group`, `from`, `to`, `reason`, `ms` | 组名、切换前后、切换原因、耗时 |
-| `available`, `total`, `ok`, `changed` | URLTest 可用数、检查结果与是否有更新 |
+| `available`, `total`, `ok`, `changed` | 组可用节点数、检查结果与是否有更新 |
 | `severity` | `INFO` / `WARN` / `ERROR`；合并时取最高 |
 | `evidence` | `CRASH` / `OOM` + 报告 id，详情页据此打开报告 |
 | `obstacle` | 是否算问题；同时决定是否在时间轴上投射菱形 |
@@ -36,14 +37,14 @@
 `ActivityLane` 的枚举顺序就是图表自上而下的深度，新增轨道只能追加：
 
 `SERVICE`, `NETWORK`, `CONNECTION`, `TAILSCALE`, `POWER`, `TELEMETRY`,
-`SUBSCRIPTION`, `URLTEST`, `GROUP`, `VERSION`, `SYSTEM`。
+`SUBSCRIPTION`, `GROUP`, `VERSION`, `SYSTEM`。
 
 ## 存储与保留
 
 - 文件：`files/activity/events.jsonl`，单文件上限 4 MB，写临时文件后原子替换。
 - 保留：48 小时、最多 4,000 条；超限丢最旧的。
-- 合并：`TELEMETRY`、`URLTEST`（仅 `urltest`）和 `CONNECTION` 错误按
-  5 分钟桶合并；保留最高 severity、任一 `obstacle`、`evidence`，`count` 相加。
+- 合并：`TELEMETRY` 和 `CONNECTION` 错误按 5 分钟桶合并；保留最高 severity、
+  任一 `obstacle`、`evidence`，`count` 相加。
 - 关闭时：不打开文件、不解析内核日志、不写事件；热路径只做一次偏好检查。
 
 ## 采集点
@@ -61,7 +62,6 @@
 | `power_state` | POWER | 电源广播；只在状态变化时落盘 |
 | `telemetry_upload` | TELEMETRY | 每次上传尝试（成功或失败）；没有物理上行时不尝试 |
 | `profile_update` / `profile_switch` | SUBSCRIPTION | 订阅检查完成、用户切换配置 |
-| `urltest` / `urltest_health` | URLTEST | 内核日志、Groups 快照健康翻转 |
 | `group_switch` | GROUP | Groups 流的前后快照差异 |
 | `group_unavailable` / `group_stuck` | GROUP | Groups 快照的组级健康判断 |
 | `app_install` / `app_update` | VERSION | 启动时版本码变化，时间取 PackageManager |
@@ -69,10 +69,12 @@
 
 ## 什么算异常
 
-- 单个节点在 URLTest 里失败或延迟高，不算异常。测试就是为了比较并选出好节点；
-  图上用淡色刻度表示，不投影到问题轴。
-- 组内没有任何可用节点（`availableCount == 0`）立即记一次 `group_unavailable`，
-  这是组级异常。
+- 节点级 URLTest 结果不写入本地活动日志。一个 27 节点的组里长期有 10 个节点
+  不可用、另有 13 个可用是正常状态；把每次单节点失败画成一个事件或问题点，
+  反映不了用户实际走的路径。节点级结果仍由遥测上报。
+- 组内没有任何可用节点（`availableCount == 0`）记一次 `group_unavailable`，
+  这是组级异常。启动后有 1 分钟宽限，并要求 0 可用状态再持续 1 分钟，避免
+  首次测速尚未完成时误报。
 - 选中的节点持续失败 10 分钟仍未切换，记一次 `group_stuck`；组内没有可用节点
   期间不重复记 stuck，避免同一段故障两个标记。
 - 连接错误按 5 分钟桶和错误类型聚合；没有物理上行网络时不上传遥测、不记失败
@@ -88,9 +90,9 @@
 - 顶部图例是唯一的形状说明；形状标识轨道，颜色标识状态。轨道顺序与图例
   顺序一致。电源轨道在图例下多一行状态色标（awake / screen off / doze /
   power save），只在窗口里有电源事件时出现。
-- 同一轨道内状态用颜色区分：服务停止是灰色、网络丢失是红色、URLTest 失败
-  刻度更淡、健康翻转为紫色、组异常是红色实心菱形、电源四种状态各有颜色。
-  红色只留给同时投影到问题轴的事件。
+- 同一轨道内状态用颜色区分：服务停止是灰色、网络丢失/Tailscale 掉线/组异常是
+  红色、订阅未变是同心圆、变更或切换是实心、电源四种状态各有颜色。红色只留给
+  同时投影到问题轴的事件。
 - 周期性事件画在所属 5 分钟桶的起点，而不是桶内第一次上传的时间，避免
   上传触发间隔造成虚假的不均匀。
 - `SERVICE` 轨道先画会话线，再画点；窗口开始前已运行的服务从窗口左边开始。

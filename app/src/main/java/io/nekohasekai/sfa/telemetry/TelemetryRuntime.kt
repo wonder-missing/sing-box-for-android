@@ -365,9 +365,6 @@ internal object TelemetryRuntime {
             }
             for (health in update.healthChanges) {
                 val summary = healthSummaries[health.group]
-                if (activityEnabled) {
-                    ActivityLog.recordUrlTestHealth(context, health.group, health.outbound, health.up, health.delayMs)
-                }
                 if (uploadReady) TelemetryEventLog.recordAsync(
                     context,
                     "urltest_health",

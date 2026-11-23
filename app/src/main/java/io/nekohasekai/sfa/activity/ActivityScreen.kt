@@ -330,7 +330,6 @@ private fun ActivitySummary(events: List<ActivityEvent>) {
     val network = events.count { it.lane == ActivityLane.NETWORK }
     val subscription = events.count { it.type == ActivityTypes.PROFILE_UPDATE }
     val changed = events.count { it.type == ActivityTypes.PROFILE_UPDATE && it.changed == true }
-    val urlTest = events.count { it.lane == ActivityLane.URLTEST }
     val group = events.count { it.type == ActivityTypes.GROUP_SWITCH }
     val connection = events.filter { it.lane == ActivityLane.CONNECTION }.sumOf { it.count }
     val obstacles = events.count { it.obstacle }
@@ -342,7 +341,6 @@ private fun ActivitySummary(events: List<ActivityEvent>) {
         ActivitySummaryChip(stringResource(R.string.activity_summary_service, service))
         ActivitySummaryChip(stringResource(R.string.activity_summary_network, network))
         ActivitySummaryChip(stringResource(R.string.activity_summary_subscription, subscription, changed))
-        ActivitySummaryChip(stringResource(R.string.activity_summary_urltest, urlTest))
         ActivitySummaryChip(stringResource(R.string.activity_summary_group, group))
         ActivitySummaryChip(stringResource(R.string.activity_summary_connection, connection))
         ActivitySummaryChip(stringResource(R.string.activity_summary_obstacle, obstacles))
@@ -375,18 +373,6 @@ private fun ActivityDetailContent(
     val connection = event.type == ActivityTypes.CONNECTION_ERROR
     val result =
         when (event.type) {
-            ActivityTypes.URLTEST ->
-                if (event.ok == false) {
-                    stringResource(R.string.activity_result_unavailable)
-                } else {
-                    stringResource(R.string.activity_result_available)
-                }
-            ActivityTypes.URLTEST_HEALTH ->
-                if (event.ok == false) {
-                    stringResource(R.string.activity_result_down)
-                } else {
-                    stringResource(R.string.activity_result_up)
-                }
             ActivityTypes.PROFILE_UPDATE ->
                 if (event.ok == false) {
                     stringResource(R.string.activity_result_failed)
@@ -426,9 +412,7 @@ private fun ActivityDetailContent(
         Spacer(Modifier.height(8.dp))
         event.group?.let { DetailRow(stringResource(R.string.activity_detail_group), it) }
         event.from?.let { DetailRow(stringResource(R.string.activity_detail_from), it) }
-        if (event.to != null && !(event.type == ActivityTypes.URLTEST && event.count > 1)) {
-            DetailRow(stringResource(R.string.activity_detail_to), event.to)
-        }
+        event.to?.let { DetailRow(stringResource(R.string.activity_detail_to), it) }
         if (connection) {
             event.subject?.let { DetailRow(stringResource(R.string.activity_detail_outbound), it) }
             event.reason?.let { DetailRow(stringResource(R.string.activity_detail_error_class), it) }
@@ -436,9 +420,7 @@ private fun ActivityDetailContent(
             event.reason?.let { DetailRow(stringResource(R.string.activity_detail_reason), it) }
         }
         result?.let { DetailRow(stringResource(R.string.activity_detail_result), it) }
-        if (event.ms != null && !(event.type == ActivityTypes.URLTEST && event.count > 1)) {
-            DetailRow(stringResource(R.string.activity_detail_delay), "${event.ms} ms")
-        }
+        event.ms?.let { DetailRow(stringResource(R.string.activity_detail_delay), "$it ms") }
         if (event.available != null && event.total != null) {
             DetailRow(
                 stringResource(R.string.activity_detail_available),
@@ -519,11 +501,6 @@ private fun activityEventTitle(event: ActivityEvent): String =
                 event.subject ?: stringResource(R.string.activity_legend_subscription),
             )
         ActivityTypes.PROFILE_SWITCH -> stringResource(R.string.activity_event_profile_switch, event.subject.orEmpty())
-        ActivityTypes.URLTEST, ActivityTypes.URLTEST_HEALTH ->
-            stringResource(
-                R.string.activity_event_urltest,
-                event.group ?: event.subject ?: stringResource(R.string.activity_legend_urltest),
-            )
         ActivityTypes.GROUP_SWITCH ->
             stringResource(
                 R.string.activity_event_group,

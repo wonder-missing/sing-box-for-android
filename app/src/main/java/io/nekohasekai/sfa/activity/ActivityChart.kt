@@ -44,9 +44,6 @@ internal data class ActivityColors(
     val tailscale: Color,
     val telemetry: Color,
     val subscription: Color,
-    val urlTest: Color,
-    val urlTestUnavailable: Color,
-    val urlTestDown: Color,
     val group: Color,
     val version: Color,
     val connection: Color,
@@ -72,9 +69,6 @@ internal fun activityColors(): ActivityColors {
         tailscale = scheme.tertiary,
         telemetry = scheme.primary.copy(alpha = 0.55f),
         subscription = scheme.tertiary,
-        urlTest = scheme.onSurfaceVariant,
-        urlTestUnavailable = scheme.outline,
-        urlTestDown = scheme.tertiary,
         group = scheme.secondary,
         version = scheme.onSurface,
         connection = scheme.error,
@@ -103,7 +97,6 @@ private const val COALESCE_MS = 5L * 60L * 1_000L
 /** Periodic marks represent their five-minute bucket, not the first flush inside it. */
 private fun displayTs(event: ActivityEvent): Long =
     if (event.lane == ActivityLane.TELEMETRY ||
-        (event.lane == ActivityLane.URLTEST && event.type == ActivityTypes.URLTEST) ||
         (event.lane == ActivityLane.CONNECTION && event.type == ActivityTypes.CONNECTION_ERROR)
     ) {
         event.ts / COALESCE_MS * COALESCE_MS
@@ -117,7 +110,6 @@ private fun ActivityLane.color(colors: ActivityColors): Color = when (this) {
     ActivityLane.TAILSCALE -> colors.tailscale
     ActivityLane.TELEMETRY -> colors.telemetry
     ActivityLane.SUBSCRIPTION -> colors.subscription
-    ActivityLane.URLTEST -> colors.urlTest
     ActivityLane.GROUP -> colors.group
     ActivityLane.VERSION -> colors.version
     ActivityLane.CONNECTION -> colors.connection
@@ -141,12 +133,6 @@ private fun markColor(event: ActivityEvent, lane: ActivityLane, colors: Activity
             if (event.type == ActivityTypes.NETWORK_LOST) colors.obstacle else colors.network
         ActivityLane.TAILSCALE ->
             if (event.ok == false) colors.obstacle else colors.tailscale
-        ActivityLane.URLTEST ->
-            when {
-                event.ok == false && event.type == ActivityTypes.URLTEST_HEALTH -> colors.urlTestDown
-                event.ok == false -> colors.urlTestUnavailable
-                else -> colors.urlTest
-            }
         ActivityLane.GROUP ->
             if (event.obstacle) colors.obstacle else colors.group
         ActivityLane.POWER ->
@@ -355,14 +341,6 @@ private fun DrawScope.drawActivityMark(
                 drawCircle(color, 1.dp.toPx(), center)
             }
         }
-        ActivityLane.URLTEST -> {
-            drawLine(
-                color,
-                Offset(center.x, center.y - 2.2.dp.toPx()),
-                Offset(center.x, center.y + 2.2.dp.toPx()),
-                1.dp.toPx(),
-            )
-        }
         ActivityLane.GROUP ->
             if (event.obstacle) {
                 drawDiamond(center, 3.6.dp.toPx(), color)
@@ -452,7 +430,6 @@ fun ActivityLegend(
             ActivityLane.POWER to R.string.activity_legend_power,
             ActivityLane.TELEMETRY to R.string.activity_legend_telemetry,
             ActivityLane.SUBSCRIPTION to R.string.activity_legend_subscription,
-            ActivityLane.URLTEST to R.string.activity_legend_urltest,
             ActivityLane.GROUP to R.string.activity_legend_group,
             ActivityLane.VERSION to R.string.activity_legend_version,
             ActivityLane.SYSTEM to R.string.activity_legend_system,
@@ -543,13 +520,6 @@ private fun DrawScope.drawLegendMark(
             drawCircle(color, 3.2.dp.toPx(), center, style = Stroke(1.2.dp.toPx()))
             drawCircle(color, 1.dp.toPx(), center)
         }
-        ActivityLane.URLTEST ->
-            drawLine(
-                color,
-                Offset(center.x, center.y - 2.2.dp.toPx()),
-                Offset(center.x, center.y + 2.2.dp.toPx()),
-                1.dp.toPx(),
-            )
         ActivityLane.GROUP -> drawDiamondOutline(center, 3.4.dp.toPx(), color)
         ActivityLane.VERSION -> drawTriangleOutline(center, 4.dp.toPx(), color)
         ActivityLane.CONNECTION -> drawDownTriangle(center, 4.dp.toPx(), color)
