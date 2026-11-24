@@ -8,13 +8,20 @@ General working style follows the owner's global working agreement; project-spec
 - Fork: `wonder-missing/sing-box-for-android`, work branch `dev`. Upstream is SagerNet.
 - **Always pass `-R wonder-missing/sing-box-for-android` to every `gh` command** (default resolves to upstream).
 - Workspace: `~/workspace` on clawdy-mini. CFG repo: `~/workspace/CFG`.
-- CFG is a neighboring project. Use its CLI as needed (`python3 ~/workspace/CFG/cli/bin/cfg ...`, e.g. `clientlog report --hours N` for app telemetry); do not modify CFG code from this repo.
+- CFG is a neighboring project. Use its CLI as needed (`python3 ~/workspace/CFG/cli/bin/cfg ...`, e.g. `clientlog report --hours N` for app telemetry). CFG requirements raised in this session follow **CFG intake** below; CFG code is never committed from this repo.
 - Local bare backup: remote `wondersing` at `~/repos/WonderSing`; after each daily commit push `dev`, and push tags when releasing.
 - Local JVM tests and compile checks run on the Mini; setup, versions and disk cleanup live in [`docs/local-testing.md`](docs/local-testing.md). CI is the release gate. `scripts/e2e-emulator.sh` is the startup/UI smoke test; VPN/service behavior still needs a real device.
 - Update install path, the system scan prompt, and post-update service restore: [`docs/update-install.md`](docs/update-install.md).
 - `version.properties` is the single version source: `CORE_VERSION`, `WONDER_BUILD`, `GO_VERSION`. `WONDER_BUILD` is a two-character base-36 label (`99` → `A0`, `A9` → `AA`, never `A10`); use the next unused label from [`docs/versioning.md`](docs/versioning.md). `VERSION_CODE`/`VERSION_NAME` are derived in `app/build.gradle.kts`; `WonderVersionTest` guards the update-checker base.
 - Capability scenarios live in [`docs/conductor-scenarios.md`](docs/conductor-scenarios.md). Before removing/merging a tool or changing a tool parameter, check the scenarios that name it and preserve or explicitly retire them.
 - **The user's "Groups page" is the Dashboard Groups bottom sheet** (`showGroupsSheet`, `GroupsCard(asSheet = true)`); its title/actions row is `MainActivity`'s `listHeaderContent`. `Screen.Groups` is a wide-screen `NavigationRail` destination with no phone entry; do not treat it as the Groups page in UI discussions.
+
+## CFG intake (cross-project)
+- The owner may raise CFG requirements or incidents in a WonderSing session. First classify WonderSing / CFG / shared contract and state the acceptance evidence; this session owns clarification and coordination, while CFG code, tests, deploys and releases stay in `~/workspace/CFG` under `CFG/AGENTS.md`.
+- Delegate CFG work to a subagent whose brief states the problem and evidence, scope and files, tests, deploy expectation (CFG deploys routine accepted changes unless the brief says hold), what not to touch, and the report: commit SHA, commands/results, deploy/refresh status, open risks. The subagent must read `CFG/AGENTS.md` first and work on `main`.
+- Never commit CFG files in WonderSing or WonderSing files in CFG. Shared-contract changes freeze the wire contract first and verify each side separately.
+- Verify the subagent's claims (git log/status, test output, deploy) before reporting done; a subagent's self-report is not evidence. CFG private data never enters WonderSing chat, commits or release notes.
+- One CFG writer at a time. A CFG task that grows into a deep refactor moves to a dedicated CFG session with a written handoff; this session keeps the intake record, not a second CFG backlog.
 
 ## Work loop
 1. `git pull --ff-only` on `dev`.
