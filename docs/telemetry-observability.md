@@ -20,10 +20,10 @@ It must keep rows without `chain` (older app versions) and fall back to
 
 Every upload batch may carry `profile_rev`, the first 12 hex characters of the
 SHA-256 of the active profile file (after HTTP decoding). The same value is
-included in `service_start` and `profile_update_ok` as `rev`. CFG computes the
-hash of each published subscription format and stores it as `published_rev`;
-`custom`/manual edits will not match a published revision and must be reported
-as such.
+included in `service_start` and `profile_update_ok` as `rev`. CFG reports it as
+client-reported for now; matching it to a published subscription revision is a
+follow-up because the Worker builds the body per request. `custom`/manual edits
+will not match a published revision and must be reported as such.
 
 ## `dns_cache_miss` client event
 
