@@ -9,6 +9,8 @@
 
 ### P1 稳定性与隐私
 
+- [ ] **长时间无网→复网 fake-IP 失配（AN 已加可见性）**：故障机长时间无网后复网，组健康绿色但目标 App 连接失败，核心日志 `missing fakeip record`；重启服务恢复。AN 已把 5 分钟桶的 `dns_cache_miss` 写入事件点阵图/遥测，并提供一键重启。待受控复现确定是 cache 未落盘、映射被清还是缺映射未快速失败，再决定改 App cache/core；不盲目 flush/自动重启。
+
 - [ ] **Trace 可观测性真机验收（AD 已发）**：live trace 改为存合并后的 `chat.completion`（不再存 SSE 原文），响应按 reasoning → content → tool args 的顺序裁剪，长请求另存最后 8k `requestTail`；每个 turn 结束写 `filesDir/conductor/trace-turns/trace-turn-*.json` 完整快照，保留最近 3 份、约 12MB，`appfiles` scope 可读。JVM 712 用例绿。装 AD 后确认：`appfiles/conductor/trace-turns/` 能拉到完整 turn，最终回答和 tool calls 未丢；`diagnostics_export kind=trace` 的 `totalRequests`/`droppedRequests` 与实际一致；`/clear` 不留下旧快照。
 - [ ] **确认卡降噪真机验收（AE 候选）**：新增 preflight（死动作不弹卡）、Strict/Workspace/Test 会话档、按 scope 的 Run all、session 新建文件跟踪和未跟踪覆盖/删除弹卡。目标：同样做 AC 走查，选 Test 档并在第一张 `job_run` 卡点 Run all，只看到 4 张卡（VFS 授权、`job_run`、`artifacts` 目录删除、`telemetry_upload`）。JVM 731 用例绿；未发版，待真机确认卡片数量和顶部 Test 标识。
 - [ ] **上游 2026-11 同步验收**：已一次性合入 `a9e2732`（light theme）、`47aa128`（tonal 容器）、`009bc52`（本地网络权限时机）、`7c0b392`（VPN 文案 typo）、`4c1f0e0` / `c5426af` / `e82e4de`（字符串与翻译）；本地 735 用例和 e2e 已过。待真机 Android 17 确认启动即请求 `ACCESS_LOCAL_NETWORK`，以及 light theme 下 Groups/Settings 可读。
