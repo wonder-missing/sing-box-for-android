@@ -81,6 +81,20 @@
   事件。队列留在磁盘，网络恢复后的下一轮再传。
 - 单选组（selector）没有测试语义，不参与组级健康判断。
 
+## DNS 缓存失配（2026-11-24）
+
+长时间没有网络、随后网络恢复时，目标 App 可能还在使用离线前的 fake-IP；
+核心日志出现 `router: missing fakeip record`，连接在进入代理拨号前就被丢掉。
+此时 URLTest / 组健康可以是绿的，因为健康检查走的是自己的 DNS，不代表目标
+App 的旧 destination 还有映射。
+
+- 活动日志按 5 分钟桶聚合这些日志为 `dns_cache_miss`，放在 SERVICE 轨道；
+  单批 ≥3 条才记录，桶内 ≥10 条标为问题并投射到 X 轴。
+- 详情显示计数和「after network change」，并提供 **Restart service**；重启
+  隧道会强制目标 App 重新解析。
+- 这不是节点或订阅故障。修复层仍在确认（cache 是否落盘、映射是否被清、
+  缺映射时是否应快速失败），先做可见性和一键恢复，不盲目 flush 或自动重启。
+
 ## 图表规则（事件点阵图）
 
 这套规则借鉴 event raster / strip plot / actogram，以及把问题事件投影到
