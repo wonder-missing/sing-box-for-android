@@ -42,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
@@ -157,9 +158,13 @@ import io.nekohasekai.sfa.constant.Alert
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.export.DiagnosticsExport
+import io.nekohasekai.sfa.export.ExportJson
 import io.nekohasekai.sfa.log.AppLog
+import io.nekohasekai.sfa.telemetry.ProfileRevision
 import io.nekohasekai.sfa.telemetry.TelemetryEventLog
 import io.nekohasekai.sfa.telemetry.TelemetryEvents
+import io.nekohasekai.sfa.telemetry.TelemetryPreferences
 import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.ktx.launchCustomTab
@@ -1605,6 +1610,7 @@ class MainActivity :
             val groupsUiState by groupsViewModel.uiState.collectAsState()
             val groupsSingleColumn by GroupLayoutPreference.singleColumn.collectAsState()
             val allCollapsed = groupsUiState.expandedGroups.isEmpty()
+            val groupsExportScope = rememberCoroutineScope()
 
             ModalBottomSheet(
                 onDismissRequest = { showGroupsSheet = false },
@@ -1640,6 +1646,31 @@ class MainActivity :
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (groupsUiState.groups.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = {
+                                                groupsExportScope.launch {
+                                                    val now = System.currentTimeMillis()
+                                                    val text =
+                                                        withContext(Dispatchers.IO) {
+                                                            ExportJson.groups(
+                                                                exportedAt = now,
+                                                                appVersion = BuildConfig.VERSION_NAME,
+                                                                deviceId = TelemetryPreferences.deviceId(this@MainActivity),
+                                                                profileRev = ProfileRevision.current(this@MainActivity),
+                                                                groups = groupsUiState.groups,
+                                                            )
+                                                        }
+                                                    DiagnosticsExport.shareJson(this@MainActivity, "groups", text)
+                                                }
+                                            },
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Share,
+                                                contentDescription = stringResource(R.string.export_groups),
+                                            )
+                                        }
+                                    }
                                     IconButton(onClick = { GroupLayoutPreference.toggle() }) {
                                         Icon(
                                             imageVector = if (groupsSingleColumn) {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -39,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -49,11 +51,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
+import io.nekohasekai.sfa.export.DiagnosticsExport
+import io.nekohasekai.sfa.export.ExportJson
+import io.nekohasekai.sfa.telemetry.ProfileRevision
+import io.nekohasekai.sfa.telemetry.TelemetryPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -81,6 +89,7 @@ fun ActivityScreen(
     var showClearDialog by remember { mutableStateOf(false) }
     val scaffoldPadding = LocalScaffoldPadding.current
     val dayFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
+    val scope = rememberCoroutineScope()
     val enabled = ActivityPreferences.isEnabled(context)
     val retentionStart = anchorNow - (RETENTION_HOURS * HOUR_MS).toLong()
     val start = retentionStart + (rangeStart * HOUR_MS).toLong()
@@ -149,6 +158,34 @@ fun ActivityScreen(
                 }
             },
             actions = {
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            val now = System.currentTimeMillis()
+                            val window = (RETENTION_HOURS * HOUR_MS).toLong()
+                            val text =
+                                withContext(Dispatchers.IO) {
+                                    val all = ActivityLog.snapshot(context, now, window)
+                                    val rev = ProfileRevision.current(context)
+                                    ExportJson.activity(
+                                        exportedAt = now,
+                                        appVersion = BuildConfig.VERSION_NAME,
+                                        deviceId = TelemetryPreferences.deviceId(context),
+                                        profileRev = rev,
+                                        windowStart = now - window,
+                                        windowEnd = now,
+                                        events = all,
+                                    )
+                                }
+                            DiagnosticsExport.shareJson(context, "activity", text)
+                        }
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = stringResource(R.string.export_activity),
+                    )
+                }
                 IconButton(onClick = { showClearDialog = true }) {
                     Icon(
                         imageVector = Icons.Outlined.DeleteSweep,
