@@ -104,6 +104,26 @@ class TelemetryDialTest {
     }
 
     @Test
+    fun dnsMissAndGroupSnapshotStayStructured() {
+        val miss = TelemetryClientEvent.encode(
+            type = "dns_cache_miss",
+            ts = 1,
+            fields = mapOf("count" to 134, "window_s" to 60, "after_network_change" to true),
+            sessionId = null,
+        )
+        assertTrue(miss.contains("\"count\":134"))
+        assertTrue(miss.contains("\"after_network_change\":true"))
+
+        val snapshot = TelemetryClientEvent.encode(
+            type = "group_snapshot",
+            ts = 1,
+            fields = mapOf("rows" to JsonRaw("[{\"group\":\"Google\"}]")),
+            sessionId = null,
+        )
+        assertTrue(snapshot.contains("\"rows\":[{\"group\":\"Google\"}]"))
+    }
+
+    @Test
     fun dialAttemptParserKeepsCauseAndDropsGarbage() {
         val parsed = DialAttemptJson.parse(
             """[{"ts":10,"outbound":"proxy","network":"tcp","entry":"1.2.3.4:443","result":"fail","error_class":"refused","duration_ms":12,"cause":"urltest"}]""",
