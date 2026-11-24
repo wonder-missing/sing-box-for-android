@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.telemetry
 
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.sfa.ktx.toList
 
 /**
  * Copies the fields the minute aggregator needs. Domains are not read.
@@ -31,6 +32,12 @@ internal fun ConnectionEvents.collectSamples(): List<ConnSample> {
             conn != null && conn.closedAt > 0 -> conn.closedAt
             else -> 0L
         }
+        val chain =
+            if (kind == ConnKind.NEW) {
+                runCatching { boundedChain(conn?.chain()?.toList()) }.getOrDefault("")
+            } else {
+                ""
+            }
         out.add(
             ConnSample(
                 reset = wasReset && first,
@@ -41,6 +48,7 @@ internal fun ConnectionEvents.collectSamples(): List<ConnSample> {
                 network = conn?.network.orEmpty(),
                 destination = conn?.destination.orEmpty(),
                 protocol = conn?.protocol.orEmpty(),
+                chain = chain,
                 createdAt = conn?.createdAt ?: 0L,
                 closedAt = closedAt,
                 uplinkDelta = event.uplinkDelta,

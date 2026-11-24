@@ -956,6 +956,8 @@
     <string name="activity_legend_obstacle">异常</string>
 
     <string name="activity_event_service_alert">服务告警 · %1$s</string>
+    <string name="activity_event_dns_cache_miss">DNS 缓存失配 ×%1$d</string>
+    <string name="activity_detail_restart_service">重启服务</string>
     <string name="activity_event_vpn_revoked">VPN 权限被撤销</string>
     <string name="activity_event_service_restore">服务恢复 · %1$s</string>
     <string name="activity_event_config_reload">配置重载</string>

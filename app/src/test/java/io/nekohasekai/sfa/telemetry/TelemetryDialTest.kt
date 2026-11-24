@@ -58,6 +58,7 @@ class TelemetryDialTest {
                 validated = false,
                 eventTsMin = 5_000,
                 eventTsMax = 8_000,
+                profileRev = "abc123def456",
             ),
         ).toString(Charsets.UTF_8)
 
@@ -70,6 +71,7 @@ class TelemetryDialTest {
         assertTrue(json.contains("\"event_ts_min\":5000"))
         assertTrue(json.contains("\"event_ts_max\":8000"))
         assertTrue(json.contains("\"upload_lag_ms\":4000"))
+        assertTrue(json.contains("\"profile_rev\":\"abc123def456\""))
     }
 
     @Test

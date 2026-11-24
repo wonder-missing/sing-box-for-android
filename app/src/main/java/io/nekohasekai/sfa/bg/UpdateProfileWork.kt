@@ -82,17 +82,19 @@ class UpdateProfileWork {
                 try {
                     val content = HTTPClient().use { it.getString(profile.typed.remoteURL) }
                     Libbox.checkConfig(content)
+                    val rev = io.nekohasekai.sfa.telemetry.ProfileRevision.of(content)
                     val file = File(profile.typed.path)
                     val changed = file.readText() != content
                     runCatching {
                         io.nekohasekai.sfa.telemetry.TelemetryEventLog.record(
                             applicationContext,
                             "profile_update_ok",
-                            mapOf("host" to updateHost, "ms" to System.currentTimeMillis() - updateStarted, "changed" to changed, "bytes" to content.length),
+                            mapOf("host" to updateHost, "ms" to System.currentTimeMillis() - updateStarted, "changed" to changed, "bytes" to content.length, "rev" to rev),
                         )
                     }
                     if (changed) {
                         File(profile.typed.path).writeText(content)
+                        io.nekohasekai.sfa.telemetry.ProfileRevision.invalidate()
                         if (profile.id == selectedProfile) {
                             selectedProfileUpdated = true
                         }

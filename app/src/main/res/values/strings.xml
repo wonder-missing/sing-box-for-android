@@ -1057,6 +1057,8 @@
     <string name="activity_legend_obstacle">Issue</string>
 
     <string name="activity_event_service_alert">Service alert · %1$s</string>
+    <string name="activity_event_dns_cache_miss">DNS cache miss ×%1$d</string>
+    <string name="activity_detail_restart_service">Restart service</string>
     <string name="activity_event_vpn_revoked">VPN permission revoked</string>
     <string name="activity_event_service_restore">Service restore · %1$s</string>
     <string name="activity_event_config_reload">Config reload</string>

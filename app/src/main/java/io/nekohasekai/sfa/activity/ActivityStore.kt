@@ -15,6 +15,8 @@ import java.util.concurrent.Executors
  */
 object ActivityLog {
     private const val MAX_FILE_BYTES = 4L * 1024L * 1024L
+    private const val DNS_MISS_MIN_PER_BATCH = 3
+    private const val NETWORK_RECENT_MS = 30L * 60_000L
     private val json =
         Json {
             ignoreUnknownKeys = true
@@ -34,6 +36,9 @@ object ActivityLog {
     private var persistScheduled = false
     @Volatile
     private var lastPowerKey: String? = null
+
+    @Volatile
+    private var lastNetworkUpAt: Long = 0L
 
     private fun ensureLoadedLocked(context: Context): File {
         file?.let { return it }
@@ -112,11 +117,41 @@ object ActivityLog {
     fun observeCoreLogs(context: Context, lines: List<String>) {
         if (!ActivityPreferences.isEnabled(context)) return
         val app = context.applicationContext
+        var fakeIpMisses = 0
         for (line in lines) {
+            if (line.contains("missing fakeip record")) {
+                fakeIpMisses++
+                continue
+            }
             IPN_STATE.find(line)?.let { match ->
                 recordTailscale(app, match.groupValues[1], match.groupValues[2])
             }
         }
+        if (fakeIpMisses > 0) recordDnsCacheMiss(app, fakeIpMisses)
+    }
+
+    /**
+     * A burst of fake-IP lookups without a mapping means the core and the
+     * client's cached destination state diverged (for example after a long
+     * offline period). One mark per five-minute bucket, with the count.
+     */
+    fun recordDnsCacheMiss(context: Context, count: Int) {
+        if (count < DNS_MISS_MIN_PER_BATCH) return
+        val now = System.currentTimeMillis()
+        val afterNetworkChange = lastNetworkUpAt > 0 && now - lastNetworkUpAt <= NETWORK_RECENT_MS
+        record(
+            context,
+            ActivityEvent(
+                ts = now,
+                lane = ActivityLane.SERVICE,
+                type = ActivityTypes.DNS_CACHE_MISS,
+                subject = "fakeip",
+                detail = if (afterNetworkChange) "after network change" else null,
+                count = count,
+                severity = ActivitySeverity.WARN,
+                obstacle = true,
+            ),
+        )
     }
 
     fun serviceRunningAt(context: Context, at: Long): Boolean {
@@ -268,6 +303,7 @@ object ActivityLog {
     }
 
     fun recordNetwork(context: Context, transport: String, validated: Boolean, metered: Boolean) {
+        lastNetworkUpAt = System.currentTimeMillis()
         record(
             context,
             ActivityEvent(

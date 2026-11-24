@@ -14,6 +14,7 @@ internal data class BatchMeta(
     val validated: Boolean? = null,
     val eventTsMin: Long? = null,
     val eventTsMax: Long? = null,
+    val profileRev: String? = null,
 ) {
     val uploadLagMs: Long?
         get() = eventTsMin?.let { (uploadTs - it).coerceAtLeast(0) }
@@ -71,6 +72,7 @@ internal object TelemetryPayload {
             batch.validated?.let { json.append(",\"validated\":").append(it) }
             batch.eventTsMin?.let { json.append(",\"event_ts_min\":").append(it) }
             batch.eventTsMax?.let { json.append(",\"event_ts_max\":").append(it) }
+            batch.profileRev?.let { json.append(",\"profile_rev\":").append(quote(it)) }
             batch.uploadLagMs?.let { json.append(",\"upload_lag_ms\":").append(it) }
         }
         if (batchId != null) json.append(",\"batch_id\":").append(quote(batchId))

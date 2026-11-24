@@ -1230,6 +1230,7 @@ class MainActivity :
                         usbIPStatusViewModel = usbIPStatusViewModel,
                         openConnectStatusViewModel = openConnectStatusViewModel,
                         openVPNStatusViewModel = openVPNStatusViewModel,
+                        onRestartService = { restartServiceFromActivity() },
                         modifier =
                         Modifier
                             .fillMaxSize()
@@ -1790,6 +1791,10 @@ class MainActivity :
     private fun requestBackgroundLocationPermission() {
         // Show background location permission dialog in Compose UI
         showBackgroundLocationDialog = true
+    }
+
+    fun restartServiceFromActivity() {
+        lifecycleScope.launch { restartServiceForApplyChange() }
     }
 
     private suspend fun restartServiceForApplyChange() {

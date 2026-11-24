@@ -20,6 +20,11 @@ internal object TelemetrySignals {
     @Volatile
     private var lastNetwork: String? = null
 
+    /** Last time a physical uplink was available; 0 while offline. */
+    @Volatile
+    var lastNetworkUpAt: Long = 0L
+        private set
+
     fun powerState(context: Context): Map<String, Any?> {
         val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return emptyMap()
         return runCatching {
@@ -112,6 +117,8 @@ internal object TelemetrySignals {
                 val key = "${uplink.networkId}/${uplink.validated}/${uplink.metered}"
                 if (key == lastNetwork) return
                 lastNetwork = key
+                lastNetworkUpAt = System.currentTimeMillis()
+                lastNetwork = key
                 ActivityLog.recordNetwork(app, uplink.transport, uplink.validated, uplink.metered)
                 TelemetryEventLog.record(
                     app,
@@ -130,6 +137,7 @@ internal object TelemetrySignals {
                 // A handover will be reported by the next onCapabilitiesChanged.
                 if (currentUplink(app) == null && lastNetwork != null) {
                     lastNetwork = null
+                    lastNetworkUpAt = 0L
                     ActivityLog.recordNetworkLost(app)
                     TelemetryEventLog.record(app, "network_lost")
                 }

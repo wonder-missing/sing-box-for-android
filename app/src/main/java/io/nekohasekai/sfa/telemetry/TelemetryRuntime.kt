@@ -99,6 +99,11 @@ internal object TelemetryRuntime {
     private const val HEARTBEAT_INTERVAL_MS = 15L * 60L * 1000L
     /** Full URLTest item summaries are read at most this often for activity alerts. */
     private const val GROUP_SUMMARY_INTERVAL_MS = 60_000L
+    /** Periodic group availability sample for CFG; no per-node list. */
+    private const val GROUP_SNAPSHOT_INTERVAL_MS = 15L * 60L * 1000L
+    private const val DNS_MISS_MIN_PER_BATCH = 3
+    private const val DNS_MISS_EVENT_INTERVAL_MS = 60_000L
+    private const val NETWORK_RECENT_MS = 30L * 60L * 1000L
 
     /** Manual upload gets a short budget so the settings button cannot hang forever. */
     private const val MANUAL_UPLOAD_BUDGET_MS = 30_000L
@@ -149,8 +154,15 @@ internal object TelemetryRuntime {
     @Volatile
     private var lastGroupSummaryAt = 0L
 
+    @Volatile
+    private var lastGroupSnapshotAt = 0L
+
+    @Volatile
+    private var lastDnsMissEventAt = 0L
+
     private val logClock = TelemetryLogClock()
     private val minutes = ConnectionMinuteAggregator()
+    private val attachScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     internal fun currentSessionId(): String? = session.current
 
@@ -232,6 +244,8 @@ internal object TelemetryRuntime {
             if (ActivityPreferences.isEnabled(context)) {
                 ActivityLog.observeCoreLogs(context, message.mapNotNull { it.message })
             }
+            val dnsMisses = message.count { it.message?.contains("missing fakeip record") == true }
+            if (dnsMisses > 0) recordDnsMisses(context, dnsMisses)
             if (!uploadReady) return
             val receivedAt = System.currentTimeMillis()
             val lines = message.mapNotNull { entry ->
@@ -276,20 +290,26 @@ internal object TelemetryRuntime {
             val activityEnabled = ActivityPreferences.isEnabled(context)
             if (!uploadReady && !activityEnabled) return
             val now = System.currentTimeMillis()
-            val summarizeAll = activityEnabled && now - lastGroupSummaryAt >= GROUP_SUMMARY_INTERVAL_MS
+            val snapshotDue = now - lastGroupSnapshotAt >= GROUP_SNAPSHOT_INTERVAL_MS
+            val summarizeAll =
+                (activityEnabled || snapshotDue) && now - lastGroupSummaryAt >= GROUP_SUMMARY_INTERVAL_MS
             val groups = runCatching {
                 newGroups.map { group ->
                     val selected = group.selected
                     group.toSelection(
                         selectedTag = selected,
                         // Full item summary is needed when the selection changes,
-                        // and periodically for group-level activity alerts.
-                        withSummary = summarizeAll || outboundTracker.selected(group.tag) != selected,
+                        // periodically for activity alerts, and for the snapshot.
+                        withSummary = snapshotDue || summarizeAll || outboundTracker.selected(group.tag) != selected,
                     )
                 }
             }.getOrDefault(emptyList())
             if (groups.isEmpty()) return
-            if (summarizeAll) lastGroupSummaryAt = now
+            if (summarizeAll || snapshotDue) lastGroupSummaryAt = now
+            if (snapshotDue) {
+                lastGroupSnapshotAt = now
+                recordGroupSnapshot(context, groups)
+            }
             if (activityEnabled) {
                 for (alert in groupHealth.observe(groups, now)) {
                     when (alert.kind) {
@@ -399,7 +419,8 @@ internal object TelemetryRuntime {
         minutes.setEntries(entries)
     }
 
-    fun attach(vpn: VpnService) {
+    suspend fun attach(vpn: VpnService) {
+        val profileRev = runCatching { ProfileRevision.current(vpn.applicationContext) }.getOrNull()
         synchronized(stateLock) {
             if (attached) return
             attached = true
@@ -413,6 +434,8 @@ internal object TelemetryRuntime {
             outboundTracker = OutboundSelectionTracker()
             groupHealth = GroupHealthMonitor()
             lastGroupSummaryAt = 0L
+            lastGroupSnapshotAt = 0L
+            lastDnsMissEventAt = 0L
             logClock.reset()
             minutes.reset()
             coreVersion = runCatching { Libbox.version() }.getOrDefault("")
@@ -438,7 +461,11 @@ internal object TelemetryRuntime {
                     "service_start",
                     TelemetrySignals.powerState(context) +
                         TelemetrySignals.currentDefaultNetwork(context) +
-                        mapOf("app" to BuildConfig.VERSION_NAME, "sdk" to android.os.Build.VERSION.SDK_INT),
+                        buildMap<String, Any?> {
+                            put("app", BuildConfig.VERSION_NAME)
+                            put("sdk", android.os.Build.VERSION.SDK_INT)
+                            profileRev?.let { put("profile_rev", it) }
+                        },
                 )
             }
             ackFile = File(context.filesDir, "telemetry/last_ack")
@@ -485,9 +512,12 @@ internal object TelemetryRuntime {
         if (!attached) {
             val vpn = io.nekohasekai.sfa.bg.BoxService.runningVpn
             if (vpn != null) {
-                // Called from the UI thread; a telemetry failure must not crash it.
-                runCatching { attach(vpn) }.onFailure {
-                    Log.w(TAG, "telemetry attach failed", it)
+                // Called from the UI thread; attach reads the profile and must
+                // never block it. A telemetry failure must not crash the UI.
+                attachScope.launch {
+                    runCatching { attach(vpn) }.onFailure {
+                        Log.w(TAG, "telemetry attach failed", it)
+                    }
                 }
             }
         }
@@ -937,6 +967,43 @@ internal object TelemetryRuntime {
         }
     }
 
+    private fun recordDnsMisses(context: Context, count: Int) {
+        if (count < DNS_MISS_MIN_PER_BATCH) return
+        val now = System.currentTimeMillis()
+        if (now - lastDnsMissEventAt < DNS_MISS_EVENT_INTERVAL_MS) return
+        lastDnsMissEventAt = now
+        val afterNetworkChange =
+            TelemetrySignals.lastNetworkUpAt > 0 &&
+                now - TelemetrySignals.lastNetworkUpAt <= NETWORK_RECENT_MS
+        TelemetryEventLog.recordAsync(
+            context,
+            "dns_cache_miss",
+            mapOf(
+                "count" to count,
+                "window_s" to 60,
+                "after_network_change" to afterNetworkChange,
+            ),
+        )
+    }
+
+    private fun recordGroupSnapshot(context: Context, groups: List<OutboundGroupSelection>) {
+        val rows = groups.filter { it.isUrlTest && it.itemCount > 0 }
+        if (rows.isEmpty()) return
+        val json = StringBuilder("[")
+        rows.forEachIndexed { index, group ->
+            if (index > 0) json.append(',')
+            json.append("{\"group\":").append(TelemetryPayload.quote(group.tag))
+            json.append(",\"selected\":").append(TelemetryPayload.quote(group.selected))
+            json.append(",\"available\":").append(group.availableCount)
+            json.append(",\"total\":").append(group.itemCount)
+            group.selectedDelayMs?.let { json.append(",\"selected_ms\":").append(it) }
+            group.fastestDelayMs?.let { json.append(",\"fastest_ms\":").append(it) }
+            json.append('}')
+        }
+        json.append(']')
+        TelemetryEventLog.recordAsync(context, "group_snapshot", mapOf("rows" to JsonRaw(json.toString())))
+    }
+
     private suspend fun sendOne(
         flush: FlushContext,
         token: String,
@@ -1023,6 +1090,7 @@ internal object TelemetryRuntime {
                     validated = uplink?.validated,
                     eventTsMin = chosenStamps.minOrNull(),
                     eventTsMax = chosenStamps.maxOrNull(),
+                    profileRev = runCatching { ProfileRevision.current(context) }.getOrNull(),
                 ),
             )
             val tags = buildMap {

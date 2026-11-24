@@ -56,6 +56,7 @@ object ActivityTypes {
     const val PROFILE_UPDATE = "profile_update"
     const val PROFILE_SWITCH = "profile_switch"
     const val GROUP_SWITCH = "group_switch"
+    const val DNS_CACHE_MISS = "dns_cache_miss"
     const val GROUP_UNAVAILABLE = "group_unavailable"
     const val GROUP_STUCK = "group_stuck"
     const val APP_INSTALL = "app_install"
@@ -163,9 +164,14 @@ internal object ActivityReducer {
 
     private fun isCoalescible(event: ActivityEvent): Boolean =
         event.lane == ActivityLane.TELEMETRY ||
-            (event.lane == ActivityLane.CONNECTION && event.type == ActivityTypes.CONNECTION_ERROR)
+            (event.lane == ActivityLane.CONNECTION && event.type == ActivityTypes.CONNECTION_ERROR) ||
+            (event.lane == ActivityLane.SERVICE && event.type == ActivityTypes.DNS_CACHE_MISS)
 
-    /** Connection errors batch by error class; other coalescible events by group. */
+    /** Connection errors batch by error class; DNS misses by fake-IP. */
     private fun coalesceKey(event: ActivityEvent): String? =
-        if (event.lane == ActivityLane.CONNECTION) event.reason else event.group
+        when {
+            event.lane == ActivityLane.CONNECTION -> event.reason
+            event.type == ActivityTypes.DNS_CACHE_MISS -> "fakeip"
+            else -> event.group
+        }
 }

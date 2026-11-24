@@ -21,6 +21,7 @@ internal data class ConnSample(
     val network: String = "",
     val destination: String = "",
     val protocol: String = "",
+    val chain: String = "",
     val createdAt: Long = 0,
     val closedAt: Long = 0,
     val uplinkDelta: Long = 0,
@@ -28,6 +29,19 @@ internal data class ConnSample(
     val uplinkTotal: Long = 0,
     val downlinkTotal: Long = 0,
 )
+
+/** Bounded tag chain for group attribution; no domains or addresses. */
+internal fun boundedChain(tags: List<String>?): String =
+    tags.orEmpty()
+        .asSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .take(MAX_CHAIN_TAGS)
+        .joinToString(">")
+        .take(MAX_CHAIN_CHARS)
+
+private const val MAX_CHAIN_TAGS = 4
+private const val MAX_CHAIN_CHARS = 120
 
 internal data class MinuteFlush(
     val minuteTs: Long,
@@ -147,6 +161,7 @@ internal class ConnectionMinuteAggregator {
         val down = sample.downlinkTotal.coerceAtLeast(0)
         open[sample.id] = Open(
             outbound = sample.outbound,
+            chain = sample.chain,
             dest = destCategory(sample.protocol, sample.destination, sample.network),
             createdAt = created,
             up = sample.uplinkTotal.coerceAtLeast(0),
@@ -178,6 +193,7 @@ internal class ConnectionMinuteAggregator {
         val down = sample.downlinkTotal.coerceAtLeast(0)
         return Open(
             outbound = sample.outbound,
+            chain = sample.chain,
             dest = destCategory(sample.protocol, sample.destination, sample.network),
             createdAt = sample.createdAt.takeIf { it > 0 } ?: observedAt,
             up = sample.uplinkTotal.coerceAtLeast(0),
@@ -196,6 +212,7 @@ internal class ConnectionMinuteAggregator {
                 Closed(
                     minuteTs = minuteOf(closedAt),
                     outbound = row.outbound,
+                    chain = row.chain,
                     entry = entry,
                     dest = row.dest,
                     down = true,
@@ -219,6 +236,7 @@ internal class ConnectionMinuteAggregator {
             awaiting.add(
                 Awaiting(
                     outbound = row.outbound,
+                    chain = row.chain,
                     entry = entry,
                     dest = row.dest,
                     closedAt = closedAt,
@@ -242,6 +260,7 @@ internal class ConnectionMinuteAggregator {
                     Closed(
                         minuteTs = minuteOf(item.closedAt),
                         outbound = item.outbound,
+                        chain = item.chain,
                         entry = item.entry,
                         dest = item.dest,
                         down = false,
@@ -265,6 +284,7 @@ internal class ConnectionMinuteAggregator {
     private fun closedRow(row: Open, closedAt: Long, duration: Long, errorClass: String, entry: String?) = Closed(
         minuteTs = minuteOf(closedAt),
         outbound = row.outbound,
+        chain = row.chain,
         entry = entry,
         dest = row.dest,
         down = false,
@@ -278,9 +298,9 @@ internal class ConnectionMinuteAggregator {
     private fun toFlush(minuteTs: Long, rows: List<Closed>): MinuteFlush {
         val buckets = LinkedHashMap<String, Bucket>()
         for (row in rows) {
-            val key = listOf(row.outbound, row.entry.orEmpty(), row.dest, row.down.toString(), row.errorClass).joinToString("|")
+            val key = listOf(row.outbound, row.chain, row.entry.orEmpty(), row.dest, row.down.toString(), row.errorClass).joinToString("|")
             val bucket = buckets.getOrPut(key) {
-                Bucket(row.outbound, row.entry, row.dest, row.down, row.errorClass)
+                Bucket(row.outbound, row.chain, row.entry, row.dest, row.down, row.errorClass)
             }
             bucket.n++
             bucket.up += row.up
@@ -302,6 +322,9 @@ internal class ConnectionMinuteAggregator {
         buckets.forEachIndexed { index, bucket ->
             if (index > 0) out.append(',')
             out.append("{\"outbound\":").append(TelemetryPayload.quote(bucket.outbound))
+            if (bucket.chain.isNotEmpty()) {
+                out.append(",\"chain\":").append(TelemetryPayload.quote(bucket.chain))
+            }
             out.append(",\"dest\":").append(TelemetryPayload.quote(bucket.dest))
             out.append(",\"down\":").append(bucket.down)
             out.append(",\"n\":").append(bucket.n)
@@ -331,6 +354,7 @@ internal class ConnectionMinuteAggregator {
 
     private class Open(
         val outbound: String,
+        val chain: String,
         val dest: String,
         val createdAt: Long,
         var up: Long,
@@ -340,6 +364,7 @@ internal class ConnectionMinuteAggregator {
 
     private class Awaiting(
         val outbound: String,
+        val chain: String,
         val entry: String?,
         val dest: String,
         val closedAt: Long,
@@ -353,6 +378,7 @@ internal class ConnectionMinuteAggregator {
     private data class Closed(
         val minuteTs: Long,
         val outbound: String,
+        val chain: String,
         val entry: String?,
         val dest: String,
         val down: Boolean,
@@ -367,6 +393,7 @@ internal class ConnectionMinuteAggregator {
 
     private class Bucket(
         val outbound: String,
+        val chain: String,
         val entry: String?,
         val dest: String,
         val down: Boolean,

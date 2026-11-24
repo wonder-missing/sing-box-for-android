@@ -69,6 +69,7 @@ private const val HOUR_MS = 60L * 60L * 1_000L
 fun ActivityScreen(
     onBack: () -> Unit,
     onOpenEvidence: (ActivityEvidence) -> Unit = {},
+    onRestartService: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var anchorNow by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
@@ -294,6 +295,10 @@ fun ActivityScreen(
                     selected = null
                     onOpenEvidence(it)
                 },
+                onRestartService = {
+                    selected = null
+                    onRestartService()
+                },
             )
         }
     }
@@ -368,9 +373,11 @@ private fun ActivityDetailContent(
     nearbyCount: Int,
     onFocus: () -> Unit,
     onOpenEvidence: (ActivityEvidence) -> Unit,
+    onRestartService: () -> Unit,
 ) {
     val format = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
     val connection = event.type == ActivityTypes.CONNECTION_ERROR
+    val dnsMiss = event.type == ActivityTypes.DNS_CACHE_MISS
     val result =
         when (event.type) {
             ActivityTypes.PROFILE_UPDATE ->
@@ -427,7 +434,7 @@ private fun ActivityDetailContent(
                 "${event.available} / ${event.total}",
             )
         }
-        if (connection || event.count > 1) {
+        if (connection || dnsMiss || event.count > 1) {
             DetailRow(stringResource(R.string.activity_detail_count), event.count.toString())
         }
         event.detail?.let { DetailRow(stringResource(R.string.activity_detail_note), it) }
@@ -443,6 +450,11 @@ private fun ActivityDetailContent(
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onFocus) {
                 Text(stringResource(R.string.activity_detail_focus))
+            }
+            if (dnsMiss) {
+                TextButton(onClick = onRestartService) {
+                    Text(stringResource(R.string.activity_detail_restart_service))
+                }
             }
             event.evidence?.let { evidence ->
                 TextButton(onClick = { onOpenEvidence(evidence) }) {
@@ -478,6 +490,7 @@ private fun activityEventTitle(event: ActivityEvent): String =
         ActivityTypes.SERVICE_START -> stringResource(R.string.activity_event_service_start)
         ActivityTypes.SERVICE_STOP -> stringResource(R.string.activity_event_service_stop)
         ActivityTypes.SERVICE_ALERT -> stringResource(R.string.activity_event_service_alert, event.subject.orEmpty())
+        ActivityTypes.DNS_CACHE_MISS -> stringResource(R.string.activity_event_dns_cache_miss, event.count)
         ActivityTypes.VPN_REVOKED -> stringResource(R.string.activity_event_vpn_revoked)
         ActivityTypes.SERVICE_RESTORE -> stringResource(R.string.activity_event_service_restore, event.subject.orEmpty())
         ActivityTypes.CONFIG_RELOAD -> stringResource(R.string.activity_event_config_reload)

@@ -112,6 +112,41 @@ class ActivityLogTest {
     }
 
     @Test
+    fun `dns cache misses coalesce inside their five minute bucket`() {
+        val events = mutableListOf<ActivityEvent>()
+        ActivityReducer.add(
+            events,
+            ActivityEvent(
+                ts = now - 2_000,
+                lane = ActivityLane.SERVICE,
+                type = ActivityTypes.DNS_CACHE_MISS,
+                subject = "fakeip",
+                count = 3,
+                severity = ActivitySeverity.WARN,
+                obstacle = true,
+            ),
+            now,
+        )
+        ActivityReducer.add(
+            events,
+            ActivityEvent(
+                ts = now - 1_000,
+                lane = ActivityLane.SERVICE,
+                type = ActivityTypes.DNS_CACHE_MISS,
+                subject = "fakeip",
+                count = 4,
+                severity = ActivitySeverity.WARN,
+                obstacle = true,
+            ),
+            now,
+        )
+
+        assertEquals(1, events.size)
+        assertEquals(7, events.single().count)
+        assertTrue(events.single().obstacle)
+    }
+
+    @Test
     fun `evidence survives a coalesced merge`() {
         val first =
             ActivityEvent(

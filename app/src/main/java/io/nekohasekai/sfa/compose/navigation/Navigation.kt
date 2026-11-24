@@ -114,6 +114,7 @@ fun NavHost(
     usbIPStatusViewModel: USBIPStatusViewModel? = null,
     openConnectStatusViewModel: OpenConnectStatusViewModel? = null,
     openVPNStatusViewModel: OpenVPNStatusViewModel? = null,
+    onRestartService: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     androidx.navigation.compose.NavHost(
@@ -155,6 +156,7 @@ fun NavHost(
                         }
                     navController.navigate(route)
                 },
+                onRestartService = onRestartService,
             )
         }
 
