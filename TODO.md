@@ -5,7 +5,7 @@
 
 ## 现在待办
 
-> Conductor 审查/评估：[`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md) / [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。VFS 设计见 `~/workspace/clawdy-portal/docs/agent-oriented-vfs.md`；P7 见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；结论见「最近完成」。
+> Conductor 审查/评估：[`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md) / [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。旧 VFS 设计见 `~/workspace/clawdy-portal/docs/agent-oriented-vfs.md`；新 Share Key VFS 设计见 [`docs/vfs-share-key.md`](docs/vfs-share-key.md)（v3 待评审）；P7 见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；结论见「最近完成」。
 
 ### P1 稳定性与隐私
 
@@ -28,7 +28,7 @@
 
 ### P2 数据面与能力
 
-- [ ] **VFS Broker**：Settings 与 Telemetry 平行，统一暴露 Activity/Groups/Logs/Telemetry/Diagnostics；Phase 1 生成 snapshot zip，Phase 2 加 live `broker/**` scope，复用 VFS consent/trust；AP 移除 Activity/Groups 的分散分享按钮，只留一个入口。VFS 核心协议已解耦；当前 `AndroidVirtualDirectorySource` 有 Conductor 分支、`VfsRuntime` 通过 MCP 解析服务器，Broker 需要独立数据源和配置入口。
+- [ ] **Share Key VFS（VFS Broker 替代）**：设计见 [`docs/vfs-share-key.md`](docs/vfs-share-key.md)（v3 待评审，未实现）。App 作为 Provider 生成 Share Key；用户建 Share 后把 5 分钟 Pairing Code 粘给 Agent；Consumer 只提供 `wonder-vfs` CLI（不做 MCP）；Portal/Relay 只做盲路由。旧 Conductor VFS / MCP `vfs_link_request` / vfsd / `job_run(vfs=true)` 容器挂载退役；AO 的 Activity/Groups 分散导出在真机验收后移除。
 
 - [ ] **plan_update 隐藏导致相邻思考卡**：一轮只有 `plan_update` 时，它只更新顶部计划卡、不插入对话流；前后两个模型调用的 reasoning 卡会贴在一起。可选轻量「计划已更新 · x/y」行，或合并同一 turn 内相邻 reasoning；两条路的视觉不同，待拍板。
 - [ ] **Plan 卡完成态与变更历史（AF 候选）**：全部 `done` 后隐藏 Edit；`PlanEvent` 记录模型/用户每次版本、来源和 action，Transcript 增加 `## Plan history`；`[runtime:plan]` 增加 `updated by`。735 用例绿。待真机确认 v3→v4 能在 transcript 看到 user 取消第 5 步，且全部完成时没有编辑入口。
