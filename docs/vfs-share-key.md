@@ -115,7 +115,7 @@ Agent CLI (Consumer) --Unix socket / HTTPS--> Portal/Relay
 
 ### 3.2 App / Portal 配置
 
-- 默认：Settings → Share files 显示已有 Portal 连接；Connect 时用现有 Portal 会话/token 自动换/发一个 **Relay 专用 Provider key**，加密存储。VFS 核心不使用 MCP 工具；现有 Portal 连接只做一次性 bootstrap。
+- 默认：Settings → Share files 显示已有 Portal 连接；Connect 时用现有 Portal 会话/token 调 `POST /v1/provider-keys`（按 device 幂等），换/发一个 **Relay 专用 Provider key**，返回 `{relayUrl, providerKey}`，App 加密存储。VFS 核心不使用 MCP 工具；现有 Portal 连接只做一次性 bootstrap。
 - 没有现有 Portal 连接时，Advanced 允许手填 Relay URL + Provider key。
 - Provider key 与 Portal MCP token 分离；撤销 Provider key 不影响其他 Portal 功能。
 - Connect/Disconnect 是全局；Stop sharing 停掉所有 Share；单个 Share 走 Revoke。
@@ -278,6 +278,7 @@ Provider 顺序：persist Share Key → verify AEAD → consume code → build e
 
 ### 4.3 API 契约
 
+- Provider key 发放：`POST /v1/provider-keys`，Portal 现有会话/MCP token 认证；body `{deviceId,name}`；返回 `{relayUrl,providerKey}`；按 device 幂等；只用于 App bootstrap，不授予数据。
 - Provider WS：`GET /v1/provider`，`Authorization: Bearer <Provider key>`；`register {linkId,instanceId,generation}`、`unregister {linkId}`、`request/response` envelope、ping/pong。
 - Consumer：`POST /v1/request`，body `{v,op,linkId,reqId,ts,iv,ct}`；本机 Unix socket 无 auth；远端 `Authorization: Bearer <Consumer key>`；202 `{reqId}`；`GET /v1/response/{reqId}` long-poll ≤30s。
 - 状态：401 auth、404 unknown/revoked、410 revoked/expired（明确）、429 rate、503 offline + Retry-After、413 too large。
@@ -286,7 +287,7 @@ Provider 顺序：persist Share Key → verify AEAD → consume code → build e
 
 ### 4.4 App 改动
 
-- 新增：`VfsRelayConfig`（auto-provision/Advanced）、`VfsRelayClient`、`VfsShareStore`、`VfsPairing`、`VfsEnvelopeCrypto`、`VfsRelayManager`（一 WS 多 Link）、`AppDataVirtualDirectorySource`、`UserSelectedVirtualDirectorySource`。
+- 新增：`VfsRelayConfig`（auto-provision/Advanced）、`VfsProviderKeyProvisioner`（只在 bootstrap adapter 里接触现有 Portal 连接，VFS core 不 import MCP）、`VfsRelayClient`、`VfsShareStore`、`VfsPairing`、`VfsEnvelopeCrypto`、`VfsRelayManager`（一 WS 多 Link）、`AppDataVirtualDirectorySource`、`UserSelectedVirtualDirectorySource`。
 - 改写：`VfsRuntime`（去 MCP，接 Relay manager）、`VfsConnectionManager`（单 WS/多 Link，或拆成 Relay manager）、`VfsProviderProtocol`（envelope request/response）、`VirtualDirectoryProtocol`（复用 VFS frame）、`VfsScopedSource`（allowlist/新 scope）、`WorkspaceVirtualDirectorySource`（排除 conductor/.runtime）、`InternalFilesVirtualDirectorySource`（filesDir only、vfs/）、`AppVirtualDirectorySource`（appdata/selected）。
 - 删除：`VfsConnectTool`、`VfsConsent`、`VfsTrust`、`VfsCooldown(Store)`、`VfsResumeStore`、`VfsServerBase`、`VfsLink`/`VfsLinkParser`/旧 `VfsScopeAliases`、`VfsAccessScreen`、旧 `VfsProviderProtocol` server-hello、`OkHttpVfsProviderConnector` 旧 Portal 逻辑。
 - UI/strings：Settings → Share files；Shares；Pairing Code；warnings；global Stop；human labels；translations。
@@ -295,7 +296,7 @@ Provider 顺序：persist Share Key → verify AEAD → consume code → build e
 
 ### 4.5 Portal/Relay 改动
 
-- 新增 Relay 模块（可放在 `server.mjs` 路由或独立本机服务）：Provider WS、link register/generation、pairing、consumer 202+poll、response cache、Unix socket、public auth、limits/audit。
+- 新增 Relay 模块（可放在 `server.mjs` 路由或独立本机服务）：Provider key 发放、Provider WS、link register/generation、pairing、consumer 202+poll、response cache、Unix socket、public auth、limits/audit。
 - 退役旧 VFS：`vfs_link_request`/`vfs_connect`/`vfs_export`/`job_run(vfs=true)` VFS 分支；vfsd transport；旧 `/vfs/provider`；文档。
 - 部署在现有 Portal origin/tailnet 下，不新开 Funnel 端口；Provider key/Consumer key 存 hash、constant-time、限速。
 - 测试：pairing、link takeover、404/503、local socket vs Funnel、malicious relay、audit no plaintext。
