@@ -1,7 +1,34 @@
 # Share Key VFS：概念、方案与实现
 
-状态：设计草案 v3（2026-11-25），待独立评审；未实现。旧 Conductor VFS / Portal vfsd / MCP VFS 路径在本设计通过后退役。
+状态：设计草案 v4（2026-11-25），已按 v3 文档评审的 3 个 blocker 与 high 修正；待新一轮独立评审；未实现。
 相关旧路径：`~/workspace/clawdy-portal/VFS.md`、`~/workspace/clawdy-portal/docs/agent-oriented-vfs.md`、`~/workspace/clawdy-portal/docs/jobs.md`、[`vfs-dry-run.md`](vfs-dry-run.md)、[`vfs-connection-stability.md`](vfs-connection-stability.md)、[`mcp.md`](mcp.md)。本设计通过后按 §3.12 改写或标退役。
+
+## 0. v4 修复摘要
+
+| 评审项 | v4 处理 |
+|---|---|
+| B1 pairing code 只存 hash | Pairing code 的 secret（规范化 16 字符）在 5 分钟 TTL 内加密存 `noBackupFilesDir/vfs` 或只在内存；消费/过期 zeroize；hash 只做查找，不再作为唯一存储。 |
+| B2 provider key「幂等」与 hash-only 矛盾 | Provider key **issue-once per device**；Portal 加密存可逆 key（不是 hash-only），重复调用返回同一个 key；显式 `rotate`/`revoke`；App 更新并重连。 |
+| B3 `iv`/`N`/AAD/code 编码不明 | 固定 wire 字段 `clientNonce` + `iv`；data `iv=0` under unique per-request key；pair `iv` 随机；AAD 长度前缀固定顺序；code 规范化 ASCII 直接做 HKDF 输入；跨语言 vectors。 |
+| H1 scope 表未落地 | §3.7 增加「scope → 物理来源 → VFS 路径 → 生成方式 → 警告」表；`app.workspace` 改成 denylist 表述；`conductor.files` 标红；警告按真实路径。 |
+| H2 `all` 矛盾 | `all` = 所有固定 scope（含三个 `.runtime`），只排除 `user.selected`；`Everything = all`；旧 `all` 能力保留。 |
+| H3 404/410 不清 | Relay 增加 bounded tombstone；`unregister {reason}`；404 unknown、410 revoked/expired、503 offline；revoke purge cache。 |
+| H4 先删旧路径 | P1/P2 新路径 behind `ShareKeyVfs` flag，旧路径保留；P4 验收；P5 再删旧路径/AO 导出。 |
+| H5 protect/Tailscale | 默认 `relayUrl` = 公网 Portal Funnel origin，用 `VpnService.protect()`；tailnet/MagicDNS URL 不 protect；测试两种路径。 |
+| H6 provider key 生命周期 | 补 auth（现有 knock）、存储、deviceId、rotate/revoke、Advanced CLI/UI；更新 `AUTH.md`。 |
+| H7 Share 生命周期 | `pairedAt`、`lastUsedAt`、默认无过期；Stop sharing = pause all，Revoke = permanent，New code 不 eject；新手机旧 Share 仍有效直到 Revoke。 |
+| H8 CLI 契约 | 补 JSON/exit/error codes、key store、socket、`$HOME/bin` 绝对命令、list cursor、预览/get、`--share`、code 脱敏。 |
+| H9 多 Share UI | 新 `VfsRelayState`/通知「Sharing N files with M Agents」+ Stop；旧 status bar/strings/Conductor prompt/tool catalog/tests 一起改。 |
+| H10 部署/迁移 | 同 Portal 进程 + Unix socket；`~/.clawdy-portal/run/vfs-relay.sock`；AUTH/HOOKS/AGENTS/jobs/agent-oriented/old tests/scripts 全部列迁移。 |
+| H11 replay/cache | bounded/expiring replay cache；duplicate reqId 返回缓存；pair cache 5 分钟；revoke purge；GCM tag 16B；nonce 唯一。 |
+| M1 5 次尝试无效 | 删除 5-attempt 声明；80-bit code + 5 分钟 + per-Link rate limit。 |
+| M2 New code/Revoke | UI 文案明确 New code 不 eject，只有 Revoke 断开。 |
+| M3 预设/警告 | Recommended/Everything/Customize 精确列表；per-scope 警告文案；`all` 并集。 |
+| M4 API 24 | Share/crypto 代码放 `src/minApi24` 或 guard；`otherLegacy` 隐藏并测试。 |
+| M5 user.selected | 虚拟名/冲突、SAF 权限丢失、删除、目录不支持、pfd 错误都定义。 |
+| M6 limits 值 | 8 MiB frame、1 MiB read、10k list/4 KiB path、per-link 8、120 req/min、64 MiB/min、5 pair/min。 |
+| M7 迁移清单 | §3.12 列出 App/Portal/CLI/文档/测试/脚本/Agent prompt 的完整退役项。 |
+| M8 错误目录 | §3.10 加 stable codes/exit codes；补 CLI not installed/PATH、404/410、pair consumed、multi-Share、SAF、relay restart、provider key revoked、rate limit 不 New code。 |
 
 ## 1. 背景与目标
 
@@ -33,8 +60,8 @@
 | App（Provider） | 数据在手机上；主动连 Portal/Relay；验证 Share Key；按 Share 的 scope 读 VFS。 |
 | Agent（Consumer） | 远端 Claude Code；用 `wonder-vfs` CLI 读；不需要 MCP。 |
 | Portal/Relay | 盲路由；鉴权 transport、按 Link ID 转发密文、限速/审计元数据；不解析数据。 |
-| Share | 一次授权：label + scope 集合 + 一个 Link；一个 Agent 一个 Share；可 New code / Revoke。 |
-| Pairing Code | 5 分钟、一次性、16 字符 Crockford base32；用户粘给 Agent；CLI 用它换 Share Key。 |
+| Share | 一次授权：label + scope 集合 + 一个 Link；一个 Agent 一个 Share；New code / Revoke。 |
+| Pairing Code | 5 分钟、一次性、16 字符 Crockford base32；用户粘进 Agent 聊天；CLI 用它换 Share Key。 |
 | Share Key | 长期 AEAD 密钥；只存在 App 和 Agent 的 CLI 里；不打印、不进聊天。 |
 
 用户只需要理解 **App / Agent / Portal / Share / Pairing Code** 五个概念。Provider/Consumer、Share Key、Link ID、instanceId、generation、reqId、AEAD/HKDF、202+poll 都是实现概念，不出现在主 UI。
@@ -44,19 +71,20 @@
 - **Transport auth**：App 默认复用现有 Portal 连接，自动换/发一个 Relay 专用 Provider key；本机 Agent 走 Unix socket，免 transport key；远端 Consumer 的 key 后置。Transport key 只防滥用，不授予数据。
 - **Data auth**：Share Key。App 和 CLI 各持有；Portal/Relay 永远看不到。
 - **Authorization**：App 按 Share 的 scope 逐请求检查；Portal 不解释 scope。
-- **Consent**：创建 Share、生成 Pairing Code 就是授权；每个敏感 scope 有自己的红字警告；`all` 的警告是并集。
+- **Consent**：创建 Share、生成 Pairing Code 就是授权；每个敏感 scope 有自己的红字/黄字警告；`all` 的警告是并集。
 
 必须对用户说清楚：
 
-- **Portal 看得到**：哪个 Share、什么时候、多少字节、key 身份、Link ID；看不到文件内容、路径、scope、label。
+- **Portal 看得到**：哪个 Share、什么时候、多少字节、Provider/Consumer key 的**前缀/身份**（不是 Share Key）、Link ID；看不到文件内容、路径、scope、label。
 - **Agent 看得到**：你分享的文件；Agent 可能把它们发给它的模型提供方。
 - **Pairing Code**：一次性、5 分钟、在聊天里可见；看到它的人在这 5 分钟内可能抢先配对。
 - **Share Key**：由 Agent 的 CLI 保存；Portal 读不到；Agent 宿主机被信任（同一用户可读 CLI 的 key store）；不要宣称模型绝对拿不到 key。
-- **Relay 不可读**：密文和 AEAD tag 保证 Portal 不能读/伪造/篡改；它可以丢包、延迟、看元数据。
+- **Relay 不可读内容**：密文和 AEAD tag 保证 Portal 不能读/伪造/篡改；Portal 仍能看到 linkId/reqId/ts/op/size 等路由元数据，可以丢包、延迟。
+- **可用性**：读取只在 WonderSing 的 sharing 通知/FGS 活着时可用；App 停止/Doze 后 CLI 得到 503，重开 App 再试。不承诺 24/7。
 
 ### 2.3 用户模型（一页话术）
 
-> WonderSing 连上你的 Portal 后，创建一个 Share：起个名字，选 Agent 可以读的文件。复制 5 分钟配对码（或完整的一行配对命令）到 Agent 聊天。Agent 的 CLI 用它换一把自己保存的 key，然后 list/read 这些文件。Portal 只转发加密数据，能看到元数据，看不到内容。撤销 Share 就断掉访问。
+> WonderSing 连上你的 Portal 后，创建一个 Share：起个名字，选 Agent 可以读的文件。复制 App 给的一行配对命令（5 分钟有效）到 Agent 聊天。Agent 的 CLI 用它换一把自己保存的 key，然后 list/read 这些文件。Portal 只转发加密数据和路由元数据，看不到内容。撤销 Share 就断掉访问。
 
 术语：
 
@@ -64,31 +92,33 @@
 - 用「Portal connection」，不用 Relay（除非 Relay 不是 Portal）。
 - 用「What the Agent can read」，不摆 scope 技术名。
 - 用「New code」「Revoke」，不用 rotate。
-- 全局叫「Stop sharing（all Agents）」，单个 Share 叫「Revoke this Share」。
+- 全局叫「Stop sharing（all Agents，暂停）」，单个 Share 叫「Revoke this Share（永久断开）」。
 
 ### 2.4 用户流程
 
 一次性设置：
 
-1. Settings → Share files → Connect。默认使用已配置的 Portal 连接；URL/key 收进 Advanced，不要求用户手填第二个 key。
+1. 安装 `wonder-vfs` CLI（Portal `pnpm service-install` 装到 `$HOME/bin`；Claude Code skill/CLAUDE.md 告诉 Agent 命令）。
+2. Settings → Share files → Connect。默认使用已配置的 Portal 连接；URL/key 收进 Advanced。
 
 每个 Agent：
 
-2. New Share → 名字（可选）→ Recommended / Everything / Customize → Create。
-3. Copy pairing command（5:00 倒计时）；App 复制完整命令，不只是 code。
-4. 粘到 Agent 聊天；Agent 运行 `wonder-vfs pair ...`，返回它能看到的 roots。
-5. Agent 运行 `wonder-vfs list/read`；不再需要 code。撤销 Share → Revoke。
+3. New Share → 名字（可选）→ Recommended / Everything / Customize → Create。
+4. Copy pairing command（5:00 倒计时）；App 复制完整命令 `"$HOME/bin/wonder-vfs" pair --link <linkId> --code <code>`。
+5. 粘到 Agent 聊天；Agent 运行命令，返回它能看到的 roots。
+6. Agent 运行 `"$HOME/bin/wonder-vfs" list/read ...`；不再需要 code。撤销 Share → Revoke。
 
 ### 2.5 已接受的取舍
 
 - Pairing Code 会进入聊天/模型上下文；一次性、5 分钟、兑换后失效；长期 Share Key 不打印、不进聊天。用户已拒绝 out-of-band CLI/QR。
-- `all` 可以包含敏感 App 文件，但必须有红字警告；`vfs/` 永久排除；`app.files` 和 `conductor.conversation` 各自也有红字警告，不只 `all`。
+- `all` 可以包含敏感 App 文件，但必须有红字警告；`vfs/` 永久排除；`app.files`、`conductor.files`、`conductor.conversation` 各自也有红字警告，不只 `all`。
 - 可用性保持现状：FGS 活着时后台可读；进程死/Doze 后 503；不做 always-on。
 - 无 PFS；静态 Share Key + 短 TTL/Revoke；以后可加 X25519 ephemeral。
-- Relay 元数据（Link ID、时间、大小、key 身份）可见；不记录内容/路径/scope/label。
+- Relay 元数据（Link ID、时间、大小、key 前缀）可见；不记录内容/路径/scope/label。
 - Share 功能要求 API 24+；API 21 `otherLegacy` 隐藏该功能。
 - 容器 `/vfs` 退役；Conductor 的手机侧 VFS 工具移除；CLI 是替代。
 - 保留 `user.selected` 和细粒度 `app.data.*`；实现可分阶段，设计保留。
+- Share 默认不过期；`lastUsedAt` 记录；以后可选 TTL。Stop sharing 只是暂停 transport，Share/Key 保留；Revoke 才永久删除。New code 不 eject 已配对 Agent。
 
 ### 2.6 备选方案
 
@@ -112,243 +142,283 @@ Agent CLI (Consumer) --Unix socket / HTTPS--> Portal/Relay
 - App 只出站；Portal 按 Link ID 路由不透明 envelope；不需要 vfsd/FUSE。
 - Agent CLI 把 VFS 请求加密；App 解密、验 scope、读 VFS、加密响应；Portal 只转发。
 - 一个 Share 一个 Link ID；App 只维护一条 Provider WebSocket，多 Link ID 用 register/unregister 复用，上限 8。
+- Relay 只存内存 `linkId -> connection` + bounded tombstone；不存 secret/scope/label。
 
-### 3.2 App / Portal 配置
+### 3.2 App / Portal 配置与 Provider key
 
-- 默认：Settings → Share files 显示已有 Portal 连接；Connect 时用现有 Portal 会话/token 调 `POST /v1/provider-keys`（按 device 幂等），换/发一个 **Relay 专用 Provider key**，返回 `{relayUrl, providerKey}`，App 加密存储。VFS 核心不使用 MCP 工具；现有 Portal 连接只做一次性 bootstrap。
-- 没有现有 Portal 连接时，Advanced 允许手填 Relay URL + Provider key。
-- Provider key 与 Portal MCP token 分离；撤销 Provider key 不影响其他 Portal 功能。
-- Connect/Disconnect 是全局；Stop sharing 停掉所有 Share；单个 Share 走 Revoke。
+- 默认：Settings → Share files 显示已有 Portal 连接；Connect 时用现有 MCP knock secret 调 `POST /v1/provider-keys`（按 `deviceId` **issue-once**），返回 `{relayUrl, providerKey}`；Portal 加密保存可逆 key（不是 hash-only），重复调用返回同一个 key。App 加密存 `noBackupFilesDir/vfs`。
+- 显式 `POST /v1/provider-keys/rotate`：撤销旧 key、返回新 key；App 更新存储并关闭/重连现有 Provider WS。`DELETE /v1/provider-keys/{deviceId}` 撤销。
+- 一个 device 只有一个 active provider key；Provider key 只是 transport auth，不能读数据；可被用于 DoS/takeover，必须可撤销/轮换。
+- `VfsProviderKeyProvisioner` 是唯一接触现有 Portal 连接的 bootstrap adapter；VFS core 不 import MCP。没有 Portal 连接时，Advanced 允许手填 Relay URL + Provider key；Portal 提供 CLI/UI 一次性显示 key。
+- 更新 `AUTH.md`：`POST /v1/provider-keys` 的认证、device 绑定、限速、审计；不记录 secret。
 
 ### 3.3 Share 与 Pairing Code
 
 - Share 创建时生成 128-bit `linkId` + 32B `secret`；一个 Agent 一个 Share；多个 Agent 建多个 Share；上限 8，超出提示先 Revoke。
-- Share 记录：`shareId`、label、linkId、secret（加密）、scopes、instanceId、createdAt、lastUsedAt、expiresAt、revokedAt。存 `noBackupFilesDir/vfs/`，不进 telemetry/export。
-- Pairing Code：16 字符 Crockford base32（无 I/L/O/U），分组显示，大小写不敏感，5 分钟，单次，5 次尝试；一个 Share 同时只有一个 active code；New code 使旧 code 立即失效。
-- App 复制的是完整命令：`wonder-vfs pair --link <linkId> --code <code>`。16 字符是 secret；linkId 是公开路由；不要把 50 字符 URI 当默认，远端场景再议。
+- Share 记录：`shareId`、label、linkId、secret（加密）、scopes、instanceId、createdAt、pairedAt、lastUsedAt、expiresAt（默认 null）、revokedAt。存 `noBackupFilesDir/vfs/`，不进 telemetry/export。
+- Pairing Code：16 字符 Crockford base32（无 I/L/O/U），分组显示，大小写不敏感，5 分钟，单次；一个 Share 同时只有一个 active code；New code 使旧 code 立即失效。**不设 5-attempt 上限**；用 80-bit + 5 分钟 + per-Link rate limit；无效 AEAD tag 只限速，不烧 code。
+- Pairing code 的 secret 在 TTL 内加密存 `noBackupFilesDir/vfs` 或只在内存；Provider 需要它派生 Kpair；消费/过期 zeroize；hash 只做查找，不作为唯一存储。进程死则 code 丢失，用户 New code。
+- App 复制完整命令：`"$HOME/bin/wonder-vfs" pair --link <linkId> --code <code>`。16 字符是 secret；linkId 是公开路由；不要把 ~50 字符 URI 当默认。
 - 无 QR；Pairing Code 不进通知/状态栏；`FLAG_SECURE`；clipboard 自动清。
-- 生命周期只有两个动作：**New code**（同 Share Key，给重装/丢失的 CLI 重新配对）和 **Revoke**（删除 Share/linkId/secret，立即断 access）。没有 rotate；要换 key 就 Revoke 后新建 Share。
+- 生命周期只有两个动作：**New code**（同 Share Key，给重装/丢失的 CLI 重新配对；不 eject 已配对 Agent）和 **Revoke**（先 best-effort 向 Relay `unregister`，再删除 Share/linkId/secret；Relay 可达时新请求立即 410，离线/重启窗口按 404/503 + tombstone，cache purge）。没有 rotate；要换 key 就 Revoke 后新建 Share。
 - Cap 8：创建第 9 个 Share 时显示「已达到上限，先撤销一个」，不静默驱逐。
+- Share 默认不过期；`lastUsedAt` 记录；`expiresAt` 预留给以后可选 TTL。
 
 ### 3.4 Pairing 协议
 
-请求：
+Wire（pair 和 data 共用）：
 
 ```json
-{"v":1,"op":"pair","linkId":"...","reqId":"...","ts":0,"iv":"...","ct":"..."}
+{"v":1,"op":"pair","linkId":"...","reqId":"...","clientNonce":"...","ts":0,"iv":"...","ct":"..."}
 ```
 
-- `Kpair = HKDF-SHA256(code, salt=linkId, info="wsvfs/pair/req")`
-- `ct = AES-256-GCM(Kpair, plaintext={clientNonce}, aad={v,op,linkId,reqId,iv,ts,direction:"pair-req"})`
-- code 不发送；Relay 只见密文；linkId 是公开路由。
-
-响应：
-
-```json
-{"v":1,"linkId":"...","reqId":"...","iv":"...","ct":"..."}
-```
-
-- `KpairResp = HKDF-SHA256(code, salt=clientNonce, info="wsvfs/pair/resp")`
-- 明文 `{shareId, shareSecret, scopes, label}`；AAD 绑定 `{v,op,linkId,reqId,clientNonce,iv,direction:"pair-resp"}`。
-- AEAD tag 就是认证；客户端存 Share Key 到 keychain/0600，按 Share 分开；tool/CLI 输出只说 connected/roots，不打印 key。
-
-Provider 顺序：persist Share Key → verify AEAD → consume code → build encrypted response → cache `(linkId, reqId, clientNonce)` 60 秒 → send。响应丢失时 CLI 用同一个 reqId/nonce 重试，Provider 返回缓存，不重复消费。无效 AEAD tag 只按 Link 限速，不烧 code；只有有效兑换才消费 code。code 过期/用完即废；New code 换新。
-
-客户端：`pair` 命令把 Share Key 持久化后才报告成功；同一个 Share 可以重新 New code 再配对；CLI 重启不需要 code；pair 前拒绝任何 read。
+- `linkId`：16B base64url；`reqId`：16B base64url；`clientNonce`：32B base64url；`iv`：12B base64url；`op`：`"pair"`/`"vfs"`。
+- **code 编码**：16 字符规范化（大写、去空格/连字符）后的 ASCII 字节（UTF-8）作为 HKDF 输入；不做 base32 decode。Crockford 只用于人工输入。
+- `Kpair = HKDF-SHA256(codeBytes, salt=linkId, info="wsvfs/pair/req")`。
+- Pair 请求 `ct = AES-256-GCM(Kpair, plaintext={clientNonce}, aad)`；`iv` 是随机 12B；同一请求重试复用同一 `reqId`/`iv`/`clientNonce`。
+- Pair 响应：`{v,op:"pair",linkId,reqId,clientNonce,ts,iv,ct}`；`KpairResp = HKDF-SHA256(codeBytes, salt=clientNonce, info="wsvfs/pair/resp")`；明文 `{shareId,shareSecret,scopes,label}`；响应 `iv` 新随机 12B。
+- **AAD 规范**：字段固定顺序 `{v,op,linkId,reqId,clientNonce,ts,iv,direction}`；每个字段 4-byte big-endian 长度前缀 + UTF-8/bytes；`direction` = `"pair-req"`、`"pair-resp"`、`"request"`、`"response"`。Response AAD 绑定 request 的 `clientNonce`/`reqId`/`iv`。
+- GCM tag 16B；data `iv=0`（每请求 `Kreq` 唯一）；pair `iv` 随机；同一请求重试复用同一 IV，不产生不同明文同 key/IV。
+- Provider 顺序：persist Share Key → verify AEAD → consume code → build encrypted response → cache `(linkId,reqId,clientNonce)` **5 分钟**（与 code TTL 一致）→ send。响应丢失时 CLI 用同一 reqId/nonce 重试，返回缓存；缓存过期/丢失则 New code。Revoke 清 pair/response cache。
+- 无效 AEAD tag：按 Link 限速（5 pair/min），不消费 code；有效兑换才消费。code 过期/用完即废；New code 换新。
+- 客户端：`pair` 命令持久化 Share Key 后才报告成功；按 Share 存 key；重启不需要 code；pair 前拒绝任何 read。
 
 ### 3.5 数据加密
 
 - Share Key 32B；`K = HKDF-SHA256(secret, salt=linkId, info="wsvfs/v1")`。
-- 每请求 client nonce `N`；`Kreq = HKDF(K, salt=N, info="request")`，`Kresp = HKDF(K, salt=N, info="response")`。
-- AES-256-GCM，zero IV under unique per-request key；AAD length-prefixed `{v, linkId, reqId, N, ts, direction}`；response AAD 包含 request `N`/`reqId`。
-- Provider replay cache 在处理前插入 `reqId`；Consumer pending `reqId`；`ts` ±5 分钟为辅助；`SecureRandom`，不用 `kotlin.random.Random`。
-- AES-256-GCM only（ChaCha 需 API 28+，minSdk 21）；HKDF 用 HMAC-SHA256（RFC 5869）或 Tink；Kotlin/Node 交叉 test vectors。
+- 每请求 `clientNonce` 32B；`Kreq = HKDF(K, salt=clientNonce, info="request")`，`Kresp = HKDF(K, salt=clientNonce, info="response")`。
+- Data 请求/响应：AES-256-GCM，`iv=0`（每请求 key 唯一）；AAD 按 §3.4 固定顺序，`direction="request"/"response"`；response AAD 绑定 request `clientNonce`/`reqId`/`iv`。
+- Provider replay cache：per Share，bounded（10k 条/10 分钟），处理前插入 `reqId`；重复 reqId 返回缓存结果（若已完成）或 `409 IN_FLIGHT`（若处理中）；失败读可同 reqId 重试。
+- Consumer pending `reqId`；`ts` ±5 分钟为辅助；`SecureRandom`，不用 `kotlin.random.Random`。
+- AES-256-GCM only（ChaCha 需 API 28+，minSdk 21）；HKDF 用 HMAC-SHA256（RFC 5869）或 Tink；Kotlin/Node 交叉 vectors。
 - 无 PFS：静态 secret + 历史密文被录，key 泄露可解历史；短 TTL/Revoke 降低暴露；以后可加 X25519 ephemeral，不宣称 PFS。
 - VFS 错误/状态也在密文里；Portal 看不到路径或错误详情。
 
 ### 3.6 Relay
 
-- Provider：`GET /v1/provider` WS + Provider key；帧 `register {linkId, instanceId, generation}`、`unregister`、`request/response` envelope、app-level ping/pong；一条 WS 多 Link；重连重注册。
-- Consumer：`POST /v1/request` → 202 `{reqId}`；`GET /v1/response/{reqId}` long-poll ≤30s；response cache 60s；retry 503/429；404 unknown/revoked；401 auth；429 rate。
-- response cache 按 `(consumerKeyId|connectionId, reqId)`；reqId 高熵；客户端 404/503 不删 Share Key；只有明确 revoked/expired 才提示重新配对。
-- 本机：**只用 Unix socket 0600 in 0700**；免 transport key；只开 Consumer request/pair；删掉 loopback TCP 选项。Portal 在 Tailscale Funnel 后面，Funnel peer 是 `127.0.0.1`，loopback TCP 分不清本机 Agent 和公网。
-- 公网/tailnet listener：Provider WS + remote Consumer；永远要 key；key hash/constant-time；按 key/linkId 限速；不信 `X-Forwarded-For`；Funnel peer 不触发本机 bypass。
-- linkId 注册 generation/takeover：新连接替换旧连接，旧 generation 忽略/关闭；同 instanceId 重注册；不同 instance 的重复 linkId 拒绝。
-- limits：8 MiB frame/body；1 MiB read（base64 后约 1.33 MiB）；list entry/path-length cap + cursor；per-link concurrency 8；byte/request budget。
+- **Provider key**：`POST /v1/provider-keys`（knock auth，body `{deviceId,name}`，issue-once，返回 `{relayUrl,providerKey}`）；`rotate`/`revoke`；加密存 key；一个 device 一个 active key。
+- **Provider WS**：`GET /v1/provider` + `Authorization: Bearer <Provider key>`；帧 `register {linkId,instanceId,generation}`、`unregister {linkId,reason}`、`request/response` envelope、app-level ping/pong；一条 WS 多 Link；重连重注册。
+- **Registration takeover**：`generation` 单调；新的 authenticated registration 替换旧连接，旧 generation 关闭/忽略；同 instanceId 重注册；不同 instance 的重复 linkId 拒绝或按 generation 替换。
+- **Consumer**：`POST /v1/request` → 202 `{reqId}`；`GET /v1/response/{reqId}` long-poll ≤30s；response cache 60s（data）/5min（pair）；retry 503/429；401 auth；413 too large；404 unknown；410 revoked/expired；503 offline + Retry-After；429 rate。
+- **Tombstone**：link record `{linkId,connection,instanceId,generation,registeredAt,revokedAt?,expiresAt?}`；App Revoke 先 best-effort `unregister {reason:"revoked"}`；Relay 可达时保留 7 天 tombstone，期间请求 410；不可达/Relay 重启后未知，返回 404；Provider 离线 503。客户端把 404/503 都保留 key，不删；只有明确 410 revoked/expired 才提示重新配对。
+- response cache 按 `(consumerKeyId|connectionId,reqId)`；reqId 高熵；客户端 404/503 不删 Share Key；只有明确 revoked/expired 才提示重新配对。
+- **本机**：只用 Unix socket `~/.clawdy-portal/run/vfs-relay.sock`，目录 0700、socket 0600；免 transport key；只开 Consumer request/pair；删除 loopback TCP 选项。Portal 在 Tailscale Funnel 后面，Funnel peer 是 `127.0.0.1`，loopback TCP 分不清本机 Agent 和公网。
+- **公网/tailnet listener**：Provider WS + remote Consumer；永远要 key；key 存 hash/constant-time；按 key/linkId 限速；不信 `X-Forwarded-For`；Funnel peer 不触发本机 bypass。
+- **limits**：8 MiB frame/body；1 MiB read（base64 后约 1.33 MiB）；list 10k entries、path 4 KiB、cursor；per-link concurrency 8；120 req/min、64 MiB/min per Link；5 pair attempts/min per Link；429 + Retry-After。
 - audit 只记 event/linkId prefix/key prefix/bytes/duration/result；不记 ciphertext、路径、scope、label。
-- 部署在现有 Portal origin/tailnet 下，不新开 Funnel 端口；Relay 是 Portal 的新路由或独立本机服务，app 只认 URL。
-- 不需要 vfsd；旧 `/vfs/provider` 和 Portal VFS 数据面禁用。
+- **部署**：同一个 Portal 进程 + Unix socket；Provider WS/remote Consumer 挂现有 Portal origin/tailnet；不新开 Funnel 端口；launchd 生命周期随 Portal。
+- 不需要 vfsd；旧 `/vfs/provider` 和 Portal VFS 数据面在 P5 禁用。
 
 ### 3.7 Scope
 
-| Scope | 路径 | 用户标签 | 警告 |
-|---|---|---|---|
-| `app.data.activity` | `appdata/activity/**` | Activity history | amber |
-| `app.data.groups` | `appdata/groups/**` | Groups snapshot | amber |
-| `app.data.logs` | `appdata/logs/**` | App logs | amber |
-| `app.data.telemetry` | `appdata/telemetry/**` | Telemetry | amber |
-| `app.data.diagnostics` | `appdata/diagnostics/**` | Diagnostics | amber |
-| `app.files` | `appfiles/**` | App internal files | red |
-| `app.workspace` | 外部工作目录 allowlist | Working files | amber |
-| `conductor.files` | `conductor/**` | Conductor files | amber |
-| `conductor.trace` | `.runtime/trace.md` | API trace | amber |
-| `conductor.system_prompt` | `.runtime/system_prompt.md` | System prompt | amber |
-| `conductor.conversation` | `.runtime/conversation.md` | Chat transcript | red |
-| `user.selected` | `selected/**` | User-selected files | 单独 picker |
-| `all` | 目录 scope 的并集 | Everything | red 并集 |
+| Scope | 物理来源 | VFS 路径 | 生成方式 | 警告 |
+|---|---|---|---|---|
+| `app.data.activity` | `filesDir/activity/events.jsonl` | `appdata/activity/events.jsonl` | 现有文件虚拟映射 | amber |
+| `app.data.groups` | 内存 group state（AO 导出同一数据源） | `appdata/groups/current.json` | on-read snapshot | amber |
+| `app.data.logs` | `filesDir/logs/app.log` + AppLog | `appdata/logs/app.log` | 脱敏视图/tail | amber |
+| `app.data.telemetry` | `filesDir/telemetry/` | `appdata/telemetry/...` | curated view | amber |
+| `app.data.diagnostics` | `DiagnosticsExport` + crash reports | `appdata/diagnostics/...` | on-read metadata | amber |
+| `app.files` | `filesDir/**` except `vfs/` | `appfiles/**` | raw | red |
+| `app.workspace` | external files dir；denylist 排除 `conductor/`、`.runtime/` | `**` | raw | amber |
+| `conductor.files` | external `conductor/**` + artifacts | `conductor/**` | raw | red |
+| `conductor.trace` | `.runtime/trace.md` | `.runtime/trace.md` | runtime file | amber |
+| `conductor.system_prompt` | `.runtime/system_prompt.md` | `.runtime/system_prompt.md` | runtime file | amber |
+| `conductor.conversation` | `.runtime/conversation.md` | `.runtime/conversation.md` | runtime file | red |
+| `user.selected` | SAF content URIs | `selected/**` | virtual, pfd | picker |
+| `all` | 所有固定 scope 的并集 | union | — | red union |
 
-- `app.files` 只暴露 `filesDir`，不暴露 `noBackupFilesDir`；`vfs/` 在每个 base 都排除，canonical path 检查。警告列出真实路径：`configuration.json`、`configs/` + profile credentials、Tailscale state、logs、MCP token 文件（API 24+ 加密）、conversation/system prompt。
-- `app.workspace` 是 allowlist：排除 `conductor/` 和 `.runtime/`；`.runtime/*` 只能通过三个 `conductor.*` scope 读。当前 `workdir` 覆盖 `conductor/`，这是行为变化，文档和测试都要写明。
-- `user.selected` 是 SAF 多选，persistable read，存 URI+metadata，`pfd` + `Os.pread` 读取，0 copy（不落 APP 存储），read-only；不在 `all` 里，避免 `all` 静默包含别处选的文档。
-- 预设：**Recommended / Everything / Customize**。Recommended 是最小可用集（默认不含 `app.files`、`conductor.conversation`、`user.selected`）；Everything = `all`；Customize 展开全部 scope。技术名只出现在 Advanced/JSON。
-- 每个敏感 scope 有自己的红字/黄字警告；`all` 的警告是并集，不是唯一警告。
+- **`all` = 所有固定 scope**：`app.data.*`、`app.files`、`app.workspace`、`conductor.files`、`conductor.trace`、`conductor.system_prompt`、`conductor.conversation`；**只排除 `user.selected`**。`Everything = all`；旧 `all` 的 trace/system_prompt/conversation 能力保留。
+- **`app.workspace` 是 denylist**：external files dir 减去 `conductor/`、`.runtime/`；已知内容有 crash reports、core cache/state、Taildrop；amber 警告要列出。当前 `workdir` 包含 `conductor/`，新行为排除，需测试。
+- **`app.files` 只暴露 `filesDir`**，不暴露 `noBackupFilesDir`；`vfs/` 在每个 base 都排除，canonical path 检查。红字警告按真实路径列出：`configuration.json`、`configs/*.json`（profile credentials）、`conductor/mcp-servers.json`（API 24+ 加密的 MCP tokens）、`logs/`、`telemetry/`、`activity/`。Tailscale state 不在 `filesDir`；若某 scope 实际包含它，警告由真实文件清单生成，不硬编码。
+- **`conductor.files` 标红**：可能包含 Conductor artifacts、trace-turns、图片、Conductor 配置；警告写清楚。
+- **`conductor.conversation` 标红**：完整聊天记录。
+- **`app.workspace` amber**：external dir 的 raw 文件；警告列已知内容。
+- **`user.selected`**：SAF `ACTION_OPEN_DOCUMENT` 多选，persistable read；存 URI+metadata，不复制文件；虚拟名 `<id>-<sanitized-name>`，冲突用 id 去重；v1 只支持文件，不支持目录；删除/权限丢失 → `not_found`；`pfd` + `Os.pread`，不支持 seek 的 provider 退化 stream-skip；read-only；不在 `all`。
+- **预设精确列表**：
+  - **Recommended**：`app.data.activity`、`app.data.groups`、`app.data.logs`、`app.data.telemetry`、`app.data.diagnostics`、`app.workspace`；不含 `app.files`、`conductor.*`、`user.selected`。
+  - **Everything**：`all`（所有固定 scope，不含 `user.selected`）。
+  - **Customize**：任意固定 scope + 可选 `user.selected`。
+- **警告文案**（strings.xml）：
+  - `app.files`：「Includes configuration.json, configs/*.json (profile credentials), conductor/mcp-servers.json (encrypted MCP tokens), logs, telemetry, activity. The Agent and its model provider can read them.」
+  - `conductor.files`：「Includes Conductor files/artifacts/trace data; may contain sensitive session material.」
+  - `conductor.conversation`：「Includes the full chat transcript.」
+  - `all`：并集，列出上述 + `conductor.conversation` + `app.workspace` 已知内容。
+  - `user.selected`：「Files you pick are readable by this Agent; permissions are read-only and can be lost.」
 - Provider `VfsScopedSource` 按 Share 执行；Relay 不解释 scope；Share 创建 UI 显示 exact roots。
 
-### 3.8 App UI 与后台
+### 3.8 App UI、后台、状态、feature flag、egress
 
 - Settings → Share files：Portal connection（默认现有连接；Advanced 手动 URL/key）、Connect/Disconnect、状态。
-- Shares 列表：label、scope 摘要、created、last used、状态（waiting/paired/offline）、New code、Revoke。
+- Shares 列表：label、scope 摘要、created、pairedAt、lastUsed、状态（waiting/paired/offline）、New code、Revoke。
 - New Share：名字、Recommended/Everything/Customize、per-scope 警告、Create。
 - Pairing Code 页：5:00 倒计时、Copy pairing command、New code；无 QR；不进通知/状态栏；`FLAG_SECURE`；clipboard 自动清。
-- 全局 Disconnect 文案「Stop sharing（all Agents）」；单 Share「Revoke this Share」。
+- **多 Share 状态**：新 `VfsRelayState`：`Connected(shareCount, shares[{label,scopes,status,lastUsedAt}], totalBytes)`、`Idle`、`Backoff`、`Error`；通知「Sharing N files with M Agents」+ Stop；旧单 server/单 scope 的 status bar/notification/strings 替换。
+- **Stop sharing（all Agents）= 暂停**：关闭 Provider WS；Share/Key 保留；Connect 恢复，不重配对。**Revoke this Share = 永久**：删除 Share/linkId/secret，Relay tombstone。**New code 不 eject 已配对 Agent**；只有 Revoke 断开。
 - 后台复用 `VfsSharingService`/`VfsSharingPolicy`：FGS 活着时后台可读；进程死/Doze 后 503；不引入 always-on；Share 记录持久化，重开 App 显示 one-tap Reconnect（不静默自动连）。
-- egress：Relay socket 用 `VpnService.protect()`/SocketFactory，独立于规则化出口；切规则/切网络不能断 Share。
-- 旧路径移除：`VfsConnectTool`、`VfsConsent`/trust/cooldown/resume/`VfsAccessScreen`、`VfsRuntime` MCP 解析、`resolveServerForVfs`、`/vfs/provider`。
+- **egress**：默认 `relayUrl` = 公网 Portal Funnel origin；Relay socket 用 `VpnService.protect()`/SocketFactory，独立于规则化出口。若用户配置 tailnet/MagicDNS URL，**不 protect**（protect 会绕过 Tailscale 路由），文档写明；测试 VPN on/off、per-app include、root/proxy、rule switch、network switch。
+- **feature flag `ShareKeyVfs`**：P1/P2 新路径在 flag 后；旧路径/工具保留到 P4 验收；P5 移除旧路径和 AO 导出。flag off 可回旧路径。
 
 ### 3.9 CLI
 
-- 安装：Portal `pnpm service-install` 装到 `~/bin/wonder-vfs`；提供 Claude Code skill / CLAUDE.md 片段，告诉 Agent CLI 存在、命令、App 路径；App 复制完整 pair 命令。
+- 安装：Portal `pnpm service-install` 装 `$HOME/bin/wonder-vfs`；Claude Code skill/CLAUDE.md 告诉 Agent 命令；App 复制 `"$HOME/bin/wonder-vfs" pair ...`（绝对路径，避免 PATH 问题）。
+- `--help` 一页：App 路径、pair 流程、每命令一个示例、JSON 默认、大文件、Portal 盲区、not-paired 错误。
 - 命令：
-  - `wonder-vfs pair --link <linkId> --code <code>`
-  - `wonder-vfs list [path] --json [--cursor]`
-  - `wonder-vfs stat <path> --json`
-  - `wonder-vfs read <path> [--max-bytes 65536] --json`（preview）
-  - `wonder-vfs get <path> --out <file>`（全文件，带进度）
-  - `--share <label|id>` 多 Share 时选择；只有一个时默认。
-- 默认 `--json`；`--pretty` 给人看；默认本机 Unix socket；远端 `--relay/--api-key` 后置/Advanced。
-- Share Key 按 Share 存 keychain/0600；不打印、不进 argv/env/日志/错误；Pairing Code 在错误中脱敏。
-- 未配对错误要教用户去 App 的路径；list 带 cursor；read 默认 64 KiB preview；大文件用 `get --out`，提示可能数分钟；错误可行动。
-- 模型只看到一次性 code 和结果；CLI 保存 key；Agent 宿主被信任。
+  - `"$HOME/bin/wonder-vfs" pair --link <linkId> --code <code>`
+  - `... list [path] --json [--cursor] [--limit]`
+  - `... stat <path> --json`
+  - `... read <path> [--max-bytes 65536] --json`（preview）
+  - `... get <path> --out <file>`（全文件，带进度）
+  - `--share <label|id>` 多 Share 时选择；只有一个时默认；重复 label 报 `SHARE_AMBIGUOUS`。
+  - `--socket <path>`；默认 `~/.clawdy-portal/run/vfs-relay.sock`。`--relay/--api-key` 远端后置/Advanced。
+- 默认 `--json`；`--pretty` 给人看。JSON envelope：`{"ok":true,"data":...}` / `{"ok":false,"error":{"code","message","retryable","hint"}}`。
+- Exit codes：0 成功；2 usage；3 transient（retry）；4 permanent（not paired/revoked/invalid）；5 not found。
+- Error codes：`NOT_PAIRED`、`CODE_EXPIRED`、`CODE_INVALID`、`CODE_CONSUMED`、`PROVIDER_OFFLINE`、`SHARE_UNKNOWN`、`SHARE_REVOKED`、`RELAY_UNREACHABLE`、`RATE_LIMITED`、`TOO_LARGE`、`PATH_NOT_FOUND`、`PERMISSION_LOST`、`SHARE_AMBIGUOUS`、`PROVIDER_KEY_REVOKED`、`PROTOCOL_ERROR`、`CLI_NOT_FOUND`。
+- Key store：`~/Library/Application Support/wonder-vfs/keys.json`（macOS）0600、atomic write；每 Share `{shareId,label,linkId,secret}`；不打印、不进 argv/env/日志/错误；Pairing Code 在错误中脱敏（code 在 pair argv 里是设计允许的）。
+- list 分页：VFS `list` request 增加 `{cursor?,limit?}`，response 增加 `{entries,nextCursor?}`；默认 1k，最大 10k；Provider source 分页。
+- read 默认 64 KiB preview；大文件用 `get --out`，提示可能数分钟；list cursor；模型不一次吃 1.33 MiB base64。
+- 未配对错误教用户去 App 的路径；本地 Agent 默认 Unix socket；远端后置。
 
 ### 3.10 错误目录
 
-| 情况 | 文案/动作 |
-|---|---|
-| 未配对 | 去 WonderSing → Settings → Share files → New Share，拿 pairing command。 |
-| code 过期 | code 有效期 5 分钟；请用户 New code。 |
-| code 错误 | 检查 16 字符/分组；仍失败请 New code。 |
-| Provider 离线 | 手机离线或 sharing service 停了；打开 WonderSing，确认 Share files 为 Connected，再重试。 |
-| Share revoked | 该 Share 已撤销；请新建 Share，不要复用旧 key。 |
-| Portal 不可达 | 检查 Portal；本机用默认 socket；远端检查 `--relay`。 |
-| 限速 | 等 N 秒；或 New code。 |
-| 大文件 | 用 `get --out`；可能数分钟。 |
+| 情况 | code | exit | 动作 |
+|---|---|---|---|
+| CLI 未安装/PATH | `CLI_NOT_FOUND` | 2 | 用 `"$HOME/bin/wonder-vfs"` 或跑 `pnpm service-install`。 |
+| 未配对 | `NOT_PAIRED` | 4 | WonderSing → Settings → Share files → New Share，复制 pairing command。 |
+| code 过期 | `CODE_EXPIRED` | 4 | New code（5 分钟有效）。 |
+| code 错误 | `CODE_INVALID` | 4 | 检查 16 字符/分组；仍失败 New code。 |
+| code 已用/响应丢失超过缓存 | `CODE_CONSUMED` | 4 | New code；不要复用旧 code。 |
+| Provider 离线 | `PROVIDER_OFFLINE` | 3 | 打开 WonderSing，确认 Share files Connected；重试。 |
+| Share revoked | `SHARE_REVOKED` | 4 | 新建 Share；不要复用旧 key。 |
+| Relay 未知/重启 | `SHARE_UNKNOWN` | 3 | 保留 key；重试；不要删 key。 |
+| Provider key revoked | `PROVIDER_KEY_REVOKED` | 4 | App 重新 Connect/rotate provider key。 |
+| Portal 不可达 | `RELAY_UNREACHABLE` | 3 | 检查 Portal；本机默认 socket；远端 `--relay`。 |
+| 限速 | `RATE_LIMITED` | 3 | 等 `Retry-After`；不要 New code（New code 不清 rate limit）。 |
+| 大文件 | `TOO_LARGE` | 4 | `get --out`；可能数分钟。 |
+| 多 Share 未选 | `SHARE_AMBIGUOUS` | 2 | `--share <label|id>`。 |
+| SAF 权限丢失 | `PERMISSION_LOST` | 4 | App 重新选择文件。 |
+| 路径不存在 | `PATH_NOT_FOUND` | 5 | 检查 scope/path。 |
 
 ### 3.11 重启、新手机、多 Agent
 
-- Relay 重启：App 重连并重注册 Share；CLI key 不变；pending 请求重试；不重配对。
+- Relay 重启：App 重连并重注册 Share；CLI key 不变；pending 请求重试；不重配对；404/503 不删 key。
 - App 重启/进程死亡：Share 记录持久化；重开 App 显示 one-tap Reconnect；不静默自动连；CLI key 不变；不重配对。
-- 新手机/重装：Share 不迁移；新建 Share、撤销旧 Share；CLI 重新配对；旧 key 失效。
-- 多 Agent：一 Agent 一 Share；CLI 按 Share 存多把 key，`--share` 选择；上限 8；超出提示。
+- 新手机/重装：Share 不迁移；新建 Share、**在旧手机 Revoke 旧 Share**；CLI 重新配对；旧 Share 在 Revoke 前仍有效，不能声称自动失效。
+- 多 Agent：一 Agent 一 Share；CLI 按 Share 存多把 key，`--share` 选择；上限 8；超出提示；重复 label 报错。
+- Stop sharing（全局）= 暂停；Revoke（单 Share）= 永久；New code 同 key，不 eject。
 
-### 3.12 旧路径退役与文档迁移
+### 3.12 旧路径退役、文档迁移、feature flag
 
-- App：移除 `VfsConnectTool` 注册；移除 `VfsConsent`/trust/cooldown/resume/`VfsAccessScreen`；`VfsRuntime` 不再解析 MCP；删除 `resolveServerForVfs`；禁用 `/vfs/provider`。
-- Portal：退役 `vfs_link_request`/`vfs_connect`/`vfs_export`/`job_run(vfs=true)` 的 VFS 分支；vfsd 数据面不再使用；容器 `/vfs` 挂载退役；旧 Link/trust 清理。
-- 文档：`clawdy-portal/VFS.md` 改成新的 Relay/pairing/CLI 契约；`agent-oriented-vfs.md`、`jobs.md` 的 `/vfs` 段落标退役；`AGENTS.md` 的 VFS MCP 工具清单更新；WonderSing `vfs-dry-run.md`、`vfs-connection-stability.md`、`mcp.md`、`agent-control-plane.md` 改成新路径或标退役；App strings 全部更新（不能只留旧 consent 文案）。
-- AO 的 Activity/Groups 分散导出：Share Key VFS 真机验收后移除，避免同一版把唯一出口换掉；不在本设计的第一版混入。
+- App 移除（P5，flag 后）：`VfsConnectTool`、`VfsConsent`/`VfsTrust`/`VfsCooldown(Store)`/`VfsResumeStore`/`VfsServerBase`/`VfsLink`/`VfsLinkParser`/旧 `VfsScopeAliases`/`VfsAccessScreen`/旧 `VfsProviderProtocol` server-hello/`OkHttpVfsProviderConnector` 旧 Portal 逻辑/`VfsRuntime` MCP 解析/`resolveServerForVfs`/`/vfs/provider`；Conductor prompt/tool catalog/sanitizer/MCP device header；旧 status bar/notification/strings/tests。
+- Portal 移除（P5）：`vfs_link_request`/`vfs_connect`/`vfs_export`/`job_run(vfs=true)` VFS 分支；`lib/vfs.mjs`、`lib/vfsd-transport.mjs`、`/vfs/provider`；vfsd 数据面；容器 `/vfs` 挂载；旧 tests/scripts（`tests/vfs*.mjs`、`tests/jobs.test.mjs`、`scripts/e2e-vfs*.mjs`、`scripts/fake-app-provider.mjs`）。
+- 文档：Portal `VFS.md` 改成新的 Relay/pairing/CLI 契约；`agent-oriented-vfs.md`、`docs/jobs.md`、`docs/mcp-grants.md`、`AUTH.md`（`/vfs/provider` 例外）、`HOOKS.md`、`AGENTS.md` 的 VFS 工具清单全部更新/标退役；WonderSing `vfs-dry-run.md`、`vfs-connection-stability.md`、`mcp.md`、`agent-control-plane.md` 改成新路径或标退役；App strings/translations 全部更新；`TODO.md` VFS Broker → Share Key VFS。
+- AO 的 Activity/Groups 分散导出：P5（Share Key VFS 真机验收后）移除；P4 AP 保留 old path/AO 导出，避免同一版把唯一出口换掉。
+- `ShareKeyVfs` feature flag：P1/P2 新路径 behind flag；旧路径保留；P4 验收；P5 移除旧路径/flag/AO 导出。
 
 ## 4. 实现方案
 
 ### 4.1 阶段
 
 - **P0**：评审并冻结本文档；不改代码。
-- **P1 App provider core**：Portal auto-provision/Relay config；Share store；pairing；AEAD/HKDF；scope allowlist；FGS 复用；Settings/Share UI；移除旧路径；JVM 测试。
-- **P2 Portal/Relay**：Link 路由/注册 generation；pairing；Unix socket；公网 auth；202+poll；limits/audit；旧路径禁用；契约测试。
-- **P3 CLI**：`wonder-vfs` 安装；pair/list/stat/read/get；key store；错误；Claude Code skill；测试。
-- **P4 E2E**：真机 + Mini + Agent；Relay 只见密文；revoke/offline/restart；release AP；AO 导出移除放到验收后。
-- **P5 文档/清理**：Portal/WonderSing 文档改写；旧工具/strings/tests 删除；TODO 收尾。
+- **P1 App provider core**：Portal auto-provision/Relay config；Share store；pairing；AEAD/HKDF；scope source/denylist；FGS 复用；Settings/Share UI；新路径 behind `ShareKeyVfs`；旧路径保留；JVM 测试。
+- **P2 Portal/Relay**：Provider key issue/rotate/revoke；Link 路由/注册 generation/tombstone；pairing；Unix socket；公网 auth；202+poll；limits/audit；新路径 behind flag；旧路径保留；契约测试。
+- **P3 CLI**：`wonder-vfs` 安装；pair/list/stat/read/get；key store；JSON/exit/errors；Claude Code skill；测试。
+- **P4 E2E**：真机 + Mini + Agent；flag on；Relay 只见密文；revoke/offline/restart；release AP（old path/AO 导出仍保留）；验收。
+- **P5 清理**：移除旧 App/Portal 路径、vfsd、容器 `/vfs`、旧 strings/tests/docs；移除 AO 导出；移除 flag；另发版或紧随 P4 的清理版。
+- P1/P2/P3 在 contract v4 冻结后可并行；P4 依赖 P1–P3。
 
 ### 4.2 数据模型
 
-- App Share：`shareId,label,linkId,secretCiphertext,scopes,instanceId,createdAt,lastUsedAt,expiresAt,revokedAt`；`noBackupFilesDir/vfs/` 加密；不进 telemetry/export。
-- Pairing code：`shareId,codeHash,expiresAt,attempts,consumedAt`；单 active；内存/加密存储。
-- Relay link：`linkId,connection,instanceId,generation,registeredAt`；内存；无 secret/scope/label。
-- Response cache：`(consumerKeyId|connectionId, reqId) -> encrypted response,expiresAt`；60s。
-- CLI key：`shareId,label,linkId,secret`；keychain/0600；按 Share 分开。
+- App Share：`shareId,label,linkId,secretCiphertext,scopes,instanceId,createdAt,pairedAt,lastUsedAt,expiresAt(null),revokedAt`；`noBackupFilesDir/vfs/` 加密；不进 telemetry/export。
+- Pairing code：`shareId,codeCiphertext,createdAt,expiresAt,consumedAt`；5 分钟；加密/内存；消费/过期 zeroize；不存 hash-only。
+- Provider key：`deviceId,providerKeyCiphertext,relayUrl,createdAt,rotatedAt,revokedAt`；Portal 加密存可逆 key；App 加密存；一 device 一 active。
+- Relay link：`linkId,connection,instanceId,generation,registeredAt,revokedAt?,expiresAt?`；内存 + bounded tombstone（7 天）。
+- Response cache：`(consumerKeyId|connectionId,reqId) -> encrypted response,expiresAt`；data 60s、pair 5min。
+- Replay cache：per Share，bounded 10k/10min。
+- CLI key：`shareId,label,linkId,secret`；`~/Library/Application Support/wonder-vfs/keys.json` 0600；atomic。
 
 ### 4.3 API 契约
 
-- Provider key 发放：`POST /v1/provider-keys`，Portal 现有会话/MCP token 认证；body `{deviceId,name}`；返回 `{relayUrl,providerKey}`；按 device 幂等；只用于 App bootstrap，不授予数据。
-- Provider WS：`GET /v1/provider`，`Authorization: Bearer <Provider key>`；`register {linkId,instanceId,generation}`、`unregister {linkId}`、`request/response` envelope、ping/pong。
-- Consumer：`POST /v1/request`，body `{v,op,linkId,reqId,ts,iv,ct}`；本机 Unix socket 无 auth；远端 `Authorization: Bearer <Consumer key>`；202 `{reqId}`；`GET /v1/response/{reqId}` long-poll ≤30s。
-- 状态：401 auth、404 unknown/revoked、410 revoked/expired（明确）、429 rate、503 offline + Retry-After、413 too large。
-- Pairing：`op:"pair"` envelope；响应同 reqId；错误码同表；客户端 404/503 不删 key。
-- 限制：8 MiB frame/body；1 MiB read；list cap/cursor；per-link concurrency 8；高熵 reqId 128-bit。
+- **Provider key**：`POST /v1/provider-keys`（knock auth，`{deviceId,name}`，issue-once，返回 `{relayUrl,providerKey}`）；`POST /v1/provider-keys/rotate`；`DELETE /v1/provider-keys/{deviceId}`；key 加密存；一 device 一 active。
+- **Provider WS**：`GET /v1/provider`，`Authorization: Bearer <Provider key>`；`register {linkId,instanceId,generation}`、`unregister {linkId,reason}`、`request/response` envelope、ping/pong；多 Link；generation/takeover。
+- **Consumer**：`POST /v1/request`（本机 Unix socket 无 auth；远端 `Authorization: Bearer <Consumer key>`）body `{v,op,linkId,reqId,clientNonce,ts,iv,ct}`；202 `{reqId}`；`GET /v1/response/{reqId}` long-poll ≤30s。
+- **List**：VFS `list` request 增加 `{cursor?,limit?}`，response `{entries,nextCursor?}`；默认 1k，最大 10k。
+- **状态**：401 auth、404 unknown、410 revoked/expired、413 too large、429 rate + Retry-After、503 offline + Retry-After；客户端 404/503 不删 key。
+- **AAD/crypto**：按 §3.4/§3.5；GCM tag 16B；data iv=0；pair iv 随机；`clientNonce` 32B；code ASCII 规范化。
+- **Limits**：8 MiB frame/body；1 MiB read；10k list/4 KiB path；per-link concurrency 8；120 req/min、64 MiB/min、5 pair/min；tombstone 7d；replay 10k/10min。
+- **审计**：event/linkId prefix/key prefix/bytes/duration/result；不记 secret/ciphertext/路径/scope/label。
 
 ### 4.4 App 改动
 
-- 新增：`VfsRelayConfig`（auto-provision/Advanced）、`VfsProviderKeyProvisioner`（只在 bootstrap adapter 里接触现有 Portal 连接，VFS core 不 import MCP）、`VfsRelayClient`、`VfsShareStore`、`VfsPairing`、`VfsEnvelopeCrypto`、`VfsRelayManager`（一 WS 多 Link）、`AppDataVirtualDirectorySource`、`UserSelectedVirtualDirectorySource`。
-- 改写：`VfsRuntime`（去 MCP，接 Relay manager）、`VfsConnectionManager`（单 WS/多 Link，或拆成 Relay manager）、`VfsProviderProtocol`（envelope request/response）、`VirtualDirectoryProtocol`（复用 VFS frame）、`VfsScopedSource`（allowlist/新 scope）、`WorkspaceVirtualDirectorySource`（排除 conductor/.runtime）、`InternalFilesVirtualDirectorySource`（filesDir only、vfs/）、`AppVirtualDirectorySource`（appdata/selected）。
-- 删除：`VfsConnectTool`、`VfsConsent`、`VfsTrust`、`VfsCooldown(Store)`、`VfsResumeStore`、`VfsServerBase`、`VfsLink`/`VfsLinkParser`/旧 `VfsScopeAliases`、`VfsAccessScreen`、旧 `VfsProviderProtocol` server-hello、`OkHttpVfsProviderConnector` 旧 Portal 逻辑。
-- UI/strings：Settings → Share files；Shares；Pairing Code；warnings；global Stop；human labels；translations。
-- egress：`VpnService.protect()` SocketFactory；测试 per-app include/root/proxy/rule switch。
-- 测试：crypto vectors、pairing、scope matrix、Share store、FGS/background、旧路径不可达。
+- 新增：`VfsRelayConfig`、`VfsProviderKeyProvisioner`（仅 bootstrap adapter 接触现有 Portal 连接；core 不 import MCP）、`VfsRelayClient`、`VfsShareStore`、`VfsPairing`、`VfsEnvelopeCrypto`、`VfsRelayManager`（一 WS 多 Link）、`AppDataVirtualDirectorySource`、`UserSelectedVirtualDirectorySource`、`VfsRelayState`。
+- 改写：`VfsRuntime`（去 MCP，接 Relay manager）、`VfsConnectionManager`（或拆成 Relay manager）、`VfsProviderProtocol`（envelope request/response）、`VirtualDirectoryProtocol`/`Session`（list cursor）、`VfsScopedSource`（新 scope/denylist）、`WorkspaceVirtualDirectorySource`（排除 conductor/.runtime）、`InternalFilesVirtualDirectorySource`（filesDir only、vfs/）、`AppVirtualDirectorySource`（appdata/selected）、`VfsStatusBar`/`ServiceStatusBar`/`VfsScopeLabel`/`MainActivity`/`Navigation`/`VfsConnectionState`/`VfsSharingService`（多 Share 状态/通知/Stop）、`VfsPrivateFiles`/`VfsDeviceId`、strings/translations、Agent `AgentContext`/`AgentDataTools`/`AgentSanitizer`/`McpProtocol`/`ConductorViewModel`（去 VFS 提示/tool）。
+- 删除（P5）：§3.12 列表；旧 trust/consent/resume/cooldown/link/parser/serverBase/`VfsAccessScreen`/`VfsConnectTool`。
+- API 24：Share/crypto 代码放 `src/minApi24` 或 guard；`otherLegacy` 隐藏/不编译该功能并测试。
+- Egress：公网 Funnel URL + `VpnService.protect()`；tailnet URL 不 protect；测试。
+- Feature flag `ShareKeyVfs`；P1–P4 旧路径保留。
 
 ### 4.5 Portal/Relay 改动
 
-- 新增 Relay 模块（可放在 `server.mjs` 路由或独立本机服务）：Provider key 发放、Provider WS、link register/generation、pairing、consumer 202+poll、response cache、Unix socket、public auth、limits/audit。
-- 退役旧 VFS：`vfs_link_request`/`vfs_connect`/`vfs_export`/`job_run(vfs=true)` VFS 分支；vfsd transport；旧 `/vfs/provider`；文档。
-- 部署在现有 Portal origin/tailnet 下，不新开 Funnel 端口；Provider key/Consumer key 存 hash、constant-time、限速。
-- 测试：pairing、link takeover、404/503、local socket vs Funnel、malicious relay、audit no plaintext。
+- 新增：`lib/vfs-relay.mjs`（或同进程模块）：provider key issue/rotate/revoke、Provider WS、link register/generation/tombstone、pairing、consumer 202+poll、response/replay cache、Unix socket、public auth、limits/audit。
+- 修改：`server.mjs` 挂路由；`AUTH.md`（`/v1/provider-keys`、`/v1/provider`、Unix socket）、`HOOKS.md`、`AGENTS.md`、`docs/jobs.md`、`docs/agent-oriented-vfs.md`、`docs/mcp-grants.md`、`VFS.md`；launchd 同进程；Unix socket 路径/权限。
+- 退役（P5）：`lib/vfs.mjs`、`lib/vfsd-transport.mjs`、`/vfs/provider`、`vfs_link_request`/`vfs_connect`/`vfs_export`/`job_run(vfs=true)` VFS 分支、vfsd 数据面、容器 `/vfs`、旧 tests/scripts。
+- Consumer key 远端后置；v1 只本机 Unix socket。
 
 ### 4.6 CLI 改动
 
-- 新增 `wonder-vfs`（Node/Go；优先 Node 便于 Portal `service-install`）；安装到 `~/bin`；Claude Code skill/CLAUDE.md 片段。
-- 命令/JSON/key store/errors 按 §3.9/§3.10；本机 Unix socket；远端后置。
-- 测试：pair、key storage、read preview/get、list cursor、multi-Share `--share`、no key/code in logs、error copy。
+- 新增 `$HOME/bin/wonder-vfs`（Node/Go；优先 Node 便于 `service-install`）；安装脚本；Claude Code skill/CLAUDE.md；key store；socket 默认；JSON/exit/errors；list cursor；read preview/get。
+- 测试：pair、key 0600/atomic、socket、PATH/absolute、JSON/exit/errors、multi-Share、code 脱敏、大文件、list cursor、no key in logs。
+- 远端 `--relay/--api-key` 后置；v1 本机。
 
 ### 4.7 测试
 
-- Crypto：RFC 5869 HKDF、NIST AES-GCM、Kotlin/Node 交叉、AAD tamper、nonce/reqId replay、response swap、clock skew、API 24 存储。
-- Pairing：5 分钟、单次、attempts、invalid-tag DoS、concurrent redeem、lost response/retry、New code、client restart、reads-before-pair、code/key not in logs。
-- Relay：malicious swap/replay/reorder/drop、401/404/429/503、body/frame/list caps、restart/reconnect、duplicate linkId takeover、local socket vs Funnel、audit grep。
-- App：share create/copy/revoke/New code、scope matrix（`vfs/` 不可达、`.runtime` 不经 `app.workspace`、`all` 警告、per-scope 警告）、background/Doze/process death、egress switch、旧路径禁用、key/code 不进 telemetry/export/screenshot/clipboard/notification。
-- E2E：真机 + Mini + Agent；读已知文件；Relay 只见密文；revoke/tamper/offline；overnight；large files；multi-device；容器 `/vfs` 退役记录。
-- UX：新用户 5 步完成；术语理解；CLI `--help`/错误可行动；`all` 警告清楚。
+- Pairing：5 分钟、单次、code 加密存储/重启、无效 tag 限速、并发兑换、响应丢失/同 reqId 重试、cache 5 分钟、New code、client restart、pair 前拒绝读、code/key 不进日志。
+- Provider key：issue-once/重复/rotate/revoke、deviceId/reinstall、Advanced、未授权、加密存储。
+- Crypto：RFC 5869 HKDF、NIST AES-GCM、Kotlin/Node 交叉、AAD tamper、nonce/iv 复用拒绝、reqId replay、response swap、clock skew、API 24 存储。
+- Relay：malicious swap/replay/reorder/drop、401/404/410/429/503、frame/body/list caps、restart/reconnect、generation takeover、duplicate linkId、local socket vs Funnel、audit grep、tombstone。
+- Scopes：每个 scope × 路径矩阵；`appdata/groups`/diagnostics 生成；`app.workspace` denylist；`vfs/` 不可达；`.runtime` 不经 `app.workspace`；`all` 含 `.runtime`；`user.selected` 权限丢失/删除/目录；`app.files` 警告真实路径；`conductor.files` 红字。
+- App：Share create/copy/New code/Revoke/Stop；多 Share 状态/通知；background/Doze/process death；one-tap Reconnect；egress VPN/proxy/tailnet/rule switch；旧路径 flag off/on；key/code 不进 telemetry/export/screenshot/clipboard/notification。
+- CLI：JSON/exit/errors、key store 0600/atomic、Unix socket、`$HOME/bin`、list cursor、read preview/get、multi-Share `--share`、duplicate label、no code/key in logs。
+- E2E：真机 + Mini + Agent；已知文件；Relay 只见密文/元数据；revoke/tamper/offline；overnight；large files；multi-device；容器 `/vfs` 退役记录。
+- UX：新用户按 6 步完成；术语；`--help`；错误可行动；`all`/per-scope 警告清楚。
 
 ### 4.8 发布与回滚
 
-- 顺序：Portal/Relay + CLI 就绪 → App AP（P4）→ 真机/Agent 验收 → 移除 AO 导出 → 文档收尾。
-- 发布门：E2E 通过；Relay 日志无明文/key/code；scope matrix 通过；旧路径禁用；`./scripts/local-test.sh`；`./scripts/e2e-emulator.sh`；CI Test/Release。
-- 回滚：App 回滚到旧版会失去新 Share；Portal/Relay 回滚到旧 VFS 会恢复旧路径；旧路径退役是不可逆产品决定，发版前确认。No force push/tag move.
+- 顺序：Portal/Relay + CLI 就绪 → App AP（`ShareKeyVfs` flag on，旧路径/AO 导出保留）→ P4 E2E/真机验收 → P5 移除旧路径/flag/AO 导出 → 清理版 AP。
+- 发布门：P4 E2E；Relay 日志无明文/key/code；scope matrix；旧路径 flag off 可回退；`./scripts/local-test.sh`；`./scripts/e2e-emulator.sh`；CI Test/Release。
+- 回滚：P4 前 flag off 回旧路径；P5 后回滚 App/Portal 版本；旧路径退役不可逆，发版前确认。No force push/tag move。
 - 下一个 App label 若无其他改动是 AP；版本规则见 [`versioning.md`](versioning.md)。
 
 ### 4.9 风险
 
 - Pairing Code 在聊天/模型上下文；一次性/5 分钟；Agent 宿主可读 CLI key store；不要过度宣称。
-- `all` 敏感文件暴露；红字警告 + 用户确认；`vfs/` 硬排除；真实路径清单要准确。
-- 可用性：FGS/Doze/进程死亡；不承诺 always-on；503 要可行动。
+- `all` 敏感文件暴露；红字/amber 警告 + 用户确认；`vfs/` 硬排除；真实路径清单要准确。
+- 可用性：FGS/Doze/进程死亡；不承诺 always-on；503 可行动。
 - 无 PFS；未来 X25519。
 - Relay 元数据；不记内容/路径/scope/label。
-- CLI 安装/发现；skill/CLAUDE.md/App 复制命令；否则 5 步不成立。
-- Provider key auto-provision 依赖现有 Portal 连接；无则 Advanced 手填。
-- 文档迁移是重写，不是 append；旧文档/strings/tests 必须一起改。
-- API 21 `otherLegacy` 隐藏 Share；默认 minSdk 24 可用。
+- CLI 安装/发现/PATH；`$HOME/bin` 绝对命令；skill/CLAUDE.md；否则流程不成立。
+- Provider key auto-provision 依赖现有 Portal 连接；无则 Advanced；key 可 rotate/revoke。
+- 文档迁移是重写；旧文档/strings/tests/scripts/Agent prompt 必须一起改。
+- API 21 `otherLegacy` 隐藏 Share；API 24 source set/guard。
 - Cap 8；溢出提示；不静默驱逐。
 - 大文件 1 MiB read 25–28 秒/MB；CLI preview + `get --out`；不要默认把大数据塞进模型。
+- Egress：公网 Funnel + protect；tailnet URL 不 protect；测试两种路径。
 
 ## 5. 验收标准
 
-- Agent 用 CLI 读取 App 的选定 scope，无需手动导出/容器。
-- Pairing Code 5 分钟、一次性；长期 Share Key 不打印、不进聊天；CLI 按 Share 保存。
-- Portal 流量只有密文；日志无 key/code/路径/内容；元数据符合 §2.2。
-- Revoke 立即断；New code 可重配对；Provider 离线 503；Relay/App 重启不重配对；新手机新 Share。
-- `all`/`app.files`/`conductor.conversation` 警告可见；`vfs/` 不可达；`.runtime` 不经 `app.workspace`；`user.selected` 不在 `all`。
-- 旧 `/vfs/provider`/vfsd/`job_run(vfs=true)`/`VfsConnectTool` 禁用；文档/strings 更新。
-- 测试/证据：crypto vectors、malicious Relay、scope matrix、真机/Agent E2E、background/Doze、egress switch、key/code leak scan。
+| 验收 | 证据/测试 |
+|---|---|
+| Agent 用 CLI 读取选定 scope，无需手动导出/容器 | 真机 + Mini + Agent E2E；已知文件 sha256。 |
+| Pairing Code 5 分钟、一次性；长期 Share Key 不打印、不进聊天；CLI 按 Share 保存 | pairing 测试；transcript/log 扫描；CLI key store 权限。 |
+| Portal 只见密文 + 路由元数据；无 key/code/路径/内容 | malicious Relay 测试；audit grep；tcpdump/WSS 检查。 |
+| Revoke 后 Relay 可达时新请求 410；离线/重启按 tombstone；New code 可重配对；Provider 离线 503；Relay/App 重启不重配对；新手机新 Share | revoke/tombstone/restart/new-phone 测试。 |
+| `all`/`app.files`/`conductor.files`/`conductor.conversation` 警告可见；`vfs/` 不可达；`.runtime` 不经 `app.workspace`；`user.selected` 不在 `all` | scope matrix；UI 截图/strings 测试。 |
+| 旧 `/vfs/provider`/vfsd/`job_run(vfs=true)`/`VfsConnectTool` 在 P5 禁用；P4 前 flag off 可回退 | flag off/on；旧路径回归；docs 更新。 |
+| 多 Share 状态/通知正确；Stop=pause，Revoke=permanent | 多 Share UI 测试；通知/strings。 |
+| CLI JSON/exit/errors/key store/socket/PATH/list cursor 正确 | CLI 契约测试；Agent 实际调用。 |
+| 测试/证据完整：crypto vectors、malicious Relay、scope matrix、background/Doze、egress、key/code leak scan | 测试报告/记录路径。 |
 
 ## 6. 评审记录与变更
 
 - 安全/协议评审：sound with changes；2 个 blocking 已定：容器 `/vfs` 退役；一 Agent 一 Share（linkId/secret 在 Share 创建时生成，一条 WS 多 Link）。
 - 简洁性/易懂性/易用性评审：概念 4/5、易懂 3/5、易用 3/5；0 blocking；5 个默认已记录：Provider auth 复用/自动发放；16 字符 Pairing Code + 完整命令；CLI 本机预装 + skill；New code/Revoke（砍 rotate）+ per-Share key + `all` 不含 `user.selected` + per-scope warning；手机侧 Conductor VFS 退役。
-- 本文档 v3 已合并上述修正；待新的文档评审。
+- v3 文档评审：3 个新 blocking（pairing code 存储、provider key 幂等、iv/AAD/编码）+ high；v4 已按 §0 修复；待新一轮文档评审。
