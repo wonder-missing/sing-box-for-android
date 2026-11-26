@@ -1,6 +1,6 @@
 # Share Key VFS v1 战役板
 
-状态：实现完成，AP 发版与真机验收中。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
+状态：AQ 已发布（2026-11-26）；真机验收待用户。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
 
 ## 目标与验收
 
@@ -46,7 +46,7 @@
 | Portal 实现 | `clawdy-portal` `37949d8`；`pnpm check` 207/207；部署 `~/.clawdy-portal` 成功，socket 0600，`/v1/health` ok |
 | App 实现 | WonderSing `49bb790`；本地 815 tests / 0 failures；legacy/R8 通过；Test CI 45817405184 |
 | 真机 E2E | 待 AP 安装后验收：Connect/Share/pair/list/read/Stop/Revoke/离线/重启 |
-| Release | 待 bump AP、Test CI、tag、Release、APK 资产与飞书通知 |
+| Release | AQ 已发布：`v1.15.0-alpha.13-wonder.AQ`；APK 35,332,190 B；Release/Test/Notify 均 success |
 
 ## 风险
 
