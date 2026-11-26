@@ -1,6 +1,6 @@
 # Share Key VFS v1 战役板
 
-状态：实现中。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
+状态：实现完成，AP 发版与真机验收中。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
 
 ## 目标与验收
 
@@ -43,10 +43,10 @@
 | 合同/参考拆分 | commit `b47788f`（origin 推送待网络恢复） |
 | Portal 侦察 | server.mjs:1268-1277 listener；handleRequest:560；handleUpgrade:1195；hooks.mjs:70-173；install-launchd.sh:25-28 |
 | App 侦察 | VirtualDirectoryProtocol.kt:78-212；VfsSharingService.kt:36-268；SettingsScreen.kt:313；Navigation.kt:642；McpRuntime.kt:101-112 |
-| Portal 实现 | 待补 |
-| App 实现 | 待补 |
-| 真机 E2E | 待补 |
-| Release | 待补 |
+| Portal 实现 | `clawdy-portal` `37949d8`；`pnpm check` 207/207；部署 `~/.clawdy-portal` 成功，socket 0600，`/v1/health` ok |
+| App 实现 | WonderSing `49bb790`；本地 815 tests / 0 failures；legacy/R8 通过；Test CI 45817405184 |
+| 真机 E2E | 待 AP 安装后验收：Connect/Share/pair/list/read/Stop/Revoke/离线/重启 |
+| Release | 待 bump AP、Test CI、tag、Release、APK 资产与飞书通知 |
 
 ## 风险
 
@@ -54,3 +54,12 @@
 - App 新路径与旧 `/vfs/provider`、MCP VFS 并存；旧路径不改，新入口只加 Settings 行。
 - cursor/1 MiB 页与绝对路径适配是 App 侧最大实现风险；先写 JVM 测试再写 UI。
 - Provider key 自动 provision 依赖 MCP token 读取；不得绕过 `McpRuntime` 另开 store 实例。
+
+## v1 已知限制
+
+- `app.data.groups` 目前固定 `{"available":false,"groups":[]}`：Conductor group state 在 ViewModel 内，没有全局源；不在 v1 修旧架构。
+- 真实 Keystore 只有编译 + fake cipher JVM 测试；等真机安装后验证。
+- Egress 的 `VpnService.protect`/underlying DNS 只有注入测试；VPN on/off、per-app include、规则切换需真机 E2E。
+- 重复 JSON 键由 kotlinx 宽松解析；不作为 v1 阻塞。
+- 每次 Connect 会 issue-once 取当前 Provider key；Portal 5/min 限速下快速重连可能 429。
+- 跨 Portal pending Revoke、永久 tombstone、Provider key rotate/自删、admin socket 均为 post-v1。
