@@ -16,8 +16,8 @@ import java.security.MessageDigest
  */
 class AppDataVirtualDirectorySource(
     filesDir: File,
-    private val diagnosticsJson: () -> String,
-    private val groupsJson: () -> String,
+    private val diagnosticsJson: suspend () -> String,
+    private val groupsJson: suspend () -> String,
     private val now: () -> Long = System::currentTimeMillis,
 ) : VirtualDirectorySource {
     private val base = filesDir.canonicalFile

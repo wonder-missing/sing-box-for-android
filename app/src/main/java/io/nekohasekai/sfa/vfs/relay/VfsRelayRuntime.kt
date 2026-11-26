@@ -102,6 +102,8 @@ object VfsRelayRuntime {
     val shares: StateFlow<List<VfsRelayShareView>> = _shares.asStateFlow()
 
     @Volatile private var appContext: Context? = null
+    @Volatile private var egressInstance: VfsRelayEgress? = null
+    @Volatile private var provisionerInstance: VfsProviderKeyProvisioner? = null
     @Volatile private var shareStore: VfsShareStore? = null
     @Volatile private var configStore: VfsRelayConfigStore? = null
     @Volatile private var deviceSecretStore: VfsDeviceSecretStore? = null
@@ -117,7 +119,6 @@ object VfsRelayRuntime {
     private var heartbeatJob: Job? = null
     private var expiryJobs = ConcurrentHashMap<String, Job>()
     private var reconnectAttempt = 0
-    private val provisioner = VfsProviderKeyProvisioner()
 
     fun isAvailable(): Boolean = BuildConfig.SHARE_KEY_VFS && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
 
@@ -132,6 +133,9 @@ object VfsRelayRuntime {
             configStore = VfsRelayConfigStore(File(base, "relay/config.json"), cipher)
             deviceSecretStore = VfsDeviceSecretStore(File(base, "relay"), cipher)
             deviceIdStore = VfsDeviceIdStore(VfsPrivateFiles.deviceIdFile(app.noBackupFilesDir))
+            val egress = VfsRelayEgress.create(app)
+            egressInstance = egress
+            provisionerInstance = VfsProviderKeyProvisioner(egress.httpClient())
             appContext = app
             normalizeAfterProcessDeath()
         }
@@ -169,7 +173,7 @@ object VfsRelayRuntime {
             val config = configStore!!.load()
             val mcp = McpRuntimes.get(context).relayPortal(serverId)
                 ?: throw RelayProvisionException("PORTAL_NOT_FOUND", "Enable that MCP server first.", false)
-            val resolved = provisioner.targetOf(mcp)
+            val resolved = provisioner().targetOf(mcp)
             configStore!!.save(
                 config.copy(portalServerId = serverId, canonicalBase = resolved.canonicalBase),
             )
@@ -215,14 +219,20 @@ object VfsRelayRuntime {
                 return@withLock
             }
             _state.value = VfsRelayState.Connecting("Contacting the Portal")
-            VfsSharingService.start(context)
+            if (!VfsSharingService.start(context)) {
+                throw RelayProvisionException(
+                    "FOREGROUND_SERVICE_BLOCKED",
+                    "Android blocked the sharing notification, so WonderSing is not sharing. Open WonderSing and tap Connect again.",
+                    true,
+                )
+            }
             val mcp = McpRuntimes.get(context).relayPortal(config.portalServerId)
                 ?: throw RelayProvisionException(
                     "PORTAL_NOT_FOUND",
                     "The selected Portal is no longer enabled. Choose another Portal or enable it in Conductor settings.",
                     false,
                 )
-            val resolved = provisioner.targetOf(mcp)
+            val resolved = provisioner().targetOf(mcp)
             val deviceId = deviceIdStore!!.getOrCreate()
             val account =
                 config.accounts.firstOrNull {
@@ -244,7 +254,7 @@ object VfsRelayRuntime {
                         deviceId,
                     )
                 }
-            val issue = provisioner.issue(resolved, deviceId, deviceSecret, providerName())
+            val issue = provisioner().issue(resolved, deviceId, deviceSecret, providerName())
             val promoted =
                 deviceSecretStore!!.promotePending(
                     resolved.portalServerId,
@@ -309,6 +319,7 @@ object VfsRelayRuntime {
             VfsRelayClient(
                 relayUrl = url,
                 providerKey = key,
+                client = egress().relayClient(),
                 listener =
                     object : VfsRelayClientListener {
                         override fun onRelayOpen() {
@@ -387,7 +398,7 @@ object VfsRelayRuntime {
             if (record.registrationState != VfsShareRecord.STATE_REGISTERED || record.registeredAt == null) {
                 val key = providerKey ?: continue
                 target?.let { current ->
-                    runCatching { provisioner.postLink(current, key, record.linkId) }
+                    runCatching { provisioner().postLink(current, key, record.linkId) }
                         .onSuccess {
                             persistShare(record.copy(registrationState = VfsShareRecord.STATE_REGISTERED, registeredAt = System.currentTimeMillis()))
                         }
@@ -434,7 +445,7 @@ object VfsRelayRuntime {
 
                     "LINK_UNKNOWN" -> {
                         if (!retried && providerKey != null && target != null) {
-                            runCatching { provisioner.postLink(target!!, providerKey!!, updated.linkId) }
+                            runCatching { provisioner().postLink(target!!, providerKey!!, updated.linkId) }
                                 .onSuccess {
                                     persistShare(updated.copy(registrationState = VfsShareRecord.STATE_REGISTERED, registeredAt = System.currentTimeMillis()))
                                     registerLink(latestShare(updated.shareId) ?: updated, generation, retried = true)
@@ -1060,7 +1071,7 @@ object VfsRelayRuntime {
             saveShares(shareStore!!.load() + created)
             secret.fill(0)
             val key = providerKey ?: throw RelayProvisionException("NO_ACCOUNT", "Connect to the Portal again.", false)
-            runCatching { provisioner.postLink(target!!, key, linkId) }
+            runCatching { provisioner().postLink(target!!, key, linkId) }
                 .onFailure { error ->
                     val permanent = error is RelayProvisionException && !error.retryable
                     persistShare(
@@ -1431,6 +1442,20 @@ object VfsRelayRuntime {
             .filter { it.code in 0x20..0x7e && it != '|' }
             .trim()
             .take(64)
+
+    private fun egress(): VfsRelayEgress =
+        egressInstance ?: throw RelayProvisionException(
+            "EGRESS_UNAVAILABLE",
+            "Share files is not initialized yet. Try again.",
+            true,
+        )
+
+    private fun provisioner(): VfsProviderKeyProvisioner =
+        provisionerInstance ?: throw RelayProvisionException(
+            "EGRESS_UNAVAILABLE",
+            "Share files is not initialized yet. Try again.",
+            true,
+        )
 
     private fun providerName(): String =
         Build.MODEL?.takeIf { it.isNotBlank() }?.take(64) ?: PROVIDER_KEY_NAME

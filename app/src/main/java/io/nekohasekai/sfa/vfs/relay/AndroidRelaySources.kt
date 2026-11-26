@@ -11,6 +11,7 @@ import io.nekohasekai.sfa.agent.InboxRegistry
 import io.nekohasekai.sfa.conductor.ConductorSessionStore
 import io.nekohasekai.sfa.conductor.conductorConversationMarkdown
 import io.nekohasekai.sfa.log.AppLog
+import io.nekohasekai.sfa.telemetry.ProfileRevision
 import io.nekohasekai.sfa.vfs.ConductorVirtualDirectorySource
 import io.nekohasekai.sfa.vfs.InboxVirtualDirectorySource
 import io.nekohasekai.sfa.vfs.InternalFilesVirtualDirectorySource
@@ -68,13 +69,13 @@ object AndroidRelaySources {
         val telemetryDir = File(app.filesDir, "telemetry")
         val activityFile = File(app.filesDir, "activity/events.jsonl")
         val logFile = File(app.filesDir, "logs/app.log")
-        val diagnostics =
+        val diagnostics: suspend () -> String =
             {
                 buildJsonObject {
                     put("generated_at", System.currentTimeMillis())
                     put("app_version", BuildConfig.VERSION_NAME)
                     put("device_prefix", deviceId.take(8))
-                    put("profile_rev", "")
+                    put("profile_rev", runCatching { ProfileRevision.current(app) }.getOrNull() ?: "")
                     put("event_count", AppLog.entries().size)
                     put("activity_bytes", activityFile.length())
                     put("telemetry_bytes", telemetryDir.listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L)

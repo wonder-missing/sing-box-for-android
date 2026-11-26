@@ -22,9 +22,19 @@ class VPNService :
     PlatformInterfaceWrapper {
     companion object {
         private const val TAG = "VPNService"
+
+        /** The live VPN, used only to protect outbound sockets. Never route state. */
+        @Volatile
+        var active: VPNService? = null
+            private set
     }
 
     private val service = BoxService(this, this)
+
+    override fun onCreate() {
+        super.onCreate()
+        active = this
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = service.onStartCommand()
 
@@ -37,6 +47,7 @@ class VPNService :
     }
 
     override fun onDestroy() {
+        if (active === this) active = null
         service.onDestroy()
     }
 
