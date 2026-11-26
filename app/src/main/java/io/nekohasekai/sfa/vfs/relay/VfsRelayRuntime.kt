@@ -22,7 +22,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
-import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -83,7 +82,6 @@ object VfsRelayRuntime {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gate = Mutex()
-    private val random = SecureRandom()
     private val codes = VfsPairingCodes()
     private val nonces = RelayNonceCache()
     private val pendingControls = ConcurrentHashMap<String, CompletableDeferred<Any>>()
@@ -678,6 +676,7 @@ object VfsRelayRuntime {
     ) {
         val pairId = envelope.pairId ?: return
         val now = System.currentTimeMillis()
+        purgeExpiredCaches(now)
         if (!RelayClock.isFresh(envelope.ts, now)) {
             sendPairError(envelope, RelayPairErrorCode.STALE_TS, "timestamp outside window", serverTs = now, skewMs = now - envelope.ts)
             return
@@ -796,7 +795,9 @@ object VfsRelayRuntime {
         envelope: RelayEnvelope,
     ) {
         val cacheKey = "${record.linkId}|${envelope.reqId}|${envelope.clientNonce}"
-        responseCache[cacheKey]?.takeIf { it.expiresAt > System.currentTimeMillis() }?.let {
+        val now = System.currentTimeMillis()
+        purgeExpiredCaches(now)
+        responseCache[cacheKey]?.takeIf { it.expiresAt > now }?.let {
             client?.send(it.json)
             return
         }
@@ -996,6 +997,15 @@ object VfsRelayRuntime {
         )
     }
 
+    private fun purgeExpiredCaches(now: Long) {
+        if (responseCache.size > 512) {
+            responseCache.entries.removeIf { it.value.expiresAt <= now }
+        }
+        if (pairResponseCache.size > 64) {
+            pairResponseCache.entries.removeIf { it.value.expiresAt <= now }
+        }
+    }
+
     private fun sendLinkError(
         envelope: RelayEnvelope,
         code: String,
@@ -1074,6 +1084,14 @@ object VfsRelayRuntime {
             val record = latestShare(shareId)
                 ?: throw RelayProvisionException("SHARE_NOT_FOUND", "This Share no longer exists.", false)
             if (record.revokedAt != null) throw RelayProvisionException("SHARE_REVOKED", "This Share was revoked.", false)
+            val config = configStore!!.load()
+            if (record.portalServerId != config.portalServerId || record.canonicalBase != config.canonicalBase) {
+                throw RelayProvisionException(
+                    "SHARE_OFFLINE",
+                    "This Share belongs to another Portal. Connect that Portal first.",
+                    false,
+                )
+            }
             if (record.registrationState != VfsShareRecord.STATE_REGISTERED ||
                 !linkGate.canSendPair(record.linkId)
             ) {
@@ -1256,7 +1274,13 @@ object VfsRelayRuntime {
             linkGate.forget(record.linkId)
             responseCache.keys.removeIf { it.startsWith("${record.linkId}|") }
             pairResponseCache.keys.removeIf { it.startsWith("${record.linkId}|") }
-            val tombstoned = sendUnregisterBestEffort(record.linkId, "revoked")
+            val config = configStore!!.load()
+            val owningPortal =
+                record.portalServerId == config.portalServerId && record.canonicalBase == config.canonicalBase
+            // v1 has no cross-Portal pending Revoke: an offline Share owned by
+            // another Portal is deleted locally; reconnect to that Portal to
+            // tombstone it remotely.
+            val tombstoned = !owningPortal || sendUnregisterBestEffort(record.linkId, "revoked")
             if (tombstoned) {
                 removeShare(shareId)
             }
@@ -1308,6 +1332,9 @@ object VfsRelayRuntime {
                 val status =
                     when {
                         record.revokedAt != null || record.revokingAt != null -> "revoked"
+                        config != null &&
+                            (record.portalServerId != config.portalServerId ||
+                                record.canonicalBase != config.canonicalBase) -> "offline"
                         record.registrationState == VfsShareRecord.STATE_FAILED -> "failed"
                         record.registrationState != VfsShareRecord.STATE_REGISTERED -> "pending"
                         record.pairState == VfsShareRecord.PAIR_CONSUMED -> "paired"

@@ -176,6 +176,7 @@
     <string name="share_files_status_expired">Code expired</string>
     <string name="share_files_status_pending">Not registered</string>
     <string name="share_files_status_failed">Registration failed</string>
+    <string name="share_files_status_offline">Offline (another Portal)</string>
     <string name="share_files_status_revoked">Revoked</string>
     <string name="share_files_scope_activity">Activity</string>
     <string name="share_files_scope_groups">Groups</string>

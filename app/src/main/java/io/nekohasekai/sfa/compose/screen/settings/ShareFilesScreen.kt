@@ -643,6 +643,7 @@ private fun shareStatusLabel(status: String): String =
             "pending" -> R.string.share_files_status_pending
             "failed" -> R.string.share_files_status_failed
             "revoked" -> R.string.share_files_status_revoked
+            "offline" -> R.string.share_files_status_offline
             else -> R.string.share_files_status_pending
         },
     )
