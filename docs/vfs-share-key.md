@@ -60,7 +60,7 @@
 
 **Share 状态**：`waiting`（未生成 code）、`active`（code 有效）、`consumed`（已配对）、`paused`（Stop）、`expired`（code 过期）、`revoked`（本地已撤销）。
 
-- **Stop** → 所有 Link `paused`，关闭 WS，Share/Key 保留；Connect 后已配对 Agent 直接读，未配对/旧 code 需 New code。
+- **Stop** → 所有 Link `paused`，关闭 WS，`desiredConnected=false`（App 重启不自动连），Share/Key 保留；Connect 显式置 true 后，已配对 Agent 直接读，未配对/旧 code 需 New code。
 - **Code 自然过期** → `expired`；Relay 对同 pairId 返回 `code_expired`，不返回 `share_paused`。
 - **Revoke** → 本地立即拒绝新 pair/读，删除 secret；Relay tombstone 后 CLI 得到 410；失败则下次 Connect 重试。
 - **App 重启**：若 `desiredConnected=true` 自动重连一次；重新 `register` 并补发 pair 状态；不重配对。
