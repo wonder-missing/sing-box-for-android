@@ -50,6 +50,36 @@ class RelayRuntimePolicyTest {
     }
 
     @Test
+    fun emptySessionCountsOnlyTheCurrentPortal() {
+        val base =
+            VfsShareRecord(
+                shareId = "s", linkId = "l", secretCiphertext = "c", scopes = listOf("app.files"),
+                portalServerId = "portal", hookId = "h", canonicalBase = "https://current", deviceId = "d",
+                createdAt = 0,
+            )
+        val revokedCurrent = base.copy(shareId = "revoked", revokedAt = 1)
+        val otherPortalActive =
+            base.copy(shareId = "other", portalServerId = "other", canonicalBase = "https://other")
+        val current =
+            RelayRuntimePolicy.currentPortalActiveShares(
+                listOf(revokedCurrent, otherPortalActive),
+                "portal",
+                "https://current",
+            )
+        assertTrue(current.isEmpty())
+        assertTrue(RelayRuntimePolicy.shouldStopEmptySession(current.size))
+        assertFalse(RelayRuntimePolicy.shouldStopEmptySession(1))
+        // The other Portal's Share must not keep the current session alive.
+        assertFalse(
+            RelayRuntimePolicy.currentPortalActiveShares(
+                listOf(otherPortalActive),
+                "portal",
+                "https://current",
+            ).isNotEmpty(),
+        )
+    }
+
+    @Test
     fun pairFramesPreserveStateRulesForReconnectReplay() {
         val now = System.currentTimeMillis()
         val base =

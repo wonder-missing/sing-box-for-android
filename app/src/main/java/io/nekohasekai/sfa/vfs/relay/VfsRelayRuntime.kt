@@ -451,6 +451,7 @@ object VfsRelayRuntime {
             }
             if (record.revokedAt != null || record.revokingAt != null) {
                 if (sendUnregisterBestEffort(record.linkId, "revoked")) repository().remove(record.shareId)
+                if (stopIfNoCurrentPortalShares(context, config)) return
                 continue
             }
             if (record.registrationState == VfsShareRecord.STATE_FAILED) continue
@@ -1519,10 +1520,12 @@ object VfsRelayRuntime {
                 removeShare(shareId)
             }
             val remaining =
-                repository().load().filter {
-                    it.revokedAt == null && it.registrationState != VfsShareRecord.STATE_FAILED
-                }
-            if (tombstoned && remaining.isEmpty()) {
+                RelayRuntimePolicy.currentPortalActiveShares(
+                    repository().load(),
+                    config.portalServerId,
+                    config.canonicalBase,
+                )
+            if (remaining.isEmpty() && tombstoned) {
                 reconnectJob?.cancel()
                 configStore!!.update { it.copy(desiredConnected = false) }
                 manualClose = true
@@ -1531,6 +1534,14 @@ object VfsRelayRuntime {
                 client = null
                 _state.value = VfsRelayState.Idle
                 VfsSharingService.stop(context)
+            } else if (remaining.isEmpty()) {
+                // The last current-Portal Share is revoked but the tombstone
+                // is still pending; close the empty session and retry later.
+                manualClose = true
+                client?.close(1000, "revoke pending")
+                client = null
+                manualClose = false
+                scheduleReconnect(context, "Revoke still needs the Portal")
             } else if (RelayRuntimePolicy.shouldRescheduleAfterRevoke(
                     remaining = remaining.size,
                     tombstoned = tombstoned,
@@ -1542,6 +1553,34 @@ object VfsRelayRuntime {
             }
             publishConnected()
         }
+
+    /**
+     * After a revoked-link cleanup, never keep an empty "Connected" session.
+     * Pending tombstone records stay on disk for the next Connect retry.
+     */
+    private suspend fun stopIfNoCurrentPortalShares(
+        context: Context,
+        config: VfsRelayConfigFile,
+    ): Boolean {
+        val remaining =
+            RelayRuntimePolicy.currentPortalActiveShares(
+                repository().load(),
+                config.portalServerId,
+                config.canonicalBase,
+            )
+        if (!RelayRuntimePolicy.shouldStopEmptySession(remaining.size)) return false
+        reconnectJob?.cancel()
+        configStore?.update { it.copy(desiredConnected = false) }
+        manualClose = true
+        heartbeatJob?.cancel()
+        linkGate.clear()
+        client?.close(1000, "no shares")
+        client = null
+        _state.value = VfsRelayState.Idle
+        VfsSharingService.stop(context)
+        publishShares()
+        return true
+    }
 
     /** Called when the sharing FGS disappears; never keeps a silent Link alive. */
     fun onSharingServiceStopped() {
