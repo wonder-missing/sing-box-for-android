@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FilterAlt
+import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsRemote
@@ -354,6 +355,34 @@ fun SettingsScreen(navController: NavController) {
                     containerColor = Color.Transparent,
                 ),
             )
+            if (BuildConfig.SHARE_KEY_VFS && android.os.Build.VERSION.SDK_INT >= 24) {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            stringResource(R.string.settings_share_files_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    supportingContent = {
+                        Text(stringResource(R.string.settings_share_files_help))
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.FolderShared,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { navController.navigate("settings/share_files") },
+                    colors =
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
+                )
+            }
         }
 
         // About Section

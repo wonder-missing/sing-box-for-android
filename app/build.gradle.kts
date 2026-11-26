@@ -108,6 +108,10 @@ android {
         versionCode = 11_404_000 + wonderBuildOrdinalValue
         versionName = "$coreVersion-wonder.$wonderBuildCode"
         base.archivesName.set("SFA-${versionName}")
+
+        // Share Key VFS (Relay provider) is built in by default; API 21 builds
+        // hide the entry at runtime and use an unsupported cipher.
+        buildConfigField("boolean", "SHARE_KEY_VFS", "true")
     }
 
     signingConfigs {

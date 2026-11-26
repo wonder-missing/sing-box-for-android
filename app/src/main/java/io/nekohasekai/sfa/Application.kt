@@ -32,6 +32,7 @@ import io.nekohasekai.sfa.utils.HookModuleUpdateNotifier
 import io.nekohasekai.sfa.utils.HookStatusClient
 import io.nekohasekai.sfa.utils.PrivilegeSettingsClient
 import io.nekohasekai.sfa.vendor.Vendor
+import io.nekohasekai.sfa.vfs.relay.VfsRelayRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -83,6 +84,7 @@ class Application : Application() {
                 Log.w("Application", "setup libbox: ${it.message}")
             }
             runCatching { ProcessExitRecorder.recordRecent(this@Application) }
+            runCatching { VfsRelayRuntime.onAppStart(this@Application) }
             UpdateProfileWork.reconfigureUpdater()
             HookModuleUpdateNotifier.sync(this@Application)
             TaildropFiles.cleanCache()

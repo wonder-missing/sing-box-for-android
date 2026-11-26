@@ -63,6 +63,7 @@ object VfsErrorCode {
     const val NOT_SUPPORTED = "not_supported"
     const val PROVIDER_ERROR = "provider_error"
     const val RANGE_NOT_SATISFIABLE = "range_not_satisfiable"
+    const val PERMISSION_LOST = "permission_lost"
 }
 
 class VfsException(

@@ -111,6 +111,14 @@ class McpRuntime(
                 }.singleOrNull()
         }
 
+    /** Enabled portals that can act as a Share Key VFS Relay (token included). */
+    suspend fun relayPortalCandidates(): List<McpServerConfig> =
+        gate.withLock { servers.filter { it.enabled && it.token.isNotBlank() } }
+
+    /** One enabled portal by id, including its token. Used only for provisioning. */
+    suspend fun relayPortal(id: String): McpServerConfig? =
+        gate.withLock { servers.firstOrNull { it.id == id && it.enabled } }
+
     fun cancelActive() {
         cancels.forEach { it.cancel() }
     }
