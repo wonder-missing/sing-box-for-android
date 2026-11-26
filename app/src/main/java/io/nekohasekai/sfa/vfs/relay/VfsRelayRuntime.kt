@@ -643,8 +643,13 @@ object VfsRelayRuntime {
         context: Context,
         envelope: RelayEnvelope,
     ) {
-        val record = shareStore?.load()?.firstOrNull { it.linkId == envelope.linkId } ?: run {
-            sendLinkError(envelope, RelayLinkErrorCode.LINK_UNKNOWN, "link unknown")
+        val record = shareStore?.load()?.firstOrNull { it.linkId == envelope.linkId }
+        if (record == null) {
+            if (envelope.linkId in revokedLinkIds) {
+                sendLinkError(envelope, RelayLinkErrorCode.SHARE_REVOKED, "share revoked")
+            } else {
+                sendLinkError(envelope, RelayLinkErrorCode.LINK_UNKNOWN, "link unknown")
+            }
             return
         }
         if (record.revokedAt != null || envelope.linkId in revokedLinkIds) {

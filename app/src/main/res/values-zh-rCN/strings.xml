@@ -1024,7 +1024,7 @@
     <string name="share_files_preset_everything_help">所有固定 scope，包含配置、对话和原始文件。</string>
     <string name="share_files_customize_help">精确选择这个 Agent 能读的内容。</string>
     <string name="share_files_warning_amber">该 scope 可能包含敏感数据。日志仅 best-effort 脱敏，遥测是原始内容。</string>
-    <string name="share_files_warning_red">该 scope 可能暴露配置、凭据、对话或全部 App 文件。</string>
+    <string name="share_files_warning_red">该 scope 可能暴露配置（configs/*.json、conductor/mcp-servers.json）、凭据、trace-turns/、images/、日志、遥测、对话或全部 App 文件。</string>
     <string name="share_files_warning_picker">只共享你选中的文件。提供方移除文件后访问会丢失。</string>
     <string name="share_files_pick_files">选择文件</string>
     <string name="share_files_selected_count">已选 %1$d 个文件</string>

@@ -153,7 +153,7 @@
     <string name="share_files_preset_everything_help">All fixed scopes. Includes configuration, conversations and raw files.</string>
     <string name="share_files_customize_help">Choose exactly what this Agent can read.</string>
     <string name="share_files_warning_amber">This scope can contain sensitive app data. Logs are redacted best-effort; telemetry is raw.</string>
-    <string name="share_files_warning_red">This scope can expose configuration, credentials, conversations or every app file.</string>
+    <string name="share_files_warning_red">This scope can expose configuration (configs/*.json, conductor/mcp-servers.json), credentials, trace-turns/, images/, logs, telemetry, conversations or every app file.</string>
     <string name="share_files_warning_picker">Only the files you pick are shared. Access can be lost if the provider removes them.</string>
     <string name="share_files_pick_files">Pick files</string>
     <string name="share_files_selected_count">%1$d files selected</string>
