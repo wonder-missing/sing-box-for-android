@@ -167,6 +167,38 @@ class VfsShareStoreTest {
     }
 
     @Test
+    fun connectAccountSaveCannotOverwriteAConcurrentStop() {
+        val file = File(temp.root, "relay/config.json")
+        val store = VfsRelayConfigStore(file, cipher)
+        store.save(VfsRelayConfigFile(portalServerId = "old", desiredConnected = true))
+        val account =
+            VfsRelayAccount(
+                portalServerId = "portal",
+                canonicalBase = "https://portal.example",
+                hookId = "hk",
+                deviceId = "device",
+                providerKeyId = "key",
+                providerKeyCiphertext = "blob",
+                createdAt = 1,
+            )
+
+        // Stop wins before Connect finishes writing accounts.
+        store.update { it.copy(desiredConnected = false) }
+        val result = store.update { latest -> latest.withAccount("portal", "https://portal.example", account) }
+        assertFalse(result.desiredConnected)
+        assertFalse(store.load().desiredConnected)
+        assertTrue(result.accounts.any { it.portalServerId == "portal" })
+        assertFalse(RelayRuntimePolicy.shouldReconnect(store.load().desiredConnected))
+
+        // Connect finishes first; a later Stop still wins.
+        store.save(VfsRelayConfigFile(portalServerId = "old", desiredConnected = true))
+        store.update { latest -> latest.withAccount("portal", "https://portal.example", account) }
+        store.update { it.copy(desiredConnected = false) }
+        assertFalse(store.load().desiredConnected)
+        assertTrue(store.load().accounts.any { it.portalServerId == "portal" })
+    }
+
+    @Test
     fun desiredConnectedFalseSurvivesARestartAfterStop() {
         val file = File(temp.root, "relay/config.json")
         VfsRelayConfigStore(file, cipher).save(

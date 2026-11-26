@@ -181,6 +181,24 @@ data class VfsRelayConfigFile(
     val accounts: List<VfsRelayAccount> = emptyList(),
 )
 
+/**
+ * Adds one `(portalServerId, canonicalBase)` account without touching
+ * desiredConnected or any other field from the caller's stale snapshot.
+ */
+fun VfsRelayConfigFile.withAccount(
+    portalServerId: String,
+    canonicalBase: String,
+    account: VfsRelayAccount,
+): VfsRelayConfigFile =
+    copy(
+        portalServerId = portalServerId,
+        canonicalBase = canonicalBase,
+        accounts =
+            accounts.filterNot {
+                it.portalServerId == portalServerId && it.canonicalBase == canonicalBase
+            } + account,
+    )
+
 class VfsRelayConfigStore(
     private val file: File,
     private val cipher: VfsShareCipher,
@@ -205,6 +223,14 @@ class VfsRelayConfigStore(
             file,
             json.encodeToString(VfsRelayConfigFile.serializer(), config).toByteArray(Charsets.UTF_8),
         )
+    }
+
+    /** Re-reads the latest file, applies one targeted change, then saves. */
+    @Synchronized
+    fun update(transform: (VfsRelayConfigFile) -> VfsRelayConfigFile): VfsRelayConfigFile {
+        val updated = transform(load())
+        save(updated)
+        return updated
     }
 
     fun sealProviderKey(

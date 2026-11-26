@@ -166,10 +166,7 @@ object VfsRelayRuntime {
             runCatching { connectInternal(context.applicationContext, auto = true) }
                 .onFailure { error ->
                     if (error is RelayProvisionException && !error.retryable) {
-                        configStore?.let { store ->
-                            val latest = store.load()
-                            if (latest.desiredConnected) store.save(latest.copy(desiredConnected = false))
-                        }
+                        configStore?.update { it.copy(desiredConnected = false) }
                         _state.value = VfsRelayState.Error(error.message ?: "Connect failed")
                     } else {
                         scheduleReconnect(context.applicationContext, error.message ?: "Connect failed")
@@ -193,9 +190,9 @@ object VfsRelayRuntime {
             val mcp = McpRuntimes.get(context).relayPortal(serverId)
                 ?: throw RelayProvisionException("PORTAL_NOT_FOUND", "Enable that MCP server first.", false)
             val resolved = provisioner().targetOf(mcp)
-            configStore!!.save(
-                config.copy(portalServerId = serverId, canonicalBase = resolved.canonicalBase),
-            )
+            configStore!!.update {
+                it.copy(portalServerId = serverId, canonicalBase = resolved.canonicalBase)
+            }
         }
 
     suspend fun connect(context: Context): Result<Unit> = withContext(Dispatchers.IO) { connectResult(context) }
@@ -211,14 +208,11 @@ object VfsRelayRuntime {
                     false,
                 )
             }
-            configStore!!.save(config.copy(desiredConnected = true))
+            configStore!!.update { it.copy(desiredConnected = true) }
             connectInternal(context.applicationContext, auto = false)
         }.onFailure { error ->
             if (error is RelayProvisionException && !error.retryable) {
-                runCatching {
-                    val config = configStore!!.load()
-                    configStore!!.save(config.copy(desiredConnected = false))
-                }
+                runCatching { configStore!!.update { it.copy(desiredConnected = false) } }
                 _state.value = VfsRelayState.Error(error.message ?: "Connect failed")
             } else if (configStore?.load()?.desiredConnected == true) {
                 scheduleReconnect(context.applicationContext, error.message ?: "Connect failed")
@@ -313,26 +307,24 @@ object VfsRelayRuntime {
                     createdAt = account?.createdAt ?: issue.createdAt,
                     rotatedAt = account?.let { issue.createdAt },
                 )
-            val accounts = config.accounts.filterNot {
-                it.portalServerId == resolved.portalServerId && it.canonicalBase == resolved.canonicalBase
-            } + newAccount
-            configStore!!.save(
-                config.copy(
-                    portalServerId = resolved.portalServerId,
-                    canonicalBase = resolved.canonicalBase,
-                    desiredConnected = config.desiredConnected,
-                    accounts = accounts,
-                ),
-            )
-            target = resolved
-            providerKey = issue.providerKey
-            lastInboundAt = System.currentTimeMillis()
-            manualClose = false
-            val latest = configStore!!.load()
+            val latest =
+                configStore!!.update { current ->
+                    current.withAccount(resolved.portalServerId, resolved.canonicalBase, newAccount)
+                }
             if (!latest.desiredConnected) {
                 _state.value = VfsRelayState.Idle
                 return@withLock
             }
+            if (latest.portalServerId != resolved.portalServerId ||
+                latest.canonicalBase != resolved.canonicalBase
+            ) {
+                _state.value = VfsRelayState.Idle
+                return@withLock
+            }
+            target = resolved
+            providerKey = issue.providerKey
+            lastInboundAt = System.currentTimeMillis()
+            manualClose = false
             if (RelayForegroundGuard.blocked(started = true, serviceActive = VfsSharingService.isActive())) {
                 throw RelayProvisionException(
                     "FOREGROUND_SERVICE_BLOCKED",
@@ -407,6 +399,11 @@ object VfsRelayRuntime {
                 true,
             )
         }
+        if (configStore?.load()?.desiredConnected != true) {
+            created.close(1000, "sharing stopped")
+            client = null
+            _state.value = VfsRelayState.Idle
+        }
     }
 
     private suspend fun onSocketOpen(
@@ -414,8 +411,10 @@ object VfsRelayRuntime {
         generation: Int,
         auto: Boolean,
     ) {
+        if (configStore?.load()?.desiredConnected != true) return
         _state.value = VfsRelayState.Connecting("Registering Shares")
         registerAll(context, generation)
+        if (configStore?.load()?.desiredConnected != true) return
         if (generation != clientGeneration) return
         reconnectAttempt = 0
         publishConnected()
@@ -676,10 +675,7 @@ object VfsRelayRuntime {
         linkGate.clear()
         client = null
         if (code != null && RelayCloseCodes.isPermanent(code)) {
-            configStore?.let { store ->
-                val config = store.load()
-                if (config.desiredConnected) store.save(config.copy(desiredConnected = false))
-            }
+            configStore?.update { it.copy(desiredConnected = false) }
             _state.value =
                 VfsRelayState.Error(
                     "This device was revoked on the Portal.",
@@ -720,10 +716,7 @@ object VfsRelayRuntime {
                 runCatching { connectInternal(context.applicationContext, auto = true) }
                     .onFailure { error ->
                         if (error is RelayProvisionException && !error.retryable) {
-                            configStore?.let { store ->
-                                val config = store.load()
-                                if (config.desiredConnected) store.save(config.copy(desiredConnected = false))
-                            }
+                            configStore?.update { it.copy(desiredConnected = false) }
                             _state.value = VfsRelayState.Error(error.message ?: "Connect failed")
                             VfsSharingService.stop(context)
                         } else {
@@ -1357,10 +1350,7 @@ object VfsRelayRuntime {
             ensure(context)
             checkStore()
             reconnectJob?.cancel()
-            val config = configStore!!.load()
-            if (config.desiredConnected) {
-                configStore!!.save(config.copy(desiredConnected = false))
-            }
+            val config = configStore!!.update { it.copy(desiredConnected = false) }
             val records =
                 repository().load().filter {
                     it.portalServerId == config.portalServerId &&
@@ -1404,8 +1394,7 @@ object VfsRelayRuntime {
             ensure(context)
             checkStore()
             reconnectJob?.cancel()
-            val config = configStore!!.load()
-            if (config.desiredConnected) configStore!!.save(config.copy(desiredConnected = false))
+            val config = configStore!!.update { it.copy(desiredConnected = false) }
             val records =
                 repository().load().filter {
                     it.portalServerId == config.portalServerId &&
@@ -1478,8 +1467,7 @@ object VfsRelayRuntime {
                     it.revokedAt == null && it.registrationState != VfsShareRecord.STATE_FAILED
                 }
             if (tombstoned && remaining.isEmpty()) {
-                val latest = configStore!!.load()
-                configStore!!.save(latest.copy(desiredConnected = false))
+                configStore!!.update { it.copy(desiredConnected = false) }
                 manualClose = true
                 heartbeatJob?.cancel()
                 client?.close(1000, "no shares")
