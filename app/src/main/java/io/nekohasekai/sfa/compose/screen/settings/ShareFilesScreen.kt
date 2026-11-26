@@ -121,9 +121,6 @@ fun ShareFilesScreen(navController: NavController) {
     val candidates = servers.filter { it.enabled && it.hasToken }
 
     var portalId by remember { mutableStateOf(VfsRelayRuntime.selectedPortalId(context)) }
-    LaunchedEffect(candidates.size) {
-        if (portalId.isBlank() && candidates.size == 1) portalId = candidates.first().id
-    }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var showCreate by remember { mutableStateOf(false) }
@@ -193,6 +190,11 @@ fun ShareFilesScreen(navController: NavController) {
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
         )
+        Text(
+            text = stringResource(R.string.share_files_portal_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (candidates.isEmpty()) {
             Text(
                 text = stringResource(R.string.share_files_no_portal),
@@ -220,6 +222,13 @@ fun ShareFilesScreen(navController: NavController) {
             }
         }
 
+        if (candidates.isNotEmpty() && portalId.isBlank()) {
+            Text(
+                text = stringResource(R.string.share_files_choose_portal),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         StatusLine(relayState)
         if (relayError != null && relayError.resetRecommended) {
             OutlinedButton(onClick = { showReset = true }, enabled = !busy) {

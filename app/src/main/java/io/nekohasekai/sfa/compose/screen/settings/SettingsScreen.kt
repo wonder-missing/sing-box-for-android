@@ -329,32 +329,34 @@ fun SettingsScreen(navController: NavController) {
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
             ),
         ) {
-            ListItem(
-                headlineContent = {
-                    Text(
-                        stringResource(R.string.vfs_access_title),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                },
-                supportingContent = {
-                    Text(stringResource(R.string.vfs_access_help))
-                },
-                leadingContent = {
-                    Icon(
-                        imageVector = Icons.Outlined.AdminPanelSettings,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                },
-                modifier =
-                Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { navController.navigate("settings/vfs_access") },
-                colors =
-                ListItemDefaults.colors(
-                    containerColor = Color.Transparent,
-                ),
-            )
+            if (!BuildConfig.SHARE_KEY_VFS || android.os.Build.VERSION.SDK_INT < 24) {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            stringResource(R.string.vfs_access_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    supportingContent = {
+                        Text(stringResource(R.string.vfs_access_help))
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.AdminPanelSettings,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { navController.navigate("settings/vfs_access") },
+                    colors =
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
+                )
+            }
             if (BuildConfig.SHARE_KEY_VFS && android.os.Build.VERSION.SDK_INT >= 24) {
                 ListItem(
                     headlineContent = {
