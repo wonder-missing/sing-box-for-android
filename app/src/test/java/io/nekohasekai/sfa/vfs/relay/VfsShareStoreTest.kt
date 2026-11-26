@@ -78,11 +78,25 @@ class VfsShareStoreTest {
     }
 
     @Test
-    fun corruptShareFileLoadsEmptyInsteadOfCrashing() {
+    fun corruptShareFileFailsClosedAndIsPreserved() {
         val file = File(temp.root, "relay/shares.json")
         file.parentFile.mkdirs()
         file.writeText("{not json", Charsets.UTF_8)
-        assertTrue(VfsShareStore(file, cipher).load().isEmpty())
+        val store = VfsShareStore(file, cipher)
+        var thrown = false
+        try {
+            store.load()
+        } catch (_: RelayStoreException) {
+            thrown = true
+        }
+        assertTrue(thrown)
+        assertEquals("{not json", file.readText(Charsets.UTF_8))
+        try {
+            store.save(emptyList())
+            throw AssertionError("corrupt store must not be overwritten")
+        } catch (_: RelayStoreException) {
+            assertEquals("{not json", file.readText(Charsets.UTF_8))
+        }
     }
 
     @Test
@@ -150,6 +164,15 @@ class VfsShareStoreTest {
         assertNull(paused.pairExpiresAt)
         assertEquals(record.secretCiphertext, paused.secretCiphertext)
         assertArrayEquals(ByteArray(32) { 7 }, store.openSecret(paused))
+    }
+
+    @Test
+    fun desiredConnectedFalseSurvivesARestartAfterStop() {
+        val file = File(temp.root, "relay/config.json")
+        VfsRelayConfigStore(file, cipher).save(
+            VfsRelayConfigFile(portalServerId = "portal", desiredConnected = false),
+        )
+        assertFalse(VfsRelayConfigStore(file, cipher).load().desiredConnected)
     }
 
     @Test

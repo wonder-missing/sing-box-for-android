@@ -30,6 +30,7 @@ data class VfsShareRecord(
     val expiresAt: Long? = null,
     val revokedAt: Long? = null,
     val selectedUris: List<String> = emptyList(),
+    val lastError: String? = null,
 ) {
     val concreteScopes: Set<RelayScope>
         get() = RelayScope.parseAll(scopes)
@@ -84,16 +85,27 @@ class VfsShareStore(    private val file: File,
             encodeDefaults = true
         }
 
+    @Volatile
+    private var corrupt = false
+
     @Synchronized
     fun load(): List<VfsShareRecord> {
         if (!file.isFile) return emptyList()
-        return runCatching {
-            json.decodeFromString(VfsShareFile.serializer(), file.readText(Charsets.UTF_8)).shares
-        }.getOrDefault(emptyList())
+        if (corrupt) throw RelayStoreException(corruptMessage())
+        val decoded =
+            runCatching {
+                json.decodeFromString(VfsShareFile.serializer(), file.readText(Charsets.UTF_8)).shares
+            }.getOrNull()
+        if (decoded == null) {
+            corrupt = true
+            throw RelayStoreException(corruptMessage())
+        }
+        return decoded
     }
 
     @Synchronized
     fun save(shares: List<VfsShareRecord>) {
+        if (corrupt) throw RelayStoreException(corruptMessage())
         if (!cipher.supported) throw RelayStoreException("Encryption is unavailable on this device.")
         RelayFiles.writeAtomic(
             file,
@@ -101,6 +113,9 @@ class VfsShareStore(    private val file: File,
                 .toByteArray(Charsets.UTF_8),
         )
     }
+
+    private fun corruptMessage(): String =
+        "The Share list is damaged. WonderSing left the file in place; revoke or restore it from a backup before creating new Shares."
 
     fun sealSecret(
         shareId: String,

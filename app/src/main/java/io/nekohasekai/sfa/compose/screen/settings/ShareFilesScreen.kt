@@ -131,12 +131,22 @@ fun ShareFilesScreen(navController: NavController) {
     var label by remember { mutableStateOf("") }
     var pairingShareId by remember { mutableStateOf<String?>(null) }
     var revokeShareId by remember { mutableStateOf<String?>(null) }
+    var showReset by remember { mutableStateOf(false) }
     var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(pairingShareId) {
         while (pairingShareId != null) {
             delay(1_000L)
             tick = System.currentTimeMillis()
+        }
+    }
+    LaunchedEffect(tick, pairingShareId, shares) {
+        val id = pairingShareId ?: return@LaunchedEffect
+        val share = shares.firstOrNull { it.shareId == id }
+        if (VfsRelayRuntime.pairingUi(id) == null &&
+            (share == null || share.status in setOf("expired", "revoked", "paused", "failed", "pending", "offline"))
+        ) {
+            pairingShareId = null
         }
     }
 
@@ -209,6 +219,11 @@ fun ShareFilesScreen(navController: NavController) {
         }
 
         StatusLine(relayState)
+        if (relayState is VfsRelayState.Error) {
+            OutlinedButton(onClick = { showReset = true }, enabled = !busy) {
+                Text(stringResource(R.string.share_files_reset))
+            }
+        }
         message?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
@@ -220,6 +235,7 @@ fun ShareFilesScreen(navController: NavController) {
                         scope.launch {
                             busy = true
                             VfsRelayRuntime.disconnect(context)
+                            pairingShareId = null
                             busy = false
                         }
                     } else {
@@ -359,6 +375,36 @@ fun ShareFilesScreen(navController: NavController) {
         }
     }
 
+    if (showReset) {
+        AlertDialog(
+            onDismissRequest = { showReset = false },
+            title = { Text(stringResource(R.string.share_files_reset_title)) },
+            text = { Text(stringResource(R.string.share_files_reset_help)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showReset = false
+                        scope.launch {
+                            busy = true
+                            VfsRelayRuntime.resetShareFilesData(context)
+                            portalId = ""
+                            pairingShareId = null
+                            message = null
+                            busy = false
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.share_files_reset_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReset = false }) {
+                    Text(stringResource(R.string.share_files_cancel))
+                }
+            },
+        )
+    }
+
     revokeShareId?.let { shareId ->
         AlertDialog(
             onDismissRequest = { revokeShareId = null },
@@ -443,6 +489,13 @@ private fun ShareCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            share.error?.let { error ->
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (share.status != "revoked") {
                     TextButton(onClick = onNewCode, enabled = enabled) {
@@ -510,8 +563,25 @@ private fun CreateShareCard(
                         },
                     ),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color =
+                    if (preset == SharePreset.EVERYTHING) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
             )
+            if (preset == SharePreset.RECOMMENDED) {
+                selectedScopes
+                    .sortedBy { it.wire }
+                    .forEach { relayScope ->
+                        Text(
+                            text = scopeLabel(relayScope.wire) + " · " +
+                                stringResource(R.string.share_files_warning_amber),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+            }
             if (preset != SharePreset.RECOMMENDED) {
                 val scopes = RelayScope.fixed + RelayScope.USER_SELECTED
                 scopes.forEach { relayScope ->

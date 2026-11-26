@@ -195,7 +195,7 @@ class VfsProviderKeyProvisioner(
             code == "DEVICE_REVOKED" ->
                 RelayProvisionException(
                     "DEVICE_REVOKED",
-                    "This device was revoked on the Portal. Create a new Share on this device.",
+                    "This device was revoked on the Portal. Ask the administrator to delete the old provider key, or reset Share files data and create a new Share.",
                     false,
                 )
 

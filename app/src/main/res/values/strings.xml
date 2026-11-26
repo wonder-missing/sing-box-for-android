@@ -163,6 +163,10 @@
     <string name="share_files_revoke_title">Revoke this Share?</string>
     <string name="share_files_revoke_help">The Agent loses access permanently. This cannot be undone.</string>
     <string name="share_files_cancel">Cancel</string>
+    <string name="share_files_reset">Reset Share files data</string>
+    <string name="share_files_reset_title">Reset Share files data?</string>
+    <string name="share_files_reset_help">This deletes local Shares, Share Keys, Provider keys and this install\'s device identity. Agents must be paired again; MCP servers may need to re-register this device. This cannot be undone.</string>
+    <string name="share_files_reset_confirm">Reset</string>
     <string name="share_files_pairing_title">Pairing Code</string>
     <string name="share_files_pairing_help">Copy this command to the Agent. The code works once and expires in %1$s.</string>
     <string name="share_files_pairing_expired">This code expired. Create a New code.</string>

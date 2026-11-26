@@ -1034,6 +1034,10 @@
     <string name="share_files_revoke_title">撤销这个 Share？</string>
     <string name="share_files_revoke_help">Agent 将永久失去访问权限，且不可恢复。</string>
     <string name="share_files_cancel">取消</string>
+    <string name="share_files_reset">清除 Share files 数据</string>
+    <string name="share_files_reset_title">清除 Share files 数据？</string>
+    <string name="share_files_reset_help">这会删除本机 Share、Share Key、Provider key 和此安装的设备身份。Agent 需要重新配对，MCP 服务端可能需要重新登记此设备。此操作不可恢复。</string>
+    <string name="share_files_reset_confirm">清除</string>
     <string name="share_files_pairing_title">Pairing Code</string>
     <string name="share_files_pairing_help">把这条命令复制给 Agent。code 只能使用一次，%1$s 后失效。</string>
     <string name="share_files_pairing_expired">code 已过期，请创建新 code。</string>

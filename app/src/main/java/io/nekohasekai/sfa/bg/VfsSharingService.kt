@@ -314,6 +314,9 @@ class VfsSharingService : Service() {
             runCatching { context.stopService(Intent(context, VfsSharingService::class.java)) }
         }
 
+        /** Runtime gate: never open a provider WS without the visible FGS. */
+        fun isActive(): Boolean = running || requested
+
         private fun foregroundServiceType() =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
