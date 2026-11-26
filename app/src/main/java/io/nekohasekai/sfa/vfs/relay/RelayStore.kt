@@ -75,9 +75,11 @@ private data class VfsShareFile(
     val shares: List<VfsShareRecord> = emptyList(),
 )
 
-class VfsShareStore(    private val file: File,
+class VfsShareStore(
+    private val file: File,
     private val cipher: VfsShareCipher,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val reader: (File) -> String = { it.readText(Charsets.UTF_8) },
 ) {
     private val json =
         Json {
@@ -92,10 +94,16 @@ class VfsShareStore(    private val file: File,
     fun load(): List<VfsShareRecord> {
         if (!file.isFile) return emptyList()
         if (corrupt) throw RelayStoreException(corruptMessage())
+        val text =
+            try {
+                reader(file)
+            } catch (error: java.io.IOException) {
+                // A transient read failure is retryable and must not latch the
+                // store as permanently damaged.
+                throw RelayStoreException("Could not read the Share list: ${error.message}", retryable = true)
+            }
         val decoded =
-            runCatching {
-                json.decodeFromString(VfsShareFile.serializer(), file.readText(Charsets.UTF_8)).shares
-            }.getOrNull()
+            runCatching { json.decodeFromString(VfsShareFile.serializer(), text).shares }.getOrNull()
         if (decoded == null) {
             corrupt = true
             throw RelayStoreException(corruptMessage())
@@ -107,11 +115,15 @@ class VfsShareStore(    private val file: File,
     fun save(shares: List<VfsShareRecord>) {
         if (corrupt) throw RelayStoreException(corruptMessage())
         if (!cipher.supported) throw RelayStoreException("Encryption is unavailable on this device.")
-        RelayFiles.writeAtomic(
-            file,
-            json.encodeToString(VfsShareFile.serializer(), VfsShareFile(shares = shares))
-                .toByteArray(Charsets.UTF_8),
-        )
+        try {
+            RelayFiles.writeAtomic(
+                file,
+                json.encodeToString(VfsShareFile.serializer(), VfsShareFile(shares = shares))
+                    .toByteArray(Charsets.UTF_8),
+            )
+        } catch (error: java.io.IOException) {
+            throw RelayStoreException("Could not save the Share list: ${error.message}", retryable = true)
+        }
     }
 
     private fun corruptMessage(): String =
@@ -341,7 +353,7 @@ class VfsDeviceSecretStore(
         value.map { if (it.isLetterOrDigit() || it == '-' || it == '_' || it == '.') it else '_' }.joinToString("")
 }
 
-class RelayStoreException(message: String) : Exception(message)
+class RelayStoreException(message: String, val retryable: Boolean = false) : Exception(message)
 
 internal object RelayFiles {
     fun writeAtomic(

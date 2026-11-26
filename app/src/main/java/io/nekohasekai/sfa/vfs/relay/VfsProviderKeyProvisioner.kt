@@ -188,7 +188,7 @@ class VfsProviderKeyProvisioner(
             code == "DEVICE_AUTH" ->
                 RelayProvisionException(
                     "DEVICE_AUTH",
-                    "This device's secret does not match the Portal record. Ask the administrator to delete the old provider key, then create a new Share.",
+                    "This device's secret does not match the Portal record. Use Reset Share files data to start with a new device identity and Share; administrator deletion permanently revokes this device.",
                     false,
                 )
 

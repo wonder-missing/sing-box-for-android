@@ -13,6 +13,26 @@ object RelayRuntimePolicy {
         }
 
     fun shouldReconnect(desiredConnected: Boolean): Boolean = desiredConnected
+
+    /**
+     * Revoke must not cancel a reconnect that other Shares still need. Only a
+     * successfully tombstoned last Share may stop the session; an offline
+     * Revoke with remaining Shares must resume the backoff.
+     */
+    fun shouldRescheduleAfterRevoke(
+        remaining: Int,
+        tombstoned: Boolean,
+        desiredConnected: Boolean,
+        clientOpen: Boolean,
+    ): Boolean = desiredConnected && !clientOpen && !(tombstoned && remaining == 0)
+
+    fun responseAllowed(
+        record: VfsShareRecord,
+        revokedLinkIds: Set<String>,
+    ): Boolean =
+        record.revokedAt == null &&
+            record.revokingAt == null &&
+            record.linkId !in revokedLinkIds
 }
 
 object RelayForegroundGuard {

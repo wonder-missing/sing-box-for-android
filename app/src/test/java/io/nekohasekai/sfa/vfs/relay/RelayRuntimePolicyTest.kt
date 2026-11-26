@@ -28,6 +28,28 @@ class RelayRuntimePolicyTest {
     }
 
     @Test
+    fun revokeSuppressesInFlightResponses() {
+        val base =
+            VfsShareRecord(
+                shareId = "s", linkId = "l", secretCiphertext = "c", scopes = listOf("app.files"),
+                portalServerId = "p", hookId = "h", canonicalBase = "https://x", deviceId = "d", createdAt = 0,
+            )
+        assertTrue(RelayRuntimePolicy.responseAllowed(base, emptySet()))
+        assertFalse(RelayRuntimePolicy.responseAllowed(base.copy(revokedAt = 1), emptySet()))
+        assertFalse(RelayRuntimePolicy.responseAllowed(base.copy(revokingAt = 1), emptySet()))
+        assertFalse(RelayRuntimePolicy.responseAllowed(base, setOf("l")))
+    }
+
+    @Test
+    fun revokeKeepsReconnectAliveWhileOtherSharesRemain() {
+        assertTrue(RelayRuntimePolicy.shouldRescheduleAfterRevoke(1, tombstoned = false, desiredConnected = true, clientOpen = false))
+        assertTrue(RelayRuntimePolicy.shouldRescheduleAfterRevoke(1, tombstoned = true, desiredConnected = true, clientOpen = false))
+        assertFalse(RelayRuntimePolicy.shouldRescheduleAfterRevoke(0, tombstoned = true, desiredConnected = true, clientOpen = false))
+        assertFalse(RelayRuntimePolicy.shouldRescheduleAfterRevoke(1, tombstoned = false, desiredConnected = false, clientOpen = false))
+        assertFalse(RelayRuntimePolicy.shouldRescheduleAfterRevoke(1, tombstoned = false, desiredConnected = true, clientOpen = true))
+    }
+
+    @Test
     fun pairFramesPreserveStateRulesForReconnectReplay() {
         val now = System.currentTimeMillis()
         val base =

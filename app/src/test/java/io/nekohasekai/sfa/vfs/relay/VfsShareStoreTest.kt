@@ -48,7 +48,7 @@ class VfsShareStoreTest {
     @Test
     fun shareRoundTripsAndSecretIsNotPlaintext() {
         val file = File(temp.root, "relay/shares.json")
-        val store = VfsShareStore(file, cipher) { 1_000L }
+        val store = VfsShareStore(file, cipher, clock = { 1_000L })
         val secret = ByteArray(32) { it.toByte() }
         val record =
             store.newRecord(
@@ -86,7 +86,8 @@ class VfsShareStoreTest {
         var thrown = false
         try {
             store.load()
-        } catch (_: RelayStoreException) {
+        } catch (error: RelayStoreException) {
+            assertFalse(error.retryable)
             thrown = true
         }
         assertTrue(thrown)
@@ -196,6 +197,21 @@ class VfsShareStoreTest {
         store.update { it.copy(desiredConnected = false) }
         assertFalse(store.load().desiredConnected)
         assertTrue(store.load().accounts.any { it.portalServerId == "portal" })
+    }
+
+    @Test
+    fun temporaryReadFailureIsRetryableAndNotLatchedAsCorrupt() {
+        val file = File(temp.root, "relay/shares.json")
+        file.parentFile.mkdirs()
+        file.writeText("{\"v\":1,\"shares\":[]}", Charsets.UTF_8)
+        val failing = VfsShareStore(file, cipher) { throw java.io.IOException("device busy") }
+        try {
+            failing.load()
+            throw AssertionError("expected a transient read failure")
+        } catch (error: RelayStoreException) {
+            assertTrue(error.retryable)
+        }
+        assertTrue(VfsShareStore(file, cipher).load().isEmpty())
     }
 
     @Test

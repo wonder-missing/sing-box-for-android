@@ -56,6 +56,7 @@ sealed interface VfsRelayState {
     data class Error(
         val message: String,
         val actionable: String? = null,
+        val resetRecommended: Boolean = false,
     ) : VfsRelayState
 }
 
@@ -145,12 +146,20 @@ object VfsRelayRuntime {
             try {
                 normalizeAfterProcessDeath()
             } catch (error: RelayStoreException) {
-                storeBlocked = true
+                storeBlocked = !error.retryable
                 _state.value =
-                    VfsRelayState.Error(
-                        error.message ?: "The Share list is damaged.",
-                        "Restore or remove noBackupFilesDir/vfs/relay/shares.json before creating new Shares.",
-                    )
+                    if (error.retryable) {
+                        VfsRelayState.Error(
+                            error.message ?: "Share storage is temporarily unavailable.",
+                            "Tap Connect to retry. If this persists, check free space and file permissions.",
+                        )
+                    } else {
+                        VfsRelayState.Error(
+                            error.message ?: "The Share list is damaged.",
+                            "Reset Share files data, or restore noBackupFilesDir/vfs/relay/shares.json from a backup.",
+                            resetRecommended = true,
+                        )
+                    }
             }
         }
     }
@@ -211,9 +220,14 @@ object VfsRelayRuntime {
             configStore!!.update { it.copy(desiredConnected = true) }
             connectInternal(context.applicationContext, auto = false)
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             if (error is RelayProvisionException && !error.retryable) {
                 runCatching { configStore!!.update { it.copy(desiredConnected = false) } }
-                _state.value = VfsRelayState.Error(error.message ?: "Connect failed")
+                _state.value =
+                    VfsRelayState.Error(
+                        error.message ?: "Connect failed",
+                        resetRecommended = isResetRecommended(error),
+                    )
             } else if (configStore?.load()?.desiredConnected == true) {
                 scheduleReconnect(context.applicationContext, error.message ?: "Connect failed")
             } else {
@@ -399,7 +413,7 @@ object VfsRelayRuntime {
                 true,
             )
         }
-        if (configStore?.load()?.desiredConnected != true) {
+        if (manualClose || configStore?.load()?.desiredConnected != true) {
             created.close(1000, "sharing stopped")
             client = null
             _state.value = VfsRelayState.Idle
@@ -411,7 +425,10 @@ object VfsRelayRuntime {
         generation: Int,
         auto: Boolean,
     ) {
-        if (configStore?.load()?.desiredConnected != true) return
+        if (manualClose || configStore?.load()?.desiredConnected != true) {
+            client?.close(1000, "sharing stopped")
+            return
+        }
         _state.value = VfsRelayState.Connecting("Registering Shares")
         registerAll(context, generation)
         if (configStore?.load()?.desiredConnected != true) return
@@ -679,7 +696,8 @@ object VfsRelayRuntime {
             _state.value =
                 VfsRelayState.Error(
                     "This device was revoked on the Portal.",
-                    "Ask the administrator to delete the old provider key, or reset Share files data and create a new Share.",
+                    "Reset Share files data and create a new Share. Administrator deletion permanently revokes this device.",
+                    resetRecommended = true,
                 )
             VfsSharingService.stop(context)
             return
@@ -713,8 +731,13 @@ object VfsRelayRuntime {
             scope.launch {
                 delay(wait)
                 if (!isAvailable()) return@launch
+                if (!RelayRuntimePolicy.shouldReconnect(configStore?.load()?.desiredConnected == true)) {
+                    _state.value = VfsRelayState.Idle
+                    return@launch
+                }
                 runCatching { connectInternal(context.applicationContext, auto = true) }
                     .onFailure { error ->
+                        if (error is CancellationException) throw error
                         if (error is RelayProvisionException && !error.retryable) {
                             configStore?.update { it.copy(desiredConnected = false) }
                             _state.value = VfsRelayState.Error(error.message ?: "Connect failed")
@@ -817,14 +840,14 @@ object VfsRelayRuntime {
                 return
             }
         }
-        val code = codes.get(record.shareId)
-        if (code == null || code.pairId != pairId || code.isExpired(now)) {
-            markPairExpired(record)
-            sendPairError(envelope, RelayPairErrorCode.CODE_EXPIRED, "pairing code expired")
-            return
-        }
         if (record.pairId != pairId) {
             sendPairError(envelope, RelayPairErrorCode.PAIR_UNKNOWN, "unknown pairing code")
+            return
+        }
+        val code = codes.get(record.shareId)
+        if (code == null || code.pairId != pairId || code.isExpired(now)) {
+            markPairExpired(record, pairId)
+            sendPairError(envelope, RelayPairErrorCode.CODE_EXPIRED, "pairing code expired")
             return
         }
         val secret = shareStore!!.openSecret(record)
@@ -883,10 +906,13 @@ object VfsRelayRuntime {
                 iv = RelayBase64.encodeUrl(sealed.iv),
                 ct = RelayBase64.encodeUrl(sealed.ciphertext),
             )
-        pairResponseCache[cacheKey] = CachedResponse(responseJson, code.expiresAt)
         val consumed =
             repository().update(record.shareId) { current ->
-                if (current.revokedAt != null || current.revokingAt != null) {
+                if (current.revokedAt != null ||
+                    current.revokingAt != null ||
+                    current.pairState != VfsShareRecord.PAIR_ACTIVE ||
+                    current.pairId != pairId
+                ) {
                     null
                 } else {
                     current.nextPairState(
@@ -897,9 +923,29 @@ object VfsRelayRuntime {
                 }
             }
         if (consumed == null) {
-            sendLinkError(envelope, RelayLinkErrorCode.SHARE_REVOKED, "share revoked")
+            when (val latest = latestShare(record.shareId)) {
+                null -> sendLinkError(envelope, RelayLinkErrorCode.SHARE_REVOKED, "share revoked")
+                else ->
+                    when {
+                        latest.revokedAt != null || latest.revokingAt != null ->
+                            sendLinkError(envelope, RelayLinkErrorCode.SHARE_REVOKED, "share revoked")
+
+                        latest.pairState == VfsShareRecord.PAIR_PAUSED ->
+                            sendPairError(envelope, RelayPairErrorCode.SHARE_PAUSED, "sharing is paused")
+
+                        latest.pairState == VfsShareRecord.PAIR_EXPIRED ->
+                            sendPairError(envelope, RelayPairErrorCode.CODE_EXPIRED, "pairing code expired")
+
+                        latest.pairState == VfsShareRecord.PAIR_CONSUMED ->
+                            sendPairError(envelope, RelayPairErrorCode.CODE_CONSUMED, "pairing code already used")
+
+                        else ->
+                            sendPairError(envelope, RelayPairErrorCode.PAIR_UNKNOWN, "unknown pairing code")
+                    }
+            }
             return
         }
+        pairResponseCache[cacheKey] = CachedResponse(responseJson, code.expiresAt)
         codes.remove(record.shareId)
         client?.send(responseJson)
         sendPairState(consumed)
@@ -1040,6 +1086,8 @@ object VfsRelayRuntime {
         cache: Boolean = true,
     ) {
         if (client?.isOpen() != true) return
+        val latest = latestShare(record.shareId) ?: return
+        if (!RelayRuntimePolicy.responseAllowed(latest, revokedLinkIds)) return
         val key =
             shareKey ?: run {
                 val secret = runCatching { shareStore!!.openSecret(record) }.getOrNull() ?: return
@@ -1403,6 +1451,14 @@ object VfsRelayRuntime {
                         it.registrationState == VfsShareRecord.STATE_REGISTERED
                 }
             for (record in records) {
+                repository().update(record.shareId) { current ->
+                    if (current.revokedAt != null || current.revokingAt != null) {
+                        null
+                    } else {
+                        current.nextPairState(VfsShareRecord.PAIR_PAUSED, expiresAt = null)
+                    }
+                }
+                codes.remove(record.shareId)
                 sendUnregisterBestEffort(record.linkId, "shutdown")
             }
             manualClose = true
@@ -1412,6 +1468,7 @@ object VfsRelayRuntime {
             client = null
             _state.value = VfsRelayState.Idle
             VfsSharingService.stop(context)
+            publishShares()
         }
 
     suspend fun revokeShare(
@@ -1426,7 +1483,6 @@ object VfsRelayRuntime {
         runCatching {
             ensure(context)
             checkStore()
-            reconnectJob?.cancel()
             val record = latestShare(shareId)
                 ?: throw RelayProvisionException("SHARE_NOT_FOUND", "This Share no longer exists.", false)
             val revoked =
@@ -1467,6 +1523,7 @@ object VfsRelayRuntime {
                     it.revokedAt == null && it.registrationState != VfsShareRecord.STATE_FAILED
                 }
             if (tombstoned && remaining.isEmpty()) {
+                reconnectJob?.cancel()
                 configStore!!.update { it.copy(desiredConnected = false) }
                 manualClose = true
                 heartbeatJob?.cancel()
@@ -1474,6 +1531,14 @@ object VfsRelayRuntime {
                 client = null
                 _state.value = VfsRelayState.Idle
                 VfsSharingService.stop(context)
+            } else if (RelayRuntimePolicy.shouldRescheduleAfterRevoke(
+                    remaining = remaining.size,
+                    tombstoned = tombstoned,
+                    desiredConnected = configStore!!.load().desiredConnected,
+                    clientOpen = client?.isOpen() == true,
+                )
+            ) {
+                scheduleReconnect(context, "Revoke still needs the Portal")
             }
             publishConnected()
         }
@@ -1598,12 +1663,18 @@ object VfsRelayRuntime {
         }
     }
 
-    private suspend fun markPairExpired(record: VfsShareRecord) {
+    private suspend fun markPairExpired(
+        record: VfsShareRecord,
+        pairId: String,
+    ) {
         codes.remove(record.shareId)
         val expired =
             runCatching {
                 repository().update(record.shareId) { current ->
-                    if (current.revokedAt != null || current.pairState != VfsShareRecord.PAIR_ACTIVE) {
+                    if (current.revokedAt != null ||
+                        current.pairState != VfsShareRecord.PAIR_ACTIVE ||
+                        current.pairId != pairId
+                    ) {
                         null
                     } else {
                         current.nextPairState(
@@ -1671,6 +1742,10 @@ object VfsRelayRuntime {
             "Share files is not initialized yet. Try again.",
             true,
         )
+
+    private fun isResetRecommended(error: Throwable): Boolean =
+        error is RelayProvisionException &&
+            error.code in setOf("DEVICE_REVOKED", "DEVICE_AUTH", "SHARE_STORE_CORRUPT")
 
     private fun providerName(): String =
         Build.MODEL?.takeIf { it.isNotBlank() }?.take(64) ?: PROVIDER_KEY_NAME

@@ -113,6 +113,7 @@ fun ShareFilesScreen(navController: NavController) {
 
     VfsRelayRuntime.ensure(context)
     val relayState by VfsRelayRuntime.state.collectAsState()
+    val relayError = relayState as? VfsRelayState.Error
     val shares by VfsRelayRuntime.shares.collectAsState()
     val mcp = remember { McpRuntimes.get(context.applicationContext) }
     val servers by mcp.views.collectAsState()
@@ -219,7 +220,7 @@ fun ShareFilesScreen(navController: NavController) {
         }
 
         StatusLine(relayState)
-        if (relayState is VfsRelayState.Error) {
+        if (relayError != null && relayError.resetRecommended) {
             OutlinedButton(onClick = { showReset = true }, enabled = !busy) {
                 Text(stringResource(R.string.share_files_reset))
             }
