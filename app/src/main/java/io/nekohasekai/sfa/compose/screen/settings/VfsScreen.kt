@@ -584,7 +584,8 @@ private fun PairingDialog(
     onCopy: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var copied by remember(pairing?.code) { mutableStateOf(false) }
+    var copiedCommand by remember(pairing?.code) { mutableStateOf(false) }
+    var copiedCode by remember(pairing?.code) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.share_files_pairing_title)) },
@@ -622,30 +623,43 @@ private fun PairingDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Text(
+                        text = stringResource(R.string.share_files_pairing_command_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                onCopy(pairing.command)
+                                copiedCommand = true
+                            },
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (copiedCommand) R.string.share_files_copied else R.string.share_files_copy_command,
+                                ),
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                onCopy(pairing.code)
+                                copiedCode = true
+                            },
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (copiedCode) R.string.share_files_copied else R.string.share_files_copy_code,
+                                ),
+                            )
+                        }
+                    }
                 }
             }
         },
         confirmButton = {
-            if (pairing != null) {
-                TextButton(
-                    onClick = {
-                        onCopy(pairing.command)
-                        copied = true
-                    },
-                ) {
-                    Text(stringResource(if (copied) R.string.share_files_copied else R.string.share_files_copy_command))
-                }
-            } else {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.share_files_done))
-                }
-            }
-        },
-        dismissButton = {
-            if (pairing != null) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.share_files_done))
-                }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.share_files_done))
             }
         },
     )
