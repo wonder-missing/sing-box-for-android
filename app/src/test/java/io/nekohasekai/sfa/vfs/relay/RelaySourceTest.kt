@@ -15,16 +15,17 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.nio.file.Files
 
 class RelaySourceTest {
     @get:Rule
     val temp = TemporaryFolder()
 
     private lateinit var filesDir: File
-    private lateinit var internal: InternalFilesVirtualDirectorySource
+    private lateinit var externalDir: File
+    private lateinit var internal: RelayAppFilesSource
     private lateinit var appData: AppDataVirtualDirectorySource
-    private lateinit var workspace: FakeSource
-    private lateinit var conductor: FakeSource
+    private lateinit var workspace: RelayWorkspaceSource
     private lateinit var selected: UserSelectedVirtualDirectorySource
 
     private fun prepare() {
@@ -34,6 +35,8 @@ class RelaySourceTest {
         File(filesDir, "c.txt").writeText("charlie", Charsets.UTF_8)
         File(filesDir, "vfs").mkdirs()
         File(filesDir, "vfs/hidden").writeText("nope", Charsets.UTF_8)
+        File(filesDir, "conductor").mkdirs()
+        File(filesDir, "conductor/secret").writeText("secret", Charsets.UTF_8)
         File(filesDir, "activity").mkdirs()
         File(filesDir, "activity/events.jsonl").writeText("{\"a\":1}\n", Charsets.UTF_8)
         File(filesDir, "telemetry").mkdirs()
@@ -44,32 +47,21 @@ class RelaySourceTest {
                 "2026-01-01 ERROR request https://user:pass@example.com/x failed\n",
             Charsets.UTF_8,
         )
-        internal = InternalFilesVirtualDirectorySource(filesDir)
+        externalDir = File(temp.root, "external").apply { mkdirs() }
+        File(externalDir, "file.txt").writeText("workspace", Charsets.UTF_8)
+        File(externalDir, "sub").mkdirs()
+        File(externalDir, "sub/nested.txt").writeText("nested", Charsets.UTF_8)
+        File(externalDir, "conductor").mkdirs()
+        File(externalDir, "conductor/c.md").writeText("c", Charsets.UTF_8)
+        File(externalDir, ".runtime").mkdirs()
+        File(externalDir, ".runtime/trace.md").writeText("trace", Charsets.UTF_8)
+        internal = RelayAppFilesSource(InternalFilesVirtualDirectorySource(filesDir))
+        workspace = RelayWorkspaceSource(externalDir)
         appData =
             AppDataVirtualDirectorySource(
                 filesDir = filesDir,
                 diagnosticsJson = { "{\"generated_at\":1,\"app_version\":\"test\"}" },
                 groupsJson = { "{\"available\":false,\"groups\":[]}" },
-            )
-        workspace =
-            FakeSource(
-                entries =
-                    mapOf(
-                        "file.txt" to "workspace".toByteArray(),
-                        "sub/nested.txt" to "nested".toByteArray(),
-                    ),
-                directories = setOf("", "sub"),
-            )
-        conductor =
-            FakeSource(
-                entries =
-                    mapOf(
-                        "conductor/c.md" to "c".toByteArray(),
-                        ".runtime/trace.md" to "trace".toByteArray(),
-                        ".runtime/system_prompt.md" to "prompt".toByteArray(),
-                        ".runtime/conversation.md" to "chat".toByteArray(),
-                    ),
-                directories = setOf("", "conductor", ".runtime"),
             )
         selected =
             UserSelectedVirtualDirectorySource(
@@ -98,7 +90,6 @@ class RelaySourceTest {
             scopes = scopes,
             internalFiles = internal,
             workspace = workspace,
-            conductor = conductor,
             appData = appData,
             selected = selected,
             shareKey = ByteArray(32) { 1 },
@@ -119,11 +110,12 @@ class RelaySourceTest {
         }
 
     @Test
-    fun scopeMatrixHidesUngrantedTrees() =
+    fun scopeMatrixHidesUngrantedTreesAndConductor() =
         runBlocking {
             val files = source(setOf(RelayScope.APP_FILES))
             assertEquals("/appfiles/a.txt", files.stat("/appfiles/a.txt").path)
             expectCode(RelayInnerError.NOT_FOUND) { files.stat("/appfiles/vfs/hidden") }
+            expectCode(RelayInnerError.NOT_FOUND) { files.stat("/appfiles/conductor/secret") }
             expectCode(RelayInnerError.NOT_FOUND) { files.stat("/appdata/activity/events.jsonl") }
             expectCode(RelayInnerError.NOT_FOUND) { files.stat("/conductor/c.md") }
             expectCode(RelayInnerError.NOT_FOUND) { files.stat("/file.txt") }
@@ -133,13 +125,30 @@ class RelaySourceTest {
             expectCode(RelayInnerError.NOT_FOUND) { workspaceOnly.stat("/conductor/c.md") }
             expectCode(RelayInnerError.NOT_FOUND) { workspaceOnly.stat("/.runtime/trace.md") }
             expectCode(RelayInnerError.NOT_FOUND) { workspaceOnly.stat("/appfiles/a.txt") }
+            assertEquals(listOf("/file.txt", "/sub"), workspaceOnly.list("/", null, 100).entries.map { it.path })
 
-            val runtime = source(setOf(RelayScope.CONDUCTOR_FILES, RelayScope.CONDUCTOR_TRACE))
-            assertEquals("/conductor/c.md", runtime.stat("/conductor/c.md").path)
-            assertEquals("/.runtime/trace.md", runtime.stat("/.runtime/trace.md").path)
-            expectCode(RelayInnerError.NOT_FOUND) { runtime.stat("/.runtime/system_prompt.md") }
-            val runtimeList = runtime.list("/.runtime", null, 100)
-            assertEquals(listOf("/.runtime/trace.md"), runtimeList.entries.map { it.path })
+            assertFalse(RelayScope.fixed.any { it.wire.startsWith("conductor.") })
+        }
+
+    @Test
+    fun workspaceSourceExcludesPhysicalConductorRuntimeAndReservedRoots() =
+        runBlocking {
+            prepare()
+            for (reserved in listOf("conductor", ".runtime", "appfiles", "appdata", "selected", "vfs")) {
+                File(externalDir, reserved).mkdirs()
+            }
+            expectCode(RelayInnerError.NOT_FOUND) { workspace.stat("conductor/c.md") }
+            expectCode(RelayInnerError.NOT_FOUND) { workspace.stat(".runtime/trace.md") }
+            expectCode(RelayInnerError.NOT_FOUND) { workspace.stat("appfiles/x") }
+            val root = workspace.list("").map { it.name }
+            assertTrue("file.txt" in root)
+            assertTrue("sub" in root)
+            assertFalse(root.any { it in setOf("conductor", ".runtime", "appfiles", "appdata", "selected", "vfs") })
+
+            val link = File(externalDir, "link")
+            if (runCatching { Files.createSymbolicLink(link.toPath(), File(externalDir, "conductor").toPath()) }.isSuccess) {
+                expectCode(RelayInnerError.NOT_FOUND) { workspace.stat("link/c.md") }
+            }
         }
 
     @Test
@@ -149,11 +158,11 @@ class RelaySourceTest {
             val roots = everything.list("/", null, 100).entries.map { it.path }
             assertTrue("/appfiles" in roots)
             assertTrue("/appdata/activity" in roots)
-            assertTrue("/conductor" in roots)
-            assertTrue("/.runtime/trace.md" in roots)
             assertTrue("/file.txt" in roots)
             assertFalse("/selected" in roots)
+            assertFalse(roots.any { it.startsWith("/conductor") || it.startsWith("/.runtime") })
             assertFalse(RelayScope.everything().contains(RelayScope.USER_SELECTED))
+            assertTrue(RelayScope.everything().none { it.wire.startsWith("conductor.") })
         }
 
     @Test
@@ -240,57 +249,4 @@ class RelaySourceTest {
         }
         throw AssertionError("expected $code")
     }
-}
-
-class FakeSource(
-    private val entries: Map<String, ByteArray>,
-    private val directories: Set<String>,
-) : VirtualDirectorySource {
-    override suspend fun stat(path: String): VfsEntry {
-        if (path in directories) return directory(path)
-        val bytes = entries[path] ?: throw notFound()
-        return VfsEntry(
-            path = path,
-            name = path.substringAfterLast('/'),
-            isDirectory = false,
-            size = bytes.size.toLong(),
-            mtimeMs = 1L,
-            etag = "\"${bytes.size}-1\"",
-        )
-    }
-
-    override suspend fun list(path: String): List<VfsEntry> {
-        if (path !in directories) throw notFound()
-        val prefix = if (path.isEmpty()) "" else "$path/"
-        val children =
-            (entries.keys + directories)
-                .filter { it.isNotEmpty() && it.startsWith(prefix) && it != path }
-                .map { it.removePrefix(prefix).substringBefore('/') }
-                .filter { it.isNotEmpty() }
-                .distinct()
-                .sorted()
-        return children.map { name ->
-            val child = prefix + name
-            if (child in directories) directory(child) else stat(child)
-        }
-    }
-
-    override suspend fun read(
-        path: String,
-        offset: Long,
-        length: Int,
-    ): VfsRead {
-        val data = entries[path] ?: throw notFound()
-        if (offset > data.size) {
-            throw VfsException(io.nekohasekai.sfa.vfs.VfsErrorCode.RANGE_NOT_SATISFIABLE, "range")
-        }
-        val end = minOf(data.size.toLong(), offset + length).toInt()
-        return VfsRead(data.copyOfRange(offset.toInt(), end), end >= data.size)
-    }
-
-    private fun directory(path: String): VfsEntry =
-        VfsEntry(path, path.substringAfterLast('/').ifEmpty { path }, true, 0, 1L)
-
-    private fun notFound(): VfsException =
-        VfsException(io.nekohasekai.sfa.vfs.VfsErrorCode.NOT_FOUND, "No such path.")
 }

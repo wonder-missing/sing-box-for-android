@@ -4,8 +4,6 @@ import android.content.Context
 import android.os.Build
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.bg.VfsSharingService
-import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
-import io.nekohasekai.sfa.vfs.VfsPrivateFiles
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -83,7 +81,7 @@ data class VfsPairingUi(
  */
 object VfsRelayRuntime {
     private const val PROVIDER_KEY_NAME = "WonderSing"
-    private const val SHARE_FILE_NAME = "relay/shares-v2.json"
+    private const val SHARE_FILE_NAME = "relay/shares-v3.json"
     private const val SERVER_FILE_NAME = "relay/servers.json"
     private const val CONTROL_TIMEOUT_MS = 5_000L
     private const val PAIR_TTL_SECONDS = 300L
@@ -126,7 +124,6 @@ object VfsRelayRuntime {
     @Volatile private var storeBlocked = false
     @Volatile private var serverStore: VfsRelayServerStore? = null
     @Volatile private var deviceSecretStore: VfsDeviceSecretStore? = null
-    @Volatile private var deviceIdStore: VfsDeviceIdStore? = null
     @Volatile private var client: VfsRelayClient? = null
     @Volatile private var target: RelayServerTarget? = null
     @Volatile private var providerKey: String? = null
@@ -146,14 +143,13 @@ object VfsRelayRuntime {
         synchronized(this) {
             if (appContext != null) return
             val app = context.applicationContext
-            val base = VfsPrivateFiles.directory(app.noBackupFilesDir)
+            val base = File(app.noBackupFilesDir, "vfs")
             val cipher = VfsShareCipherFactory.create()
             val shares = VfsShareStore(File(base, SHARE_FILE_NAME), cipher)
             shareStore = shares
             shareRepository = VfsShareRepository(shares)
             serverStore = VfsRelayServerStore(File(base, SERVER_FILE_NAME), cipher)
             deviceSecretStore = VfsDeviceSecretStore(File(base, "relay"), cipher)
-            deviceIdStore = VfsDeviceIdStore(VfsPrivateFiles.deviceIdFile(app.noBackupFilesDir))
             val egress = VfsRelayEgress.create(app)
             egressInstance = egress
             provisionerInstance = VfsProviderKeyProvisioner(egress.httpClient())
@@ -360,7 +356,7 @@ object VfsRelayRuntime {
                         false,
                     )
             val resolved = provisioner().targetOf(server, relayToken)
-            val deviceId = deviceIdStore!!.getOrCreate()
+            val deviceId = serverStore!!.relayDeviceId()
             val account =
                 serverStore!!.account(resolved.serverId)
                     ?.takeIf { it.canonicalBase == resolved.canonicalBase }
@@ -455,7 +451,7 @@ object VfsRelayRuntime {
         val url = relayProviderUrl(target.canonicalBase)
             ?: throw RelayProvisionException(
                 "INVALID_RELAY_URL",
-                "The Relay Server URL is not HTTPS. Share files needs an HTTPS origin.",
+                "The Relay Server URL must be a full HTTPS base such as https://host/relay/v1.",
                 false,
             )
         val generation = ++clientGeneration
@@ -1716,8 +1712,7 @@ object VfsRelayRuntime {
     /**
      * Destructive recovery for DEVICE_REVOKED or a damaged Share store. The
      * caller must show an explicit confirmation: this also resets the shared
-     * per-install device id used by legacy integrations.
-     */
+         */
     suspend fun resetShareFilesData(context: Context): Result<Unit> =
         withContext(Dispatchers.IO) { resetShareFilesDataResult(context) }
 
@@ -1733,11 +1728,10 @@ object VfsRelayRuntime {
             providerKey = null
             linkGate.clear()
             val app = appContext ?: context.applicationContext
-            val vfs = VfsPrivateFiles.directory(app.noBackupFilesDir)
+            val vfs = File(app.noBackupFilesDir, "vfs")
             File(vfs, "relay").deleteRecursively()
             File(vfs, "device-secrets").deleteRecursively()
             File(vfs, "pending").deleteRecursively()
-            VfsPrivateFiles.deviceIdFile(app.noBackupFilesDir).delete()
             codes.clear()
             responseCache.clear()
             pairResponseCache.clear()
@@ -1752,7 +1746,6 @@ object VfsRelayRuntime {
                 shareRepository = null
                 serverStore = null
                 deviceSecretStore = null
-                deviceIdStore = null
             }
             ensure(app)
             _state.value = VfsRelayState.Idle

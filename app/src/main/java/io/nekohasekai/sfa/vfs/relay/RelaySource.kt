@@ -72,7 +72,7 @@ object RelayPaths {
     fun isReservedRoot(name: String): Boolean = name in RESERVED_ROOTS
 
     private val RESERVED_ROOTS: Set<String> =
-        setOf("appfiles", "appdata", "conductor", ".runtime", "selected")
+        setOf("vfs", "appfiles", "appdata", "conductor", ".runtime", "selected")
 }
 
 /**
@@ -84,7 +84,6 @@ class RelayAbsoluteSource(
     private val scopes: Set<RelayScope>,
     private val internalFiles: VirtualDirectorySource,
     private val workspace: VirtualDirectorySource,
-    private val conductor: VirtualDirectorySource,
     private val appData: VirtualDirectorySource,
     private val selected: VirtualDirectorySource?,
     private val shareKey: ByteArray,
@@ -282,16 +281,6 @@ class RelayAbsoluteSource(
                 Routed(appData, RelayPaths.relative(segments), "/")
             }
 
-            "conductor" -> {
-                if (RelayScope.CONDUCTOR_FILES !in scopes) throw notFound()
-                Routed(conductor, RelayPaths.relative(segments), "/")
-            }
-
-            ".runtime" -> {
-                if (!hasRuntimeScope()) throw notFound()
-                Routed(conductor, RelayPaths.relative(segments), "/")
-            }
-
             "selected" -> {
                 if (RelayScope.USER_SELECTED !in scopes) throw notFound()
                 val resolver = selected ?: throw notFound()
@@ -317,8 +306,6 @@ class RelayAbsoluteSource(
         return when (segments.first()) {
             "appfiles" -> RelayScope.APP_FILES in scopes
             "appdata" -> allowedAppData(segments)
-            "conductor" -> RelayScope.CONDUCTOR_FILES in scopes
-            ".runtime" -> allowedRuntime(segments)
             "selected" -> RelayScope.USER_SELECTED in scopes
             else ->
                 RelayScope.APP_WORKSPACE in scopes &&
@@ -340,24 +327,8 @@ class RelayAbsoluteSource(
         return scope in scopes
     }
 
-    private fun allowedRuntime(segments: List<String>): Boolean {
-        if (segments.size == 1) return hasRuntimeScope()
-        if (segments.size != 2) return false
-        return when (segments[1]) {
-            "trace.md" -> RelayScope.CONDUCTOR_TRACE in scopes
-            "system_prompt.md" -> RelayScope.CONDUCTOR_SYSTEM_PROMPT in scopes
-            "conversation.md" -> RelayScope.CONDUCTOR_CONVERSATION in scopes
-            else -> false
-        }
-    }
-
     private fun hasAppDataScope(): Boolean =
         scopes.any { it.wire.startsWith("app.data.") }
-
-    private fun hasRuntimeScope(): Boolean =
-        RelayScope.CONDUCTOR_TRACE in scopes ||
-            RelayScope.CONDUCTOR_SYSTEM_PROMPT in scopes ||
-            RelayScope.CONDUCTOR_CONVERSATION in scopes
 
     private fun notFound(): RelaySourceException =
         RelaySourceException(RelayInnerError.NOT_FOUND, "No such path.")

@@ -189,12 +189,12 @@ fun ShareFilesScreen(navController: NavController) {
         )
 
         Text(
-            text = stringResource(R.string.share_files_portal),
+            text = stringResource(R.string.share_files_relay_server),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
-            text = stringResource(R.string.share_files_portal_note),
+            text = stringResource(R.string.share_files_relay_server_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -600,6 +600,12 @@ private fun ServerEditorDialog(
                     value = url,
                     onValueChange = { url = it.trim() },
                     label = { Text(stringResource(R.string.share_files_server_url)) },
+                    supportingText = {
+                        Text(
+                            stringResource(R.string.share_files_server_url_help),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -950,10 +956,6 @@ private fun scopeLabel(wire: String): String =
             "app.data.diagnostics" -> R.string.share_files_scope_diagnostics
             "app.files" -> R.string.share_files_scope_app_files
             "app.workspace" -> R.string.share_files_scope_workspace
-            "conductor.files" -> R.string.share_files_scope_conductor
-            "conductor.trace" -> R.string.share_files_scope_trace
-            "conductor.system_prompt" -> R.string.share_files_scope_system_prompt
-            "conductor.conversation" -> R.string.share_files_scope_conversation
             "user.selected" -> R.string.share_files_scope_selected
             else -> R.string.share_files_scope_diagnostics
         },

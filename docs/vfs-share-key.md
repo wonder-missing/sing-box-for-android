@@ -36,10 +36,11 @@
 
 **App ↔ Portal**
 
-- `WSS /v1/provider`，`Authorization: Bearer <Provider key>`；一条连接复用多个 Link。
+- **Relay base**：完整 HTTPS API base（如 `https://host/relay/v1`），App 原样保存，不剥/补 path。
+- `WSS <base>/provider`，`Authorization: Bearer <Provider key>`；一条连接复用多个 Link。
 - `register/unregister {linkId, generation}` 维护 Link；`pair` 控制帧同步 pairing 状态；`request/response` 只转发不透明 envelope。
-- `POST /v1/provider-keys`：用 Portal **Relay token**（`relay_...`，从顶级 Relay 页面获取）+ `deviceSecret` 换 Provider key；首次创建 `(relayId,deviceId)`，之后 issue-once。v1 只支持管理员在 Relay 页面撤销设备；不支持 rotate/自删/过期。
-- `POST /v1/links`：Share 创建时先登记 `linkId` 归属，再显示 Pairing Code；未登记不 claim。
+- `POST <base>/provider-keys`：用 Portal **Relay token**（`relay_...`，从顶级 Relay 页面获取）+ `deviceSecret` 换 Provider key；首次创建 `(relayId,deviceId)`，之后 issue-once。v1 只支持管理员在 Relay 页面撤销设备；不支持 rotate/自删/过期。
+- `POST <base>/links`：Share 创建时先登记 `linkId` 归属，再显示 Pairing Code；未登记不 claim。
 - Link store 持久化 `linkId -> (relayId,deviceId)`；Revoke 后 tombstone 保留 30 天，防复活。
 
 **CLI ↔ Portal**
@@ -72,11 +73,10 @@
 | Scope 组 | 内容 | 警告 |
 |---|---|---|
 | `app.data.*` | activity / groups / logs / telemetry / diagnostics | amber；logs 是 redactor best-effort，telemetry 是 raw |
-| `app.files` | `filesDir/**`，排除 `vfs/`；物理 `conductor/` 仍暴露 | red |
+| `app.files` | `filesDir/**`，硬排除物理 `vfs/` 与 `conductor/` | red |
 | `app.workspace` | external files dir，排除 `conductor/`、`.runtime/`、保留虚拟 root | red |
-| `conductor.*` | files / trace / system_prompt / conversation | red |
 | `user.selected` | SAF 多选文件，read-only，不进 `all` | picker |
-| `all` | 所有固定 scope 的并集，**不含 `user.selected`**，硬排除 `vfs/` | red 并集 |
+| `all` | 所有固定 scope 的并集，**不含 `user.selected`**，硬排除物理 `vfs/` 与 `conductor/` | red 并集 |
 
 Recommended = 仅 `app.data.*`；Everything = `all`；Customize = 任意固定 scope + 可选 `user.selected`。Share 创建时展开 concrete scope，之后新增 scope 不自动进入旧 Share。
 

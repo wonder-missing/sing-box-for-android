@@ -11,36 +11,48 @@ class VfsProviderKeyProvisionerTest {
         VfsRelayServer(
             id = "server-1",
             name = "Mini",
-            baseUrl = "https://relay.example",
+            baseUrl = "https://relay.example/relay/v1",
             tokenCiphertext = "unused",
             createdAt = 1,
         )
 
     @Test
-    fun canonicalOriginKeepsSchemeHostAndNonDefaultPortOnly() {
+    fun fullBaseUrlKeepsPathAndRejectsOriginOnly() {
         assertEquals(
-            "https://portal.example",
-            VfsProviderKeyProvisioner.canonicalOrigin("https://portal.example/some/path"),
+            "https://relay.example/relay/v1",
+            VfsProviderKeyProvisioner.canonicalBaseUrl("https://relay.example/relay/v1"),
         )
         assertEquals(
-            "https://portal.example",
-            VfsProviderKeyProvisioner.canonicalOrigin("https://PORTAL.example:443/x"),
+            "https://relay.example/relay/v1",
+            VfsProviderKeyProvisioner.canonicalBaseUrl("https://RELAY.example:443/relay/v1/"),
         )
         assertEquals(
-            "https://portal.example:8443",
-            VfsProviderKeyProvisioner.canonicalOrigin("https://portal.example:8443/"),
+            "https://relay.example:8443/relay/v1",
+            VfsProviderKeyProvisioner.canonicalBaseUrl("https://relay.example:8443/relay/v1"),
         )
-        assertNull(VfsProviderKeyProvisioner.canonicalOrigin("http://portal.example"))
-        assertNull(VfsProviderKeyProvisioner.canonicalOrigin("https://user:pass@portal.example"))
-        assertNull(VfsProviderKeyProvisioner.canonicalOrigin("https://portal.example?token=x"))
-        assertNull(VfsProviderKeyProvisioner.canonicalOrigin("not a url"))
+        assertNull(VfsProviderKeyProvisioner.canonicalBaseUrl("https://relay.example"))
+        assertNull(VfsProviderKeyProvisioner.canonicalBaseUrl("https://relay.example/"))
+        assertNull(VfsProviderKeyProvisioner.canonicalBaseUrl("http://relay.example/relay/v1"))
+        assertNull(VfsProviderKeyProvisioner.canonicalBaseUrl("https://user:pass@relay.example/relay/v1"))
+        assertNull(VfsProviderKeyProvisioner.canonicalBaseUrl("https://relay.example/relay/v1?token=x"))
+        assertNull(VfsProviderKeyProvisioner.canonicalBaseUrl("not a url"))
+    }
+
+    @Test
+    fun requestUrlsKeepTheRelayBasePath() {
+        val base = "https://relay.example/relay/v1"
+        assertEquals("$base/provider-keys", VfsProviderKeyProvisioner.providerKeysUrl(base))
+        assertEquals("$base/links", VfsProviderKeyProvisioner.linksUrl(base))
+        assertEquals("wss://relay.example/relay/v1/provider", relayProviderUrl(base))
+        assertNull(relayProviderUrl("https://relay.example"))
+        assertNull(relayProviderUrl("http://relay.example/relay/v1"))
     }
 
     @Test
     fun targetUsesRelayServerAndRelayToken() {
         val provisioner = VfsProviderKeyProvisioner()
         val target = provisioner.targetOf(server, "relay_token_one")
-        assertEquals("https://relay.example", target.canonicalBase)
+        assertEquals("https://relay.example/relay/v1", target.canonicalBase)
         assertEquals("server-1", target.serverId)
         assertEquals("relay_token_one", target.relayToken)
 
@@ -51,7 +63,7 @@ class VfsProviderKeyProvisionerTest {
             assertEquals("INVALID_TOKEN", error.code)
         }
         try {
-            provisioner.targetOf(server.copy(baseUrl = "http://relay.example"), "relay_ok")
+            provisioner.targetOf(server.copy(baseUrl = "http://relay.example/relay/v1"), "relay_ok")
             throw AssertionError("expected INVALID_RELAY_URL")
         } catch (error: RelayProvisionException) {
             assertEquals("INVALID_RELAY_URL", error.code)

@@ -71,7 +71,7 @@ fun VfsShareRecord.nextPairState(
 
 @Serializable
 private data class VfsShareFile(
-    val v: Int = 2,
+    val v: Int = 3,
     val shares: List<VfsShareRecord> = emptyList(),
 )
 
@@ -201,6 +201,7 @@ data class VfsRelayServerFile(
     val v: Int = SCHEMA_VERSION,
     val selectedServerId: String = "",
     val desiredConnected: Boolean = false,
+    val relayDeviceId: String = "",
     val servers: List<VfsRelayServer> = emptyList(),
     val accounts: List<VfsRelayAccount> = emptyList(),
 ) {
@@ -209,7 +210,7 @@ data class VfsRelayServerFile(
     fun selectedServer(): VfsRelayServer? = server(selectedServerId)
 
     companion object {
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
     }
 }
 
@@ -232,7 +233,12 @@ object RelayServerValidation {
     const val MAX_TOKEN = 512
     const val TOKEN_PREFIX = "relay_"
 
-    fun canonicalHttpsOrigin(raw: String): String? {
+    /**
+     * The Relay Server page shows a full API base such as
+     * `https://host/relay/v1`. Origin-only URLs are rejected: silently adding
+     * a default path is not part of the contract.
+     */
+    fun canonicalHttpsBaseUrl(raw: String): String? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return null
         if (trimmed.length > MAX_URL) return null
@@ -241,6 +247,8 @@ object RelayServerValidation {
         if (uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null) return null
         val host = uri.host ?: return null
         if (uri.port != -1 && uri.port !in 1..65535) return null
+        val path = uri.rawPath.orEmpty().trimEnd('/')
+        if (path.isEmpty() || path == "/" || path.startsWith("//")) return null
         val scheme = uri.scheme.lowercase(java.util.Locale.US)
         val authority =
             if (uri.port == -1 || uri.port == 443) {
@@ -248,7 +256,7 @@ object RelayServerValidation {
             } else {
                 "${host.lowercase(java.util.Locale.US)}:${uri.port}"
             }
-        return "$scheme://$authority"
+        return "$scheme://$authority$path"
     }
 
     fun normalizeToken(raw: String): String? {
@@ -288,7 +296,7 @@ class VfsRelayServerStore(
             runCatching { json.decodeFromString(VfsRelayServerFile.serializer(), text) }.getOrNull()
             ?: throw RelayStoreException("Relay Server settings are damaged.")
         if (decoded.v != VfsRelayServerFile.SCHEMA_VERSION) {
-            // Legacy v1 config: clean start, no migration.
+            // Legacy v1/v2 config: clean start, no migration.
             return VfsRelayServerFile()
         }
         return decoded
@@ -318,8 +326,8 @@ class VfsRelayServerStore(
         url: String,
         token: String,
     ): VfsRelayServer {
-        val base = RelayServerValidation.canonicalHttpsOrigin(url)
-            ?: throw RelayStoreException("Relay URL must be an HTTPS origin such as https://relay.example.")
+        val base = RelayServerValidation.canonicalHttpsBaseUrl(url)
+            ?: throw RelayStoreException("Relay URL must be a full HTTPS base such as https://relay.example/relay/v1.")
         val cleanToken = RelayServerValidation.normalizeToken(token)
             ?: throw RelayStoreException("Relay token must start with relay_ and contain no spaces.")
         if (!cipher.supported) throw RelayStoreException("Encryption is unavailable on this device.")
@@ -351,8 +359,8 @@ class VfsRelayServerStore(
         url: String,
         token: String?,
     ): VfsRelayServer {
-        val base = RelayServerValidation.canonicalHttpsOrigin(url)
-            ?: throw RelayStoreException("Relay URL must be an HTTPS origin such as https://relay.example.")
+        val base = RelayServerValidation.canonicalHttpsBaseUrl(url)
+            ?: throw RelayStoreException("Relay URL must be a full HTTPS base such as https://relay.example/relay/v1.")
         var updated: VfsRelayServer? = null
         update { latest ->
             val current = latest.server(id) ?: throw RelayStoreException("Relay Server not found.")
@@ -386,6 +394,18 @@ class VfsRelayServerStore(
                 accounts = latest.accounts.filterNot { it.serverId == id },
             )
         }
+    }
+
+    /** Relay-only per-install identity; no other subsystem owns this value. */
+    fun relayDeviceId(): String {
+        var created = ""
+        update { latest ->
+            val id = latest.relayDeviceId.takeIf { it.isNotBlank() }
+                ?: java.util.UUID.randomUUID().toString()
+            created = id
+            latest.copy(relayDeviceId = id)
+        }
+        return created
     }
 
     fun selectServer(id: String) {

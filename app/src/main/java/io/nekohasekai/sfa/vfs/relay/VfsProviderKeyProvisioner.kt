@@ -50,10 +50,10 @@ class VfsProviderKeyProvisioner(
         server: VfsRelayServer,
         relayToken: String,
     ): RelayServerTarget {
-        val canonical = RelayServerValidation.canonicalHttpsOrigin(server.baseUrl)
+        val canonical = RelayServerValidation.canonicalHttpsBaseUrl(server.baseUrl)
             ?: throw RelayProvisionException(
                 "INVALID_RELAY_URL",
-                "The Relay URL must be an HTTPS origin.",
+                "The Relay URL must be a full HTTPS base such as https://host/relay/v1.",
                 false,
             )
         val token = RelayServerValidation.normalizeToken(relayToken)
@@ -84,7 +84,7 @@ class VfsProviderKeyProvisioner(
             }.toString().toRequestBody(JSON)
         val request =
             Request.Builder()
-                .url("${target.canonicalBase}/v1/provider-keys")
+                .url(providerKeysUrl(target.canonicalBase))
                 .header("Authorization", "Bearer ${target.relayToken}")
                 .header("Accept", "application/json")
                 .post(body)
@@ -137,7 +137,7 @@ class VfsProviderKeyProvisioner(
             }.toString().toRequestBody(JSON)
         val request =
             Request.Builder()
-                .url("${target.canonicalBase}/v1/links")
+                .url(linksUrl(target.canonicalBase))
                 .header("Authorization", "Bearer $providerKey")
                 .header("Accept", "application/json")
                 .post(body)
@@ -279,7 +279,11 @@ class VfsProviderKeyProvisioner(
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
-        fun canonicalOrigin(raw: String): String? = RelayServerValidation.canonicalHttpsOrigin(raw)
+        fun providerKeysUrl(baseUrl: String): String = "${baseUrl.trimEnd('/')}/provider-keys"
+
+        fun linksUrl(baseUrl: String): String = "${baseUrl.trimEnd('/')}/links"
+
+        fun canonicalBaseUrl(raw: String): String? = RelayServerValidation.canonicalHttpsBaseUrl(raw)
 
         private fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()

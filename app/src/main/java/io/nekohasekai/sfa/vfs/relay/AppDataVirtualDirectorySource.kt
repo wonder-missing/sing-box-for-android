@@ -190,7 +190,7 @@ class AppDataVirtualDirectorySource(
             isDirectory = false,
             size = file.length(),
             mtimeMs = mtime,
-            mimeType = io.nekohasekai.sfa.vfs.ConductorVirtualDirectorySource.mimeTypeFor(file.name),
+            mimeType = RelayMimeTypes.forName(file.name),
             etag = "\"${file.length()}-$mtime\"",
         )
     }

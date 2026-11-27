@@ -28,13 +28,12 @@ object RelayCloseCodes {
     fun isSuspend(code: Int): Boolean = code == SUSPENDED
 }
 
-fun relayProviderUrl(canonicalBase: String): String? {
-    val base = canonicalBase.trim().removeSuffix("/")
-    return when {
-        base.startsWith("https://") -> "wss://${base.removePrefix("https://")}/v1/provider"
-        base.startsWith("http://") -> null
-        else -> null
-    }
+fun relayProviderUrl(baseUrl: String): String? {
+    val base = baseUrl.trim().trimEnd('/')
+    if (!base.startsWith("https://")) return null
+    val authorityAndPath = base.removePrefix("https://")
+    if ('/' !in authorityAndPath) return null
+    return "wss://$authorityAndPath/provider"
 }
 
 interface VfsRelayClientListener {

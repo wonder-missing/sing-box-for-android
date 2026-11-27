@@ -6,21 +6,13 @@ import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.system.Os
 import io.nekohasekai.sfa.BuildConfig
-import io.nekohasekai.sfa.agent.AgentApiTrace
-import io.nekohasekai.sfa.agent.InboxRegistry
-import io.nekohasekai.sfa.conductor.ConductorSessionStore
-import io.nekohasekai.sfa.conductor.conductorConversationMarkdown
 import io.nekohasekai.sfa.log.AppLog
 import io.nekohasekai.sfa.telemetry.ProfileRevision
-import io.nekohasekai.sfa.vfs.ConductorVirtualDirectorySource
-import io.nekohasekai.sfa.vfs.InboxVirtualDirectorySource
 import io.nekohasekai.sfa.vfs.InternalFilesVirtualDirectorySource
 import io.nekohasekai.sfa.vfs.VfsEntry
 import io.nekohasekai.sfa.vfs.VfsException
 import io.nekohasekai.sfa.vfs.VfsRead
-import io.nekohasekai.sfa.vfs.VirtualDirectoryRuntimeFiles
 import io.nekohasekai.sfa.vfs.VirtualDirectorySource
-import io.nekohasekai.sfa.vfs.WorkspaceVirtualDirectorySource
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -38,34 +30,11 @@ object AndroidRelaySources {
     ): VfsRelaySource {
         val app = context.applicationContext
         val externalDir = app.getExternalFilesDir(null)
-        val workingDir = externalDir ?: app.filesDir
-        val conductorSource =
-            ConductorVirtualDirectorySource(
-                workingDir = workingDir,
-                inbox = InboxVirtualDirectorySource(InboxRegistry.shared),
-                runtimeFiles =
-                    object : VirtualDirectoryRuntimeFiles {
-                        override fun traceMarkdown(): String = AgentApiTrace.asMarkdown()
-
-                        override fun conversationMarkdown(): String {
-                            val session = ConductorSessionStore(app).load()
-                            return conductorConversationMarkdown(
-                                items = session?.items.orEmpty(),
-                                appVersion = BuildConfig.VERSION_NAME,
-                                sessionStartVersion = session?.appVersion.orEmpty(),
-                            )
-                        }
-
-                        override fun systemPromptMarkdown(): String =
-                            AgentApiTrace.lastSystemPrompt()?.takeIf { it.isNotBlank() }
-                                ?: "No system prompt has been recorded in this session."
-                    },
-            )
         val workspaceSource =
             externalDir
-                ?.let { WorkspaceVirtualDirectorySource(it, conductorSource) }
+                ?.let { RelayWorkspaceSource(it) }
                 ?: EmptyVirtualDirectorySource
-        val internalSource = InternalFilesVirtualDirectorySource(app.filesDir)
+        val internalSource = RelayAppFilesSource(InternalFilesVirtualDirectorySource(app.filesDir))
         val telemetryDir = File(app.filesDir, "telemetry")
         val activityFile = File(app.filesDir, "activity/events.jsonl")
         val logFile = File(app.filesDir, "logs/app.log")
@@ -114,7 +83,6 @@ object AndroidRelaySources {
             scopes = share.concreteScopes,
             internalFiles = internalSource,
             workspace = workspaceSource,
-            conductor = conductorSource,
             appData = appData,
             selected = selected,
             shareKey = RelayCrypto.shareKey(secret, linkIdRaw),

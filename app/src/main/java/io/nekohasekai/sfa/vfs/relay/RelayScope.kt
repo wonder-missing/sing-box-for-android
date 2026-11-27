@@ -13,10 +13,6 @@ enum class RelayScope(
     APP_DATA_DIAGNOSTICS("app.data.diagnostics", "/appdata/diagnostics", RelayWarning.AMBER),
     APP_FILES("app.files", "/appfiles", RelayWarning.RED),
     APP_WORKSPACE("app.workspace", "/", RelayWarning.RED),
-    CONDUCTOR_FILES("conductor.files", "/conductor", RelayWarning.RED),
-    CONDUCTOR_TRACE("conductor.trace", "/.runtime/trace.md", RelayWarning.RED),
-    CONDUCTOR_SYSTEM_PROMPT("conductor.system_prompt", "/.runtime/system_prompt.md", RelayWarning.RED),
-    CONDUCTOR_CONVERSATION("conductor.conversation", "/.runtime/conversation.md", RelayWarning.RED),
     USER_SELECTED("user.selected", "/selected", RelayWarning.PICKER),
     ;
 

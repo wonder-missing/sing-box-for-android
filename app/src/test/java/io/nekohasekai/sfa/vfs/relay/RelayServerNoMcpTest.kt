@@ -37,12 +37,42 @@ class RelayServerNoMcpTest {
             "src/main/java/io/nekohasekai/sfa/vfs/relay/VfsRelayRuntime.kt",
             "src/main/java/io/nekohasekai/sfa/vfs/relay/VfsProviderKeyProvisioner.kt",
             "src/main/java/io/nekohasekai/sfa/vfs/relay/RelayStore.kt",
+            "src/main/java/io/nekohasekai/sfa/compose/screen/settings/ShareFilesScreen.kt",
         )) {
             val text = source(path).lowercase()
             for (token in forbidden) {
                 assertFalse("$path still references $token", text.contains(token.lowercase()))
             }
         }
+    }
+
+    @Test
+    fun relayPathDoesNotDependOnConductorSourcesOrSharedDeviceId() {
+        val forbidden =
+            listOf(
+                "ConductorVirtualDirectorySource",
+                "ConductorSessionStore",
+                "AgentApiTrace",
+                "InboxRegistry",
+                "VfsDeviceIdStore",
+                "VfsPrivateFiles",
+                "McpRuntime",
+                "McpRuntimes",
+            )
+        for (path in listOf(
+            "src/main/java/io/nekohasekai/sfa/vfs/relay/AndroidRelaySources.kt",
+            "src/main/java/io/nekohasekai/sfa/vfs/relay/AppDataVirtualDirectorySource.kt",
+            "src/main/java/io/nekohasekai/sfa/vfs/relay/RelaySource.kt",
+            "src/main/java/io/nekohasekai/sfa/vfs/relay/VfsRelayRuntime.kt",
+        )) {
+            val text = source(path)
+            for (token in forbidden) {
+                assertFalse("$path still references $token", text.contains(token))
+            }
+        }
+        assertTrue(RelayScope.entries.none { it.wire.startsWith("conductor.") })
+        assertTrue(RelayScope.everything().none { it.wire.startsWith("conductor.") })
+        assertFalse(RelayScope.everything().contains(RelayScope.USER_SELECTED))
     }
 
     @Test
@@ -55,6 +85,7 @@ class RelayServerNoMcpTest {
                 "share_files_add_server_title",
                 "share_files_server_name",
                 "share_files_server_url",
+                "share_files_server_url_help",
                 "share_files_server_token",
                 "share_files_no_server",
                 "share_files_server_has_shares",
@@ -80,7 +111,7 @@ class RelayServerNoMcpTest {
         }
         assertTrue(
             source("src/main/res/values/strings.xml")
-                .contains("<string name=\"share_files_portal\">Relay Server</string>"),
+                .contains("<string name=\"share_files_relay_server\">Relay Server</string>"),
         )
     }
 }
