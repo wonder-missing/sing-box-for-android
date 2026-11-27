@@ -32,7 +32,7 @@ class RelayRuntimePolicyTest {
         val base =
             VfsShareRecord(
                 shareId = "s", linkId = "l", secretCiphertext = "c", scopes = listOf("app.files"),
-                portalServerId = "p", hookId = "h", canonicalBase = "https://x", deviceId = "d", createdAt = 0,
+                serverId = "p", relayId = "h", canonicalBase = "https://x", deviceId = "d", createdAt = 0,
             )
         assertTrue(RelayRuntimePolicy.responseAllowed(base, emptySet()))
         assertFalse(RelayRuntimePolicy.responseAllowed(base.copy(revokedAt = 1), emptySet()))
@@ -50,18 +50,18 @@ class RelayRuntimePolicyTest {
     }
 
     @Test
-    fun emptySessionCountsOnlyTheCurrentPortal() {
+    fun emptySessionCountsOnlyTheCurrentServer() {
         val base =
             VfsShareRecord(
                 shareId = "s", linkId = "l", secretCiphertext = "c", scopes = listOf("app.files"),
-                portalServerId = "portal", hookId = "h", canonicalBase = "https://current", deviceId = "d",
+                serverId = "portal", relayId = "h", canonicalBase = "https://current", deviceId = "d",
                 createdAt = 0,
             )
         val revokedCurrent = base.copy(shareId = "revoked", revokedAt = 1)
         val otherPortalActive =
-            base.copy(shareId = "other", portalServerId = "other", canonicalBase = "https://other")
+            base.copy(shareId = "other", serverId = "other", canonicalBase = "https://other")
         val current =
-            RelayRuntimePolicy.currentPortalActiveShares(
+            RelayRuntimePolicy.currentServerActiveShares(
                 listOf(revokedCurrent, otherPortalActive),
                 "portal",
                 "https://current",
@@ -69,9 +69,9 @@ class RelayRuntimePolicyTest {
         assertTrue(current.isEmpty())
         assertTrue(RelayRuntimePolicy.shouldStopEmptySession(current.size))
         assertFalse(RelayRuntimePolicy.shouldStopEmptySession(1))
-        // The other Portal's Share must not keep the current session alive.
+        // The other Relay Server's Share must not keep the current session alive.
         assertFalse(
-            RelayRuntimePolicy.currentPortalActiveShares(
+            RelayRuntimePolicy.currentServerActiveShares(
                 listOf(otherPortalActive),
                 "portal",
                 "https://current",
@@ -85,7 +85,7 @@ class RelayRuntimePolicyTest {
         val base =
             VfsShareRecord(
                 shareId = "s", linkId = "l", secretCiphertext = "c", scopes = listOf("app.files"),
-                portalServerId = "p", hookId = "h", canonicalBase = "https://x", deviceId = "d", createdAt = 0,
+                serverId = "p", relayId = "h", canonicalBase = "https://x", deviceId = "d", createdAt = 0,
             )
         val active = RelayPairFrames.frameFor(base.copy(pairState = "active", pairId = "pid", pairExpiresAt = now + 300_000))
         assertEquals("active", active!!.state)

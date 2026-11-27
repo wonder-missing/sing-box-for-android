@@ -52,16 +52,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
-import io.nekohasekai.sfa.agent.mcp.McpRuntimes
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.vfs.relay.RelayScope
 import io.nekohasekai.sfa.vfs.relay.VfsPairingUi
 import io.nekohasekai.sfa.vfs.relay.VfsRelayRuntime
+import io.nekohasekai.sfa.vfs.relay.VfsRelayServerView
 import io.nekohasekai.sfa.vfs.relay.VfsRelayShareView
 import io.nekohasekai.sfa.vfs.relay.VfsRelayState
 import kotlinx.coroutines.delay
@@ -116,12 +117,14 @@ fun ShareFilesScreen(navController: NavController) {
     val relayState by VfsRelayRuntime.state.collectAsState()
     val relayError = relayState as? VfsRelayState.Error
     val shares by VfsRelayRuntime.shares.collectAsState()
-    val mcp = remember { McpRuntimes.get(context.applicationContext) }
-    val servers by mcp.views.collectAsState()
-    val candidates = servers.filter { it.enabled && it.hasToken }
+    val serverViews by VfsRelayRuntime.servers.collectAsState()
+    val selectedServerId by VfsRelayRuntime.selectedServerId.collectAsState()
 
-    var portalId by remember { mutableStateOf(VfsRelayRuntime.selectedPortalId(context)) }
     var busy by remember { mutableStateOf(false) }
+    var showAddServer by remember { mutableStateOf(false) }
+    var editServer by remember { mutableStateOf<VfsRelayServerView?>(null) }
+    var deleteServer by remember { mutableStateOf<VfsRelayServerView?>(null) }
+    var serverDialogError by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var preset by remember { mutableStateOf(SharePreset.RECOMMENDED) }
@@ -195,39 +198,83 @@ fun ShareFilesScreen(navController: NavController) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (candidates.isEmpty()) {
+        if (serverViews.isEmpty()) {
             Text(
-                text = stringResource(R.string.share_files_no_portal),
+                text = stringResource(R.string.share_files_no_server),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )
+            Button(onClick = { showAddServer = true }, enabled = !busy) {
+                Text(stringResource(R.string.share_files_add_server))
+            }
         } else {
-            candidates.forEach { server ->
+            serverViews.forEach { server ->
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     ListItem(
                         headlineContent = { Text(server.name) },
-                        supportingContent = { Text(server.url, style = MaterialTheme.typography.bodySmall) },
+                        supportingContent = {
+                            Text(server.endpoint, style = MaterialTheme.typography.bodySmall)
+                        },
                         leadingContent = {
                             RadioButton(
-                                selected = portalId == server.id,
-                                onClick = { portalId = server.id },
-                                enabled = !active,
+                                selected = server.selected,
+                                onClick = {
+                                    if (!server.selected) {
+                                        scope.launch {
+                                            busy = true
+                                            message = null
+                                            VfsRelayRuntime.selectServer(context, server.id)
+                                                .onFailure { message = it.message }
+                                            busy = false
+                                        }
+                                    }
+                                },
+                                enabled = !active && !busy,
                             )
+                        },
+                        trailingContent = {
+                            Row {
+                                TextButton(
+                                    onClick = {
+                                        serverDialogError = null
+                                        editServer = server
+                                    },
+                                    enabled = !active && !busy,
+                                ) {
+                                    Text(stringResource(R.string.share_files_edit))
+                                }
+                                TextButton(
+                                    onClick = {
+                                        if (active) {
+                                            message = context.getString(R.string.share_files_disconnect_first)
+                                        } else if (shares.any { it.serverId == server.id && it.status != "revoked" }) {
+                                            message = context.getString(R.string.share_files_server_has_shares)
+                                        } else {
+                                            deleteServer = server
+                                        }
+                                    },
+                                    enabled = !busy,
+                                ) {
+                                    Text(stringResource(R.string.share_files_delete))
+                                }
+                            }
                         },
                     )
                 }
             }
-        }
-
-        if (candidates.isNotEmpty() && portalId.isBlank()) {
-            Text(
-                text = stringResource(R.string.share_files_choose_portal),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            OutlinedButton(onClick = { showAddServer = true }, enabled = !busy && !active) {
+                Text(stringResource(R.string.share_files_add_server))
+            }
+            if (selectedServerId.isBlank()) {
+                Text(
+                    text = stringResource(R.string.share_files_choose_server),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         StatusLine(relayState)
         if (relayError != null && relayError.resetRecommended) {
@@ -253,16 +300,12 @@ fun ShareFilesScreen(navController: NavController) {
                         scope.launch {
                             busy = true
                             message = null
-                            VfsRelayRuntime.setPortal(context, portalId)
-                                .onFailure { message = it.message }
-                                .onSuccess {
-                                    VfsRelayRuntime.connect(context).onFailure { message = it.message }
-                                }
+                            VfsRelayRuntime.connect(context).onFailure { message = it.message }
                             busy = false
                         }
                     }
                 },
-                enabled = !busy && (active || (portalId.isNotBlank() && candidates.any { it.id == portalId })),
+                enabled = !busy && (active || selectedServerId.isNotBlank()),
             ) {
                 Text(
                     stringResource(
@@ -398,7 +441,6 @@ fun ShareFilesScreen(navController: NavController) {
                         scope.launch {
                             busy = true
                             VfsRelayRuntime.resetShareFilesData(context)
-                            portalId = ""
                             pairingShareId = null
                             message = null
                             busy = false
@@ -410,6 +452,85 @@ fun ShareFilesScreen(navController: NavController) {
             },
             dismissButton = {
                 TextButton(onClick = { showReset = false }) {
+                    Text(stringResource(R.string.share_files_cancel))
+                }
+            },
+        )
+    }
+
+    if (showAddServer) {
+        ServerEditorDialog(
+            initial = null,
+            error = serverDialogError,
+            busy = busy,
+            onDismiss = {
+                showAddServer = false
+                serverDialogError = null
+            },
+            onSubmit = { name, url, token ->
+                scope.launch {
+                    busy = true
+                    serverDialogError = null
+                    VfsRelayRuntime.addServer(context, name, url, token)
+                        .onSuccess {
+                            showAddServer = false
+                            message = null
+                        }
+                        .onFailure { serverDialogError = it.message }
+                    busy = false
+                }
+            },
+        )
+    }
+
+    editServer?.let { server ->
+        ServerEditorDialog(
+            initial = server,
+            error = serverDialogError,
+            busy = busy,
+            onDismiss = {
+                editServer = null
+                serverDialogError = null
+            },
+            onSubmit = { name, url, token ->
+                scope.launch {
+                    busy = true
+                    serverDialogError = null
+                    VfsRelayRuntime.updateServer(context, server.id, name, url, token.takeIf { it.isNotBlank() })
+                        .onSuccess {
+                            editServer = null
+                            message = null
+                        }
+                        .onFailure { serverDialogError = it.message }
+                    busy = false
+                }
+            },
+        )
+    }
+
+    deleteServer?.let { server ->
+        AlertDialog(
+            onDismissRequest = { deleteServer = null },
+            title = { Text(stringResource(R.string.share_files_server_delete_title)) },
+            text = { Text(stringResource(R.string.share_files_server_delete_help)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deleteServer = null
+                        scope.launch {
+                            busy = true
+                            message = null
+                            VfsRelayRuntime.removeServer(context, server.id)
+                                .onFailure { message = it.message }
+                            busy = false
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.share_files_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteServer = null }) {
                     Text(stringResource(R.string.share_files_cancel))
                 }
             },
@@ -443,6 +564,79 @@ fun ShareFilesScreen(navController: NavController) {
             },
         )
     }
+}
+
+@Composable
+private fun ServerEditorDialog(
+    initial: VfsRelayServerView?,
+    error: String?,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (name: String, url: String, token: String) -> Unit,
+) {
+    val editing = initial != null
+    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
+    var url by remember(initial) { mutableStateOf(initial?.endpoint.orEmpty()) }
+    var token by remember(initial) { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (editing) R.string.share_files_edit_server_title else R.string.share_files_add_server_title,
+                ),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(64) },
+                    label = { Text(stringResource(R.string.share_files_server_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it.trim() },
+                    label = { Text(stringResource(R.string.share_files_server_url)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it.trim() },
+                    label = { Text(stringResource(R.string.share_files_server_token)) },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (editing) {
+                    Text(
+                        text = stringResource(R.string.share_files_server_token_keep),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSubmit(name, url, token) },
+                enabled = !busy && name.isNotBlank() && url.isNotBlank() && (editing || token.isNotBlank()),
+            ) {
+                Text(stringResource(if (editing) R.string.share_files_save else R.string.share_files_add))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) {
+                Text(stringResource(R.string.share_files_cancel))
+            }
+        },
+    )
 }
 
 @Composable

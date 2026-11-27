@@ -26,20 +26,20 @@ object RelayRuntimePolicy {
         clientOpen: Boolean,
     ): Boolean = desiredConnected && !(tombstoned && remaining == 0) && (!clientOpen || remaining == 0)
 
-    /** Only Shares of the current Portal count toward an empty session. */
-    fun currentPortalActiveShares(
+    /** Only Shares of the current Relay Server count toward an empty session. */
+    fun currentServerActiveShares(
         records: List<VfsShareRecord>,
-        portalServerId: String,
+        serverId: String,
         canonicalBase: String,
     ): List<VfsShareRecord> =
         records.filter {
-            it.portalServerId == portalServerId &&
+            it.serverId == serverId &&
                 it.canonicalBase == canonicalBase &&
                 it.revokedAt == null &&
                 it.revokingAt == null
         }
 
-    fun shouldStopEmptySession(remainingInCurrentPortal: Int): Boolean = remainingInCurrentPortal == 0
+    fun shouldStopEmptySession(remainingInCurrentServer: Int): Boolean = remainingInCurrentServer == 0
 
     fun responseAllowed(
         record: VfsShareRecord,

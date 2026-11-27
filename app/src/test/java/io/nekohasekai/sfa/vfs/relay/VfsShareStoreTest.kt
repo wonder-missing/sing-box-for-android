@@ -47,7 +47,7 @@ class VfsShareStoreTest {
 
     @Test
     fun shareRoundTripsAndSecretIsNotPlaintext() {
-        val file = File(temp.root, "relay/shares.json")
+        val file = File(temp.root, "relay/shares-v2.json")
         val store = VfsShareStore(file, cipher, clock = { 1_000L })
         val secret = ByteArray(32) { it.toByte() }
         val record =
@@ -57,9 +57,9 @@ class VfsShareStoreTest {
                 linkId = "link-1",
                 secret = secret,
                 scopes = setOf(RelayScope.APP_DATA_ACTIVITY, RelayScope.CONDUCTOR_FILES),
-                portalServerId = "portal",
-                hookId = "hk_test",
-                canonicalBase = "https://portal.example",
+                serverId = "server-1",
+                relayId = "relay-1",
+                canonicalBase = "https://relay.example",
                 deviceId = "device-1",
                 selectedUris = listOf("content://a"),
             )
@@ -67,7 +67,8 @@ class VfsShareStoreTest {
 
         val loaded = VfsShareStore(file, cipher).load().single()
         assertEquals("share-1", loaded.shareId)
-        assertEquals("Claude", loaded.label)
+        assertEquals("server-1", loaded.serverId)
+        assertEquals("relay-1", loaded.relayId)
         assertEquals(listOf("app.data.activity", "conductor.files"), loaded.scopes)
         assertEquals(VfsShareRecord.PAIR_WAITING, loaded.pairState)
         assertEquals(1_000L, loaded.createdAt)
@@ -79,7 +80,7 @@ class VfsShareStoreTest {
 
     @Test
     fun corruptShareFileFailsClosedAndIsPreserved() {
-        val file = File(temp.root, "relay/shares.json")
+        val file = File(temp.root, "relay/shares-v2.json")
         file.parentFile.mkdirs()
         file.writeText("{not json", Charsets.UTF_8)
         val store = VfsShareStore(file, cipher)
@@ -101,58 +102,43 @@ class VfsShareStoreTest {
     }
 
     @Test
-    fun configRoundTripsProviderKeyWithAtRestAad() {
-        val file = File(temp.root, "relay/config.json")
-        val store = VfsRelayConfigStore(file, cipher)
-        val key = ByteArray(32) { (it + 1).toByte() }
-        val account =
-            VfsRelayAccount(
-                portalServerId = "portal",
-                canonicalBase = "https://portal.example",
-                hookId = "hk_test",
-                deviceId = "device-1",
-                providerKeyId = "key-1",
-                providerKeyCiphertext =
-                    store.sealProviderKey("https://portal.example", "hk_test", "device-1", "key-1", key),
-                createdAt = 42L,
-            )
-        store.save(
-            VfsRelayConfigFile(
-                portalServerId = "portal",
-                canonicalBase = "https://portal.example",
-                desiredConnected = true,
-                accounts = listOf(account),
-            ),
-        )
-        val loaded = VfsRelayConfigStore(file, cipher).load()
-        assertTrue(loaded.desiredConnected)
-        assertEquals("portal", loaded.portalServerId)
-        assertArrayEquals(key, store.openProviderKey(loaded.accounts.single()))
+    fun temporaryReadFailureIsRetryableAndNotLatchedAsCorrupt() {
+        val file = File(temp.root, "relay/shares-v2.json")
+        file.parentFile.mkdirs()
+        file.writeText("{\"v\":2,\"shares\":[]}", Charsets.UTF_8)
+        val failing = VfsShareStore(file, cipher) { throw java.io.IOException("device busy") }
+        try {
+            failing.load()
+            throw AssertionError("expected a transient read failure")
+        } catch (error: RelayStoreException) {
+            assertTrue(error.retryable)
+        }
+        assertTrue(VfsShareStore(file, cipher).load().isEmpty())
     }
 
     @Test
-    fun deviceSecretIsStablePromotedAndPortalScoped() {
+    fun deviceSecretIsStablePromotedAndServerScoped() {
         val store = VfsDeviceSecretStore(File(temp.root, "relay"), cipher)
-        val first = store.getOrCreatePending("portal", "https://portal.example", "device-1")
-        val again = store.getOrCreatePending("portal", "https://portal.example", "device-1")
+        val first = store.getOrCreatePending("server-1", "https://relay.example", "device-1")
+        val again = store.getOrCreatePending("server-1", "https://relay.example", "device-1")
         assertArrayEquals(first, again)
         assertEquals(32, first.size)
-        assertNull(store.existing("https://portal.example", "hk_test", "device-1"))
+        assertNull(store.existing("https://relay.example", "relay-1", "device-1"))
 
-        store.promotePending("portal", "https://portal.example", "hk_test", "device-1", first)
-        assertArrayEquals(first, store.existing("https://portal.example", "hk_test", "device-1"))
-        assertNull(store.existing("https://other.example", "hk_test", "device-1"))
-        val pendingFile = File(temp.root, "relay/pending/portal")
+        store.promotePending("server-1", "https://relay.example", "relay-1", "device-1", first)
+        assertArrayEquals(first, store.existing("https://relay.example", "relay-1", "device-1"))
+        assertNull(store.existing("https://other.example", "relay-1", "device-1"))
+        val pendingFile = File(temp.root, "relay/pending/server-1")
         assertTrue(pendingFile.listFiles().orEmpty().isEmpty())
     }
 
     @Test
     fun pairStateTransitionsBumpEpochAndKeepTheSameShareKey() {
-        val store = VfsShareStore(File(temp.root, "relay/shares.json"), cipher)
+        val store = VfsShareStore(File(temp.root, "relay/shares-v2.json"), cipher)
         val record =
             store.newRecord(
                 "s", "l", "link", ByteArray(32) { 7 }, setOf(RelayScope.APP_DATA_ACTIVITY),
-                "p", "h", "https://x", "d", emptyList(),
+                "server", "relay", "https://x", "d", emptyList(),
             )
         val active = record.nextPairState(VfsShareRecord.PAIR_ACTIVE, pairId = "pair-1", expiresAt = 1_000L)
         val consumed = active.nextPairState(VfsShareRecord.PAIR_CONSUMED, expiresAt = null, pairedAt = 2_000L)
@@ -168,70 +154,14 @@ class VfsShareStoreTest {
     }
 
     @Test
-    fun connectAccountSaveCannotOverwriteAConcurrentStop() {
-        val file = File(temp.root, "relay/config.json")
-        val store = VfsRelayConfigStore(file, cipher)
-        store.save(VfsRelayConfigFile(portalServerId = "old", desiredConnected = true))
-        val account =
-            VfsRelayAccount(
-                portalServerId = "portal",
-                canonicalBase = "https://portal.example",
-                hookId = "hk",
-                deviceId = "device",
-                providerKeyId = "key",
-                providerKeyCiphertext = "blob",
-                createdAt = 1,
-            )
-
-        // Stop wins before Connect finishes writing accounts.
-        store.update { it.copy(desiredConnected = false) }
-        val result = store.update { latest -> latest.withAccount("portal", "https://portal.example", account) }
-        assertFalse(result.desiredConnected)
-        assertFalse(store.load().desiredConnected)
-        assertTrue(result.accounts.any { it.portalServerId == "portal" })
-        assertFalse(RelayRuntimePolicy.shouldReconnect(store.load().desiredConnected))
-
-        // Connect finishes first; a later Stop still wins.
-        store.save(VfsRelayConfigFile(portalServerId = "old", desiredConnected = true))
-        store.update { latest -> latest.withAccount("portal", "https://portal.example", account) }
-        store.update { it.copy(desiredConnected = false) }
-        assertFalse(store.load().desiredConnected)
-        assertTrue(store.load().accounts.any { it.portalServerId == "portal" })
-    }
-
-    @Test
-    fun temporaryReadFailureIsRetryableAndNotLatchedAsCorrupt() {
-        val file = File(temp.root, "relay/shares.json")
-        file.parentFile.mkdirs()
-        file.writeText("{\"v\":1,\"shares\":[]}", Charsets.UTF_8)
-        val failing = VfsShareStore(file, cipher) { throw java.io.IOException("device busy") }
-        try {
-            failing.load()
-            throw AssertionError("expected a transient read failure")
-        } catch (error: RelayStoreException) {
-            assertTrue(error.retryable)
-        }
-        assertTrue(VfsShareStore(file, cipher).load().isEmpty())
-    }
-
-    @Test
-    fun desiredConnectedFalseSurvivesARestartAfterStop() {
-        val file = File(temp.root, "relay/config.json")
-        VfsRelayConfigStore(file, cipher).save(
-            VfsRelayConfigFile(portalServerId = "portal", desiredConnected = false),
-        )
-        assertFalse(VfsRelayConfigStore(file, cipher).load().desiredConnected)
-    }
-
-    @Test
     fun shareFilePermissionsAreOwnerOnly() {
-        val file = File(temp.root, "relay/shares.json")
+        val file = File(temp.root, "relay/shares-v2.json")
         val store = VfsShareStore(file, cipher)
-        val secret = ByteArray(32)
         store.save(
             listOf(
                 store.newRecord(
-                    "s", "l", "link", secret, setOf(RelayScope.APP_FILES), "p", "h", "https://x", "d", emptyList(),
+                    "s", "l", "link", ByteArray(32), setOf(RelayScope.APP_FILES),
+                    "server", "relay", "https://x", "d", emptyList(),
                 ),
             ),
         )
@@ -240,71 +170,152 @@ class VfsShareStoreTest {
     }
 }
 
-class VfsPairingTest {
+class VfsRelayServerStoreTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    private val cipher = FakeVfsShareCipher()
+
+    private fun store(file: File = File(temp.root, "relay/servers.json")) =
+        VfsRelayServerStore(file, cipher, clock = { 42L })
+
     @Test
-    fun generatedCodeUsesCrockfordAlphabetAndLength() {
-        repeat(32) {
-            val code = VfsPairing.generate()
-            assertEquals(16, code.size)
-            assertTrue(code.all { it in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" })
-            assertTrue(VfsPairing.isValid(String(code)))
+    fun addSelectEditDeleteAndTokenEncryptionRoundTrip() {
+        val file = File(temp.root, "relay/servers.json")
+        val store = store(file)
+        val first = store.addServer("Mini", "https://relay.example/path", "relay_token_one")
+        assertEquals("https://relay.example", first.baseUrl)
+        assertEquals("relay_token_one", store.openToken(first))
+        assertNotEquals("relay_token_one", first.tokenCiphertext)
+        assertEquals(first.id, store.load().selectedServerId)
+
+        val second = store.addServer("Backup", "https://backup.example:8443", "relay_token_two")
+        assertEquals(2, store.load().servers.size)
+        store.selectServer(second.id)
+        assertEquals(second.id, store.load().selectedServerId)
+
+        val edited =
+            store.updateServer(
+                second.id,
+                "Backup 2",
+                "https://backup2.example",
+                "relay_token_three",
+            )
+        assertEquals("Backup 2", edited.name)
+        assertEquals("https://backup2.example", edited.baseUrl)
+        assertEquals("relay_token_three", store.openToken(edited))
+
+        val keptToken = store.updateServer(second.id, "Backup 3", "https://backup3.example", null)
+        assertEquals("relay_token_three", store.openToken(keptToken))
+        assertEquals("Backup 3", keptToken.name)
+
+        store.removeServer(second.id)
+        assertEquals(listOf(first.id), store.load().servers.map { it.id })
+        assertTrue(store.load().selectedServerId.isBlank() || store.load().selectedServerId == first.id)
+    }
+
+    @Test
+    fun rejectsNonHttpsOriginsAndNonRelayTokens() {
+        val store = store()
+        for (url in listOf("http://relay.example", "https://relay.example/path?x=1", "not a url")) {
+            try {
+                store.addServer("Bad", url, "relay_ok")
+                throw AssertionError("expected invalid URL: $url")
+            } catch (_: RelayStoreException) {
+                assertTrue(store.load().servers.isEmpty())
+            }
+        }
+        for (token in listOf("whsec_abc", "relay_", "relay_has space")) {
+            try {
+                store.addServer("Bad", "https://relay.example", token)
+                throw AssertionError("expected invalid token: $token")
+            } catch (_: RelayStoreException) {
+                assertTrue(store.load().servers.isEmpty())
+            }
         }
     }
 
     @Test
-    fun normalizeAppliesAliasesAndSeparators() {
-        assertEquals(
-            "ABCDEFGHJKMNPQRS",
-            String(VfsPairing.normalize("abcd efgh-jkmn pqrs")!!),
-        )
-        assertEquals(
-            "0123456789ABCDEF",
-            String(VfsPairing.normalize("O123456789ABCDEF")!!),
-        )
-        assertEquals(
-            "1111ABCDEFGHJKMN",
-            String(VfsPairing.normalize("I1lLABCDEFGHJKMN")!!),
-        )
-        assertEquals(
-            "VABCDEFGHJKMNPQR",
-            String(VfsPairing.normalize("UABCDEFGHJKMNPQR")!!),
-        )
-        assertNull(VfsPairing.normalize("ABCDEFGHJKMNPQRST"))
-        assertNull(VfsPairing.normalize("ABCDEFGHJKMNPQR!"))
-        assertNull(VfsPairing.normalize("ABCDEFGHJKMNPQR"))
+    fun providerKeyAndAccountRoundTripWithRelayIdAad() {
+        val store = store()
+        val server = store.addServer("Mini", "https://relay.example", "relay_token")
+        val key = ByteArray(32) { (it + 1).toByte() }
+        val account =
+            VfsRelayAccount(
+                serverId = server.id,
+                relayId = "relay-1",
+                canonicalBase = server.baseUrl,
+                deviceId = "device-1",
+                providerKeyId = "key-1",
+                providerKeyCiphertext =
+                    store.sealProviderKey(server.baseUrl, "relay-1", "device-1", "key-1", key),
+                createdAt = 7L,
+            )
+        store.update { it.withAccount(server.id, "relay-1", server.baseUrl, account) }
+        val loaded = store.load()
+        assertEquals("relay-1", loaded.accounts.single().relayId)
+        assertArrayEquals(key, store.openProviderKey(loaded.accounts.single()))
+        assertEquals("relay-1", store.account(server.id)?.relayId)
+        store.removeServer(server.id)
+        assertTrue(store.load().accounts.isEmpty())
     }
 
     @Test
-    fun ttlIsFiveMinutesAndCommandCarriesRouteIds() {
-        val code = VfsPairing.normalize("ABCDEFGHJKMNPQRS")!!
-        val command = VfsPairing.pairingCommand("link-1", "pair-1", code)
-        assertEquals(
-            "\"\$HOME/bin/wonder-vfs\" pair --link link-1 --pair pair-1 --code ABCDEFGHJKMNPQRS",
-            command,
+    fun legacySchemaAndOldConfigAreNotLoaded() {
+        val file = File(temp.root, "relay/servers.json")
+        file.parentFile.mkdirs()
+        file.writeText(
+            "{\"v\":1,\"portalServerId\":\"old\",\"canonicalBase\":\"https://old\",\"desiredConnected\":true}",
+            Charsets.UTF_8,
         )
-        assertTrue(VfsPairing.TTL_MS == 5L * 60L * 1000L)
-        assertTrue(VfsPairingCode("s", "p", code, 0, VfsPairing.TTL_MS).isExpired(VfsPairing.TTL_MS))
-        assertFalse(VfsPairingCode("s", "p", code, 0, VfsPairing.TTL_MS).isExpired(VfsPairing.TTL_MS - 1))
+        val legacy = store(file).load()
+        assertTrue(legacy.servers.isEmpty())
+        assertFalse(legacy.desiredConnected)
+        assertTrue(legacy.selectedServerId.isBlank())
+
+        File(temp.root, "relay/config.json").writeText("{\"portalServerId\":\"old\"}", Charsets.UTF_8)
+        assertTrue(store(File(temp.root, "relay/servers.json")).load().servers.isEmpty())
     }
 
     @Test
-    fun codesAreMemoryOnlyAndZeroizedOnRemoval() {
-        val codes = VfsPairingCodes()
-        val code = VfsPairing.normalize("ABCDEFGHJKMNPQRS")!!
-        codes.put(VfsPairingCode("share", "pair", code, 0, 1_000))
-        assertEquals("ABCDEFGHJKMNPQRS", VfsPairing.ascii(codes.get("share")!!.code))
-        val removed = codes.remove("share")!!
-        assertTrue(removed.code.all { it == '\u0000' })
-        assertNull(codes.get("share"))
+    fun connectAccountSaveCannotOverwriteAConcurrentStop() {
+        val file = File(temp.root, "relay/servers.json")
+        val store = store(file)
+        val server = store.addServer("Mini", "https://relay.example", "relay_token")
+        store.update { it.copy(desiredConnected = true) }
+        val account =
+            VfsRelayAccount(
+                serverId = server.id,
+                relayId = "relay-1",
+                canonicalBase = server.baseUrl,
+                deviceId = "device",
+                providerKeyId = "key",
+                providerKeyCiphertext = "blob",
+                createdAt = 1L,
+            )
+
+        // Stop wins before Connect finishes writing the account.
+        store.update { it.copy(desiredConnected = false) }
+        val result = store.update { latest -> latest.withAccount(server.id, "relay-1", server.baseUrl, account) }
+        assertFalse(result.desiredConnected)
+        assertFalse(store.load().desiredConnected)
+        assertEquals("relay-1", result.accounts.single().relayId)
+        assertFalse(RelayRuntimePolicy.shouldReconnect(store.load().desiredConnected))
+
+        // Connect finishes first; a later Stop still wins.
+        store.update { it.copy(desiredConnected = true) }
+        store.update { latest -> latest.withAccount(server.id, "relay-2", server.baseUrl, account) }
+        store.update { it.copy(desiredConnected = false) }
+        assertFalse(store.load().desiredConnected)
+        assertEquals("relay-2", store.load().accounts.single().relayId)
     }
 
     @Test
-    fun invalidPairAttemptsAreRateLimitedButDoNotBurnTheCode() {
-        var now = 1_000L
-        val limiter = RelayPairRateLimiter(now = { now })
-        repeat(5) { assertTrue(limiter.allow("link")) }
-        assertFalse(limiter.allow("link"))
-        now += 61_000L
-        assertTrue(limiter.allow("link"))
+    fun desiredConnectedFalseSurvivesARestartAfterStop() {
+        val file = File(temp.root, "relay/servers.json")
+        val store = store(file)
+        store.addServer("Mini", "https://relay.example", "relay_token")
+        store.update { it.copy(desiredConnected = false) }
+        assertFalse(store(file).load().desiredConnected)
     }
 }

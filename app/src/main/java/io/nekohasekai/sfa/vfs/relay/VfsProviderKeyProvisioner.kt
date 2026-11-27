@@ -1,6 +1,5 @@
 package io.nekohasekai.sfa.vfs.relay
 
-import io.nekohasekai.sfa.agent.mcp.McpServerConfig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -11,28 +10,26 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.net.URI
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-data class PortalTarget(
-    val portalServerId: String,
+data class RelayServerTarget(
+    val serverId: String,
     val name: String,
     val canonicalBase: String,
-    val hookToken: String,
+    val relayToken: String,
 )
 
 data class ProviderKeyIssue(
     val providerKey: String,
     val providerKeyId: String,
-    val hookId: String,
+    val relayId: String,
     val deviceId: String,
     val createdAt: Long,
     val expiresAt: Long?,
 ) {
     fun providerKeyBytes(): ByteArray =
         RelayBase64.decodeUrl(providerKey.removePrefix("wsk_"))
-            ?: throw RelayProvisionException("PROTOCOL_ERROR", "Portal returned a malformed Provider key.", false)
+            ?: throw RelayProvisionException("PROTOCOL_ERROR", "Relay Server returned a malformed Provider key.", false)
 }
 
 class RelayProvisionException(
@@ -42,40 +39,39 @@ class RelayProvisionException(
 ) : Exception(message)
 
 /**
- * Bootstraps the Relay Provider key from an existing MCP server: the server's
- * `serverBase`/`url` origin plus its `whsec_` token. The token only goes to the
- * selected server's canonical base. No second MCP store is created.
+ * Bootstraps the Relay Provider key from a locally configured Relay Server.
+ * The relay token is only sent to that server's canonical HTTPS origin.
  */
 class VfsProviderKeyProvisioner(
     private val client: OkHttpClient = defaultClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-    fun targetOf(config: McpServerConfig): PortalTarget {
-        val rawBase = config.serverBase.trim().ifBlank { config.url.trim() }
-        val canonical = canonicalOrigin(rawBase)
+    fun targetOf(
+        server: VfsRelayServer,
+        relayToken: String,
+    ): RelayServerTarget {
+        val canonical = RelayServerValidation.canonicalHttpsOrigin(server.baseUrl)
             ?: throw RelayProvisionException(
-                "INVALID_PORTAL",
-                "This Portal URL is not an HTTPS origin. Share files needs an HTTPS Portal (Funnel).",
+                "INVALID_RELAY_URL",
+                "The Relay URL must be an HTTPS origin.",
                 false,
             )
-        val token = config.token.trim()
-        if (!token.startsWith("whsec_")) {
-            throw RelayProvisionException(
-                "TOKEN_UNSUPPORTED",
-                "Share files needs this Portal's MCP hook secret (whsec_...). OAuth-only servers are not supported yet.",
+        val token = RelayServerValidation.normalizeToken(relayToken)
+            ?: throw RelayProvisionException(
+                "INVALID_TOKEN",
+                "The Relay token is missing or invalid. Edit the Relay Server.",
                 false,
             )
-        }
-        return PortalTarget(
-            portalServerId = config.id,
-            name = config.name,
+        return RelayServerTarget(
+            serverId = server.id,
+            name = server.name,
             canonicalBase = canonical,
-            hookToken = token,
+            relayToken = token,
         )
     }
 
     fun issue(
-        target: PortalTarget,
+        target: RelayServerTarget,
         deviceId: String,
         deviceSecret: ByteArray,
         deviceName: String,
@@ -89,34 +85,41 @@ class VfsProviderKeyProvisioner(
         val request =
             Request.Builder()
                 .url("${target.canonicalBase}/v1/provider-keys")
-                .header("Authorization", "Bearer ${target.hookToken}")
+                .header("Authorization", "Bearer ${target.relayToken}")
                 .header("Accept", "application/json")
                 .post(body)
                 .build()
         val (status, text) = execute(request)
         if (status !in 200..299) throw provisionError(status, text)
+        return parseIssueResponse(text, deviceId)
+    }
+
+    fun parseIssueResponse(
+        text: String,
+        deviceId: String,
+    ): ProviderKeyIssue {
         val obj = parseObject(text)
-            ?: throw RelayProvisionException("PROTOCOL_ERROR", "Portal returned an invalid Provider key response.", false)
+            ?: throw RelayProvisionException("PROTOCOL_ERROR", "Relay Server returned an invalid Provider key response.", false)
         val providerKey = string(obj, "providerKey")
         val providerKeyId = string(obj, "providerKeyId")
-        val hookId = string(obj, "hookId")
+        val relayId = string(obj, "relayId")
         val returnedDevice = string(obj, "deviceId") ?: deviceId
         if (providerKey == null || !providerKey.startsWith("wsk_")) {
-            throw RelayProvisionException("PROTOCOL_ERROR", "Portal returned a malformed Provider key.", false)
+            throw RelayProvisionException("PROTOCOL_ERROR", "Relay Server returned a malformed Provider key.", false)
         }
         if (providerKeyId == null || RelayBase64.decodeUrl(providerKeyId)?.size != 16) {
-            throw RelayProvisionException("PROTOCOL_ERROR", "Portal returned a malformed Provider key id.", false)
+            throw RelayProvisionException("PROTOCOL_ERROR", "Relay Server returned a malformed Provider key id.", false)
         }
-        if (hookId.isNullOrBlank() || returnedDevice != deviceId) {
-            throw RelayProvisionException("PROTOCOL_ERROR", "Portal returned a mismatched device identity.", false)
+        if (relayId.isNullOrBlank() || returnedDevice != deviceId) {
+            throw RelayProvisionException("PROTOCOL_ERROR", "Relay Server returned a mismatched relay identity.", false)
         }
         if (RelayBase64.decodeUrl(providerKey.removePrefix("wsk_"))?.size != 32) {
-            throw RelayProvisionException("PROTOCOL_ERROR", "Portal returned a malformed Provider key.", false)
+            throw RelayProvisionException("PROTOCOL_ERROR", "Relay Server returned a malformed Provider key.", false)
         }
         return ProviderKeyIssue(
             providerKey = providerKey,
             providerKeyId = providerKeyId,
-            hookId = hookId,
+            relayId = relayId,
             deviceId = returnedDevice,
             createdAt = long(obj, "createdAt") ?: System.currentTimeMillis(),
             expiresAt = long(obj, "expiresAt"),
@@ -124,7 +127,7 @@ class VfsProviderKeyProvisioner(
     }
 
     fun postLink(
-        target: PortalTarget,
+        target: RelayServerTarget,
         providerKey: String,
         linkId: String,
     ) {
@@ -150,13 +153,13 @@ class VfsProviderKeyProvisioner(
                 RelayProvisionException("LINK_REVOKED", "This Share was revoked. Create a new Share.", false)
 
             code == "LINK_LIMIT" ->
-                RelayProvisionException("LINK_LIMIT", "This Portal is already at its Share limit. Revoke a Share or ask the administrator.", false)
+                RelayProvisionException("LINK_LIMIT", "This Relay Server is already at its Share limit. Revoke a Share first.", false)
 
             status == 429 ->
-                RelayProvisionException("RATE_LIMITED", "The Portal is rate limiting Share creation. Try again shortly.", true)
+                RelayProvisionException("RATE_LIMITED", "The Relay Server is rate limiting Share creation. Try again shortly.", true)
 
             status == 503 ->
-                RelayProvisionException("RELAY_UNAVAILABLE", "The Portal Relay is unavailable. Try again.", true)
+                RelayProvisionException("RELAY_UNAVAILABLE", "The Relay Server is unavailable. Try again.", true)
 
             else -> provisionError(status, text)
         }
@@ -174,66 +177,59 @@ class VfsProviderKeyProvisioner(
             status == 401 ->
                 RelayProvisionException(
                     "AUTH",
-                    "The Portal rejected this MCP token. Update the server token in Conductor settings, then Connect again.",
+                    "The Relay Server rejected this token. Edit the Relay Server and check the token, then Connect again.",
                     false,
                 )
 
             code == "CAPABILITY_REQUIRED" ->
                 RelayProvisionException(
                     "CAPABILITY_REQUIRED",
-                    "This Portal has not enabled Share Key VFS. Ask its administrator to grant shareKeyVfs to this hook.",
+                    "This Relay Server has not enabled Share Key VFS.",
                     false,
                 )
 
             code == "DEVICE_AUTH" ->
                 RelayProvisionException(
                     "DEVICE_AUTH",
-                    "This device's secret does not match the Portal record. Use Reset Share files data to start with a new device identity and Share; administrator deletion permanently revokes this device.",
+                    "This device's secret does not match the Relay Server record. Use Reset Share files data to create a new device identity and Share.",
                     false,
                 )
 
             code == "DEVICE_REVOKED" ->
                 RelayProvisionException(
                     "DEVICE_REVOKED",
-                    "This device was revoked on the Portal. Ask the administrator to delete the old provider key, or reset Share files data and create a new Share.",
+                    "This device was revoked on the Relay Server. Use Reset Share files data to create a new device identity and Share.",
                     false,
                 )
 
             code == "ROTATE_REQUIRED" ->
                 RelayProvisionException(
                     "ROTATE_REQUIRED",
-                    "The Portal requires a new Provider key. Update WonderSing, then Connect again.",
-                    false,
-                )
-
-            code == "HOOK_SUSPENDED" ->
-                RelayProvisionException(
-                    "HOOK_SUSPENDED",
-                    "This Portal hook is suspended. Ask its administrator to re-enable Share Key VFS, then Connect again.",
+                    "The Relay Server requires a new Provider key. Update WonderSing, then Connect again.",
                     false,
                 )
 
             status == 403 ->
                 RelayProvisionException(
                     "FORBIDDEN",
-                    detail ?: "The Portal refused this request. Check the Portal's Share Key VFS settings.",
+                    detail ?: "The Relay Server refused this request. Check its settings.",
                     false,
                 )
 
             status == 404 ->
                 RelayProvisionException(
-                    "UNSUPPORTED_PORTAL",
-                    "This Portal does not support Share Key VFS. Update the Portal service, then Connect again.",
+                    "UNSUPPORTED_RELAY_SERVER",
+                    "This Relay Server does not support Share Key VFS.",
                     false,
                 )
 
             status == 429 ->
-                RelayProvisionException("RATE_LIMITED", "The Portal is rate limiting key issuance. Try again shortly.", true)
+                RelayProvisionException("RATE_LIMITED", "The Relay Server is rate limiting key issuance. Try again shortly.", true)
 
             status in 500..599 ->
                 RelayProvisionException(
                     "RELAY_UNAVAILABLE",
-                    detail ?: "The Portal Relay is unavailable. Try again.",
+                    detail ?: "The Relay Server is unavailable. Try again.",
                     true,
                 )
 
@@ -253,7 +249,7 @@ class VfsProviderKeyProvisioner(
             } catch (error: Exception) {
                 throw RelayProvisionException(
                     "RELAY_UNREACHABLE",
-                    "Could not reach the Portal: ${error.message ?: "network error"}",
+                    "Could not reach the Relay Server: ${error.message ?: "network error"}",
                     true,
                 )
             }
@@ -283,18 +279,7 @@ class VfsProviderKeyProvisioner(
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
-        fun canonicalOrigin(raw: String): String? {
-            val trimmed = raw.trim()
-            if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return null
-            val uri = runCatching { URI(trimmed) }.getOrNull() ?: return null
-            if (!uri.scheme.equals("https", ignoreCase = true)) return null
-            if (uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null) return null
-            val host = uri.host ?: return null
-            if (uri.port != -1 && uri.port !in 1..65535) return null
-            val scheme = uri.scheme.lowercase(Locale.US)
-            val authority = if (uri.port == -1 || uri.port == 443) host.lowercase(Locale.US) else "${host.lowercase(Locale.US)}:${uri.port}"
-            return "$scheme://$authority"
-        }
+        fun canonicalOrigin(raw: String): String? = RelayServerValidation.canonicalHttpsOrigin(raw)
 
         private fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()

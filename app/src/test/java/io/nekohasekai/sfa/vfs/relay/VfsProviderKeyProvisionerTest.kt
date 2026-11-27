@@ -1,11 +1,21 @@
 package io.nekohasekai.sfa.vfs.relay
 
-import io.nekohasekai.sfa.agent.mcp.McpServerConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VfsProviderKeyProvisionerTest {
+    private val server =
+        VfsRelayServer(
+            id = "server-1",
+            name = "Mini",
+            baseUrl = "https://relay.example",
+            tokenCiphertext = "unused",
+            createdAt = 1,
+        )
+
     @Test
     fun canonicalOriginKeepsSchemeHostAndNonDefaultPortOnly() {
         assertEquals(
@@ -27,38 +37,50 @@ class VfsProviderKeyProvisionerTest {
     }
 
     @Test
-    fun targetUsesServerBaseThenUrlAndRequiresHookSecret() {
+    fun targetUsesRelayServerAndRelayToken() {
         val provisioner = VfsProviderKeyProvisioner()
-        val config =
-            McpServerConfig(
-                id = "portal",
-                name = "Mini",
-                url = "https://portal.example/mcp",
-                token = "whsec_0123456789abcdef0123456789abcdef",
-                enabled = true,
-                serverBase = "https://portal.example",
-            )
-        val target = provisioner.targetOf(config)
-        assertEquals("https://portal.example", target.canonicalBase)
-        assertEquals("portal", target.portalServerId)
-
-        val derived =
-            provisioner.targetOf(
-                config.copy(serverBase = "", url = "https://other.example/mcp/grant"),
-            )
-        assertEquals("https://other.example", derived.canonicalBase)
+        val target = provisioner.targetOf(server, "relay_token_one")
+        assertEquals("https://relay.example", target.canonicalBase)
+        assertEquals("server-1", target.serverId)
+        assertEquals("relay_token_one", target.relayToken)
 
         try {
-            provisioner.targetOf(config.copy(token = "oauth-access-token"))
-            throw AssertionError("expected TOKEN_UNSUPPORTED")
+            provisioner.targetOf(server, "whsec_abc")
+            throw AssertionError("expected INVALID_TOKEN")
         } catch (error: RelayProvisionException) {
-            assertEquals("TOKEN_UNSUPPORTED", error.code)
+            assertEquals("INVALID_TOKEN", error.code)
         }
         try {
-            provisioner.targetOf(config.copy(serverBase = "http://portal.example"))
-            throw AssertionError("expected INVALID_PORTAL")
+            provisioner.targetOf(server.copy(baseUrl = "http://relay.example"), "relay_ok")
+            throw AssertionError("expected INVALID_RELAY_URL")
         } catch (error: RelayProvisionException) {
-            assertEquals("INVALID_PORTAL", error.code)
+            assertEquals("INVALID_RELAY_URL", error.code)
+        }
+    }
+
+    @Test
+    fun issueResponseUsesRelayIdAndRejectsHookIds() {
+        val provisioner = VfsProviderKeyProvisioner()
+        val key = RelayBase64.encodeUrl(ByteArray(32) { 1 })
+        val keyId = RelayBase64.encodeUrl(ByteArray(16) { 2 })
+        val issue =
+            provisioner.parseIssueResponse(
+                """{"providerKey":"wsk_$key","providerKeyId":"$keyId","relayId":"relay-1","deviceId":"device-1","createdAt":7,"expiresAt":null}""",
+                "device-1",
+            )
+        assertEquals("relay-1", issue.relayId)
+        assertEquals("device-1", issue.deviceId)
+        assertEquals(7L, issue.createdAt)
+        assertFalse(issue.providerKey.contains("hook"))
+
+        try {
+            provisioner.parseIssueResponse(
+                """{"providerKey":"wsk_$key","providerKeyId":"$keyId","hookId":"hk_1","deviceId":"device-1","createdAt":7}""",
+                "device-1",
+            )
+            throw AssertionError("expected PROTOCOL_ERROR")
+        } catch (error: RelayProvisionException) {
+            assertTrue(error.code == "PROTOCOL_ERROR")
         }
     }
 }

@@ -37,6 +37,8 @@ object NoopVfsShareCipher : VfsShareCipher {
 object VfsShareAad {
     fun shareSecret(shareId: String): String = "v1|$shareId|secret"
 
+    fun relayServerToken(localId: String): String = "v1|relayServer|$localId|token"
+
     fun pendingDeviceSecret(
         canonicalBase: String,
         deviceId: String,
@@ -44,14 +46,14 @@ object VfsShareAad {
 
     fun deviceSecret(
         canonicalBase: String,
-        hookId: String,
+        relayId: String,
         deviceId: String,
-    ): String = "v1|$canonicalBase|$hookId|$deviceId|deviceSecret"
+    ): String = "v1|$canonicalBase|$relayId|$deviceId|deviceSecret"
 
     fun providerKey(
         canonicalBase: String,
-        hookId: String,
+        relayId: String,
         deviceId: String,
         providerKeyId: String,
-    ): String = "v1|$canonicalBase|$hookId|$deviceId|providerKey|$providerKeyId"
+    ): String = "v1|$canonicalBase|$relayId|$deviceId|providerKey|$providerKeyId"
 }

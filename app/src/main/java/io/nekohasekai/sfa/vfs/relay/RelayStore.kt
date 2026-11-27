@@ -12,8 +12,8 @@ data class VfsShareRecord(
     val linkId: String,
     val secretCiphertext: String,
     val scopes: List<String>,
-    val portalServerId: String,
-    val hookId: String,
+    val serverId: String,
+    val relayId: String,
     val canonicalBase: String,
     val deviceId: String,
     val generation: Long = 0,
@@ -71,7 +71,7 @@ fun VfsShareRecord.nextPairState(
 
 @Serializable
 private data class VfsShareFile(
-    val v: Int = 1,
+    val v: Int = 2,
     val shares: List<VfsShareRecord> = emptyList(),
 )
 
@@ -147,8 +147,8 @@ class VfsShareStore(
         linkId: String,
         secret: ByteArray,
         scopes: Set<RelayScope>,
-        portalServerId: String,
-        hookId: String,
+        serverId: String,
+        relayId: String,
         canonicalBase: String,
         deviceId: String,
         selectedUris: List<String>,
@@ -159,8 +159,8 @@ class VfsShareStore(
             linkId = linkId,
             secretCiphertext = sealSecret(shareId, secret),
             scopes = RelayRoots.scopesSorted(scopes),
-            portalServerId = portalServerId,
-            hookId = hookId,
+            serverId = serverId,
+            relayId = relayId,
             canonicalBase = canonicalBase,
             deviceId = deviceId,
             generation = 0,
@@ -172,10 +172,19 @@ class VfsShareStore(
 }
 
 @Serializable
+data class VfsRelayServer(
+    val id: String,
+    val name: String,
+    val baseUrl: String,
+    val tokenCiphertext: String,
+    val createdAt: Long,
+)
+
+@Serializable
 data class VfsRelayAccount(
-    val portalServerId: String,
+    val serverId: String,
+    val relayId: String,
     val canonicalBase: String,
-    val hookId: String,
     val deviceId: String,
     val providerKeyId: String,
     val providerKeyCiphertext: String,
@@ -183,37 +192,82 @@ data class VfsRelayAccount(
     val rotatedAt: Long? = null,
 )
 
-@Serializable
-data class VfsRelayConfigFile(
-    val v: Int = 1,
-    val portalServerId: String = "",
-    val canonicalBase: String = "",
-    val desiredConnected: Boolean = false,
-    val egressMode: String = "public",
-    val accounts: List<VfsRelayAccount> = emptyList(),
-)
-
 /**
- * Adds one `(portalServerId, canonicalBase)` account without touching
- * desiredConnected or any other field from the caller's stale snapshot.
+ * v2 is the clean Relay Server schema. Legacy v1 configs are deliberately
+ * not loaded or migrated.
  */
-fun VfsRelayConfigFile.withAccount(
-    portalServerId: String,
+@Serializable
+data class VfsRelayServerFile(
+    val v: Int = SCHEMA_VERSION,
+    val selectedServerId: String = "",
+    val desiredConnected: Boolean = false,
+    val servers: List<VfsRelayServer> = emptyList(),
+    val accounts: List<VfsRelayAccount> = emptyList(),
+) {
+    fun server(id: String): VfsRelayServer? = servers.firstOrNull { it.id == id }
+
+    fun selectedServer(): VfsRelayServer? = server(selectedServerId)
+
+    companion object {
+        const val SCHEMA_VERSION = 2
+    }
+}
+
+/** Adds/replaces the account for one local Relay Server, preserving all other state. */
+fun VfsRelayServerFile.withAccount(
+    serverId: String,
+    relayId: String,
     canonicalBase: String,
     account: VfsRelayAccount,
-): VfsRelayConfigFile =
+): VfsRelayServerFile =
     copy(
-        portalServerId = portalServerId,
-        canonicalBase = canonicalBase,
         accounts =
-            accounts.filterNot {
-                it.portalServerId == portalServerId && it.canonicalBase == canonicalBase
-            } + account,
+            accounts.filterNot { it.serverId == serverId } +
+                account.copy(relayId = relayId, canonicalBase = canonicalBase),
     )
 
-class VfsRelayConfigStore(
+object RelayServerValidation {
+    const val MAX_NAME = 64
+    const val MAX_URL = 300
+    const val MAX_TOKEN = 512
+    const val TOKEN_PREFIX = "relay_"
+
+    fun canonicalHttpsOrigin(raw: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return null
+        if (trimmed.length > MAX_URL) return null
+        val uri = runCatching { java.net.URI(trimmed) }.getOrNull() ?: return null
+        if (!uri.scheme.equals("https", ignoreCase = true)) return null
+        if (uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null) return null
+        val host = uri.host ?: return null
+        if (uri.port != -1 && uri.port !in 1..65535) return null
+        val scheme = uri.scheme.lowercase(java.util.Locale.US)
+        val authority =
+            if (uri.port == -1 || uri.port == 443) {
+                host.lowercase(java.util.Locale.US)
+            } else {
+                "${host.lowercase(java.util.Locale.US)}:${uri.port}"
+            }
+        return "$scheme://$authority"
+    }
+
+    fun normalizeToken(raw: String): String? {
+        val token = raw.trim()
+        if (token.isEmpty() || token.length > MAX_TOKEN) return null
+        if (token.any { it == '\n' || it == '\r' || it.isWhitespace() }) return null
+        return token.takeIf { it.startsWith(TOKEN_PREFIX) && it.length > TOKEN_PREFIX.length }
+    }
+
+    fun cleanName(
+        raw: String,
+        fallback: String,
+    ): String = raw.trim().take(MAX_NAME).ifBlank { fallback.take(MAX_NAME) }
+}
+
+class VfsRelayServerStore(
     private val file: File,
     private val cipher: VfsShareCipher,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val json =
         Json {
@@ -222,39 +276,147 @@ class VfsRelayConfigStore(
         }
 
     @Synchronized
-    fun load(): VfsRelayConfigFile {
-        if (!file.isFile) return VfsRelayConfigFile()
-        return runCatching {
-            json.decodeFromString(VfsRelayConfigFile.serializer(), file.readText(Charsets.UTF_8))
-        }.getOrDefault(VfsRelayConfigFile())
+    fun load(): VfsRelayServerFile {
+        if (!file.isFile) return VfsRelayServerFile()
+        val text =
+            try {
+                file.readText(Charsets.UTF_8)
+            } catch (error: java.io.IOException) {
+                throw RelayStoreException("Could not read Relay Server settings: ${error.message}", retryable = true)
+            }
+        val decoded =
+            runCatching { json.decodeFromString(VfsRelayServerFile.serializer(), text) }.getOrNull()
+            ?: throw RelayStoreException("Relay Server settings are damaged.")
+        if (decoded.v != VfsRelayServerFile.SCHEMA_VERSION) {
+            // Legacy v1 config: clean start, no migration.
+            return VfsRelayServerFile()
+        }
+        return decoded
     }
 
     @Synchronized
-    fun save(config: VfsRelayConfigFile) {
-        RelayFiles.writeAtomic(
-            file,
-            json.encodeToString(VfsRelayConfigFile.serializer(), config).toByteArray(Charsets.UTF_8),
-        )
+    fun save(settings: VfsRelayServerFile) {
+        try {
+            RelayFiles.writeAtomic(
+                file,
+                json.encodeToString(VfsRelayServerFile.serializer(), settings).toByteArray(Charsets.UTF_8),
+            )
+        } catch (error: java.io.IOException) {
+            throw RelayStoreException("Could not save Relay Server settings: ${error.message}", retryable = true)
+        }
     }
 
-    /** Re-reads the latest file, applies one targeted change, then saves. */
     @Synchronized
-    fun update(transform: (VfsRelayConfigFile) -> VfsRelayConfigFile): VfsRelayConfigFile {
+    fun update(transform: (VfsRelayServerFile) -> VfsRelayServerFile): VfsRelayServerFile {
         val updated = transform(load())
         save(updated)
         return updated
     }
 
+    fun addServer(
+        name: String,
+        url: String,
+        token: String,
+    ): VfsRelayServer {
+        val base = RelayServerValidation.canonicalHttpsOrigin(url)
+            ?: throw RelayStoreException("Relay URL must be an HTTPS origin such as https://relay.example.")
+        val cleanToken = RelayServerValidation.normalizeToken(token)
+            ?: throw RelayStoreException("Relay token must start with relay_ and contain no spaces.")
+        if (!cipher.supported) throw RelayStoreException("Encryption is unavailable on this device.")
+        val id = java.util.UUID.randomUUID().toString()
+        val server =
+            VfsRelayServer(
+                id = id,
+                name = RelayServerValidation.cleanName(name, base.removePrefix("https://")),
+                baseUrl = base,
+                tokenCiphertext =
+                    cipher.encrypt(
+                        VfsShareAad.relayServerToken(id),
+                        cleanToken.toByteArray(Charsets.UTF_8),
+                    ),
+                createdAt = clock(),
+            )
+        update { latest ->
+            latest.copy(
+                servers = latest.servers + server,
+                selectedServerId = if (latest.selectedServerId.isBlank()) id else latest.selectedServerId,
+            )
+        }
+        return server
+    }
+
+    fun updateServer(
+        id: String,
+        name: String,
+        url: String,
+        token: String?,
+    ): VfsRelayServer {
+        val base = RelayServerValidation.canonicalHttpsOrigin(url)
+            ?: throw RelayStoreException("Relay URL must be an HTTPS origin such as https://relay.example.")
+        var updated: VfsRelayServer? = null
+        update { latest ->
+            val current = latest.server(id) ?: throw RelayStoreException("Relay Server not found.")
+            val ciphertext =
+                if (token.isNullOrBlank()) {
+                    current.tokenCiphertext
+                } else {
+                    val cleanToken = RelayServerValidation.normalizeToken(token)
+                        ?: throw RelayStoreException("Relay token must start with relay_ and contain no spaces.")
+                    cipher.encrypt(
+                        VfsShareAad.relayServerToken(id),
+                        cleanToken.toByteArray(Charsets.UTF_8),
+                    )
+                }
+            updated =
+                current.copy(
+                    name = RelayServerValidation.cleanName(name, base.removePrefix("https://")),
+                    baseUrl = base,
+                    tokenCiphertext = ciphertext,
+                )
+            latest.copy(servers = latest.servers.map { if (it.id == id) updated ?: it else it })
+        }
+        return updated!!
+    }
+
+    fun removeServer(id: String) {
+        update { latest ->
+            latest.copy(
+                servers = latest.servers.filterNot { it.id == id },
+                selectedServerId = if (latest.selectedServerId == id) "" else latest.selectedServerId,
+                accounts = latest.accounts.filterNot { it.serverId == id },
+            )
+        }
+    }
+
+    fun selectServer(id: String) {
+        update { latest ->
+            require(latest.server(id) != null) { "Relay Server not found." }
+            latest.copy(selectedServerId = id)
+        }
+    }
+
+    fun setDesiredConnected(desired: Boolean) {
+        update { it.copy(desiredConnected = desired) }
+    }
+
+    fun openToken(server: VfsRelayServer): String? =
+        cipher.decrypt(
+            VfsShareAad.relayServerToken(server.id),
+            server.tokenCiphertext,
+        )?.toString(Charsets.UTF_8)
+
+    fun account(serverId: String): VfsRelayAccount? = load().accounts.firstOrNull { it.serverId == serverId }
+
     fun sealProviderKey(
         canonicalBase: String,
-        hookId: String,
+        relayId: String,
         deviceId: String,
         providerKeyId: String,
         providerKey: ByteArray,
     ): String {
         if (!cipher.supported) throw RelayStoreException("Encryption is unavailable on this device.")
         return cipher.encrypt(
-            VfsShareAad.providerKey(canonicalBase, hookId, deviceId, providerKeyId),
+            VfsShareAad.providerKey(canonicalBase, relayId, deviceId, providerKeyId),
             providerKey,
         )
     }
@@ -263,7 +425,7 @@ class VfsRelayConfigStore(
         cipher.decrypt(
             VfsShareAad.providerKey(
                 account.canonicalBase,
-                account.hookId,
+                account.relayId,
                 account.deviceId,
                 account.providerKeyId,
             ),
@@ -273,8 +435,8 @@ class VfsRelayConfigStore(
 
 /**
  * Device secrets live outside the Share file. A pending secret exists before
- * the Portal has told us the hookId; after issue-once succeeds it is re-encrypted
- * with the final AAD and atomically moved under `device-secrets/<hookId>/`.
+ * the Relay Server has told us the relayId; after issue-once succeeds it is re-encrypted
+ * with the final AAD and atomically moved under `device-secrets/<relayId>/`.
  */
 class VfsDeviceSecretStore(
     private val baseDir: File,
@@ -282,21 +444,21 @@ class VfsDeviceSecretStore(
 ) {
     fun existing(
         canonicalBase: String,
-        hookId: String,
+        relayId: String,
         deviceId: String,
     ): ByteArray? {
-        val file = finalFile(hookId, deviceId)
+        val file = finalFile(relayId, deviceId)
         if (!file.isFile) return null
         val blob = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return null
-        return cipher.decrypt(VfsShareAad.deviceSecret(canonicalBase, hookId, deviceId), blob)
+        return cipher.decrypt(VfsShareAad.deviceSecret(canonicalBase, relayId, deviceId), blob)
     }
 
     fun getOrCreatePending(
-        portalServerId: String,
+        serverId: String,
         canonicalBase: String,
         deviceId: String,
     ): ByteArray {
-        val file = pendingFile(portalServerId, canonicalBase, deviceId)
+        val file = pendingFile(serverId, canonicalBase, deviceId)
         if (file.isFile) {
             val blob = runCatching { file.readText(Charsets.UTF_8) }.getOrNull()
             if (blob != null) {
@@ -311,17 +473,17 @@ class VfsDeviceSecretStore(
 
     /** Re-encrypts the pending secret with the final AAD, then deletes pending. */
     fun promotePending(
-        portalServerId: String,
+        serverId: String,
         canonicalBase: String,
-        hookId: String,
+        relayId: String,
         deviceId: String,
         secret: ByteArray,
     ): ByteArray {
-        val final = finalFile(hookId, deviceId)
-        val existing = existing(canonicalBase, hookId, deviceId)
+        val final = finalFile(relayId, deviceId)
+        val existing = existing(canonicalBase, relayId, deviceId)
         if (existing != null) return existing
-        writeSecret(final, VfsShareAad.deviceSecret(canonicalBase, hookId, deviceId), secret)
-        pendingFile(portalServerId, canonicalBase, deviceId).delete()
+        writeSecret(final, VfsShareAad.deviceSecret(canonicalBase, relayId, deviceId), secret)
+        pendingFile(serverId, canonicalBase, deviceId).delete()
         return secret
     }
 
@@ -336,17 +498,17 @@ class VfsDeviceSecretStore(
     }
 
     private fun finalFile(
-        hookId: String,
+        relayId: String,
         deviceId: String,
-    ): File = File(File(File(baseDir, "device-secrets"), safeName(hookId)), safeName(deviceId))
+    ): File = File(File(File(baseDir, "device-secrets"), safeName(relayId)), safeName(deviceId))
 
     private fun pendingFile(
-        portalServerId: String,
+        serverId: String,
         canonicalBase: String,
         deviceId: String,
     ): File {
         val digest = RelayBase64.hex(RelayCrypto.sha256("$canonicalBase|$deviceId".toByteArray(Charsets.UTF_8)))
-        return File(File(File(baseDir, "pending"), safeName(portalServerId)), digest)
+        return File(File(File(baseDir, "pending"), safeName(serverId)), digest)
     }
 
     private fun safeName(value: String): String =
