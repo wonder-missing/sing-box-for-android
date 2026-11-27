@@ -54,7 +54,8 @@ General working style follows the owner's global working agreement; project-spec
 - The owner uses frontend terms (`padding`/`margin`/`gap`/`flex`); translate to dp and Compose. Prefer relative references over exact numbers, and apply product-level spacing/alignment yourself.
 - **Inspect the UI path before explaining behavior.** When the owner reports an interaction, read the Compose/UI code and reproduce it; an agent's explanation of a card it cannot see is not evidence.
 - **Conductor Plan card completion is terminal.** When every step is `done`, hide Edit and do not add Reopen; re-planning is a natural-language request to Conductor. While work remains, the card stays editable. Every model/user plan change is a `PlanEvent` (version, time, actor, action) and appears in `## Plan history`; `[runtime:plan]` carries `updatedBy`.
-- **Render UI changes locally.** Compile/tests are not a UI proof; use `scripts/e2e-emulator.sh` (`E2E_KEEP_EMULATOR=1` when inspecting) and keep screenshots/XML under `build/e2e-emulator/`. Report the path, not "should be fixed".
+- **Render UI changes locally.** Compile/tests are not a UI proof; use `scripts/e2e-emulator.sh` (`E2E_KEEP_EMULATOR=1` when inspecting) and keep screenshots/XML under `build/e2e-emulator/`.
+- **Show UI changes, don't just describe them.** For a new design or adjustment that is hard to state in prose, send screenshots first for review: use `"$HOME/bin/feisend"` (number multiple images on the image itself, A01, B02, …) or a `~/notes` image note (no numbering). A note is preferred when images plus captions are richer. The Mini is headless; never report a local screenshot path as the only deliverable.
 - Design specs/tokens live in [`design/README.md`](design/README.md); Conductor-specific UI decisions live in [`docs/agent-control-plane.md`](docs/agent-control-plane.md).
 
 ## Conductor tool metadata

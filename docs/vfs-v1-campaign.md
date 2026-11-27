@@ -1,6 +1,6 @@
 # Share Key VFS v1 战役板
 
-状态：AU 已发布（2026-11-27）；AV 未发布（2026-11-27，等待设计确认）：VFS 配置与功能分离，首页 Dashboard VFS 卡片，CLI 改名 `vfsc`。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
+状态：AV 已发布（2026-11-27）：VFS 配置与功能分离，首页 Dashboard VFS 卡片，CLI 改名 `vfsc`。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
 
 ## 目标与验收
 
@@ -47,7 +47,7 @@
 | App 实现 | WonderSing `dev`；VFS 入口在首页 Dashboard 卡片，Relay 配置在 Settings；824 JVM tests / 0 failures；本地界面截图 `build/e2e-emulator/vfs-dashboard-card.png`、`vfs-feature-scope-final.png`、`vfs-config-server.png` |
 | CLI | `vfsc`（Portal commit `32c6fbd`）；安装到 `$HOME/bin/vfsc`；旧 `wonder-vfs` 已移除；`vfsc status` socket/relay ok |
 | 真机 E2E | 待 AP 安装后验收：Share/pair/list/read/Revoke/自动连接/离线/重启 |
-| Release | AU 已发布：`v1.15.0-alpha.13-wonder.AU`；AV 未发布：首页 Dashboard VFS 卡片、无 Connect/Stop、Scope 与 Pairing Code 对话框、CLI `vfsc`。 |
+| Release | AV 已发布：`v1.15.0-alpha.13-wonder.AV`；APK 35,353,494 B；首页 Dashboard VFS 卡片、无 Connect/Stop、Scope 与 Pairing Code 对话框、CLI `vfsc`。 |
 
 ## 风险
 

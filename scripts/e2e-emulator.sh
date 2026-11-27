@@ -14,6 +14,9 @@
 # Then boots an arm64 API 36 AVD, builds/installs the otherDebug APK, launches
 # MainActivity, dismisses the first-run update prompt, and asserts the
 # Dashboard/Profiles UI. Real VPN/service behavior still needs a physical device.
+# The AVD is shaped like the owner's Z Flip 6: 1080x2640, 420 dpi, font scale
+# 1.15, dark theme; override with E2E_DEVICE_SIZE / E2E_DEVICE_DENSITY /
+# E2E_FONT_SCALE / E2E_DARK_MODE.
 #
 #   ./scripts/e2e-emulator.sh
 #   ./scripts/e2e-emulator.sh --no-build
@@ -37,6 +40,13 @@ AVD=${E2E_AVD:-wondersing-e2e}
 PORT=${E2E_PORT:-5556}
 SERIAL="emulator-$PORT"
 RAM_MB=${E2E_RAM_MB:-3072}
+# Default to the owner's phone shape: Z Flip 6-class 1080x2640, 420 dpi,
+# font scale 1.15, dark theme. Override with E2E_* when a different device is
+# intentional.
+DEVICE_SIZE=${E2E_DEVICE_SIZE:-1080x2640}
+DEVICE_DENSITY=${E2E_DEVICE_DENSITY:-420}
+FONT_SCALE=${E2E_FONT_SCALE:-1.15}
+DARK_MODE=${E2E_DARK_MODE:-1}
 BUILD_BUDGET_MB=${E2E_BUILD_BUDGET_MB:-1536}
 ARTIFACT_BUDGET_MB=${E2E_ARTIFACT_BUDGET_MB:-128}
 AVD_DATA_BUDGET_MB=${E2E_AVD_DATA_BUDGET_MB:-4096}
@@ -305,6 +315,9 @@ values = {
     "disk.dataPartition.size": "6G",
     "showDeviceFrame": "no",
     "hw.keyboard": "yes",
+    "hw.lcd.width": "1080",
+    "hw.lcd.height": "2640",
+    "hw.lcd.density": "420",
     "hw.gpu.enabled": "yes",
     "hw.gpu.mode": "swiftshader_indirect",
 }
@@ -355,6 +368,12 @@ wait_boot() {
         sleep 3
     done
     "$ADB" -s "$SERIAL" shell input keyevent 82 >/dev/null 2>&1 || true
+    "$ADB" -s "$SERIAL" shell wm size "$DEVICE_SIZE" >/dev/null 2>&1 || true
+    "$ADB" -s "$SERIAL" shell wm density "$DEVICE_DENSITY" >/dev/null 2>&1 || true
+    "$ADB" -s "$SERIAL" shell settings put system font_scale "$FONT_SCALE" >/dev/null 2>&1 || true
+    if [ "$DARK_MODE" = "1" ]; then
+        "$ADB" -s "$SERIAL" shell cmd uimode night yes >/dev/null 2>&1 || true
+    fi
     "$ADB" -s "$SERIAL" shell settings put global window_animation_scale 0 >/dev/null 2>&1 || true
     "$ADB" -s "$SERIAL" shell settings put global transition_animation_scale 0 >/dev/null 2>&1 || true
     "$ADB" -s "$SERIAL" shell settings put global animator_duration_scale 0 >/dev/null 2>&1 || true
