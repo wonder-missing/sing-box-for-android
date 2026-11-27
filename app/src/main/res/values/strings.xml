@@ -167,13 +167,11 @@
     <string name="share_files_server_delete_title">Delete this Relay Server?</string>
     <string name="share_files_server_delete_help">Its local token and Provider key are removed. This does not revoke remote Shares.</string>
     <string name="share_files_pairing_title">Pairing Code</string>
-    <string name="share_files_pairing_help">Copy this command to the client. The code works once and expires in %1$s.</string>
+    <string name="share_files_pairing_help">Copy this line to the client. The code works once and expires in %1$s.</string>
     <string name="share_files_pairing_expired">This code expired. Create a New code.</string>
-    <string name="share_files_copy_instructions">Copy instructions</string>
-    <string name="share_files_copy_code">Copy code</string>
-    <string name="share_files_pairing_copy_block">Pair this Share:\n%1$s\n\nThen list and read:\n"$HOME/bin/vfsc" list /\n"$HOME/bin/vfsc" read &lt;path&gt; --max-bytes 65536</string>
+    <string name="share_files_pairing_line">VFS Link ID: %1$s, Pair code: %2$s. Run $HOME/bin/vfsc --help.</string>
+    <string name="share_files_copy_pairing">Copy pairing line</string>
     <string name="share_files_copied">Copied</string>
-    <string name="share_files_copy_stdin_hint">To keep the code out of shell history, use --code-stdin or VFSC_CODE.</string>
     <string name="share_files_done">Done</string>
     <string name="share_files_status_waiting">Waiting for code</string>
     <string name="share_files_status_active">Pairing active</string>

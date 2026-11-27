@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -68,10 +69,8 @@ data class VfsRelayServerView(
 data class VfsPairingUi(
     val shareId: String,
     val linkId: String,
-    val pairId: String,
     val code: String,
     val expiresAt: Long,
-    val command: String,
 )
 
 /**
@@ -614,6 +613,28 @@ object VfsRelayRuntime {
             throw RelayProvisionException(
                 "RELAY_UNREACHABLE",
                 "Could not open the Relay Server connection. Check the server and your network.",
+                true,
+            )
+        }
+        // onRelayOpen() completes `opened` before onSocketOpen() finishes
+        // registration. Callers such as Share creation must not observe a
+        // half-open client as Connected; wait for registration to settle.
+        val settled =
+            withTimeoutOrNull(20_000L) {
+                _state.first {
+                    it is VfsRelayState.Connected ||
+                        it is VfsRelayState.Error ||
+                        it is VfsRelayState.Backoff ||
+                        it is VfsRelayState.Idle
+                }
+            }
+        if (settled !is VfsRelayState.Connected) {
+            created.close(1001, "not ready")
+            client = null
+            throw RelayProvisionException(
+                "RELAY_UNREACHABLE",
+                (settled as? VfsRelayState.Error)?.message
+                    ?: "The Relay Server connection is not ready. Check the server and your network.",
                 true,
             )
         }
@@ -1501,9 +1522,9 @@ object VfsRelayRuntime {
                 throw RelayProvisionException("SHARE_NOT_REGISTERED", "This Share is not registered with the Relay Server. Reconnect and try again.", true)
             }
             val now = System.currentTimeMillis()
-            val pairId = RelayCrypto.randomToken(16)
             pairResponseCache.keys.removeIf { it.startsWith("${record.linkId}|") }
             val code = VfsPairing.generate()
+            val pairId = VfsPairing.pairId(record.linkId, code)
             val expiresAt = now + VfsPairing.TTL_MS
             val activated =
                 repository().update(shareId) { current ->
@@ -1593,10 +1614,8 @@ object VfsRelayRuntime {
         return VfsPairingUi(
             shareId = shareId,
             linkId = record.linkId,
-            pairId = code.pairId,
             code = text,
             expiresAt = code.expiresAt,
-            command = VfsPairing.pairingCommand(record.linkId, code.pairId, code.code),
         )
     }
 

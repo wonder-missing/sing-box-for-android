@@ -87,7 +87,7 @@
 每个 Agent：
 
 3. New Share → 名字（可选）→ Recommended / Everything / Customize → Create。
-4. Copy pairing command（5:00 倒计时）；App 复制完整命令 `"$HOME/bin/vfsc" pair --link <linkId> --pair <pairId> --code <code>`（默认；code 会进 argv/shell history，见 §2.5）；CLI 也支持 `--code-stdin`/`VFSC_CODE`。
+4. Copy pairing line（5:00 倒计时）；App 复制一行无换行文本 `VFS Link ID: <linkId>, Pair code: <code>. Run $HOME/bin/vfsc --help.`；CLI 从 code+linkId 派生 pairId，并支持 `--code-stdin`/`VFSC_CODE`。code 会进入聊天/模型上下文，见 §2.5。
 5. 粘到 Agent 聊天；Agent 运行命令，返回它能看到的 roots。
 6. Agent 运行 `"$HOME/bin/vfsc" list/read ...`；不再需要 code。撤销 Share → Revoke。
 
@@ -158,11 +158,11 @@ Agent CLI (Consumer) --Unix socket--> Portal/Relay
 - `deviceSecret` 32B 首次生成，按 `(hookId,deviceId)` 存 `noBackupFilesDir/vfs/device-secrets/<hookId>/<deviceId>`；首次 issue 前暂存 `pending/<portalServerId>/<hash(canonicalBase|deviceId)>`，pending AAD 用 `v1|<canonicalBase>|<deviceId>|deviceSecret`（**不含 hookId**）；拿到 hookId 后重新加密并原子迁移到 `device-secrets/<hookId>/<deviceId>`（AAD 含 canonicalBase/hookId/deviceId）；provider key issue/rotate 必带；不进日志/export。不同 Portal 不复用 secret。
 - **创建/New code gating**：只有 Provider WS Connected 时才能建 Share/New code；`POST /v1/links`、`register`、`pair active` 都拿到 ack 后才显示可复制命令；Stop/离线时按钮禁用并提示先 Connect。避免生成 Relay 不认识的命令。
 - Label：可选，最长 64，只允许可打印字符、去控制字符/换行；CLI 输出转义；重复 label 允许；`--share` 用 `shareId` 或唯一 label，重复 label 报 `SHARE_AMBIGUOUS`。
-- **Pairing Code**：16 字符 Crockford base32（无 I/L/O/U），输入规范化大写/去空格连字符，并按 Crockford 别名 `O→0`、`I/L→1`、`U→V` 归一；code/linkId/pairId/secret/deviceSecret 全部 `SecureRandom`；5 分钟；单次；一个 Share 同时只有一个 active code。**不设 5-attempt 上限**；用 80-bit + 5 分钟 + per-Link rate limit；无效 AEAD tag 只限速，不烧 code。
+- **Pairing Code**：16 字符 Crockford base32（无 I/L/O/U），输入规范化大写/去空格连字符，并按 Crockford 别名 `O→0`、`I/L→1`、`U→V` 归一；code/linkId/secret/deviceSecret 用 `SecureRandom`；pairId 由 `HKDF-SHA256(codeASCII, salt=linkId_raw, info="wsvfs/pair/id", 16)` 派生；5 分钟；单次；一个 Share 同时只有一个 active code。**不设 5-attempt 上限**；用 80-bit + 5 分钟 + per-Link rate limit；无效 AEAD tag 只限速，不烧 code。
 - **PairingCode（memory-only）**：`{shareId,pairId(16B public),code(ByteArray ASCII 16),createdAt,expiresAt,consumedAt}`；只在 App 内存；code 用 `ByteArray`/`CharArray`，**best-effort** 不落盘/不进日志/不进通知；Kotlin/JSON 边界不可避免的短生命周期 `String`（UI 输入、命令拼接）不持久化、不打印；消费/过期/进程死 `fill(0)`。不持久化 `codeCiphertext`/`codeHash`。Provider 按 linkId 找 Share 的 active pairId/code。
 - **pairState 持久化**：New code 成功生成后持久化 `pairId/pairState=active/pairExpiresAt`；配对成功 → `consumed`（保留 pairId）；Stop → `paused`；code 自然过期 → `expired`（**不发** `pair paused`；Relay 未重启时按 `pairExpiresAt` 返回 `code_expired`，重连时补发 `expired`）；进程死亡后 code 丢失：**以持久 `pairState` 为准**；`consumed` 保持 `consumed`（用当前 pairId，不把 active New code 误标 consumed）；`active` 但 code 丢失 → `expired`（需 New code）；`pairedAt` 不用于推断当前状态。进程死亡会丢 memory-only pair response cache；`consumed` 只恢复状态，不承诺 exact tuple 可取，响应已丢失时 CLI 需 New code。Relay 重启/App 重连据此补发 `consumed`/`paused`/`active`/`expired`；Relay 未重启时也会按 `pairExpiresAt` 自然判定 `code_expired`。不再依赖 memory-only PairingCode 的 pairId。
-- **pairId/Relay pair 状态**：16B 公开随机；pair envelope/AAD/cache key 都带；New code 生成新 `pairId+code`，旧 pairId 立即失效。App 向 Relay 发 Provider WS 控制帧 `pair {v:1,controlId,linkId,pairId,ttlSeconds,state,pairEpoch}`（只含公开 pairId/剩余 TTL/单调 epoch）；每个 active/paused/consumed/expired 状态变化都 `pairEpoch+1` 并随 Share 持久化；Relay 同 epoch+同 state 幂等 ack，只应用更大 epoch，更低 epoch 回 `STALE_PAIR_EPOCH`，防止迟到重试把 New code/Stop 回退。Relay 存 `activePairId+pairExpiresAt+pairState+pairEpoch`，purge 其他 pairId 的 pair response cache；旧/过期 pairId 请求得到明文 `pair-error`（§3.4.1），不是 404 Link；`consumed` 后同 pairId 的**新 tuple** 直接回 `code_consumed`，完全相同的 `(consumerId,pairId,reqId,clientNonce)` 仍返回已缓存响应直到 TTL。无需 secret/purge 帧，也不会 eject 已配对 Agent。
-- App 复制默认命令：`"$HOME/bin/vfsc" pair --link <linkId> --pair <pairId> --code <code>`；同时显示 `--code-stdin`/`VFSC_CODE` 作为避免 argv/shell history 的替代。默认命令的 code 会进 shell history/进程参数，§2.5 已接受；16 字符是 secret；linkId/pairId 是公开路由。
+- **pairId/Relay pair 状态**：16B 公开派生（code+linkId，不可逆）；pair envelope/AAD/cache key 都带；New code 生成新 `pairId+code`，旧 pairId 立即失效。App 向 Relay 发 Provider WS 控制帧 `pair {v:1,controlId,linkId,pairId,ttlSeconds,state,pairEpoch}`（只含公开 pairId/剩余 TTL/单调 epoch）；每个 active/paused/consumed/expired 状态变化都 `pairEpoch+1` 并随 Share 持久化；Relay 同 epoch+同 state 幂等 ack，只应用更大 epoch，更低 epoch 回 `STALE_PAIR_EPOCH`，防止迟到重试把 New code/Stop 回退。Relay 存 `activePairId+pairExpiresAt+pairState+pairEpoch`，purge 其他 pairId 的 pair response cache；旧/过期 pairId 请求得到明文 `pair-error`（§3.4.1），不是 404 Link；`consumed` 后同 pairId 的**新 tuple** 直接回 `code_consumed`，完全相同的 `(consumerId,pairId,reqId,clientNonce)` 仍返回已缓存响应直到 TTL。无需 secret/purge 帧，也不会 eject 已配对 Agent。
+- App 复制一行无换行文本：`VFS Link ID: <linkId>, Pair code: <code>. Run $HOME/bin/vfsc --help.`；CLI 从同一 code+linkId 派生 pairId；`--code-stdin`/`VFSC_CODE` 是可选的 argv/shell history 规避方式。linkId/pairId 是公开路由，code 是 secret；复制文本只含 linkId 与 code。
 - 无 QR；Pairing Code 不进通知/状态栏；页面不设置 `FLAG_SECURE`，用户可主动截图；clipboard 自动清；shell history 由 skill/CLAUDE.md 提示不要保留。
 - 生命周期：**New code**（同 Share Key；新 pairId/code；旧 code/pairId 失效；不 eject 已配对 Agent；旧 pair cache 不可达）和 **Revoke**（先持久化 pending revocation，再 best-effort `unregister {reason:"revoked"}`；只有 owner 能建持久 tombstone；owner + link 不存在 ack 不建 tombstone；非 owner `DEVICE_MISMATCH`；再删除 Share/linkId/secret；cache purge；revoke 期间保留 `revoking` 归属直到 ack）。没有 rotate；换 key 就 Revoke + 新 Share。删除本地 Share 后对迟到请求回明文 `link-error share_revoked`。**每个 Link 的 pair/read/Revoke 在 App 内串行；Revoke 先置本地 revoked、取消/拒绝新 pair，pair 在发送前重查 revoked；已开始的读可完成，之后回 link-error。**
 - Cap 8：按 `(hookId,deviceId)`/当前 Portal 分区，第 9 个提示先撤销；切换 Portal 不占另一 Portal 的名额。
@@ -225,6 +225,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 
 #### 3.4.3 Pairing
 
+- `pairId = base64url(HKDF-SHA256(normalizedCodeASCII, salt=linkId_raw, info="wsvfs/pair/id", 16))`；公开路由，App/CLI 各自派生，不进入复制文本。向量：linkId `101112131415161718191a1b1c1d1e1f`、code `ABCDEFGHJKMNPQRS` → `n2NxoA743x71oXkKa1BkWg`。
 - `Kpair = HKDF-SHA256(normalizedCodeASCII, salt=linkId_raw, info="wsvfs/pair/req")`；只用归一化后的 16 字符 ASCII。
 - `KpairResp = HKDF-SHA256(codeASCII, salt=clientNonce_raw, info="wsvfs/pair/resp")`；KDF 不绑定 linkId，但 AAD 绑定 linkId/pairId/reqId，跨 Link 响应会被拒绝。
 - Pair request `ct = AES-256-GCM(Kpair, pairPlaintext, aad_pair_req)`；`iv` 随机 12B。
@@ -337,7 +338,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 - **切换 Portal**：切换前断开当前 WS；旧 Portal 的 Share/Provider key/deviceSecret 保留并显示为 offline；新 Portal 用同一 deviceId 但新 hook 领独立 key、建新 Share；切回旧 Portal 可恢复旧 Share。CLI 本地 socket 只连当前 Portal，切换期间旧 Share 404/503，不是 Revoke。
 - Shares 列表：label、scope 摘要、created、pairedAt、lastUsed、状态（waiting/paired/offline）、New code、Revoke。
 - New Share：名字、Recommended/Everything/Customize、per-scope 警告、Create。
-- Pairing Code 页：5:00 倒计时、Copy pairing command、New code；无 QR；不进通知/状态栏；不设置 `FLAG_SECURE`，用户可主动截图；clipboard 自动清。
+- Pairing Code 页：5:00 倒计时、Copy pairing line、New code；无 QR；不进通知/状态栏；不设置 `FLAG_SECURE`，用户可主动截图；clipboard 自动清。
 - **多 Share 状态**：`VfsRelayState`：`Connected(shareCount, shares[{shareId,label,status,pairedAt,lastUsedAt}], totalBytesRead)`、`Idle`、`Backoff`、`Error`；通知「Sharing N Shares」+ Stop（不统计 Agent 数）；`totalBytesRead` 是实际读取字节（read response data bytes 累加）。
 - **Stop sharing = 暂停**：遍历所有 Link，逐个发 `pair paused` 等 ack（2s；不可达按 Link 存 `pendingPairState=paused`，下次 Connect 补发），再 zeroize 所有 code、关闭 WS、清 pair cache；Share/Share Key 保留；Connect 恢复，不重配对。**Revoke = 永久**：best-effort unregister，删除 Share/linkId/secret，tombstone。**New code 不 eject 已配对 Agent**；只有 Revoke 断开。
 - **Disconnect vs Stop**：Disconnect 对每个已注册 Link 发 `unregister shutdown`（links 变 offline）、`desiredConnected=false`、关闭 WS；Stop 只发 `pair paused`（links 保持登记、Relay 有 paused 状态时 CLI 得到 `SHARE_PAUSED`）、`desiredConnected=false`、关闭 WS；两者都不删 Share/Share Key，New code 不 unregister。
@@ -351,10 +352,10 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 
 ### 3.9 CLI
 
-- 安装：Portal `pnpm service-install` 装 `$HOME/bin/vfsc`；skill/CLAUDE.md 提示；App 复制 `"$HOME/bin/vfsc" pair ...`（绝对路径）。
+- 安装：Portal `pnpm service-install` 装 `$HOME/bin/vfsc`；skill/CLAUDE.md 提示；App 复制一行 `VFS Link ID: <linkId>, Pair code: <code>. Run $HOME/bin/vfsc --help.`（绝对路径）。
 - `--help` 一页：App 路径、pair 流程、每命令一个示例、JSON 默认、大文件、Portal 盲区、not-paired 错误。
 - 命令：
-- `pair --link ... --pair ... --code ...`（App 默认复制的形式，兼容非交互 Agent）；也支持 `--code-stdin` / `VFSC_CODE`（避免 argv/shell history 的可选方式）；App 复制命令时提示“含一次性 code”。
+- `pair --link ... --code ...`（CLI 从 code+linkId 派生 pairId，兼容非交互 Agent）；也支持 `--code-stdin` / `VFSC_CODE`（避免 argv/shell history 的可选方式）；App 复制行只含 linkId/code，提示“含一次性 code”。
   - `list [path] --json [--cursor] [--limit]`
   - `stat <path> --json`
   - `read <path> [--max-bytes 65536] --json`

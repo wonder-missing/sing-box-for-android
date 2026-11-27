@@ -584,8 +584,7 @@ private fun PairingDialog(
     onCopy: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var copiedInstructions by remember(pairing?.code) { mutableStateOf(false) }
-    var copiedCode by remember(pairing?.code) { mutableStateOf(false) }
+    var copied by remember(pairing?.code) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.share_files_pairing_title)) },
@@ -611,44 +610,24 @@ private fun PairingDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    val instructions = stringResource(R.string.share_files_pairing_copy_block, pairing.command)
-                    SelectionContainer {
-                        Text(
-                            text = instructions,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
+                    val pairingLine =
+                        stringResource(
+                            R.string.share_files_pairing_line,
+                            pairing.linkId,
+                            pairing.code,
                         )
-                    }
-                    Text(
-                        text = stringResource(R.string.share_files_copy_stdin_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                onCopy(instructions)
-                                copiedInstructions = true
-                            },
-                        ) {
-                            Text(
-                                stringResource(
-                                    if (copiedInstructions) R.string.share_files_copied else R.string.share_files_copy_instructions,
-                                ),
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                onCopy(pairing.code)
-                                copiedCode = true
-                            },
-                        ) {
-                            Text(
-                                stringResource(
-                                    if (copiedCode) R.string.share_files_copied else R.string.share_files_copy_code,
-                                ),
-                            )
-                        }
+                    Button(
+                        onClick = {
+                            onCopy(pairingLine)
+                            copied = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            stringResource(
+                                if (copied) R.string.share_files_copied else R.string.share_files_copy_pairing,
+                            ),
+                        )
                     }
                 }
             }

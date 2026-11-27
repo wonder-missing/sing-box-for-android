@@ -26,8 +26,10 @@
 
 1. Portal 的顶级 **Relay** 页面提供 Relay URL + Relay token。Settings → **VFS Relay Servers** → **Add Relay Server**（填完整 `/relay/v1` URL + token）。**Test connection** 只验证 URL/token/device，不创建 Share，也不打开 Provider WS。
 2. 首页 Dashboard 的 **VFS 卡片**同时是指示器和入口；它不依赖 VPN 服务是否运行。进入 VFS → **New Share**：名字（可选）→ Recommended / Everything / Customize → Create。创建时自动连接 Relay Server。
-3. App 显示 5:00 Pairing Code；**Copy instructions** 复制一段简短说明，含 pair 命令和后续 `list/read` 示例；**Copy code** 只复制 code。命令含 `linkId/pairId`，code 可走 argv、stdin 或环境变量。
-4. Client 运行 `vfsc pair ...`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
+3. App 显示 5:00 Pairing Code；**Copy pairing line** 复制一行无换行文本：
+   `VFS Link ID: <linkId>, Pair code: <code>. Run $HOME/bin/vfsc --help.`
+   `pairId` 由 code 与 linkId 用 HKDF 派生，不进入复制文本；code 只显示一次。
+4. Client 运行 `"$HOME/bin/vfsc" --help`，按 help 执行 `vfsc pair --link <linkId> --code <code>`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
 5. **连接随 Share 维持**：至少一个 Share 存在时 App 自动连接并保持；最后一个 Share 撤销后自动关闭 WS。没有 Connect / Stop sharing 按钮，也没有全局暂停概念。
 6. **Revoke** = 永久删除 Share；App 删除本地 secret，best-effort 通知 Relay；Relay 收到后写 tombstone，CLI 收到 410 后 `forget`。通知失败时下次自动连接重试，期间 CLI 得到 503。
 7. **New code** = 同一个 Share Key，新 pairId/code；旧 code 失效，不 eject 已配对 CLI。一 client 一 Share，最多 8 个。
@@ -53,7 +55,7 @@
 
 - 创建 Share 生成 128-bit `linkId`、32B `secret`、16B `shareId`；Share 存 `noBackupFilesDir/vfs/`，secret/deviceSecret/Provider key 用 Android Keystore AES-256-GCM 加密。
 - `K = HKDF-SHA256(secret, salt=linkId, info="wsvfs/v1")`；每个请求 32B `clientNonce`，派生 `Kreq/Kresp`；AES-256-GCM，AAD 绑定 `v/op/linkId/reqId/clientNonce/ts/iv/direction`；timestamp ±5 分钟，nonce 去重。
-- Pairing Code 16 字符 Crockford base32，大小写不敏感，5 分钟、单次；pair 响应返回 Share Key、scopes 和 roots；CLI 成功持久化 key 后才报告 connected。
+- Pairing Code 16 字符 Crockford base32，大小写不敏感，5 分钟、单次；pair 响应返回 Share Key、scopes 和 roots；CLI 成功持久化 key 后才报告 connected。`pairId = base64url(HKDF-SHA256(codeASCII, salt=linkId_raw, info="wsvfs/pair/id", 16))`；App 与 CLI 各自派生，Relay 只看到公开 pairId。
 - 数据操作：`stat/list/read`；路径绝对、以 `/` 为根、禁止 `.`/`..`/`//`、≤4 KiB；`list` 按 path bytewise 排序，opaque cursor 绑定 link/path/limit，页 ≤1 MiB/10k entries；`read` 单次 ≤1 MiB，带 `offset/length/etag/eof`；`get` 由 CLI 分块写到临时文件，sha256 校验后 rename。
 - P0 向量（HKDF/AAD/AES-GCM/cursor/at-rest）以参考文档附录 A 为 source of truth；Kotlin/Node 必须逐字节复现。
 

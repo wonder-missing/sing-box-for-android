@@ -1038,13 +1038,11 @@
     <string name="share_files_server_delete_title">删除这个 Relay Server？</string>
     <string name="share_files_server_delete_help">会删除本地 token 和 Provider key，不会撤销远端的 Share。</string>
     <string name="share_files_pairing_title">Pairing Code</string>
-    <string name="share_files_pairing_help">把这条命令复制给客户端。code 只能使用一次，%1$s 后失效。</string>
+    <string name="share_files_pairing_help">把这一行复制给客户端。code 只能使用一次，%1$s 后失效。</string>
     <string name="share_files_pairing_expired">code 已过期，请创建新 code。</string>
-    <string name="share_files_copy_instructions">复制说明</string>
-    <string name="share_files_copy_code">复制 code</string>
-    <string name="share_files_pairing_copy_block">配对这个 Share：\n%1$s\n\n然后 list / read：\n"$HOME/bin/vfsc" list /\n"$HOME/bin/vfsc" read &lt;path&gt; --max-bytes 65536</string>
+    <string name="share_files_pairing_line">VFS Link ID: %1$s，Pair code: %2$s。运行 $HOME/bin/vfsc --help。</string>
+    <string name="share_files_copy_pairing">复制配对信息</string>
     <string name="share_files_copied">已复制</string>
-    <string name="share_files_copy_stdin_hint">如需避免进入 shell history，可改用 --code-stdin 或 VFSC_CODE。</string>
     <string name="share_files_done">完成</string>
     <string name="share_files_status_waiting">等待生成 code</string>
     <string name="share_files_status_active">配对进行中</string>

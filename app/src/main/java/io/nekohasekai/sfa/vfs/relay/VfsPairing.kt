@@ -52,15 +52,31 @@ object VfsPairing {
     }
 
     /**
-     * `"$HOME/bin/vfsc" pair --link <linkId> --pair <pairId> --code <code>`
-     * is the default copy command. It is allowed to carry the code in argv, the
-     * user is told it is a one-time secret; stdin/env alternatives are shown too.
+     * Public routing id for this one-time code. The copied text carries only
+     * Link ID and Pair code, so the CLI derives the same value. Pairing code is
+     * the IKM; linkId is the salt; neither the Relay nor the copy text needs a
+     * separately generated pairId.
      */
-    fun pairingCommand(
+    fun pairId(
         linkId: String,
-        pairId: String,
         code: CharArray,
-    ): String = "\"\$HOME/bin/vfsc\" pair --link $linkId --pair $pairId --code ${ascii(code)}"
+    ): String {
+        val linkRaw = RelayBase64.decodeUrl(linkId)
+        require(linkRaw != null && linkRaw.size == 16) { "linkId must be 16-byte base64url" }
+        val normalized =
+            normalize(ascii(code))
+                ?: throw IllegalArgumentException("pairing code is not canonical Crockford base32")
+        val derived =
+            RelayCrypto.hkdfSha256(
+                ascii(normalized).toByteArray(Charsets.US_ASCII),
+                linkRaw,
+                PAIR_ID_INFO.toByteArray(Charsets.UTF_8),
+                16,
+            )
+        return RelayBase64.encodeUrl(derived)
+    }
+
+    private const val PAIR_ID_INFO = "wsvfs/pair/id"
 
     fun zeroize(code: CharArray?) {
         code?.fill('\u0000')
