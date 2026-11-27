@@ -52,7 +52,7 @@ object VfsPairing {
     }
 
     /**
-     * `"$HOME/bin/wonder-vfs" pair --link <linkId> --pair <pairId> --code <code>`
+     * `"$HOME/bin/vfsc" pair --link <linkId> --pair <pairId> --code <code>`
      * is the default copy command. It is allowed to carry the code in argv, the
      * user is told it is a one-time secret; stdin/env alternatives are shown too.
      */
@@ -60,7 +60,7 @@ object VfsPairing {
         linkId: String,
         pairId: String,
         code: CharArray,
-    ): String = "\"\$HOME/bin/wonder-vfs\" pair --link $linkId --pair $pairId --code ${ascii(code)}"
+    ): String = "\"\$HOME/bin/vfsc\" pair --link $linkId --pair $pairId --code ${ascii(code)}"
 
     fun zeroize(code: CharArray?) {
         code?.fill('\u0000')

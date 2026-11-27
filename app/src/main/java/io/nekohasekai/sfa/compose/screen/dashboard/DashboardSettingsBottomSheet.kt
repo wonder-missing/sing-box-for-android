@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cable
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Route
@@ -167,6 +168,7 @@ fun DashboardSettingsBottomSheet(
                                 CardGroup.SystemProxy,
                                 CardGroup.ClashMode,
                                 CardGroup.Profiles,
+                                CardGroup.Vfs,
                             )
                         val allCardsEnabled =
                             setOfNotNull(
@@ -177,6 +179,7 @@ fun DashboardSettingsBottomSheet(
                                 CardGroup.Connections,
                                 CardGroup.SystemProxy,
                                 CardGroup.Profiles,
+                                CardGroup.Vfs,
                             )
                         reorderedList = defaultOrder
                         currentVisibleCards = allCardsEnabled
@@ -392,6 +395,7 @@ fun DashboardItemCard(
                     CardGroup.Profiles -> Icons.Outlined.Person
                     CardGroup.Activity -> Icons.Outlined.Timeline
                     CardGroup.Logs -> Icons.Outlined.Article
+                    CardGroup.Vfs -> Icons.Outlined.CloudUpload
                 },
                 contentDescription = null,
                 modifier =
@@ -425,6 +429,7 @@ fun DashboardItemCard(
                         CardGroup.Profiles -> stringResource(R.string.title_configuration)
                         CardGroup.Activity -> stringResource(R.string.activity_title)
                         CardGroup.Logs -> stringResource(R.string.title_log)
+                        CardGroup.Vfs -> stringResource(R.string.share_files_title)
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,

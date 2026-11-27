@@ -4,7 +4,7 @@
 
 ## 1. 目标与非目标
 
-**目标**：配对的 CLI client（当前是 Claude Code Agent）在 Mini 上直接读取 WonderSing 的 VFS；App 是 Provider，client 侧只用 `wonder-vfs` CLI，Portal/Relay 只做盲路由。用户配置一次 Relay Server；之后每个 client 建一个 Share、粘一次 5 分钟 Pairing Code。连接只为已有 Share 维持，不设手动 Connect/Stop。
+**目标**：配对的 CLI client（当前是 Claude Code Agent）在 Mini 上直接读取 WonderSing 的 VFS；App 是 Provider，client 侧只用 `vfsc` CLI，Portal/Relay 只做盲路由。用户配置一次 Relay Server；之后每个 client 建一个 Share、粘一次 5 分钟 Pairing Code。连接只为已有 Share 维持，不设手动 Connect/Stop。
 
 **非目标（v1）**：Consumer MCP、容器 `/vfs`、always-on、FCM 唤醒、PFS、多租户/跨账号、远程 Consumer、多 Portal 同时在线、Provider key 自动轮换。
 
@@ -13,7 +13,7 @@
 | 角色 | 职责 |
 |---|---|
 | App（Provider） | 主动连 Portal；持有 Share Key；按 scope 读 VFS、加密响应。 |
-| Client（Consumer） | `wonder-vfs` CLI；本地 Unix socket；持有 Share Key；不做 MCP。 |
+| Client（Consumer） | `vfsc` CLI；本地 Unix socket；持有 Share Key；不做 MCP。 |
 | Portal/Relay | 鉴权 transport、按 Link 路由密文、限速/审计元数据；不解析数据。 |
 
 1. **明文只存在于 App 与 CLI**。Portal 可看 Link ID、pairId、reqId、时间、大小、Provider key/deviceSecret、操作类型；不可看文件内容、路径、scope、label、inner error。
@@ -25,9 +25,9 @@
 ## 3. 用户流程
 
 1. Portal 的顶级 **Relay** 页面提供 Relay URL + Relay token。Settings → **VFS Relay Servers** → **Add Relay Server**（填完整 `/relay/v1` URL + token）。**Test connection** 只验证 URL/token/device，不创建 Share，也不打开 Provider WS。
-2. 首页底部状态栏最后一个 **VFS** 条目同时是指示器和入口。进入 VFS → **New Share**：名字（可选）→ Recommended / Everything / Customize → Create。创建时自动连接 Relay Server。
+2. 首页 Dashboard 的 **VFS 卡片**同时是指示器和入口；它不依赖 VPN 服务是否运行。进入 VFS → **New Share**：名字（可选）→ Recommended / Everything / Customize → Create。创建时自动连接 Relay Server。
 3. App 显示 5:00 Pairing Code 和一行命令；命令含 `linkId/pairId`，code 可走 argv、stdin 或环境变量。
-4. Client 运行 `wonder-vfs pair ...`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
+4. Client 运行 `vfsc pair ...`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
 5. **连接随 Share 维持**：至少一个 Share 存在时 App 自动连接并保持；最后一个 Share 撤销后自动关闭 WS。没有 Connect / Stop sharing 按钮，也没有全局暂停概念。
 6. **Revoke** = 永久删除 Share；App 删除本地 secret，best-effort 通知 Relay；Relay 收到后写 tombstone，CLI 收到 410 后 `forget`。通知失败时下次自动连接重试，期间 CLI 得到 503。
 7. **New code** = 同一个 Share Key，新 pairId/code；旧 code 失效，不 eject 已配对 CLI。一 client 一 Share，最多 8 个。

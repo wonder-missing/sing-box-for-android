@@ -132,6 +132,7 @@ fun NavHost(
                     onOpenNewProfile = onOpenNewProfile,
                     onOpenLogs = { navController.navigate(Screen.Log.route) },
                     onOpenActivity = { navController.navigate(Screen.Activity.route) },
+                    onOpenVfs = { navController.navigate(Screen.Vfs.route) },
                     viewModel = dashboardViewModel,
                 )
             } else {
@@ -142,6 +143,7 @@ fun NavHost(
                     onOpenNewProfile = onOpenNewProfile,
                     onOpenLogs = { navController.navigate(Screen.Log.route) },
                     onOpenActivity = { navController.navigate(Screen.Activity.route) },
+                    onOpenVfs = { navController.navigate(Screen.Vfs.route) },
                 )
             }
         }

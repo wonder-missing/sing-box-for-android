@@ -231,11 +231,6 @@ fun ShareFilesScreen(navController: NavController) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
-            Text(
-                text = stringResource(R.string.share_files_scope_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             if (shares.isEmpty()) {
                 Text(
                     text = stringResource(R.string.share_files_empty),
@@ -645,7 +640,7 @@ private fun copyToClipboard(
     text: String,
 ) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-    clipboard.setPrimaryClip(ClipData.newPlainText("wonder-vfs pair", text))
+    clipboard.setPrimaryClip(ClipData.newPlainText("vfsc pair", text))
 }
 
 private fun clearClipboardIfMatches(

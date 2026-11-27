@@ -57,6 +57,7 @@ fun DashboardScreen(
     onOpenNewProfile: (NewProfileArgs) -> Unit = {},
     onOpenLogs: () -> Unit = {},
     onOpenActivity: () -> Unit = {},
+    onOpenVfs: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -171,12 +172,14 @@ fun DashboardScreen(
                             cardGroup != CardGroup.Profiles &&
                                 cardGroup != CardGroup.SystemProxy &&
                                 cardGroup != CardGroup.Activity &&
+                                cardGroup != CardGroup.Vfs &&
                                 serviceRunning &&
                                 isCardAvailableWhenServiceRunning(cardGroup, uiState)
 
                         cardGroup == CardGroup.Profiles -> true // Profiles card is always available
                         cardGroup == CardGroup.Logs -> true // Logs preview is a stable entry
                         cardGroup == CardGroup.Activity -> ActivityPreferences.isEnabled(context)
+                        cardGroup == CardGroup.Vfs -> io.nekohasekai.sfa.vfs.relay.VfsRelayRuntime.isAvailable()
                         else -> serviceRunning && isCardAvailableWhenServiceRunning(cardGroup, uiState)
                     }
                 }.toSet()
@@ -225,6 +228,7 @@ fun DashboardScreen(
                                 recentLogs = viewModel.recentLogs,
                                 onOpenLogs = onOpenLogs,
                                 onOpenActivity = onOpenActivity,
+                                onOpenVfs = onOpenVfs,
                                 modifier =
                                 Modifier
                                     .weight(1f)
@@ -265,6 +269,7 @@ fun DashboardScreen(
                             recentLogs = viewModel.recentLogs,
                             onOpenLogs = onOpenLogs,
                             onOpenActivity = onOpenActivity,
+                            onOpenVfs = onOpenVfs,
                         )
                     }
                 }
@@ -327,4 +332,5 @@ fun isCardAvailableWhenServiceRunning(cardGroup: CardGroup, uiState: DashboardUi
     CardGroup.Profiles -> true // This shouldn't be called for Profiles, but return true for safety
     CardGroup.Activity -> true
     CardGroup.Logs -> true
+    CardGroup.Vfs -> true
 }

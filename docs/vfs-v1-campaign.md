@@ -1,16 +1,16 @@
 # Share Key VFS v1 战役板
 
-状态：AU 已发布（2026-11-27）；AV 开发中：VFS 配置与功能分离，连接随 Share 自动维持。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
+状态：AU 已发布（2026-11-27）；AV 未发布（2026-11-27，等待设计确认）：VFS 配置与功能分离，首页 Dashboard VFS 卡片，CLI 改名 `vfsc`。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
 
 ## 目标与验收
 
-一条真实链路：WonderSing（Provider）→ Portal Relay → Mini 上的 `wonder-vfs` CLI → 读取 App VFS。最终发布 arm64 AP，并在真机验证 Share、5 分钟 Pairing Code、list/read、Revoke、自动连接/断开、离线 503。
+一条真实链路：WonderSing（Provider）→ Portal Relay → Mini 上的 `vfsc` CLI → 读取 App VFS。最终发布 arm64 AP，并在真机验证 Share、5 分钟 Pairing Code、list/read、Revoke、自动连接/断开、离线 503。
 
 ## 仓库与 ownership
 
 | 工作流 | 仓库 | 分支 | 独占范围 |
 |---|---|---|---|
-| Portal Relay + CLI | `~/workspace/clawdy-portal` | `main` | `lib/vfs-relay*`、`lib/wonder-vfs-cli.mjs`、`bin/wonder-vfs`、`tests/vfs-relay*`、必要的 `server.mjs`/`hooks.mjs`/安装脚本改动 |
+| Portal Relay + CLI | `~/workspace/clawdy-portal` | `main` | `lib/vfs-relay*`、`lib/vfsc-cli.mjs`、`bin/vfsc`、`tests/vfs-relay*`、必要的 `server.mjs`/`hooks.mjs`/安装脚本改动 |
 | App Provider | `~/workspace/WonderSing` | `dev` | `app/src/main/java/io/nekohasekai/sfa/vfs/relay/`、Share UI、必要导航/strings/FGS/MCP accessor |
 | 裁决与发版 | WonderSing | `dev` | 合同、战役板、集成验收、版本号、tag、Release |
 
@@ -22,7 +22,7 @@
 2. **Portal listener**：Portal 顶级 Relay 页面管理 `/relay/`；公共 Provider 端点在 `/relay/v1/provider`（WS）与 `/relay/v1/provider-keys`、`/relay/v1/links`（HTTP，自行 Bearer 校验）。另起 `<stateDir>/run/vfs-relay.sock` 只挂 Consumer 的 `/v1/request`、`/v1/response/{consumerId}/{linkId}/{reqId}`、`/v1/health`。旧根 `/v1/provider*` 返回 404。
 3. **Provider key**：`POST /relay/v1/provider-keys` 用 Relay token（`relay_...`）+ 32B deviceSecret，首次创建、之后 issue-once。Portal 用单 master AES-256-GCM 加密存 `provider-keys.json` 0600；master 丢失即 503，不做轮换。管理员在 Relay 页面撤销设备。
 4. **Link store**：`vfs-relay-links.json` + `vfs-relay-links.initialized`，atomic+fsync；Revoke tombstone 保留 30 天；未登记不 claim；同 owner 幂等，不同 owner 409。
-5. **CLI**：Portal 仓库 `lib/wonder-vfs-cli.mjs` + `bin/wonder-vfs`；`$HOME/bin` 安装；默认 stateDir `~/.clawdy-portal`，测试用临时 `PORTAL_STATE_FILE`；Unix socket 无 transport auth；key store 0700/0600 atomic+fsync。
+5. **CLI**：Portal 仓库 `lib/vfsc-cli.mjs` + `bin/vfsc`；`$HOME/bin` 安装；默认 stateDir `~/.clawdy-portal`，测试用临时 `PORTAL_STATE_FILE`；Unix socket 无 transport auth；key store 0700/0600 atomic+fsync。
 6. **App**：新包 `io.nekohasekai.sfa.vfs.relay`，独立 `VfsRelayRuntime`/`VfsRelayState`；复用现有 source 的 stat/list/read 与 FGS 外壳；绝对路径和分页在新适配层完成，**不改** 旧 `VirtualDirectorySource` 签名和旧 VFS 路由。`SHARE_KEY_VFS` build flag 默认开启，API21 flavor 隐藏。
 7. **App Relay Server 配置**：Settings → VFS Relay Servers 保存本地列表（完整 `/relay/v1` URL + Relay token，Keystore 加密）；Relay 自有 `relayDeviceId`，不复用 MCP config。Test connection 只验证 URL/token/device，不创建 Share、不打开 Provider WS。
 8. **Scope v1**：`app.data.*`、`app.files`、`app.workspace`、`user.selected`、`all`；`all` 不含 `user.selected`，硬排除物理 `vfs/` 与 `conductor/`。Recommended=app.data.*；Everything=固定 scope；Customize 全选/逐项。
@@ -44,14 +44,15 @@
 | Portal 侦察 | server.mjs:1268-1277 listener；handleRequest:560；handleUpgrade:1195；hooks.mjs:70-173；install-launchd.sh:25-28 |
 | App 侦察 | VirtualDirectoryProtocol.kt:78-212；VfsSharingService.kt:36-268；SettingsScreen.kt:313；Navigation.kt:642；McpRuntime.kt:101-112 |
 | Portal 实现 | `clawdy-portal` `37949d8`；`pnpm check` 207/207；部署 `~/.clawdy-portal` 成功，socket 0600，`/v1/health` ok |
-| App 实现 | WonderSing `dev`；VFS 入口在首页状态栏，Relay 配置在 Settings；823 JVM tests / 0 failures；本地界面截图 `build/e2e-emulator/vfs-feature-scope-short.png`、`vfs-config-server.png` |
+| App 实现 | WonderSing `dev`；VFS 入口在首页 Dashboard 卡片，Relay 配置在 Settings；824 JVM tests / 0 failures；本地界面截图 `build/e2e-emulator/vfs-dashboard-card.png`、`vfs-feature-scope-final.png`、`vfs-config-server.png` |
+| CLI | `vfsc`（Portal commit `32c6fbd`）；安装到 `$HOME/bin/vfsc`；旧 `wonder-vfs` 已移除；`vfsc status` socket/relay ok |
 | 真机 E2E | 待 AP 安装后验收：Share/pair/list/read/Revoke/自动连接/离线/重启 |
-| Release | AU 已发布：`v1.15.0-alpha.13-wonder.AU`；AV 收口中：配置/功能分离、无 Connect/Stop、Scope 与 Pairing Code 对话框。 |
+| Release | AU 已发布：`v1.15.0-alpha.13-wonder.AU`；AV 未发布：首页 Dashboard VFS 卡片、无 Connect/Stop、Scope 与 Pairing Code 对话框、CLI `vfsc`。 |
 
 ## 风险
 
 - Portal 生产部署会影响现有服务；先在临时 stateDir/端口联调，部署前单独确认。
-- VFS 功能入口只在首页状态栏，Relay 配置只在 Settings；旧 VFS access 页面与状态条已删除，新 VFS 不读取旧 VFS 的 Share/连接状态。
+- VFS 功能入口只在首页 Dashboard 卡片，Relay 配置只在 Settings；旧 VFS access 页面与状态条已删除，新 VFS 不读取旧 VFS 的 Share/连接状态。
 - cursor/1 MiB 页与绝对路径适配是 App 侧最大实现风险；先写 JVM 测试再写 UI。
 - Relay Server token 只保存在本地 Keystore；Test connection 和自动连接都只访问配置的完整 `/relay/v1` base。
 

@@ -124,8 +124,6 @@ import io.nekohasekai.sfa.compose.component.ServiceStatusBar
 import io.nekohasekai.sfa.compose.component.SnackbarHost
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
 import io.nekohasekai.sfa.compose.component.UptimeText
-import io.nekohasekai.sfa.vfs.relay.VfsRelayRuntime
-import io.nekohasekai.sfa.vfs.relay.VfsRelayState
 import io.nekohasekai.sfa.compose.model.Connection
 import io.nekohasekai.sfa.compose.model.GroupLayoutPreference
 import io.nekohasekai.sfa.compose.navigation.NavHost
@@ -892,14 +890,6 @@ class MainActivity :
         val remoteServer by RemoteControlManager.remoteServer.collectAsState()
         val remoteConnected by RemoteControlManager.isConnected.collectAsState()
         val remoteStartedAt by RemoteControlManager.startedAt.collectAsState()
-        val relayVfsState by VfsRelayRuntime.state.collectAsState()
-        val relayVfsShares by VfsRelayRuntime.shares.collectAsState()
-        val vfsOn =
-            relayVfsState is VfsRelayState.Connected &&
-                relayVfsShares.any { it.status != "revoked" }
-        val vfsConnecting =
-            relayVfsState is VfsRelayState.Connecting ||
-                relayVfsState is VfsRelayState.Backoff
         val isRemote = remoteServer != null
 
         // Initialize the dashboard view model and store reference
@@ -1269,13 +1259,6 @@ class MainActivity :
                                 onGroupsClick = { showGroupsSheet = true },
                                 connectionsCount = dashboardUiState.connectionsCount,
                                 onConnectionsClick = { showConnectionsSheet = true },
-                                vfsOn = vfsOn,
-                                vfsConnecting = vfsConnecting,
-                                onVfsClick = {
-                                    navController.navigate(Screen.Vfs.route) {
-                                        launchSingleTop = true
-                                    }
-                                },
                                 onStopClick = { dashboardViewModel.toggleService() },
                                 modifier =
                                 Modifier

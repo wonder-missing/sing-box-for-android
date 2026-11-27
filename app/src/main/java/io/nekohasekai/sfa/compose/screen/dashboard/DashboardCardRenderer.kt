@@ -41,6 +41,7 @@ fun DashboardCardRenderer(
     recentLogs: StateFlow<List<LogEntryData>>,
     onOpenLogs: () -> Unit,
     onOpenActivity: () -> Unit = {},
+    onOpenVfs: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when (cardGroup) {
@@ -143,6 +144,13 @@ fun DashboardCardRenderer(
             LogsPreviewCard(
                 recentLogs = recentLogs,
                 onOpenLogs = onOpenLogs,
+                modifier = modifier,
+            )
+        }
+
+        CardGroup.Vfs -> {
+            VfsCard(
+                onOpen = onOpenVfs,
                 modifier = modifier,
             )
         }

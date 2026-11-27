@@ -55,6 +55,7 @@ enum class CardGroup(val pairGroup: CardPairGroup? = null) {
     Profiles,
     Activity,
     Logs,
+    Vfs,
 }
 
 enum class CardPairGroup {
@@ -112,6 +113,7 @@ data class DashboardUiState(
             CardGroup.Profiles,
             CardGroup.Activity,
             CardGroup.Logs,
+            CardGroup.Vfs,
         ),
     val cardOrder: List<CardGroup> =
         listOf(
@@ -124,6 +126,7 @@ data class DashboardUiState(
             CardGroup.Profiles,
             CardGroup.Activity,
             CardGroup.Logs,
+            CardGroup.Vfs,
         ),
     val showCardSettingsDialog: Boolean = false,
 ) {
@@ -798,6 +801,7 @@ class DashboardViewModel :
         CardGroup.Profiles,
         CardGroup.Activity,
         CardGroup.Logs,
+        CardGroup.Vfs,
     )
 
     private fun loadItemOrder(): List<CardGroup> {

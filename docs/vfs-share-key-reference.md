@@ -44,7 +44,7 @@
 | 术语 | 含义 | UI 用词 |
 |---|---|---|
 | App / Provider | 数据在手机上；主动连 Portal/Relay；验证 Share Key；按 Share 的 scope 读 VFS。 | App |
-| Agent / Consumer | 远端 Claude Code；用 `wonder-vfs` CLI 读。 | Agent |
+| Agent / Consumer | 远端 Claude Code；用 `vfsc` CLI 读。 | Agent |
 | Portal / Relay | 盲路由；鉴权 transport、按 Link ID 转发密文、限速/审计元数据。 | Portal |
 | Share | 一次授权：label + scope 集合 + 一个 Link；一个 Share 对应一个逻辑 Agent；密码学上只有一把 Share Key，持有者等价。 | Share |
 | Pairing Code | 5 分钟、一次性、16 字符 Crockford base32。 | Pairing Code |
@@ -69,7 +69,7 @@
 - **Agent 看得到**：你分享的文件；Agent 可能把它们发给它的模型提供方。
 - **Pairing Code**：一次性、5 分钟、在聊天里可见；看到它的人在这 5 分钟内可能抢先配对；`pairId` 是公开路由，不是 secret。
 - **Share Key**：由 Agent 的 CLI 保存；Portal 读不到；Agent 宿主机被信任（同一用户可读 CLI 的 key store）；不要宣称模型绝对拿不到 key。
-- **Relay 不可读内容（协议保证，主机可信前提）**：密文和 AEAD tag 保证 Relay 的**data payload**不能读/伪造/篡改；Portal 仍能看到路由元数据，可以丢包、延迟。**明文控制帧（pair-error/link-error/ack/error）不防伪造**：恶意/被攻破 Relay 可注入或延迟，CLI/App 只把它们当提示，不作为数据真实性证据；`message` 必须是固定短语，不含路径/scope/文件名。但 v1 Portal 与 CLI 同机、同 macOS 用户（`launchctl gui/$uid`），同一用户或被攻破的 Portal 进程可以读 CLI key store（`~/Library/Application Support/wonder-vfs/keys.json`）和 Unix socket，从而解密 Share。**v1 把 Portal 代码与同机用户视为可信**；要抵抗 Portal 进程被攻破，需独立 OS 用户/VM 或 Keychain ACL/独立用户，见 §2.5。
+- **Relay 不可读内容（协议保证，主机可信前提）**：密文和 AEAD tag 保证 Relay 的**data payload**不能读/伪造/篡改；Portal 仍能看到路由元数据，可以丢包、延迟。**明文控制帧（pair-error/link-error/ack/error）不防伪造**：恶意/被攻破 Relay 可注入或延迟，CLI/App 只把它们当提示，不作为数据真实性证据；`message` 必须是固定短语，不含路径/scope/文件名。但 v1 Portal 与 CLI 同机、同 macOS 用户（`launchctl gui/$uid`），同一用户或被攻破的 Portal 进程可以读 CLI key store（`~/Library/Application Support/vfsc/keys.json`）和 Unix socket，从而解密 Share。**v1 把 Portal 代码与同机用户视为可信**；要抵抗 Portal 进程被攻破，需独立 OS 用户/VM 或 Keychain ACL/独立用户，见 §2.5。
 - **必须对用户说清楚（补充）**：UI/文档不能宣称“Portal 宿主机被攻破也读不到”；准确说法是“正常运行的 Relay 只转发密文；Portal 主机/同用户进程可信”。
 - **可用性**：读取只在 WonderSing 的 sharing 通知/FGS 活着时可用；进程死/Doze 时 Relay 在 WS close/写失败时立即 fail pending 为 503，半开连接最长约 90s 心跳超时后 503；重开 App 再试。不承诺 24/7。
 
@@ -81,15 +81,15 @@
 
 一次性设置：
 
-1. 安装 `wonder-vfs` CLI（Portal `pnpm service-install` 装到 `$HOME/bin`；Claude Code skill/CLAUDE.md 告诉 Agent 命令）。
+1. 安装 `vfsc` CLI（Portal `pnpm service-install` 装到 `$HOME/bin`；Claude Code skill/CLAUDE.md 告诉 Agent 命令）。
 2. Settings → Share files → 选择 Portal connection（现有 MCP server；Advanced 可手填 URL/key）→ Connect。
 
 每个 Agent：
 
 3. New Share → 名字（可选）→ Recommended / Everything / Customize → Create。
-4. Copy pairing command（5:00 倒计时）；App 复制完整命令 `"$HOME/bin/wonder-vfs" pair --link <linkId> --pair <pairId> --code <code>`（默认；code 会进 argv/shell history，见 §2.5）；CLI 也支持 `--code-stdin`/`WONDER_VFS_CODE`。
+4. Copy pairing command（5:00 倒计时）；App 复制完整命令 `"$HOME/bin/vfsc" pair --link <linkId> --pair <pairId> --code <code>`（默认；code 会进 argv/shell history，见 §2.5）；CLI 也支持 `--code-stdin`/`VFSC_CODE`。
 5. 粘到 Agent 聊天；Agent 运行命令，返回它能看到的 roots。
-6. Agent 运行 `"$HOME/bin/wonder-vfs" list/read ...`；不再需要 code。撤销 Share → Revoke。
+6. Agent 运行 `"$HOME/bin/vfsc" list/read ...`；不再需要 code。撤销 Share → Revoke。
 
 ### 2.5 已接受的取舍
 
@@ -146,7 +146,7 @@ Agent CLI (Consumer) --Unix socket--> Portal/Relay
 - **Hook 能力**：`hooks.json` 增加 durable `capabilities:["shareKeyVfs"]`（缺省 = 空数组，不隐含授权）；`POST /v1/provider-keys`、`POST /rotate` 和 Provider WS 都检查 `enabled && shareKeyVfs && !expired`；`GET`/`DELETE` 允许 admin 或该 device 的 Provider key 做清理（capability 撤销后仍可 delete）；`maxCalls` 只对 MCP tool calls 计数，不阻塞 Relay transport。hook **disable/expire/移除 capability = suspend**：关闭 WS 4401，keys/links 保留；重新 enable/grant 后 App 用 deviceSecret issue-once 恢复并重连。hook **delete = 永久**：revoke keys、tombstone 该 hook 全部 links、close 4414。Provider WS 连接时和每 5 分钟重新验证；**hooks 状态变更通过 admin socket 立即 close WS 并 tombstone；5 分钟只作兜底；数据转发前也校验 hook 状态**。**`shareKeyVfs` 只允许 `handler=mcp`；inbox 的 maxCalls/disable 不得影响 transport。`sweepHooks` 对带 provider key/link 的 hook 只 suspend、不删除；所有删除入口（CLI/admin UI/API）统一走 revoke keys + tombstone links + close 4414。**
 - **能力发放/迁移**：`portal-knock`、admin API（`/knocks/api`）、`public/knocks.html` 增加 `capabilities` create/update/list（`portal-knock capabilities list|grant|revoke`）；现有带 `vfs_link_request` 的 hook 在 P2 显示 one-click grant，不静默迁移；App 选到无 capability 的 server 时只用 `POST /v1/provider-keys` 探测，403 `CAPABILITY_REQUIRED` 就显示 `portal-knock capabilities grant <hookId> shareKeyVfs` 指引，不缓存错误。OAuth-only server v1 不支持 Share Key VFS；不引入 App OAuth client/refresh/scope。
 - **Portal 识别/绑定**：**存储主键是 `(hookId,deviceId)`，`canonicalBase` 是记录字段**；同一 base 的双配置若解析出同一 hookId → 复用同 deviceSecret/Provider key；若不同 hookId → 两条独立 record（同一时刻只连一个）。base 变化时先用已有 `(hookId,deviceId)` 的 deviceSecret 调新 base 的 issue：Portal 仍有该 hook/device → 成功；随后用旧 AAD 解密、新 AAD 原子重加密 deviceSecret/Provider key 并更新 canonicalBase（失败则保留旧记录与旧 base）；`403 DEVICE_AUTH` → 必须 admin delete 或新 Share。App 只把 token 发到选中 server 的 canonical base，不自动推断。
-- **状态目录**：`<stateDir> = dirname(PORTAL_STATE_FILE)`；部署默认 `~/.clawdy-portal`，`service-install` 在 plist/env 显式写 `PORTAL_STATE_FILE=~/.clawdy-portal/state.json`。源码直接跑沿用仓库根 `state.json` 仅作开发默认，必须在仓库外显式设置 `PORTAL_STATE_FILE` 才能部署；该开发默认不受“stateDir 不得在仓库内”约束，但不得用于发布。所有 store/socket 跟随 `PORTAL_STATE_FILE`；`wonder-vfs`/`portal-knock` 未设 env 时默认 `~/.clawdy-portal/state.json`，可用同一 env 覆盖；测试/E2E 用临时目录；`provider-keys.json`/`provider-keys.initialized`/master/`vfs-relay-links*`/`run/` 加入 `.gitignore`。
+- **状态目录**：`<stateDir> = dirname(PORTAL_STATE_FILE)`；部署默认 `~/.clawdy-portal`，`service-install` 在 plist/env 显式写 `PORTAL_STATE_FILE=~/.clawdy-portal/state.json`。源码直接跑沿用仓库根 `state.json` 仅作开发默认，必须在仓库外显式设置 `PORTAL_STATE_FILE` 才能部署；该开发默认不受“stateDir 不得在仓库内”约束，但不得用于发布。所有 store/socket 跟随 `PORTAL_STATE_FILE`；`vfsc`/`portal-knock` 未设 env 时默认 `~/.clawdy-portal/state.json`，可用同一 env 覆盖；测试/E2E 用临时目录；`provider-keys.json`/`provider-keys.initialized`/master/`vfs-relay-links*`/`run/` 加入 `.gitignore`。
 - **Master key**：`<stateDir>/vfs-provider-key.master` 0600、`{v:1,current:<32B b64url>,previous?:<32B b64url>}`；Provider key 加密存 `<stateDir>/provider-keys.json` 0600、`{v:1,masterVersion,keys:[{...,keyVersion}]}`、atomic；值格式 `0x01||iv(12)||ct||tag(16)`，JSON 字段用标准 base64url 无 padding，AES-256-GCM **Portal master 侧 AAD** `v1|hookId|deviceId|providerKeyId`。**master 轮换两阶段**：先写 master `current=新, previous=旧`（atomic），再用新 master 全量重加密 keys（atomic），最后清 `previous`；任一步崩溃，旧/新 keys 都能用 current/previous 解开。读坏 → 视为 master-loss：所有旧 key 标记 revoked、close 4413（可恢复，不是 4414）；App 用 deviceSecret 调 issue-once，用现存 `deviceSecretHash` 发新 key，不返回旧 key、不自动清空文件；`service-install` 不得覆盖/删除。`provider-keys.json` 缺失/损坏与 master 丢失分开：`<stateDir>/provider-keys.initialized` marker 存在但文件丢失 → 503 `RELAY_STATE_UNAVAILABLE`，禁止自动 claim；首次初始化先写 store 再写 marker；合法 store 存在而 marker 缺失时 adopt 并补 marker；store 与 marker 都不存在 → 全新初始化；admin 重建/删除 device；`portal-knock provider-keys rotate-master` 执行；丢失 master 的恢复步骤写进 runbook（删除并重发全部 device key；provider key 丢失可 issue-once 恢复，Share Key 不变；deviceSecret/deviceId 丢失才需重配）。
 - **Store 锁**：`provider-keys.json`/`vfs-relay-links.json`/master/marker 都 atomic+fsync（文件与目录）；`provider-keys.json` 用独立 `provider-keys.lock`（不是 `hooks.json` 的 `withStore`）；**全局锁序 hooks → provider-key → link，任何路径不得反向**；hook disable/delete 先写 hooks 状态，再撤销 keys/links；崩溃后 5 分钟 revalidation 补撤销，不留下可用 key。`rotate-master` 持同一 `provider-keys.lock`，与 issue/rotate/delete 串行，顺序为读 master→写 master→重加密 keys→清 previous。
 - 更新 `AUTH.md`/`HOOKS.md`：`/v1/provider-keys` 的 auth（hook secret + `shareKeyVfs` + deviceSecret；GET/DELETE admin/self）、device 绑定、Origin、限速、审计；不记录 secret/deviceSecret；OAuth token 仍只用于 MCP，不用于 provider-key。
@@ -162,7 +162,7 @@ Agent CLI (Consumer) --Unix socket--> Portal/Relay
 - **PairingCode（memory-only）**：`{shareId,pairId(16B public),code(ByteArray ASCII 16),createdAt,expiresAt,consumedAt}`；只在 App 内存；code 用 `ByteArray`/`CharArray`，**best-effort** 不落盘/不进日志/不进通知；Kotlin/JSON 边界不可避免的短生命周期 `String`（UI 输入、命令拼接）不持久化、不打印；消费/过期/进程死 `fill(0)`。不持久化 `codeCiphertext`/`codeHash`。Provider 按 linkId 找 Share 的 active pairId/code。
 - **pairState 持久化**：New code 成功生成后持久化 `pairId/pairState=active/pairExpiresAt`；配对成功 → `consumed`（保留 pairId）；Stop → `paused`；code 自然过期 → `expired`（**不发** `pair paused`；Relay 未重启时按 `pairExpiresAt` 返回 `code_expired`，重连时补发 `expired`）；进程死亡后 code 丢失：**以持久 `pairState` 为准**；`consumed` 保持 `consumed`（用当前 pairId，不把 active New code 误标 consumed）；`active` 但 code 丢失 → `expired`（需 New code）；`pairedAt` 不用于推断当前状态。进程死亡会丢 memory-only pair response cache；`consumed` 只恢复状态，不承诺 exact tuple 可取，响应已丢失时 CLI 需 New code。Relay 重启/App 重连据此补发 `consumed`/`paused`/`active`/`expired`；Relay 未重启时也会按 `pairExpiresAt` 自然判定 `code_expired`。不再依赖 memory-only PairingCode 的 pairId。
 - **pairId/Relay pair 状态**：16B 公开随机；pair envelope/AAD/cache key 都带；New code 生成新 `pairId+code`，旧 pairId 立即失效。App 向 Relay 发 Provider WS 控制帧 `pair {v:1,controlId,linkId,pairId,ttlSeconds,state,pairEpoch}`（只含公开 pairId/剩余 TTL/单调 epoch）；每个 active/paused/consumed/expired 状态变化都 `pairEpoch+1` 并随 Share 持久化；Relay 同 epoch+同 state 幂等 ack，只应用更大 epoch，更低 epoch 回 `STALE_PAIR_EPOCH`，防止迟到重试把 New code/Stop 回退。Relay 存 `activePairId+pairExpiresAt+pairState+pairEpoch`，purge 其他 pairId 的 pair response cache；旧/过期 pairId 请求得到明文 `pair-error`（§3.4.1），不是 404 Link；`consumed` 后同 pairId 的**新 tuple** 直接回 `code_consumed`，完全相同的 `(consumerId,pairId,reqId,clientNonce)` 仍返回已缓存响应直到 TTL。无需 secret/purge 帧，也不会 eject 已配对 Agent。
-- App 复制默认命令：`"$HOME/bin/wonder-vfs" pair --link <linkId> --pair <pairId> --code <code>`；同时显示 `--code-stdin`/`WONDER_VFS_CODE` 作为避免 argv/shell history 的替代。默认命令的 code 会进 shell history/进程参数，§2.5 已接受；16 字符是 secret；linkId/pairId 是公开路由。
+- App 复制默认命令：`"$HOME/bin/vfsc" pair --link <linkId> --pair <pairId> --code <code>`；同时显示 `--code-stdin`/`VFSC_CODE` 作为避免 argv/shell history 的替代。默认命令的 code 会进 shell history/进程参数，§2.5 已接受；16 字符是 secret；linkId/pairId 是公开路由。
 - 无 QR；Pairing Code 不进通知/状态栏；页面不设置 `FLAG_SECURE`，用户可主动截图；clipboard 自动清；shell history 由 skill/CLAUDE.md 提示不要保留。
 - 生命周期：**New code**（同 Share Key；新 pairId/code；旧 code/pairId 失效；不 eject 已配对 Agent；旧 pair cache 不可达）和 **Revoke**（先持久化 pending revocation，再 best-effort `unregister {reason:"revoked"}`；只有 owner 能建持久 tombstone；owner + link 不存在 ack 不建 tombstone；非 owner `DEVICE_MISMATCH`；再删除 Share/linkId/secret；cache purge；revoke 期间保留 `revoking` 归属直到 ack）。没有 rotate；换 key 就 Revoke + 新 Share。删除本地 Share 后对迟到请求回明文 `link-error share_revoked`。**每个 Link 的 pair/read/Revoke 在 App 内串行；Revoke 先置本地 revoked、取消/拒绝新 pair，pair 在发送前重查 revoked；已开始的读可完成，之后回 link-error。**
 - Cap 8：按 `(hookId,deviceId)`/当前 Portal 分区，第 9 个提示先撤销；切换 Portal 不占另一 Portal 的名额。
@@ -351,10 +351,10 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 
 ### 3.9 CLI
 
-- 安装：Portal `pnpm service-install` 装 `$HOME/bin/wonder-vfs`；skill/CLAUDE.md 提示；App 复制 `"$HOME/bin/wonder-vfs" pair ...`（绝对路径）。
+- 安装：Portal `pnpm service-install` 装 `$HOME/bin/vfsc`；skill/CLAUDE.md 提示；App 复制 `"$HOME/bin/vfsc" pair ...`（绝对路径）。
 - `--help` 一页：App 路径、pair 流程、每命令一个示例、JSON 默认、大文件、Portal 盲区、not-paired 错误。
 - 命令：
-- `pair --link ... --pair ... --code ...`（App 默认复制的形式，兼容非交互 Agent）；也支持 `--code-stdin` / `WONDER_VFS_CODE`（避免 argv/shell history 的可选方式）；App 复制命令时提示“含一次性 code”。
+- `pair --link ... --pair ... --code ...`（App 默认复制的形式，兼容非交互 Agent）；也支持 `--code-stdin` / `VFSC_CODE`（避免 argv/shell history 的可选方式）；App 复制命令时提示“含一次性 code”。
   - `list [path] --json [--cursor] [--limit]`
   - `stat <path> --json`
   - `read <path> [--max-bytes 65536] --json`
@@ -362,7 +362,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
   - `shares --json`（列出本地保存的 Share；不含 secret）
   - `status --json`（socket/Relay 可达性、当前 Share 是否 paired；不发数据）
   - `forget --share <shareId|label>`（410 后清理本地 key；不删远端）
-  - `--share <shareId|label>`；`--socket <path>`（默认 `<stateDir>/run/vfs-relay.sock`；`<stateDir>` 未设 `PORTAL_STATE_FILE` 时为 `~/.clawdy-portal`，可用 `WONDER_VFS_STATE_DIR`/`PORTAL_STATE_FILE` 覆盖）；远端 Consumer v1 不提供（无 `--relay/--api-key`）。
+  - `--share <shareId|label>`；`--socket <path>`（默认 `<stateDir>/run/vfs-relay.sock`；`<stateDir>` 未设 `PORTAL_STATE_FILE` 时为 `~/.clawdy-portal`，可用 `VFSC_STATE_DIR`/`PORTAL_STATE_FILE` 覆盖）；远端 Consumer v1 不提供（无 `--relay/--api-key`）。
 - JSON envelope：`{"ok":true,"data":...}` / `{"ok":false,"error":{"code","message","retryable","hint"}}`。
 - 输出 schema：
   - `pair`：`{"connected":true,"share":{"shareId","label"},"roots":["..."]}`
@@ -377,18 +377,18 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 - Error codes：`NOT_PAIRED`、`SHARE_PAUSED`、`CODE_EXPIRED`、`CODE_INVALID`、`CODE_CONSUMED`、`PROVIDER_OFFLINE`、`PAIR_WARMING`、`PROVIDER_TIMEOUT`、`SHARE_UNKNOWN`、`SHARE_REVOKED`、`RELAY_UNREACHABLE`、`RELAY_STATE_UNAVAILABLE`、`RATE_LIMITED`、`TOO_LARGE`、`PATH_NOT_FOUND`、`PERMISSION_LOST`、`SHARE_AMBIGUOUS`、`PROVIDER_KEY_REVOKED`、`PROTOCOL_ERROR`、`IN_FLIGHT`、`RESPONSE_UNKNOWN`、`REQID_CONFLICT`、`NONCE_REUSED`、`STALE_TS`、`AUTH`、`CURSOR_INVALID`、`BAD_RANGE`、`PROVIDER_ERROR`。
 - 明文 `link-error`/`pair-error` 是未验证提示，不触发 `forget`/删 key/重建 Share；`SHARE_REVOKED` 只由 HTTP 410 触发；inner error 不触发终止。
 - `CLI_NOT_FOUND` 由 skill/CLAUDE.md 发，不由 CLI 发。
-- Key store：`~/Library/Application Support/wonder-vfs/keys.json` 目录 0700、文件 0600、atomic+fsync；Share Key 明文，文档提示排除 Time Machine/云同步；每 Share `{shareId,label,linkId,secret}`；不打印、不进 argv/env/日志/错误；code 在 pair argv 里是设计允许的，错误中脱敏。
+- Key store：`~/Library/Application Support/vfsc/keys.json` 目录 0700、文件 0600、atomic+fsync；Share Key 明文，文档提示排除 Time Machine/云同步；每 Share `{shareId,label,linkId,secret}`；不打印、不进 argv/env/日志/错误；code 在 pair argv 里是设计允许的，错误中脱敏。
 - `GET /v1/response/{consumerId}/{linkId}/{reqId}` 单次 long-poll 60s；超时 204 后 CLI 用**同一 `(consumerId,linkId,reqId)`** 继续等；若 404 `RESPONSE_UNKNOWN`，在 120s 内**重发同一 tuple POST**（Provider 120s 缓存/重算）一次，再失败则新 reqId；不要无限 GET。
 - list 分页：VFS `list` request `{cursor?,limit?}`，response `{entries,nextCursor?}`；默认 1k，最大 10k；Provider 先按 1 MiB 页预算截断再给 `nextCursor`；entries 按 path bytewise 排序；单 entry 过大 → `TOO_LARGE`；`CURSOR_INVALID` 时丢弃 cursor、从头 list。
 - read 默认 64 KiB preview；文本 MIME UTF-8，二进制 base64；大文件 `get --out`，按 25–28 秒/MB 估时并显示进度；写临时文件、用 offset/etag 续传、完成后 sha256 校验再 rename；模型不一次吃 1.33 MiB base64。
 - 未配对错误教用户去 App 的路径；本机默认 Unix socket；远端后置。
-- 清理旧设备 key（reinstall/orphan）用 Portal 的 `portal-knock provider-keys list/delete`，不属于 `wonder-vfs`；见 §4.5。
+- 清理旧设备 key（reinstall/orphan）用 Portal 的 `portal-knock provider-keys list/delete`，不属于 `vfsc`；见 §4.5。
 
 ### 3.10 错误目录
 
 | 情况 | code | exit | 动作 |
 |---|---|---|---|
-| CLI 未安装/PATH | skill 提示 | 2 | 用 `"$HOME/bin/wonder-vfs"` 或 `pnpm service-install`。 |
+| CLI 未安装/PATH | skill 提示 | 2 | 用 `"$HOME/bin/vfsc"` 或 `pnpm service-install`。 |
 | 未配对 | `NOT_PAIRED` | 4 | WonderSing → Settings → Share files → New Share。 |
 | Share 暂停 | `SHARE_PAUSED` | 3 | 打开 WonderSing → Share files → Connect（已配对 Agent 直接用 key）；未配对/旧 code 需 New code。 |
 | | code 过期 | `CODE_EXPIRED` | 4 | New code（5 分钟）。 |
@@ -446,7 +446,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 - **P0**：评审并冻结本文档 + 附录 A vectors + 附录 B/C golden；不改代码。
 - **P1 App provider core**：Portal server 选择/auto-provision；Share store/deviceId/generation/pairEpoch/deviceSecret；`POST /v1/links`；Keystore `VfsShareCipher`；pairing/pairId/pair-error；control ack/error（含 pairEpoch）；AEAD/HKDF；scope source/denylist/redaction（所有 source 改 `list(path,cursor,limit)`）；`VfsRelayPolicy`/`VfsSharingService` 重写多 Share + 自动重连；Settings/Share UI（创建/New code 需 ack）；`ShareKeyVfs` flag；旧路径保留；JVM 测试。
 - **P2 Portal/Relay**：provider key issue/rotate/revoke/list（hook secret + deviceSecret + admin）；hook capability 发放/迁移；persistent link store/`POST /v1/links`/ownership；Link 路由/注册 generation/tombstone；pairing/pairId/pair state/pairEpoch/pair-error；control ack/error；rotate 不 tombstone；close codes；Unix/admin socket、listener profile、public provider-key/links 路由；新 transport gate（不复用 `live()`）；60s long-poll；limits/audit；flag；旧路径保留；契约测试。
-- **P3 CLI**：`wonder-vfs` 安装（修改 `install-launchd.sh` 实际落 `$HOME/bin`，显式 Node shebang/路径）；pair/list/stat/read/get/shares/status/forget；consumerId；`GET /v1/response/{consumerId}/{linkId}/{reqId}`；key store；pair-error/link-error 映射；JSON/exit/errors；skill；测试。
+- **P3 CLI**：`vfsc` 安装（修改 `install-launchd.sh` 实际落 `$HOME/bin`，显式 Node shebang/路径）；pair/list/stat/read/get/shares/status/forget；consumerId；`GET /v1/response/{consumerId}/{linkId}/{reqId}`；key store；pair-error/link-error 映射；JSON/exit/errors；skill；测试。
 - **P4 E2E**：真机 + Mini + Agent；flag on；Relay 只见密文；revoke/offline/restart/rotate；release AP（old path/AO 导出仍保留）；验收。
 - **P5 清理**：移除旧 App/Portal 路径、vfsd、容器 `/vfs`、旧 strings/tests/docs；移除 AO 导出；移除 flag；清理版 AP。
 - P1/P2/P3 在 v16 参考 + vectors 提交后可并行；实现以 [v1 合同](vfs-share-key.md) 为准；P4 依赖 P1–P3。
@@ -506,7 +506,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 
 ### 4.6 CLI 改动
 
-- 新增 `$HOME/bin/wonder-vfs`（Node/Go；优先 Node）；安装脚本；skill/CLAUDE.md；key store；socket；JSON/exit/errors；pair-error/link-error 映射；list cursor；read preview/get/forget/shares/status；60s long-poll；v1 无 `--relay`。
+- 新增 `$HOME/bin/vfsc`（Node/Go；优先 Node）；安装脚本；skill/CLAUDE.md；key store；socket；JSON/exit/errors；pair-error/link-error 映射；list cursor；read preview/get/forget/shares/status；60s long-poll；v1 无 `--relay`。
 - 输出 schema/错误/退出码按 §3.9/§3.10；测试各 schema、key 0700/0600/atomic/fsync、pair 成功前不写 key、pair-error/link-error 映射、Unix socket、`$HOME/bin`、multi-Share、duplicate label、code 脱敏、大文件、list 1 MiB 页、60s 超时用同一 `(consumerId,linkId,reqId)`、IN_FLIGHT/RESPONSE_UNKNOWN/REQID_CONFLICT/PROVIDER_TIMEOUT/NONCE_REUSED/STALE_TS/AUTH/413。
 
 ### 4.7 测试
