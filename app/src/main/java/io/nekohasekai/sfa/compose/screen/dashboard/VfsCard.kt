@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.vfs.relay.VfsRelayRuntime
 import io.nekohasekai.sfa.vfs.relay.VfsRelayState
@@ -53,7 +54,12 @@ fun VfsCard(
         when {
             server == null -> stringResource(R.string.vfs_card_no_server)
             !hasShares -> stringResource(R.string.vfs_card_no_shares)
-            state is VfsRelayState.Connected -> stringResource(R.string.vfs_serving_shares, activeShares)
+            state is VfsRelayState.Connected ->
+                stringResource(
+                    R.string.vfs_serving_traffic,
+                    activeShares,
+                    Libbox.formatBytes((state as VfsRelayState.Connected).totalBytesRead),
+                )
             state is VfsRelayState.Connecting -> stringResource(R.string.share_files_connecting)
             state is VfsRelayState.Backoff -> stringResource(R.string.share_files_backoff)
             state is VfsRelayState.Error -> (state as VfsRelayState.Error).message

@@ -53,6 +53,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
@@ -372,7 +373,12 @@ private fun RelayStatus(
 ) {
     val text =
         when (state) {
-            is VfsRelayState.Connected -> stringResource(R.string.vfs_serving_shares, shareCount)
+            is VfsRelayState.Connected ->
+                stringResource(
+                    R.string.vfs_serving_traffic,
+                    shareCount,
+                    Libbox.formatBytes(state.totalBytesRead),
+                )
             is VfsRelayState.Connecting -> stringResource(R.string.share_files_connecting)
             is VfsRelayState.Backoff -> stringResource(R.string.share_files_backoff)
             is VfsRelayState.Error -> state.message
@@ -611,11 +617,6 @@ private fun PairingDialog(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
-                    Text(
-                        text = stringResource(R.string.share_files_pairing_help, display),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     Button(
                         onClick = {
                             onCopy(pairingLine)
@@ -625,7 +626,8 @@ private fun PairingDialog(
                     ) {
                         Text(
                             stringResource(
-                                if (copied) R.string.share_files_copied else R.string.share_files_copy_pairing,
+                                if (copied) R.string.share_files_copied_time else R.string.share_files_copy_pairing_time,
+                                display,
                             ),
                         )
                     }
