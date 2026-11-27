@@ -37,7 +37,7 @@ class RelayServerNoMcpTest {
             "src/main/java/io/nekohasekai/sfa/vfs/relay/VfsRelayRuntime.kt",
             "src/main/java/io/nekohasekai/sfa/vfs/relay/VfsProviderKeyProvisioner.kt",
             "src/main/java/io/nekohasekai/sfa/vfs/relay/RelayStore.kt",
-            "src/main/java/io/nekohasekai/sfa/compose/screen/settings/ShareFilesScreen.kt",
+            "src/main/java/io/nekohasekai/sfa/compose/screen/settings/VfsScreen.kt",
             "src/main/java/io/nekohasekai/sfa/compose/screen/settings/VfsRelayServersScreen.kt",
         )) {
             val text = source(path).lowercase()
@@ -78,7 +78,7 @@ class RelayServerNoMcpTest {
 
     @Test
     fun vfsFeatureHasNoManualConnectionControls() {
-        val feature = source("src/main/java/io/nekohasekai/sfa/compose/screen/settings/ShareFilesScreen.kt")
+        val feature = source("src/main/java/io/nekohasekai/sfa/compose/screen/settings/VfsScreen.kt")
         assertFalse(feature.contains("VfsRelayRuntime.connect("))
         assertFalse(feature.contains("VfsRelayRuntime.stopSharing("))
         assertFalse(feature.contains("VfsRelayRuntime.disconnect("))

@@ -70,7 +70,7 @@ private enum class SharePreset {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShareFilesScreen(navController: NavController) {
+fun VfsScreen(navController: NavController) {
     OverrideTopBar {
         TopAppBar(
             title = { Text(stringResource(R.string.share_files_title)) },

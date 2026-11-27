@@ -35,7 +35,7 @@ import io.nekohasekai.sfa.compose.screen.settings.CoreSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.EditRemoteServerScreen
 import io.nekohasekai.sfa.compose.screen.settings.FDroidMirrorScreen
 import io.nekohasekai.sfa.compose.screen.settings.McpServersScreen
-import io.nekohasekai.sfa.compose.screen.settings.ShareFilesScreen
+import io.nekohasekai.sfa.compose.screen.settings.VfsScreen
 import io.nekohasekai.sfa.compose.screen.settings.VfsRelayServersScreen
 import io.nekohasekai.sfa.compose.screen.settings.PrivilegeSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.ProfileOverrideScreen
@@ -168,7 +168,7 @@ fun NavHost(
         }
 
         composable(Screen.Vfs.route) {
-            ShareFilesScreen(navController = navController)
+            VfsScreen(navController = navController)
         }
 
         composable(Screen.Log.route) {
