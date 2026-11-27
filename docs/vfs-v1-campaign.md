@@ -1,6 +1,6 @@
 # Share Key VFS v1 战役板
 
-状态：AT 纯度修正发版中：显式 /relay/v1 base、Conductor/MCP 从 Share files 移除、Relay 自有 deviceId。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
+状态：AU 发版中：显式 /relay/v1 base、Conductor/MCP 从 Share files 移除、Relay 自有 deviceId。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
 
 ## 目标与验收
 
@@ -46,7 +46,7 @@
 | Portal 实现 | `clawdy-portal` `37949d8`；`pnpm check` 207/207；部署 `~/.clawdy-portal` 成功，socket 0600，`/v1/health` ok |
 | App 实现 | WonderSing `49bb790`；本地 815 tests / 0 failures；legacy/R8 通过；Test CI 45817405184 |
 | 真机 E2E | 待 AP 安装后验收：Connect/Share/pair/list/read/Stop/Revoke/离线/重启 |
-| Release | AT 发版中：显式 `/relay/v1` API base；Share files 无 Conductor/MCP；Relay 自有 deviceId |
+| Release | AU 发版中：显式 `/relay/v1` API base；Share files 无 Conductor/MCP；Relay 自有 deviceId（AT tag 因 Maven 429 未发布） |
 
 ## 风险
 
