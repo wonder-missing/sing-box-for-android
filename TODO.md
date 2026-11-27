@@ -5,7 +5,7 @@
 
 ## 现在待办
 
-> Conductor 审查/评估：[`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md) / [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。旧 VFS 设计见 `~/workspace/clawdy-portal/docs/agent-oriented-vfs.md`；新 Share Key VFS 见 [`docs/vfs-share-key.md`](docs/vfs-share-key.md)（v1 合同，已实现，AS Relay Server 重构发版中）；协议细节/历史见 [`docs/vfs-share-key-reference.md`](docs/vfs-share-key-reference.md)（参考，不作门槛）；P7 见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；结论见「最近完成」。
+> Conductor 审查/评估：[`docs/conductor-review-2026-11-13.md`](docs/conductor-review-2026-11-13.md) / [`docs/conductor-assessment-2026-11-13.md`](docs/conductor-assessment-2026-11-13.md)。旧 VFS 设计见 `~/workspace/clawdy-portal/docs/agent-oriented-vfs.md`；新 Share Key VFS 见 [`docs/vfs-share-key.md`](docs/vfs-share-key.md)（v1 合同，已实现，AS Relay Server 重构已发布，真机验收中）；协议细节/历史见 [`docs/vfs-share-key-reference.md`](docs/vfs-share-key-reference.md)（参考，不作门槛）；P7 见 [`docs/vfs-dry-run.md`](docs/vfs-dry-run.md)；结论见「最近完成」。
 
 ### P1 稳定性与隐私
 
