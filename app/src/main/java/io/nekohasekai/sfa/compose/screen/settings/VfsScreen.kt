@@ -10,8 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,12 +26,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.BuildConfig
@@ -435,7 +437,7 @@ private fun ShareCard(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CreateShareCard(
     label: String,
@@ -462,25 +464,33 @@ private fun CreateShareCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterChip(
-                    selected = preset == SharePreset.RECOMMENDED,
-                    onClick = { onPreset(SharePreset.RECOMMENDED) },
-                    label = { Text(stringResource(R.string.share_files_preset_recommended)) },
-                )
-                FilterChip(
-                    selected = preset == SharePreset.EVERYTHING,
-                    onClick = { onPreset(SharePreset.EVERYTHING) },
-                    label = { Text(stringResource(R.string.share_files_preset_everything)) },
-                )
-                FilterChip(
-                    selected = preset == SharePreset.CUSTOMIZE,
-                    onClick = { onPreset(SharePreset.CUSTOMIZE) },
-                    label = { Text(stringResource(R.string.share_files_preset_customize)) },
-                )
+            val presets = SharePreset.entries
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                presets.forEachIndexed { index, item ->
+                    SegmentedButton(
+                        selected = preset == item,
+                        onClick = { onPreset(item) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = presets.size),
+                        modifier = Modifier.weight(1f),
+                        icon = {},
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        label = {
+                            Text(
+                                text =
+                                    stringResource(
+                                        when (item) {
+                                            SharePreset.RECOMMENDED -> R.string.share_files_preset_recommended
+                                            SharePreset.EVERYTHING -> R.string.share_files_preset_everything
+                                            SharePreset.CUSTOMIZE -> R.string.share_files_preset_customize
+                                        },
+                                    ),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                    )
+                }
             }
             Text(
                 text =
