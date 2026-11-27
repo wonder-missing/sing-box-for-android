@@ -1,6 +1,6 @@
 # Share Key VFS v1 战役板
 
-状态：AQ 已发布（2026-11-26）；真机验收待用户。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
+状态：AS Relay Server 重构发版中；真机验收待用户。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
 
 ## 目标与验收
 
@@ -46,7 +46,7 @@
 | Portal 实现 | `clawdy-portal` `37949d8`；`pnpm check` 207/207；部署 `~/.clawdy-portal` 成功，socket 0600，`/v1/health` ok |
 | App 实现 | WonderSing `49bb790`；本地 815 tests / 0 failures；legacy/R8 通过；Test CI 45817405184 |
 | 真机 E2E | 待 AP 安装后验收：Connect/Share/pair/list/read/Stop/Revoke/离线/重启 |
-| Release | AQ 已发布：`v1.15.0-alpha.13-wonder.AQ`；APK 35,332,190 B；Release/Test/Notify 均 success |
+| Release | AS 发版中：Portal Relay 顶级页面 + App 本地 Relay Server 配置，去掉 MCP/Conductor 过渡 |
 
 ## 风险
 
@@ -63,3 +63,7 @@
 - 重复 JSON 键由 kotlinx 宽松解析；不作为 v1 阻塞。
 - 每次 Connect 会 issue-once 取当前 Provider key；Portal 5/min 限速下快速重连可能 429。
 - 跨 Portal pending Revoke、永久 tombstone、Provider key rotate/自删、admin socket 均为 post-v1。
+
+- AR：隐藏旧 VFS access；首次进入不自动选 Portal；文案改为 paired client / a Portal，并说明 Portal 只转发加密数据。
+
+- AS：Portal Relay 顶级页面与 Relay token；App Share files 改为本地 Relay Server 列表（Add/Edit/Delete），不再读 MCP；旧 MCP-derived config 不加载。

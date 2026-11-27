@@ -1,6 +1,6 @@
 # Share Key VFS 参考设计（非实现门槛）
 
-> 本文件保存 v16 的协议细节、边缘状态、评审历史与 golden vectors，供实现和排障查阅；**不作为 v1 实现验收门槛**。日常设计与实现只读 [v1 合同](vfs-share-key.md)；两者冲突时以合同为准，本文件的 master 轮换、admin socket、跨 Portal pending Revoke、永久 tombstone、Provider key 自删/rotate 等属于 post-v1 参考。
+> 本文件保存历史协议细节、边缘状态、评审历史与 golden vectors，供实现和排障查阅；**不作为 v1 实现验收门槛**。日常设计与实现只读 [v1 合同](vfs-share-key.md)；两者冲突时以合同为准。**AS 起 Portal 把 Relay 作为顶级服务，Provider key 用 Relay token 认证，不再使用 hook secret/MCP；本文中 hook/MCP/capability 认证段落属于历史参考，已被合同取代。** 本文件的 master 轮换、admin socket、跨 Portal pending Revoke、永久 tombstone、Provider key 自删/rotate 等属于 post-v1 参考。
 
 状态：参考文档（基于 v16，2026-11-26）；保留 P0 vectors + 控制帧/inner/cursor golden；未实现。
 相关旧路径：`~/workspace/clawdy-portal/VFS.md`、`~/workspace/clawdy-portal/docs/agent-oriented-vfs.md`、`~/workspace/clawdy-portal/docs/jobs.md`、[`vfs-dry-run.md`](vfs-dry-run.md)、[`vfs-connection-stability.md`](vfs-connection-stability.md)、[`mcp.md`](mcp.md)。本设计通过后按 §3.12 改写或标退役。

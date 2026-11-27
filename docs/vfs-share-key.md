@@ -4,7 +4,7 @@
 
 ## 1. 目标与非目标
 
-**目标**：Claude Code Agent 在 Mini 上直接读取 WonderSing 的 VFS；App 是 Provider，Agent 侧只用 `wonder-vfs` CLI，Portal/Relay 只做盲路由。用户一次 Connect，之后每个 Agent 建一个 Share、粘一次 5 分钟 Pairing Code。
+**目标**：配对的 CLI client（当前是 Claude Code Agent）在 Mini 上直接读取 WonderSing 的 VFS；App 是 Provider，client 侧只用 `wonder-vfs` CLI，Portal/Relay 只做盲路由。用户一次 Connect，之后每个 client 建一个 Share、粘一次 5 分钟 Pairing Code。
 
 **非目标（v1）**：Consumer MCP、容器 `/vfs`、always-on、FCM 唤醒、PFS、多租户/跨账号、远程 Consumer、多 Portal 同时在线、Provider key 自动轮换。
 
@@ -13,7 +13,7 @@
 | 角色 | 职责 |
 |---|---|
 | App（Provider） | 主动连 Portal；持有 Share Key；按 scope 读 VFS、加密响应。 |
-| Agent（Consumer） | `wonder-vfs` CLI；本地 Unix socket；持有 Share Key；不做 MCP。 |
+| Client（Consumer） | `wonder-vfs` CLI；本地 Unix socket；持有 Share Key；不做 MCP。 |
 | Portal/Relay | 鉴权 transport、按 Link 路由密文、限速/审计元数据；不解析数据。 |
 
 1. **明文只存在于 App 与 CLI**。Portal 可看 Link ID、pairId、reqId、时间、大小、Provider key/deviceSecret、操作类型；不可看文件内容、路径、scope、label、inner error。
@@ -24,13 +24,13 @@
 
 ## 3. 用户流程
 
-1. Settings → Share files → 选 Portal → **Connect**（只需一次）。
+1. Portal 的顶级 **Relay** 页面提供 Relay URL + Relay token。Settings → Share files → **Add Relay Server**（填 URL + token）→ 选中 → **Connect**（只需一次）。
 2. **New Share**：名字（可选）→ Recommended / Everything / Customize → Create。
 3. App 显示 5:00 Pairing Code 和一行命令；命令含 `linkId/pairId`，code 可走 argv、stdin 或环境变量。
-4. Agent 运行 `wonder-vfs pair ...`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
-5. **Stop sharing** = 暂停所有 Link，Share/Share Key 保留；Connect 恢复，已配对 Agent 直接继续读；未配对/旧 code 需 New code。
+4. Client 运行 `wonder-vfs pair ...`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
+5. **Stop sharing** = 暂停所有 Link，Share/Share Key 保留；Connect 恢复，已配对 client 直接继续读；未配对/旧 code 需 New code。
 6. **Revoke** = 永久删除 Share；App 删除本地 secret，best-effort 通知 Relay；Relay 收到后写 tombstone，CLI 收到 410 后 `forget`。通知失败时下次 Connect 重试，期间 CLI 得到 503。
-7. **New code** = 同一个 Share Key，新 pairId/code；旧 code 失效，不 eject 已配对 CLI。一 Agent 一 Share，最多 8 个。
+7. **New code** = 同一个 Share Key，新 pairId/code；旧 code 失效，不 eject 已配对 CLI。一 client 一 Share，最多 8 个。
 
 ## 4. 最小协议
 
@@ -38,9 +38,9 @@
 
 - `WSS /v1/provider`，`Authorization: Bearer <Provider key>`；一条连接复用多个 Link。
 - `register/unregister {linkId, generation}` 维护 Link；`pair` 控制帧同步 pairing 状态；`request/response` 只转发不透明 envelope。
-- `POST /v1/provider-keys`：用 Portal hook secret + `deviceSecret` 换 Provider key；首次创建 `(hookId,deviceId)`，之后 issue-once。v1 只支持管理员删除（现有 Portal 管理员会话 `DELETE /v1/provider-keys/{deviceId}?hook=`，或 `portal-knock provider-keys delete`；不新增 admin socket），不支持 rotate/自删/过期。
+- `POST /v1/provider-keys`：用 Portal **Relay token**（`relay_...`，从顶级 Relay 页面获取）+ `deviceSecret` 换 Provider key；首次创建 `(relayId,deviceId)`，之后 issue-once。v1 只支持管理员在 Relay 页面撤销设备；不支持 rotate/自删/过期。
 - `POST /v1/links`：Share 创建时先登记 `linkId` 归属，再显示 Pairing Code；未登记不 claim。
-- Link store 持久化 `linkId -> (hookId,deviceId)`；Revoke 后 tombstone 保留 30 天，防复活。
+- Link store 持久化 `linkId -> (relayId,deviceId)`；Revoke 后 tombstone 保留 30 天，防复活。
 
 **CLI ↔ Portal**
 
@@ -65,7 +65,7 @@
 - **Revoke** → 本地立即拒绝新 pair/读，删除 secret；Relay tombstone 后 CLI 得到 410；失败则下次 Connect 重试。
 - **App 重启**：若 `desiredConnected=true` 自动重连一次；重新 `register` 并补发 pair 状态；不重配对。
 - **Relay 重启**：ownership/tombstone 从 link store 恢复；pair 状态是内存、为空；App 重连补发；补发前请求得到 503（未注册 `PROVIDER_OFFLINE`，已注册 `PAIR_WARMING`）。
-- **Provider key**：一个 `(hookId,deviceId)` 一把；丢失设备走管理员删除；新手机新 deviceId + 新 Share。换 Portal v1 只允许一个当前 Portal，旧 Share 显示 offline，不自动迁移。
+- **Provider key**：一个 `(relayId,deviceId)` 一把；丢失设备走 Relay 页面撤销；新手机新 deviceId + 新 Share。多个 Relay Server 可保存，v1 同一时刻只连一个，旧 Share 显示 offline，不自动迁移。
 
 ## 6. Scope
 
