@@ -26,7 +26,7 @@
 
 1. Portal 的顶级 **Relay** 页面提供 Relay URL + Relay token。Settings → **VFS Relay Servers** → **Add Relay Server**（填完整 `/relay/v1` URL + token）。**Test connection** 只验证 URL/token/device，不创建 Share，也不打开 Provider WS。
 2. 首页 Dashboard 的 **VFS 卡片**同时是指示器和入口；它不依赖 VPN 服务是否运行。进入 VFS → **New Share**：名字（可选）→ Recommended / Everything / Customize → Create。创建时自动连接 Relay Server。
-3. App 显示 5:00 Pairing Code 和一行命令；命令含 `linkId/pairId`，code 可走 argv、stdin 或环境变量。
+3. App 显示 5:00 Pairing Code；**Copy instructions** 复制一段简短说明，含 pair 命令和后续 `list/read` 示例；**Copy code** 只复制 code。命令含 `linkId/pairId`，code 可走 argv、stdin 或环境变量。
 4. Client 运行 `vfsc pair ...`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
 5. **连接随 Share 维持**：至少一个 Share 存在时 App 自动连接并保持；最后一个 Share 撤销后自动关闭 WS。没有 Connect / Stop sharing 按钮，也没有全局暂停概念。
 6. **Revoke** = 永久删除 Share；App 删除本地 secret，best-effort 通知 Relay；Relay 收到后写 tombstone，CLI 收到 410 后 `forget`。通知失败时下次自动连接重试，期间 CLI 得到 503。

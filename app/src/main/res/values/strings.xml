@@ -169,9 +169,9 @@
     <string name="share_files_pairing_title">Pairing Code</string>
     <string name="share_files_pairing_help">Copy this command to the client. The code works once and expires in %1$s.</string>
     <string name="share_files_pairing_expired">This code expired. Create a New code.</string>
-    <string name="share_files_copy_command">Copy command</string>
+    <string name="share_files_copy_instructions">Copy instructions</string>
     <string name="share_files_copy_code">Copy code</string>
-    <string name="share_files_pairing_command_note">The command carries linkId and pairId; the code alone cannot pair.</string>
+    <string name="share_files_pairing_copy_block">Pair this Share:\n%1$s\n\nThen list and read:\n"$HOME/bin/vfsc" list /\n"$HOME/bin/vfsc" read &lt;path&gt; --max-bytes 65536</string>
     <string name="share_files_copied">Copied</string>
     <string name="share_files_copy_stdin_hint">To keep the code out of shell history, use --code-stdin or VFSC_CODE.</string>
     <string name="share_files_done">Done</string>

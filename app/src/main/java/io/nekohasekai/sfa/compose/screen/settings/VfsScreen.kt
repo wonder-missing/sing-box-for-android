@@ -584,7 +584,7 @@ private fun PairingDialog(
     onCopy: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var copiedCommand by remember(pairing?.code) { mutableStateOf(false) }
+    var copiedInstructions by remember(pairing?.code) { mutableStateOf(false) }
     var copiedCode by remember(pairing?.code) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -611,9 +611,10 @@ private fun PairingDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    val instructions = stringResource(R.string.share_files_pairing_copy_block, pairing.command)
                     SelectionContainer {
                         Text(
-                            text = pairing.command,
+                            text = instructions,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -623,21 +624,16 @@ private fun PairingDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        text = stringResource(R.string.share_files_pairing_command_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
-                                onCopy(pairing.command)
-                                copiedCommand = true
+                                onCopy(instructions)
+                                copiedInstructions = true
                             },
                         ) {
                             Text(
                                 stringResource(
-                                    if (copiedCommand) R.string.share_files_copied else R.string.share_files_copy_command,
+                                    if (copiedInstructions) R.string.share_files_copied else R.string.share_files_copy_instructions,
                                 ),
                             )
                         }

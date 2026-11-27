@@ -1040,9 +1040,9 @@
     <string name="share_files_pairing_title">Pairing Code</string>
     <string name="share_files_pairing_help">把这条命令复制给客户端。code 只能使用一次，%1$s 后失效。</string>
     <string name="share_files_pairing_expired">code 已过期，请创建新 code。</string>
-    <string name="share_files_copy_command">复制命令</string>
+    <string name="share_files_copy_instructions">复制说明</string>
     <string name="share_files_copy_code">复制 code</string>
-    <string name="share_files_pairing_command_note">命令包含 linkId 和 pairId；只发 code 无法配对。</string>
+    <string name="share_files_pairing_copy_block">配对这个 Share：\n%1$s\n\n然后 list / read：\n"$HOME/bin/vfsc" list /\n"$HOME/bin/vfsc" read &lt;path&gt; --max-bytes 65536</string>
     <string name="share_files_copied">已复制</string>
     <string name="share_files_copy_stdin_hint">如需避免进入 shell history，可改用 --code-stdin 或 VFSC_CODE。</string>
     <string name="share_files_done">完成</string>
