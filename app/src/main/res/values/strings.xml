@@ -209,6 +209,8 @@
     <string name="vfs_check_relay_servers">Check Relay Servers</string>
     <string name="vfs_switch_requires_revoke">Revoke all Shares for this Relay Server before switching or editing it.</string>
     <string name="vfs_server_busy">VFS is serving Shares. Revoke them before changing this Relay Server.</string>
+    <string name="vfs_use_server">Use</string>
+    <string name="vfs_selected">Selected</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>
     <string name="conductor_empty_title">Conductor</string>

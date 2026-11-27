@@ -1080,4 +1080,6 @@
     <string name="vfs_check_relay_servers">检查 Relay Server</string>
     <string name="vfs_switch_requires_revoke">切换或编辑前，请先撤销这个 Relay Server 的 Share。</string>
     <string name="vfs_server_busy">VFS 正在为 Share 提供服务，撤销后才能修改这个 Relay Server。</string>
+    <string name="vfs_use_server">使用</string>
+    <string name="vfs_selected">当前</string>
 </resources>

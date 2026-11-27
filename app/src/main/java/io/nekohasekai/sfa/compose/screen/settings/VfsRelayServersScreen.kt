@@ -1,16 +1,21 @@
 package io.nekohasekai.sfa.compose.screen.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -18,11 +23,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -38,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.BuildConfig
@@ -49,7 +53,7 @@ import io.nekohasekai.sfa.vfs.relay.VfsRelayServerView
 import io.nekohasekai.sfa.vfs.relay.VfsRelayState
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun VfsRelayServersScreen(navController: NavController) {
     OverrideTopBar {
@@ -145,20 +149,82 @@ fun VfsRelayServersScreen(navController: NavController) {
         } else {
             serverViews.forEach { server ->
                 val hasShares = shares.any { it.serverId == server.id && it.status != "revoked" }
+                val canSelect = !busy && !active && !selectedHasShares
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    ListItem(
-                        headlineContent = { Text(server.name) },
-                        supportingContent = {
-                            Text(server.endpoint, style = MaterialTheme.typography.bodySmall)
+                    colors =
+                    CardDefaults.cardColors(
+                        containerColor =
+                        if (server.selected) {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainer
                         },
-                        leadingContent = {
-                            RadioButton(
-                                selected = server.selected,
-                                onClick = {
-                                    if (!server.selected) {
+                    ),
+                    modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (canSelect && !server.selected) {
+                                Modifier.clickable {
+                                    scope.launch {
+                                        busy = true
+                                        message = null
+                                        testMessage = null
+                                        VfsRelayRuntime.selectServer(context, server.id)
+                                            .onFailure { message = it.message }
+                                        busy = false
+                                    }
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = server.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (server.selected) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.vfs_selected),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = server.endpoint,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(0.dp),
+                        ) {
+                            if (!server.selected && canSelect) {
+                                TextButton(
+                                    onClick = {
                                         scope.launch {
                                             busy = true
                                             message = null
@@ -167,44 +233,45 @@ fun VfsRelayServersScreen(navController: NavController) {
                                                 .onFailure { message = it.message }
                                             busy = false
                                         }
-                                    }
-                                },
-                                enabled = !busy && !active && !selectedHasShares,
-                            )
-                        },
-                        trailingContent = {
-                            Row {
-                                TextButton(
-                                    onClick = {
-                                        serverDialogError = null
-                                        editServer = server
-                                    },
-                                    enabled = !busy && !active && !hasShares,
-                                ) {
-                                    Text(stringResource(R.string.share_files_edit))
-                                }
-                                TextButton(
-                                    onClick = {
-                                        if (active) {
-                                            message = context.getString(R.string.vfs_server_busy)
-                                        } else if (hasShares) {
-                                            message = context.getString(R.string.share_files_server_has_shares)
-                                        } else {
-                                            deleteServer = server
-                                        }
                                     },
                                     enabled = !busy,
                                 ) {
-                                    Text(stringResource(R.string.share_files_delete))
+                                    Text(stringResource(R.string.vfs_use_server))
                                 }
                             }
-                        },
-                    )
+                            TextButton(
+                                onClick = {
+                                    serverDialogError = null
+                                    editServer = server
+                                },
+                                enabled = !busy && !active && !hasShares,
+                            ) {
+                                Text(stringResource(R.string.share_files_edit))
+                            }
+                            TextButton(
+                                onClick = {
+                                    if (active) {
+                                        message = context.getString(R.string.vfs_server_busy)
+                                    } else if (hasShares) {
+                                        message = context.getString(R.string.share_files_server_has_shares)
+                                    } else {
+                                        deleteServer = server
+                                    }
+                                },
+                                enabled = !busy,
+                            ) {
+                                Text(stringResource(R.string.share_files_delete))
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Button(onClick = { showAddServer = true }, enabled = !busy) {
                 Text(stringResource(R.string.share_files_add_server))
             }
