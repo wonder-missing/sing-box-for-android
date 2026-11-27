@@ -227,7 +227,7 @@ fun ServiceStatusBar(
                         containerColor = vfsContainerColor,
                         contentColor = vfsContentColor,
                         onClick = onVfsClick,
-                        enabled = vfsOn,
+                        enabled = true,
                         modifier = Modifier.weight(1f),
                         fillWidth = true,
                     ) {

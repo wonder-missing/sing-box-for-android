@@ -14,6 +14,9 @@ object RelayRuntimePolicy {
 
     fun shouldReconnect(desiredConnected: Boolean): Boolean = desiredConnected
 
+    /** A Relay session only exists while the selected server has Shares to serve. */
+    fun shouldServe(activeShares: Int): Boolean = activeShares > 0
+
     /**
      * Revoke must not cancel a reconnect that other Shares still need. Only a
      * successfully tombstoned last Share may stop the session; an offline

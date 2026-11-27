@@ -21,6 +21,13 @@ class RelayRuntimePolicyTest {
     }
 
     @Test
+    fun relaySessionFollowsActiveShares() {
+        assertFalse(RelayRuntimePolicy.shouldServe(0))
+        assertTrue(RelayRuntimePolicy.shouldServe(1))
+        assertTrue(RelayRuntimePolicy.shouldServe(8))
+    }
+
+    @Test
     fun foregroundGuardBlocksMissingOrStoppedService() {
         assertTrue(RelayForegroundGuard.blocked(started = false, serviceActive = true))
         assertTrue(RelayForegroundGuard.blocked(started = true, serviceActive = false))

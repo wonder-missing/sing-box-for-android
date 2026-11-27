@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.filled.TextSnippet
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DeviceHub
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Timeline
@@ -36,6 +37,12 @@ sealed class Screen(val route: String, @StringRes val titleRes: Int, val icon: I
         route = "conductor",
         titleRes = R.string.title_conduct,
         icon = Icons.Default.DeviceHub,
+    )
+
+    object Vfs : Screen(
+        route = "vfs",
+        titleRes = R.string.share_files_title,
+        icon = Icons.Default.CloudUpload,
     )
 
     object Groups : Screen(

@@ -4,7 +4,7 @@
 
 ## 1. 目标与非目标
 
-**目标**：配对的 CLI client（当前是 Claude Code Agent）在 Mini 上直接读取 WonderSing 的 VFS；App 是 Provider，client 侧只用 `wonder-vfs` CLI，Portal/Relay 只做盲路由。用户一次 Connect，之后每个 client 建一个 Share、粘一次 5 分钟 Pairing Code。
+**目标**：配对的 CLI client（当前是 Claude Code Agent）在 Mini 上直接读取 WonderSing 的 VFS；App 是 Provider，client 侧只用 `wonder-vfs` CLI，Portal/Relay 只做盲路由。用户配置一次 Relay Server；之后每个 client 建一个 Share、粘一次 5 分钟 Pairing Code。连接只为已有 Share 维持，不设手动 Connect/Stop。
 
 **非目标（v1）**：Consumer MCP、容器 `/vfs`、always-on、FCM 唤醒、PFS、多租户/跨账号、远程 Consumer、多 Portal 同时在线、Provider key 自动轮换。
 
@@ -24,12 +24,12 @@
 
 ## 3. 用户流程
 
-1. Portal 的顶级 **Relay** 页面提供 Relay URL + Relay token。Settings → Share files → **Add Relay Server**（填 URL + token）→ 选中 → **Connect**（只需一次）。
-2. **New Share**：名字（可选）→ Recommended / Everything / Customize → Create。
+1. Portal 的顶级 **Relay** 页面提供 Relay URL + Relay token。Settings → **VFS Relay Servers** → **Add Relay Server**（填完整 `/relay/v1` URL + token）。**Test connection** 只验证 URL/token/device，不创建 Share，也不打开 Provider WS。
+2. 首页底部状态栏最后一个 **VFS** 条目同时是指示器和入口。进入 VFS → **New Share**：名字（可选）→ Recommended / Everything / Customize → Create。创建时自动连接 Relay Server。
 3. App 显示 5:00 Pairing Code 和一行命令；命令含 `linkId/pairId`，code 可走 argv、stdin 或环境变量。
 4. Client 运行 `wonder-vfs pair ...`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
-5. **Stop sharing** = 暂停所有 Link，Share/Share Key 保留；Connect 恢复，已配对 client 直接继续读；未配对/旧 code 需 New code。
-6. **Revoke** = 永久删除 Share；App 删除本地 secret，best-effort 通知 Relay；Relay 收到后写 tombstone，CLI 收到 410 后 `forget`。通知失败时下次 Connect 重试，期间 CLI 得到 503。
+5. **连接随 Share 维持**：至少一个 Share 存在时 App 自动连接并保持；最后一个 Share 撤销后自动关闭 WS。没有 Connect / Stop sharing 按钮，也没有全局暂停概念。
+6. **Revoke** = 永久删除 Share；App 删除本地 secret，best-effort 通知 Relay；Relay 收到后写 tombstone，CLI 收到 410 后 `forget`。通知失败时下次自动连接重试，期间 CLI 得到 503。
 7. **New code** = 同一个 Share Key，新 pairId/code；旧 code 失效，不 eject 已配对 CLI。一 client 一 Share，最多 8 个。
 
 ## 4. 最小协议
@@ -59,12 +59,12 @@
 
 ## 5. 状态与生命周期
 
-**Share 状态**：`waiting`（未生成 code）、`active`（code 有效）、`consumed`（已配对）、`paused`（Stop）、`expired`（code 过期）、`revoked`（本地已撤销）。
+**Share 状态**：`waiting`（未生成 code）、`active`（code 有效）、`consumed`（已配对）、`paused`（旧状态，当前 UI 不产生）、`expired`（code 过期）、`revoked`（本地已撤销）。
 
-- **Stop** → 所有 Link `paused`，关闭 WS，`desiredConnected=false`（App 重启不自动连），Share/Key 保留；Connect 显式置 true 后，已配对 Agent 直接读，未配对/旧 code 需 New code。
+- **连接生命周期**：有 active Share 时自动连接并保持；最后一个 Share 撤销/删除后关闭 WS，`desiredConnected=false`。没有用户可见的 Connect / Stop sharing。
 - **Code 自然过期** → `expired`；Relay 对同 pairId 返回 `code_expired`，不返回 `share_paused`。
-- **Revoke** → 本地立即拒绝新 pair/读，删除 secret；Relay tombstone 后 CLI 得到 410；失败则下次 Connect 重试。
-- **App 重启**：若 `desiredConnected=true` 自动重连一次；重新 `register` 并补发 pair 状态；不重配对。
+- **Revoke** → 本地立即拒绝新 pair/读，删除 secret；Relay tombstone 后 CLI 得到 410；失败则下次自动连接重试。
+- **App 重启**：若仍有 active Share，自动重连并重新 `register`、补发 pair 状态；没有 active Share 则不连接。均不重配对。
 - **Relay 重启**：ownership/tombstone 从 link store 恢复；pair 状态是内存、为空；App 重连补发；补发前请求得到 503（未注册 `PROVIDER_OFFLINE`，已注册 `PAIR_WARMING`）。
 - **Provider key**：一个 `(relayId,deviceId)` 一把；丢失设备走 Relay 页面撤销；新手机新 deviceId + 新 Share。多个 Relay Server 可保存，v1 同一时刻只连一个，旧 Share 显示 offline，不自动迁移。
 
@@ -88,10 +88,10 @@ Recommended = 仅 `app.data.*`；Everything = `all`；Customize = 任意固定 s
 
 1. 真机 + Mini + CLI 读取已知文件，sha256 一致；App 只有出站连接。
 2. Relay 抓包/日志只有密文和元数据，无路径/scope/label/内容。
-3. Pairing Code 5 分钟、单次；New code 同 Share Key；Stop/Connect、Revoke、离线、Relay/App 重启行为符合 §5。
+3. Pairing Code 5 分钟、单次；New code 同 Share Key；创建 Share 自动连接、撤销最后一个 Share 自动断开；Revoke、离线、Relay/App 重启行为符合 §5。
 4. 附录 A 向量 Kotlin/Node 逐字节通过；scope matrix 通过；`vfs/` 不可达；`all` 不含 `user.selected`。
 5. FGS 活着时后台可读；进程死/Doze 返回 503；恢复后自动重连。
-6. code、Share Key、deviceSecret、Provider key 不进日志/telemetry/通知/截图。
+6. code、Share Key、deviceSecret、Provider key 不进日志/telemetry/通知；App 不设置 `FLAG_SECURE`，用户可主动截图；clipboard 自动清。
 
 ## 8. 明确 deferred（post-v1）
 

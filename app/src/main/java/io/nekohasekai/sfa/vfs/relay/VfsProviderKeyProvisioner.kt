@@ -177,7 +177,7 @@ class VfsProviderKeyProvisioner(
             status == 401 ->
                 RelayProvisionException(
                     "AUTH",
-                    "The Relay Server rejected this token. Edit the Relay Server and check the token, then Connect again.",
+                    "The Relay Server rejected this token. Edit the Relay Server and check the token.",
                     false,
                 )
 
@@ -191,21 +191,21 @@ class VfsProviderKeyProvisioner(
             code == "DEVICE_AUTH" ->
                 RelayProvisionException(
                     "DEVICE_AUTH",
-                    "This device's secret does not match the Relay Server record. Use Reset Share files data to create a new device identity and Share.",
+                    "This device's secret does not match the Relay Server record. Use Reset VFS data to create a new device identity and Share.",
                     false,
                 )
 
             code == "DEVICE_REVOKED" ->
                 RelayProvisionException(
                     "DEVICE_REVOKED",
-                    "This device was revoked on the Relay Server. Use Reset Share files data to create a new device identity and Share.",
+                    "This device was revoked on the Relay Server. Use Reset VFS data to create a new device identity and Share.",
                     false,
                 )
 
             code == "ROTATE_REQUIRED" ->
                 RelayProvisionException(
                     "ROTATE_REQUIRED",
-                    "The Relay Server requires a new Provider key. Update WonderSing, then Connect again.",
+                    "The Relay Server requires a new Provider key. Update WonderSing, then reopen VFS.",
                     false,
                 )
 

@@ -124,9 +124,8 @@ import io.nekohasekai.sfa.compose.component.ServiceStatusBar
 import io.nekohasekai.sfa.compose.component.SnackbarHost
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
 import io.nekohasekai.sfa.compose.component.UptimeText
-import io.nekohasekai.sfa.compose.component.VfsStatusBar
-import io.nekohasekai.sfa.vfs.VfsConnectionState
-import io.nekohasekai.sfa.vfs.VfsRuntime
+import io.nekohasekai.sfa.vfs.relay.VfsRelayRuntime
+import io.nekohasekai.sfa.vfs.relay.VfsRelayState
 import io.nekohasekai.sfa.compose.model.Connection
 import io.nekohasekai.sfa.compose.model.GroupLayoutPreference
 import io.nekohasekai.sfa.compose.navigation.NavHost
@@ -893,17 +892,14 @@ class MainActivity :
         val remoteServer by RemoteControlManager.remoteServer.collectAsState()
         val remoteConnected by RemoteControlManager.isConnected.collectAsState()
         val remoteStartedAt by RemoteControlManager.startedAt.collectAsState()
-        val vfsState by VfsRuntime.state.collectAsState()
-        val vfsConnected = vfsState as? VfsConnectionState.Connected
+        val relayVfsState by VfsRelayRuntime.state.collectAsState()
+        val relayVfsShares by VfsRelayRuntime.shares.collectAsState()
+        val vfsOn =
+            relayVfsState is VfsRelayState.Connected &&
+                relayVfsShares.any { it.status != "revoked" }
         val vfsConnecting =
-            vfsState is VfsConnectionState.Connecting ||
-                vfsState is VfsConnectionState.Backoff ||
-                vfsState is VfsConnectionState.Confirming
-        val vfsUploadBytes by VfsRuntime.uploadBytes.collectAsState()
-        var vfsCardVisible by remember { mutableStateOf(false) }
-        LaunchedEffect(vfsConnected) {
-            if (vfsConnected == null) vfsCardVisible = false
-        }
+            relayVfsState is VfsRelayState.Connecting ||
+                relayVfsState is VfsRelayState.Backoff
         val isRemote = remoteServer != null
 
         // Initialize the dashboard view model and store reference
@@ -963,8 +959,9 @@ class MainActivity :
         val isGroupsRoute = currentRootRoute == Screen.Groups.route
         val isLogRoute = currentRootRoute == Screen.Log.route
         val isActivityRoute = currentRoute?.startsWith(Screen.Activity.route) == true
+        val isVfsRoute = currentRoute == Screen.Vfs.route
 
-        val isSubScreen = isSettingsSubScreen || isToolsSubScreen || isConnectionsDetail || isProfileRoute || isConductorRoute || isLogRoute || isActivityRoute
+        val isSubScreen = isSettingsSubScreen || isToolsSubScreen || isConnectionsDetail || isProfileRoute || isConductorRoute || isLogRoute || isActivityRoute || isVfsRoute
         // Get LogViewModel instance if we're on the Log screen
         val logViewModel: LogViewModel? =
             if (isLogRoute) {
@@ -1123,6 +1120,7 @@ class MainActivity :
                 add(Screen.Log.route)
                 add(Screen.Tools.route)
                 add(Screen.Settings.route)
+                add(Screen.Vfs.route)
                 if (useNavigationRail && showGroupsInNav) {
                     add(Screen.Groups.route)
                 }
@@ -1210,13 +1208,7 @@ class MainActivity :
                     val statusBarVisible = showStatusBar && !isSubScreen
                     var statusBarHeightPx by remember { mutableStateOf(0) }
                     val statusBarHeight = with(LocalDensity.current) { statusBarHeightPx.toDp() }
-                    val vfsBarVisible = vfsConnected != null && vfsCardVisible && !isSubScreen
-                    var vfsBarHeightPx by remember { mutableStateOf(0) }
-                    val vfsBarHeight = with(LocalDensity.current) { vfsBarHeightPx.toDp() }
-                    val bottomStatusHeight =
-                        (if (statusBarVisible) statusBarHeight else 0.dp) +
-                            (if (statusBarVisible && vfsBarVisible) 8.dp else 0.dp) +
-                            (if (vfsBarVisible) vfsBarHeight else 0.dp)
+                    val bottomStatusHeight = if (statusBarVisible) statusBarHeight else 0.dp
 
                     NavHost(
                         navController = navController,
@@ -1241,7 +1233,7 @@ class MainActivity :
                             .fillMaxSize()
                             .padding(
                                 bottom =
-                                if ((statusBarVisible || vfsBarVisible) && !useNavigationRail) {
+                                if ((statusBarVisible) && !useNavigationRail) {
                                     bottomStatusHeight
                                 } else {
                                     0.dp
@@ -1277,9 +1269,13 @@ class MainActivity :
                                 onGroupsClick = { showGroupsSheet = true },
                                 connectionsCount = dashboardUiState.connectionsCount,
                                 onConnectionsClick = { showConnectionsSheet = true },
-                                vfsOn = vfsConnected != null,
+                                vfsOn = vfsOn,
                                 vfsConnecting = vfsConnecting,
-                                onVfsClick = { vfsCardVisible = !vfsCardVisible },
+                                onVfsClick = {
+                                    navController.navigate(Screen.Vfs.route) {
+                                        launchSingleTop = true
+                                    }
+                                },
                                 onStopClick = { dashboardViewModel.toggleService() },
                                 modifier =
                                 Modifier
@@ -1288,24 +1284,6 @@ class MainActivity :
                                     .onSizeChanged { statusBarHeightPx = it.height },
                             )
                         }
-                    }
-
-                    if (vfsBarVisible && !useNavigationRail) {
-                        val vfsBarBottom =
-                            bottomOverlayPadding +
-                                (if (statusBarVisible) statusBarHeight else 0.dp) +
-                                (if (statusBarVisible) 12.dp else 0.dp)
-                        VfsStatusBar(
-                            serverName = vfsConnected.serverName ?: "VFS",
-                            scope = vfsConnected.scope,
-                            uploadBytes = vfsUploadBytes,
-                            onDisconnect = { VfsRuntime.disconnect() },
-                            modifier =
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(start = 16.dp, end = 16.dp, bottom = vfsBarBottom)
-                                .onSizeChanged { vfsBarHeightPx = it.height },
-                        )
                     }
 
                     val showPadFab = useNavigationRail && !isSubScreen && (showStartFab || showStatusBar)

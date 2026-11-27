@@ -64,10 +64,6 @@ class VfsSharingService : Service() {
             VfsRuntime.disconnect()
             return START_NOT_STICKY
         }
-        if (intent?.action == ACTION_STOP_RELAY) {
-            scope.launch { VfsRelayRuntime.stopSharing(this@VfsSharingService) }
-            return START_NOT_STICKY
-        }
         createChannel()
         try {
             ServiceCompat.startForeground(
@@ -237,20 +233,22 @@ class VfsSharingService : Service() {
                 pendingIntentFlags(),
             ),
         )
-        .addAction(
-            NotificationCompat.Action.Builder(
-                0,
-                getText(if (stopRelay) R.string.vfs_relay_stop else R.string.vfs_status_disconnect),
-                PendingIntent.getService(
-                    this,
-                    0,
-                    Intent(this, VfsSharingService::class.java).setAction(
-                        if (stopRelay) ACTION_STOP_RELAY else ACTION_DISCONNECT,
-                    ),
-                    pendingIntentFlags(),
-                ),
-            ).build(),
-        )
+        .apply {
+            if (!stopRelay) {
+                addAction(
+                    NotificationCompat.Action.Builder(
+                        0,
+                        getText(R.string.vfs_status_disconnect),
+                        PendingIntent.getService(
+                            this@VfsSharingService,
+                            0,
+                            Intent(this@VfsSharingService, VfsSharingService::class.java).setAction(ACTION_DISCONNECT),
+                            pendingIntentFlags(),
+                        ),
+                    ).build(),
+                )
+            }
+        }
         .build()
 
     private fun createChannel() {
@@ -280,7 +278,6 @@ class VfsSharingService : Service() {
         private const val NOTIFICATION_ID = 4
         private const val NOTIFICATION_CHANNEL = "vfs-sharing"
         private const val ACTION_DISCONNECT = "io.nekohasekai.sfa.action.VFS_DISCONNECT"
-        private const val ACTION_STOP_RELAY = "io.nekohasekai.sfa.action.VFS_RELAY_STOP"
 
         @Volatile
         private var running = false

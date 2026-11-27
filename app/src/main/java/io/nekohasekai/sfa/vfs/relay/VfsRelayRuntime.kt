@@ -163,12 +163,12 @@ object VfsRelayRuntime {
                     if (error.retryable) {
                         VfsRelayState.Error(
                             error.message ?: "Share storage is temporarily unavailable.",
-                            "Tap Connect to retry. If this persists, check free space and file permissions.",
+                            "Open VFS to retry. If this persists, check free space and file permissions.",
                         )
                     } else {
                         VfsRelayState.Error(
                             error.message ?: "The Share list is damaged.",
-                            "Reset Share files data, or restore the relay state under noBackupFilesDir/vfs/relay from a backup.",
+                            "Reset VFS data, or restore the relay state under noBackupFilesDir/vfs/relay from a backup.",
                             resetRecommended = true,
                         )
                     }
@@ -176,13 +176,29 @@ object VfsRelayRuntime {
         }
     }
 
-    /** Called from Application.onCreate; reconnect once if the user was connected. */
+    /** Called from Application.onCreate; reconnect while Shares still need serving. */
     fun onAppStart(context: Context) {
         if (!isAvailable()) return
         ensure(context)
         val settings = serverStore?.load() ?: return
-        if (!settings.desiredConnected) return
-        if (settings.selectedServer() == null) return
+        val server = settings.selectedServer() ?: return
+        val activeShares =
+            runCatching {
+                RelayRuntimePolicy.currentServerActiveShares(
+                    repository().load(),
+                    server.id,
+                    server.baseUrl,
+                )
+            }.getOrNull() ?: return
+        if (!RelayRuntimePolicy.shouldServe(activeShares.size)) {
+            if (settings.desiredConnected) {
+                runCatching { serverStore?.update { it.copy(desiredConnected = false) } }
+            }
+            return
+        }
+        if (!settings.desiredConnected) {
+            serverStore?.update { it.copy(desiredConnected = true) }
+        }
         scope.launch {
             runCatching { connectInternal(context.applicationContext, auto = true) }
                 .onFailure { error ->
@@ -191,11 +207,11 @@ object VfsRelayRuntime {
                         serverStore?.update { it.copy(desiredConnected = false) }
                         _state.value =
                             VfsRelayState.Error(
-                                error.message ?: "Connect failed",
+                                error.message ?: "Connection failed",
                                 resetRecommended = isResetRecommended(error),
                             )
                     } else {
-                        scheduleReconnect(context.applicationContext, error.message ?: "Connect failed")
+                        scheduleReconnect(context.applicationContext, error.message ?: "Connection failed")
                     }
                 }
         }
@@ -241,7 +257,7 @@ object VfsRelayRuntime {
                 if (settings.desiredConnected || client?.isOpen() == true) {
                     throw RelayProvisionException(
                         "DISCONNECT_FIRST",
-                        "Disconnect before switching Relay Servers.",
+                        "Revoke this Relay Server's Shares before switching Relay Servers.",
                         false,
                     )
                 }
@@ -261,7 +277,7 @@ object VfsRelayRuntime {
                 if (settings.selectedServerId == serverId && (settings.desiredConnected || client?.isOpen() == true)) {
                     throw RelayProvisionException(
                         "DISCONNECT_FIRST",
-                        "Disconnect before deleting this Relay Server.",
+                        "Revoke this Relay Server's Shares before deleting it.",
                         false,
                     )
                 }
@@ -299,7 +315,7 @@ object VfsRelayRuntime {
             if (settings.selectedServer() == null) {
                 throw RelayProvisionException(
                     "NO_SERVER",
-                    "Select a Relay Server before connecting.",
+                    "Select a Relay Server in Settings first.",
                     false,
                 )
             }
@@ -311,13 +327,109 @@ object VfsRelayRuntime {
                 runCatching { serverStore!!.update { it.copy(desiredConnected = false) } }
                 _state.value =
                     VfsRelayState.Error(
-                        error.message ?: "Connect failed",
+                        error.message ?: "Connection failed",
                         resetRecommended = isResetRecommended(error),
                     )
             } else if (serverStore?.load()?.desiredConnected == true) {
-                scheduleReconnect(context.applicationContext, error.message ?: "Connect failed")
+                scheduleReconnect(context.applicationContext, error.message ?: "Connection failed")
             } else {
                 _state.value = VfsRelayState.Idle
+            }
+        }
+
+    /**
+     * Connection follows Shares: keep a session only while the selected Relay
+     * Server has a Share to serve. Called when VFS opens; Share creation also
+     * brings the session up on demand.
+     */
+    suspend fun syncServing(context: Context): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                ensure(context)
+                checkStore()
+                val settings = serverStore!!.load()
+                val server = settings.selectedServer() ?: return@runCatching
+                val activeShares =
+                    RelayRuntimePolicy.currentServerActiveShares(
+                        repository().load(),
+                        server.id,
+                        server.baseUrl,
+                    )
+                if (!RelayRuntimePolicy.shouldServe(activeShares.size)) {
+                    val relayActive =
+                        client?.isOpen() == true ||
+                            _state.value is VfsRelayState.Connecting ||
+                            _state.value is VfsRelayState.Connected ||
+                            _state.value is VfsRelayState.Backoff
+                    if (relayActive) {
+                        stopIfNoCurrentServerShares(context, server.id, server.baseUrl)
+                    } else if (settings.desiredConnected) {
+                        serverStore!!.update { it.copy(desiredConnected = false) }
+                    }
+                    return@runCatching
+                }
+                if (!settings.desiredConnected) {
+                    serverStore!!.update { it.copy(desiredConnected = true) }
+                }
+                if (client?.isOpen() == true) {
+                    publishConnected()
+                } else {
+                    connectResult(context.applicationContext).getOrThrow()
+                }
+            }
+        }
+
+    /**
+     * Verifies a saved Relay Server without creating a Share or opening the
+     * provider socket. The token and device identity only reach the configured
+     * Relay origin.
+     */
+    suspend fun testServer(
+        context: Context,
+        serverId: String,
+    ): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                ensure(context)
+                checkStore()
+                val settings = serverStore!!.load()
+                val server =
+                    settings.server(serverId)
+                        ?: throw RelayProvisionException("NO_SERVER", "Relay Server not found.", false)
+                val token =
+                    serverStore!!.openToken(server)
+                        ?: throw RelayProvisionException(
+                            "INVALID_TOKEN",
+                            "Could not read this Relay Server's token. Edit the Relay Server and enter the token again.",
+                            false,
+                        )
+                val target = provisioner().targetOf(server, token)
+                val deviceId = serverStore!!.relayDeviceId()
+                val account =
+                    settings.accounts.firstOrNull {
+                        it.serverId == serverId && it.canonicalBase == target.canonicalBase
+                    }
+                val secret =
+                    if (account != null) {
+                        deviceSecretStore!!.existing(target.canonicalBase, account.relayId, deviceId)
+                            ?: deviceSecretStore!!.getOrCreatePending(
+                                serverId,
+                                target.canonicalBase,
+                                deviceId,
+                            )
+                    } else {
+                        deviceSecretStore!!.getOrCreatePending(
+                            serverId,
+                            target.canonicalBase,
+                            deviceId,
+                        )
+                    }
+                try {
+                    provisioner().issue(target, deviceId, secret, providerName())
+                } finally {
+                    secret.fill(0)
+                }
+                Unit
             }
         }
 
@@ -326,7 +438,7 @@ object VfsRelayRuntime {
         auto: Boolean,
     ): Unit =
         gate.withLock {
-            if (!isAvailable()) throw RelayProvisionException("UNSUPPORTED", "Share files needs Android 7.0 or newer.", false)
+            if (!isAvailable()) throw RelayProvisionException("UNSUPPORTED", "VFS needs Android 7.0 or newer.", false)
             checkStore()
             val settings = serverStore!!.load()
             val server =
@@ -344,7 +456,7 @@ object VfsRelayRuntime {
             if (RelayForegroundGuard.blocked(VfsSharingService.start(context), true)) {
                 throw RelayProvisionException(
                     "FOREGROUND_SERVICE_BLOCKED",
-                    "Android blocked the sharing notification, so WonderSing is not sharing. Open WonderSing and tap Connect again.",
+                    "Android blocked the sharing notification, so WonderSing is not sharing. Open VFS to retry.",
                     true,
                 )
             }
@@ -434,7 +546,7 @@ object VfsRelayRuntime {
             if (RelayForegroundGuard.blocked(started = true, serviceActive = VfsSharingService.isActive())) {
                 throw RelayProvisionException(
                     "FOREGROUND_SERVICE_BLOCKED",
-                    "Android stopped the sharing notification, so WonderSing is not sharing. Open WonderSing and tap Connect again.",
+                    "Android stopped the sharing notification, so WonderSing is not sharing. Open VFS to retry.",
                     true,
                 )
             }
@@ -682,7 +794,7 @@ object VfsRelayRuntime {
                         repository().update(updated.shareId) {
                             it.copy(
                                 registrationState = VfsShareRecord.STATE_FAILED,
-                                lastError = "The Relay Server rejected this device identity. Reset Share files data and create a new Share.",
+                                lastError = "The Relay Server rejected this device identity. Reset VFS data and create a new Share.",
                             )
                         }
                 }
@@ -790,7 +902,7 @@ object VfsRelayRuntime {
             _state.value =
                 VfsRelayState.Error(
                     "This device was revoked on the Relay Server.",
-                    "Reset Share files data and create a new Share. Administrator deletion permanently revokes this device.",
+                    "Reset VFS data and create a new Share. Administrator deletion permanently revokes this device.",
                     resetRecommended = true,
                 )
             VfsSharingService.stop(context)
@@ -800,7 +912,7 @@ object VfsRelayRuntime {
             _state.value =
                 VfsRelayState.Error(
                     "The Relay Server suspended Share Key VFS for this token.",
-                    "Check the Relay Server settings, then tap Connect again.",
+                    "Check the Relay Server settings, then reopen VFS.",
                 )
             return
         }
@@ -834,7 +946,7 @@ object VfsRelayRuntime {
                         if (error is CancellationException) throw error
                         if (error is RelayProvisionException && !error.retryable) {
                             serverStore?.update { it.copy(desiredConnected = false) }
-                            _state.value = VfsRelayState.Error(error.message ?: "Connect failed")
+                            _state.value = VfsRelayState.Error(error.message ?: "Connection failed")
                             VfsSharingService.stop(context)
                         } else {
                             failOrRetry(context, error.message ?: "Reconnect failed")
@@ -1292,7 +1404,10 @@ object VfsRelayRuntime {
             ensure(context)
             checkStore()
             if (client?.isOpen() != true || _state.value !is VfsRelayState.Connected) {
-                throw RelayProvisionException("NOT_CONNECTED", "Connect to the Relay Server before creating a Share.", false)
+                connectResult(context.applicationContext).getOrThrow()
+            }
+            if (client?.isOpen() != true || _state.value !is VfsRelayState.Connected) {
+                throw RelayProvisionException("NOT_CONNECTED", "VFS could not reach the Relay Server.", false)
             }
             val settings = serverStore!!.load()
             val server =
@@ -1301,7 +1416,7 @@ object VfsRelayRuntime {
             val account =
                 settings.accounts.firstOrNull {
                     it.serverId == server.id && it.canonicalBase == server.baseUrl
-                } ?: throw RelayProvisionException("NO_ACCOUNT", "Connect to the Relay Server again.", false)
+                } ?: throw RelayProvisionException("NO_ACCOUNT", "Open VFS again to reconnect.", false)
             val existing = repository().load().filter { it.revokedAt == null && it.registrationState != VfsShareRecord.STATE_FAILED }
             if (existing.count { it.serverId == server.id && it.canonicalBase == server.baseUrl } >= MAX_SHARES) {
                 throw RelayProvisionException("SHARE_LIMIT", "This Relay Server already has 8 Shares. Revoke one first.", false)
@@ -1325,8 +1440,8 @@ object VfsRelayRuntime {
                     selectedUris = selectedUris,
                 )
             secret.fill(0)
-            val key = providerKey ?: throw RelayProvisionException("NO_ACCOUNT", "Connect to the Relay Server again.", false)
-            val current = target ?: throw RelayProvisionException("NO_ACCOUNT", "Connect to the Relay Server again.", false)
+            val key = providerKey ?: throw RelayProvisionException("NO_ACCOUNT", "Open VFS again to reconnect.", false)
+            val current = target ?: throw RelayProvisionException("NO_ACCOUNT", "Open VFS again to reconnect.", false)
             val registered =
                 repository().addPendingAndRollback(created) {
                     withContext(Dispatchers.IO) {
@@ -1343,6 +1458,9 @@ object VfsRelayRuntime {
             registerLink(registered, clientGeneration)
             publishConnected()
             latestShare(shareId) ?: registered
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            stopEmptySession(context)
         }
 
     suspend fun newCode(
@@ -1358,7 +1476,10 @@ object VfsRelayRuntime {
             ensure(context)
             checkStore()
             if (client?.isOpen() != true) {
-                throw RelayProvisionException("NOT_CONNECTED", "Connect to the Relay Server before creating a code.", false)
+                syncServing(context).getOrThrow()
+            }
+            if (client?.isOpen() != true) {
+                throw RelayProvisionException("NOT_CONNECTED", "VFS could not reach the Relay Server.", false)
             }
             val record = latestShare(shareId)
                 ?: throw RelayProvisionException("SHARE_NOT_FOUND", "This Share no longer exists.", false)
@@ -1370,7 +1491,7 @@ object VfsRelayRuntime {
             if (record.serverId != server.id || record.canonicalBase != server.baseUrl) {
                 throw RelayProvisionException(
                     "SHARE_OFFLINE",
-                    "This Share belongs to another Relay Server. Connect that server first.",
+                    "This Share belongs to another Relay Server. Switch to that Relay Server first.",
                     false,
                 )
             }
@@ -1664,8 +1785,13 @@ object VfsRelayRuntime {
             publishConnected()
         }
 
-    /**
-     * After a revoked-link cleanup, never keep an empty "Connected" session.
+    private suspend fun stopEmptySession(context: Context) {
+        val settings = serverStore?.load() ?: return
+        val server = settings.selectedServer() ?: return
+        stopIfNoCurrentServerShares(context, server.id, server.baseUrl)
+    }
+
+    /** After a revoked-link cleanup, never keep an empty "Connected" session.
      * Pending tombstone records stay on disk for the next Connect retry.
      */
     private suspend fun stopIfNoCurrentServerShares(
@@ -1688,7 +1814,6 @@ object VfsRelayRuntime {
         client?.close(1000, "no shares")
         client = null
         _state.value = VfsRelayState.Idle
-        VfsSharingService.stop(context)
         publishShares()
         return true
     }
@@ -1878,7 +2003,7 @@ object VfsRelayRuntime {
     private fun repository(): VfsShareRepository =
         shareRepository ?: throw RelayProvisionException(
             "STORE_UNAVAILABLE",
-            "Share files is not initialized yet. Try again.",
+            "VFS is not initialized yet. Try again.",
             true,
         )
 
@@ -1895,14 +2020,14 @@ object VfsRelayRuntime {
     private fun egress(): VfsRelayEgress =
         egressInstance ?: throw RelayProvisionException(
             "EGRESS_UNAVAILABLE",
-            "Share files is not initialized yet. Try again.",
+            "VFS is not initialized yet. Try again.",
             true,
         )
 
     private fun provisioner(): VfsProviderKeyProvisioner =
         provisionerInstance ?: throw RelayProvisionException(
             "EGRESS_UNAVAILABLE",
-            "Share files is not initialized yet. Try again.",
+            "VFS is not initialized yet. Try again.",
             true,
         )
 

@@ -38,6 +38,7 @@ class RelayServerNoMcpTest {
             "src/main/java/io/nekohasekai/sfa/vfs/relay/VfsProviderKeyProvisioner.kt",
             "src/main/java/io/nekohasekai/sfa/vfs/relay/RelayStore.kt",
             "src/main/java/io/nekohasekai/sfa/compose/screen/settings/ShareFilesScreen.kt",
+            "src/main/java/io/nekohasekai/sfa/compose/screen/settings/VfsRelayServersScreen.kt",
         )) {
             val text = source(path).lowercase()
             for (token in forbidden) {
@@ -73,6 +74,19 @@ class RelayServerNoMcpTest {
         assertTrue(RelayScope.entries.none { it.wire.startsWith("conductor.") })
         assertTrue(RelayScope.everything().none { it.wire.startsWith("conductor.") })
         assertFalse(RelayScope.everything().contains(RelayScope.USER_SELECTED))
+    }
+
+    @Test
+    fun vfsFeatureHasNoManualConnectionControls() {
+        val feature = source("src/main/java/io/nekohasekai/sfa/compose/screen/settings/ShareFilesScreen.kt")
+        assertFalse(feature.contains("VfsRelayRuntime.connect("))
+        assertFalse(feature.contains("VfsRelayRuntime.stopSharing("))
+        assertFalse(feature.contains("VfsRelayRuntime.disconnect("))
+        assertTrue(feature.contains("VfsRelayRuntime.syncServing("))
+        val config = source("src/main/java/io/nekohasekai/sfa/compose/screen/settings/VfsRelayServersScreen.kt")
+        assertTrue(config.contains("VfsRelayRuntime.testServer("))
+        assertFalse(config.contains("VfsRelayRuntime.connect("))
+        assertFalse(config.contains("VfsRelayRuntime.stopSharing("))
     }
 
     @Test
