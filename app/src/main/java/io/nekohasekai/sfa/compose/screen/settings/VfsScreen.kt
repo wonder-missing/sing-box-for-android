@@ -599,10 +599,16 @@ private fun PairingDialog(
                 } else {
                     val remaining = (pairing.expiresAt - now).coerceAtLeast(0)
                     val display = String.format(Locale.US, "%d:%02d", remaining / 60_000, (remaining / 1_000) % 60)
+                    val pairingLine =
+                        stringResource(
+                            R.string.share_files_pairing_line,
+                            pairing.linkId,
+                            pairing.code,
+                        )
                     SelectionContainer {
                         Text(
-                            text = pairing.code.chunked(4).joinToString(" "),
-                            style = MaterialTheme.typography.headlineSmall,
+                            text = pairingLine,
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                     Text(
@@ -610,12 +616,6 @@ private fun PairingDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    val pairingLine =
-                        stringResource(
-                            R.string.share_files_pairing_line,
-                            pairing.linkId,
-                            pairing.code,
-                        )
                     Button(
                         onClick = {
                             onCopy(pairingLine)

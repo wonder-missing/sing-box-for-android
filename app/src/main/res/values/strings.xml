@@ -166,10 +166,10 @@
     <string name="share_files_add">Add</string>
     <string name="share_files_server_delete_title">Delete this Relay Server?</string>
     <string name="share_files_server_delete_help">Its local token and Provider key are removed. This does not revoke remote Shares.</string>
-    <string name="share_files_pairing_title">Pairing Code</string>
+    <string name="share_files_pairing_title">Pairing</string>
     <string name="share_files_pairing_help">Copy this line to the client. The code works once and expires in %1$s.</string>
     <string name="share_files_pairing_expired">This code expired. Create a New code.</string>
-    <string name="share_files_pairing_line">VFS Link ID: %1$s, Pair code: %2$s. Run $HOME/bin/vfsc --help.</string>
+    <string name="share_files_pairing_line">Use \"$HOME/bin/vfsc\" to access my shared files: Link ID=%1$s, Pair Code=%2$s.</string>
     <string name="share_files_copy_pairing">Copy pairing line</string>
     <string name="share_files_copied">Copied</string>
     <string name="share_files_done">Done</string>
