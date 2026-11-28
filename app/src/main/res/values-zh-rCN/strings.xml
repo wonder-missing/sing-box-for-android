@@ -992,13 +992,15 @@
     <string name="share_files_show_pairing">显示配对行</string>
     <string name="share_files_last_read">最近读取 %1$s</string>
     <string name="share_files_revoke">撤销</string>
+    <string name="share_files_stop">停止</string>
+    <string name="share_files_start">启动</string>
     <string name="share_files_revoke_title">撤销这个 Link？</string>
     <string name="share_files_revoke_help">客户端将永久失去访问权限，且不可恢复。</string>
     <string name="share_files_cancel">取消</string>
     <string name="share_files_reset">Reset Links</string>
-    <string name="share_files_reset_title">Reset Links？</string>
-    <string name="share_files_reset_help">这会删除本机 VFS Links、Link keys、Provider key 和 Relay Server 设置。客户端需要重新配对。此操作不可恢复。</string>
-    <string name="share_files_reset_confirm">重置</string>
+    <string name="share_files_reset_title">重置这个 Relay Server 上的 Links？</string>
+    <string name="share_files_reset_help">只删除该 Relay Server 上的所有 Link 和本地密钥；Relay Server、token 和设备身份保留，客户端需要重新配对。</string>
+    <string name="share_files_reset_confirm">重置 Links</string>
     <string name="share_files_add_server">添加 Relay</string>
     <string name="share_files_add_server_title">添加 Relay</string>
     <string name="share_files_edit_server_title">编辑 Relay</string>
@@ -1008,7 +1010,7 @@
     <string name="share_files_server_token">Relay token</string>
     <string name="share_files_server_token_keep">留空表示保留当前 token。</string>
     <string name="share_files_no_server">请先添加一个 Relay。</string>
-    <string name="share_files_server_has_shares">该 Relay 还有 Link，请先撤销。</string>
+    <string name="share_files_server_has_shares">该 Relay 还有 Link，请先在菜单里 Reset Links。</string>
     <string name="share_files_edit">编辑</string>
     <string name="share_files_delete">删除</string>
     <string name="share_files_save">保存</string>
@@ -1024,6 +1026,7 @@
     <string name="share_files_status_active">配对进行中</string>
     <string name="share_files_status_paired">已配对</string>
     <string name="share_files_status_paused">已暂停</string>
+    <string name="share_files_status_stopped">已停止</string>
     <string name="share_files_status_expired">code 已过期</string>
     <string name="share_files_status_pending">未登记</string>
     <string name="share_files_status_failed">登记失败</string>
@@ -1046,11 +1049,12 @@
     <string name="vfs_relay_notification_backoff">正在重连 Relay Server</string>
     <string name="vfs_relay_servers_title">VFS Relay</string>
     <string name="vfs_share_relay">Relay：%1$s</string>
-    <string name="vfs_test_connection">测试连接</string>
+    <string name="vfs_test_short">测试</string>
     <string name="vfs_testing">测试中…</string>
     <string name="vfs_test_ok">Relay Server 可访问，token 已通过验证。</string>
     <string name="vfs_no_server">还没有配置 Relay Server。</string>
     <string name="vfs_card_no_server">无 Relay Server</string>
+    <string name="vfs_all_links_stopped">所有 Link 已停止</string>
     <string name="vfs_card_no_shares">无 Link</string>
     <string name="vfs_configure_server">配置 Relay Server</string>
     <string name="vfs_server_label">Relay：%1$s</string>
@@ -1060,8 +1064,7 @@
     </plurals>
     <string name="vfs_starting">正在启动 VFS…</string>
     <string name="vfs_check_relay_servers">检查 Relay Server</string>
-    <string name="vfs_switch_requires_revoke">切换或编辑前，请先撤销这个 Relay Server 的 Link。</string>
-    <string name="vfs_server_busy">VFS 正在提供 Link，撤销后才能修改这个 Relay Server。</string>
-    <string name="vfs_use_server">使用</string>
+    <string name="vfs_switch_requires_revoke">切换或编辑前，请先 Reset Links 或撤销该 Relay Server 的 Link。</string>
+    <string name="vfs_server_busy">VFS 正在提供 Link，请先停止或 Reset Links 再修改这个 Relay Server。</string>
     <string name="vfs_selected">当前</string>
 </resources>

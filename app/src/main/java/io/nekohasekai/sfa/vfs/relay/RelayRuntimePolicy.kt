@@ -44,12 +44,30 @@ object RelayRuntimePolicy {
 
     fun shouldStopEmptySession(remainingInCurrentServer: Int): Boolean = remainingInCurrentServer == 0
 
+    /** Display status for one Share; stopped wins over pair/registration states. */
+    fun shareStatus(
+        record: VfsShareRecord,
+        selectedServerId: String?,
+        selectedBase: String?,
+    ): String =
+        when {
+            record.revokedAt != null || record.revokingAt != null -> "revoked"
+            selectedServerId != null &&
+                (record.serverId != selectedServerId || record.canonicalBase != selectedBase) -> "offline"
+            record.stopped -> "stopped"
+            record.registrationState == VfsShareRecord.STATE_FAILED -> "failed"
+            record.registrationState != VfsShareRecord.STATE_REGISTERED -> "pending"
+            record.pairState == VfsShareRecord.PAIR_CONSUMED -> "paired"
+            else -> record.pairState
+        }
+
     fun responseAllowed(
         record: VfsShareRecord,
         revokedLinkIds: Set<String>,
     ): Boolean =
         record.revokedAt == null &&
             record.revokingAt == null &&
+            !record.stopped &&
             record.linkId !in revokedLinkIds
 }
 

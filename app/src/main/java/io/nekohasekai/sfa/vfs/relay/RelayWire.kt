@@ -50,6 +50,7 @@ object RelayPairErrorCode {
 object RelayLinkErrorCode {
     const val LINK_UNKNOWN = "link_unknown"
     const val SHARE_REVOKED = "share_revoked"
+    const val SHARE_PAUSED = "share_paused"
     const val NOT_PAIRED = "not_paired"
     const val AUTH_FAILED = "auth_failed"
 }

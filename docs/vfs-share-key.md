@@ -25,14 +25,15 @@
 ## 3. 用户流程
 
 1. Portal 的顶级 **Relay** 页面提供 Relay URL + Relay token。Settings → **VFS Relay Servers** → **Add Relay Server**（填完整 `/relay/v1` URL + token）。**Test connection** 只验证 URL/token/device，不创建 Share，也不打开 Provider WS。
-2. 首页 Dashboard 的 **VFS 卡片**同时是指示器和入口；它不依赖 VPN 服务是否运行。进入 VFS → **New Link**：名字（可选）→ Recommended / Everything / Customize → Create。创建时自动连接 Relay Server。
+2. 首页 Dashboard 的 **VFS 卡片**同时是指示器和入口；它不依赖 VPN 服务是否运行。进入 VFS → **New Link**：名字（可选）→ Recommended / Everything / Customize → Create。Create 立即落盘并显示 Link 卡片；Relay 注册、连接和 Pairing Code 在后台继续，失败显示在卡片，不阻塞创建。
 3. App 显示 5:00 倒计时和一行配对说明（含 Link ID 与 Pair Code）；**Copy pairing line** 复制该行（无换行）：
    `Use "$HOME/bin/vfsc" to access my shared files: Link ID=<linkId>, Pair Code=<code>.`
    `pairId` 由 code 与 linkId 用 HKDF 派生，不进入复制文本；code 只显示一次。
 4. Client 运行 `"$HOME/bin/vfsc" --help`，按 help 执行 `vfsc pair --link <linkId> --code <code>`，得到可读 roots；之后 `list/stat/read/get` 不再需要 code。
-5. **连接随 Share 维持**：至少一个 Share 存在时 App 自动连接并保持；最后一个 Share 撤销后自动关闭 WS。没有 Connect / Stop sharing 按钮，也没有全局暂停概念。
+5. **连接随 Link 维持**：至少一个 Link 存在时 App 自动连接并保持；最后一个 Link 撤销后自动关闭 WS。没有全局 Connect/Stop。每个 Link 卡片可 **Stop/Start**：Stop 保留 Link 和 Key，拒绝新配对与读取（`LINK_PAUSED`），不影响其他 Link；Start 恢复，不重配对。
 6. **Revoke** = 永久删除 Share；App 删除本地 secret，best-effort 通知 Relay；Relay 收到后写 tombstone，CLI 收到 410 后 `forget`。通知失败时下次自动连接重试，期间 CLI 得到 503。
 7. **New code** = 同一个 Share Key，新 pairId/code；旧 code 失效，不 eject 已配对 CLI。一 client 一 Share，最多 8 个。
+8. **Reset Links**（Settings → VFS Relay 的卡片菜单）只删除该 Relay Server 上的所有 Link 和本地 key；Relay Server、token 和设备身份保留，客户端需要重新配对。
 
 ## 4. 最小协议
 
@@ -63,7 +64,7 @@
 
 **Share 状态**：`waiting`（未生成 code）、`active`（code 有效）、`consumed`（已配对）、`paused`（旧状态，当前 UI 不产生）、`expired`（code 过期）、`revoked`（本地已撤销）。
 
-- **连接生命周期**：有 active Share 时自动连接并保持；最后一个 Share 撤销/删除后关闭 WS，`desiredConnected=false`。没有用户可见的 Connect / Stop sharing。
+- **连接生命周期**：有 active Link 时自动连接并保持；最后一个 Link 撤销/删除后关闭 WS，`desiredConnected=false`。没有全局 Connect / Stop；每个 Link 可 Stop/Start，Stop 保留 Share Key。
 - **Code 自然过期** → `expired`；Relay 对同 pairId 返回 `code_expired`，不返回 `share_paused`。
 - **Revoke** → 本地立即拒绝新 pair/读，删除 secret；Relay tombstone 后 CLI 得到 410；失败则下次自动连接重试。
 - **App 重启**：若仍有 active Share，自动重连并重新 `register`、补发 pair 状态；没有 active Share 则不连接。均不重配对。

@@ -121,13 +121,15 @@
     <string name="share_files_show_pairing">Show pairing line</string>
     <string name="share_files_last_read">Last read %1$s</string>
     <string name="share_files_revoke">Revoke</string>
+    <string name="share_files_stop">Stop</string>
+    <string name="share_files_start">Start</string>
     <string name="share_files_revoke_title">Revoke this Link?</string>
     <string name="share_files_revoke_help">The client loses access permanently. This cannot be undone.</string>
     <string name="share_files_cancel">Cancel</string>
     <string name="share_files_reset">Reset Links</string>
-    <string name="share_files_reset_title">Reset Links?</string>
-    <string name="share_files_reset_help">This deletes local VFS Links, Link keys, Provider keys and Relay Server settings. Clients must be paired again. This cannot be undone.</string>
-    <string name="share_files_reset_confirm">Reset</string>
+    <string name="share_files_reset_title">Reset Links on this Relay Server?</string>
+    <string name="share_files_reset_help">Drops every Link on this Relay Server and deletes their local keys. The Relay Server, token and device identity stay; clients must pair again.</string>
+    <string name="share_files_reset_confirm">Reset Links</string>
     <string name="share_files_add_server">Add Relay</string>
     <string name="share_files_add_server_title">Add Relay</string>
     <string name="share_files_edit_server_title">Edit Relay</string>
@@ -137,7 +139,7 @@
     <string name="share_files_server_token">Relay token</string>
     <string name="share_files_server_token_keep">Leave blank to keep the current token.</string>
     <string name="share_files_no_server">Add a Relay to start.</string>
-    <string name="share_files_server_has_shares">This Relay still has Links. Revoke them first.</string>
+    <string name="share_files_server_has_shares">This Relay still has Links. Reset Links from its menu first.</string>
     <string name="share_files_edit">Edit</string>
     <string name="share_files_delete">Delete</string>
     <string name="share_files_save">Save</string>
@@ -153,6 +155,7 @@
     <string name="share_files_status_active">Pairing active</string>
     <string name="share_files_status_paired">Paired</string>
     <string name="share_files_status_paused">Paused</string>
+    <string name="share_files_status_stopped">Stopped</string>
     <string name="share_files_status_expired">Code expired</string>
     <string name="share_files_status_pending">Not registered</string>
     <string name="share_files_status_failed">Registration failed</string>
@@ -175,11 +178,12 @@
     <string name="vfs_relay_notification_backoff">Reconnecting to the Relay Server</string>
     <string name="vfs_relay_servers_title">VFS Relay</string>
     <string name="vfs_share_relay">Relay: %1$s</string>
-    <string name="vfs_test_connection">Test connection</string>
+    <string name="vfs_test_short">Test</string>
     <string name="vfs_testing">Testing…</string>
     <string name="vfs_test_ok">Relay Server reachable; token accepted.</string>
     <string name="vfs_no_server">No Relay Server configured.</string>
     <string name="vfs_card_no_server">No Relay Server</string>
+    <string name="vfs_all_links_stopped">All Links stopped</string>
     <string name="vfs_card_no_shares">No Links</string>
     <string name="vfs_configure_server">Configure Relay Server</string>
     <string name="vfs_server_label">Relay: %1$s</string>
@@ -189,9 +193,8 @@
     </plurals>
     <string name="vfs_starting">Starting VFS…</string>
     <string name="vfs_check_relay_servers">Check Relay Servers</string>
-    <string name="vfs_switch_requires_revoke">Revoke all Links for this Relay Server before switching or editing it.</string>
-    <string name="vfs_server_busy">VFS is serving Links. Revoke them before changing this Relay Server.</string>
-    <string name="vfs_use_server">Use</string>
+    <string name="vfs_switch_requires_revoke">Reset or revoke this Relay Server\'s Links before switching or editing it.</string>
+    <string name="vfs_server_busy">VFS is serving Links. Stop or reset them before changing this Relay Server.</string>
     <string name="vfs_selected">Selected</string>
     <string name="conductor_commands">Commands</string>
     <string name="conductor_mention">Mention</string>

@@ -1,6 +1,6 @@
 # Share Key VFS v1 战役板
 
-状态：AZ 已发布（2026-11-28）：AY 的 Links UI 之后完成旧 MCP VFS 路径清理、真实发送字节统计、Proxy groups scope 隐藏和 CLI `--link`/`links`/`status --probe`。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
+状态：B0 准备中（2026-11-28）：AZ 已发布；之后完成 Link 即时创建、每 Link Stop/Start、Relay Server 卡片操作收敛和状态栏波晕修复。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
 
 ## 目标与验收
 
@@ -44,7 +44,7 @@
 | Portal 侦察 | server.mjs relay listener、handleRequest/handleUpgrade、hooks.mjs、install-launchd.sh（历史行） |
 | App 侦察 | VirtualDirectoryProtocol.kt、VfsSharingService.kt、SettingsScreen.kt、Navigation.kt、McpRuntime.kt（历史行；旧类已删除） |
 | Portal 实现 | `clawdy-portal` `3c91b21`；`pnpm check` 187/187；部署 `~/.clawdy-portal` 成功，socket 0600，`/v1/health` ok |
-| App 实现 | WonderSing `dev`；VFS 入口在首页 Dashboard 卡片，Relay 配置在 Settings → VFS Relay；681 JVM tests / 0 failures；Links UI、卡片操作与 Pairing 弹卡已本地渲染确认 |
+| App 实现 | WonderSing `dev`；VFS 入口在首页 Dashboard 卡片，Relay 配置在 Settings → VFS Relay；682 JVM tests / 0 failures；Links UI、卡片操作、Stop/Start、即时 Create 与 Pairing 弹卡已本地渲染确认 |
 | 旧路径清理 | WonderSing `099a6bf`：删除旧 vfs provider/consent/MCP tool/flag，保留 Relay 复用的只读 source；JVM 830 → 681。Portal `3c91b21`：删除 vfsd、`/vfs/provider`、VFS MCP 工具，job 改为本机 `/work`；Portal 208 → 187，lint 通过，已部署 `~/.clawdy-portal`，`vfsc status` → socket/relay ok |
 | CLI | `vfsc`（Portal commit `3c91b21`）；安装到 `$HOME/bin/vfsc`；`--link` 选择器、`links`、`status --probe`、命令前后选项可用；Portal 187 用例绿 |
 | 真机 E2E | 待主人后续引导：AY 安装、Link/pair/list/read/Revoke/自动连接/离线/重启/Doze |

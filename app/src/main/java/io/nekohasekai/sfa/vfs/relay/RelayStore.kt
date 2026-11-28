@@ -23,6 +23,7 @@ data class VfsShareRecord(
     val pairId: String? = null,
     val pairState: String = PAIR_WAITING,
     val pairExpiresAt: Long? = null,
+    val stopped: Boolean = false,
     val revokingAt: Long? = null,
     val createdAt: Long,
     val pairedAt: Long? = null,

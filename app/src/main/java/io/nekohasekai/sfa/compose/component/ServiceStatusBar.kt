@@ -53,7 +53,7 @@ import io.nekohasekai.sfa.constant.Status
 import kotlinx.coroutines.delay
 
 private val STATUS_CHIP_SHAPE = RoundedCornerShape(percent = 50)
-private val STATUS_CHIP_MIN_HEIGHT = 36.dp
+private val STATUS_CHIP_MIN_HEIGHT = 48.dp
 private val STATUS_CHIP_TOUCH_HEIGHT = 48.dp
 private val STATUS_CHIP_ICON_SIZE = 16.dp
 private val STATUS_CHIP_HORIZONTAL_PADDING = 8.dp

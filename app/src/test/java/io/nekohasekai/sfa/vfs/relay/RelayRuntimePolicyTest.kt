@@ -44,7 +44,37 @@ class RelayRuntimePolicyTest {
         assertTrue(RelayRuntimePolicy.responseAllowed(base, emptySet()))
         assertFalse(RelayRuntimePolicy.responseAllowed(base.copy(revokedAt = 1), emptySet()))
         assertFalse(RelayRuntimePolicy.responseAllowed(base.copy(revokingAt = 1), emptySet()))
+        assertFalse(RelayRuntimePolicy.responseAllowed(base.copy(stopped = true), emptySet()))
         assertFalse(RelayRuntimePolicy.responseAllowed(base, setOf("l")))
+    }
+
+    @Test
+    fun stoppedStatusWinsOverPairAndRegistrationStates() {
+        val base =
+            VfsShareRecord(
+                shareId = "s", linkId = "l", secretCiphertext = "c", scopes = listOf("app.files"),
+                serverId = "p", relayId = "h", canonicalBase = "https://x", deviceId = "d", createdAt = 0,
+            )
+        assertEquals(
+            "stopped",
+            RelayRuntimePolicy.shareStatus(
+                base.copy(stopped = true, registrationState = VfsShareRecord.STATE_PENDING),
+                "p",
+                "https://x",
+            ),
+        )
+        assertEquals(
+            "pending",
+            RelayRuntimePolicy.shareStatus(base, "p", "https://x"),
+        )
+        assertEquals(
+            "offline",
+            RelayRuntimePolicy.shareStatus(base, "other", "https://other"),
+        )
+        assertEquals(
+            "revoked",
+            RelayRuntimePolicy.shareStatus(base.copy(revokedAt = 1, stopped = true), "p", "https://x"),
+        )
     }
 
     @Test

@@ -93,15 +93,23 @@ class VfsSharingService : Service() {
     private fun publish(state: VfsRelayState) {
         val (text, bigText, subText) =
             when (state) {
-                is VfsRelayState.Connected ->
+                is VfsRelayState.Connected -> {
+                    val activeShares = state.shares.filter { it.status != "stopped" }
+                    val text =
+                        if (activeShares.isEmpty()) {
+                            getString(R.string.vfs_all_links_stopped)
+                        } else {
+                            relayNotificationText(activeShares.size)
+                        }
                     Triple(
-                        relayNotificationText(state.shares.size),
-                        state.shares
+                        text,
+                        activeShares
                             .mapNotNull { it.label.takeIf { label -> label.isNotBlank() } }
                             .joinToString(", ")
-                            .ifBlank { relayNotificationText(state.shares.size) },
+                            .ifBlank { text },
                         null,
                     )
+                }
 
                 is VfsRelayState.Backoff ->
                     Triple(

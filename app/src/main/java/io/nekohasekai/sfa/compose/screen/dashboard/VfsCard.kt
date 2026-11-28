@@ -48,13 +48,15 @@ fun VfsCard(
     val shares by VfsRelayRuntime.shares.collectAsState()
     val servers by VfsRelayRuntime.servers.collectAsState()
     val server = servers.firstOrNull { it.selected }
-    val activeShares = shares.count { it.status != "revoked" }
-    val hasShares = activeShares > 0
-    val serving = state is VfsRelayState.Connected && hasShares
+    val activeShares = shares.count { it.status != "revoked" && it.status != "stopped" }
+    val hasShares = shares.any { it.status != "revoked" }
+    val allStopped = hasShares && activeShares == 0
+    val serving = state is VfsRelayState.Connected && activeShares > 0
     val status =
         when {
             server == null -> stringResource(R.string.vfs_card_no_server)
             !hasShares -> stringResource(R.string.vfs_card_no_shares)
+            allStopped -> stringResource(R.string.vfs_all_links_stopped)
             state is VfsRelayState.Connected ->
                 pluralStringResource(
                     R.plurals.vfs_serving_traffic,

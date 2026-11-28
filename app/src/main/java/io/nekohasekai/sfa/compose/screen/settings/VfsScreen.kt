@@ -138,7 +138,7 @@ fun VfsScreen(navController: NavController) {
         val id = pairingShareId ?: return@LaunchedEffect
         val share = shares.firstOrNull { it.shareId == id }
         if (VfsRelayRuntime.pairingUi(id) == null &&
-            (share == null || share.status in setOf("expired", "revoked", "paused", "failed", "pending", "offline"))
+            (share == null || share.status in setOf("expired", "revoked", "paused", "stopped", "failed", "pending", "offline"))
         ) {
             pairingShareId = null
         }
@@ -236,6 +236,18 @@ fun VfsScreen(navController: NavController) {
                     share = share,
                     relayName = relayName,
                     onPairing = { openPairing(share.shareId) },
+                    onToggleStop = {
+                        scope.launch {
+                            busy = true
+                            message = null
+                            VfsRelayRuntime.setShareStopped(
+                                context,
+                                share.shareId,
+                                stopped = share.status != "stopped",
+                            ).onFailure { message = it.message }
+                            busy = false
+                        }
+                    },
                     onRevoke = { revokeShareId = share.shareId },
                     enabled = !busy,
                 )
@@ -294,12 +306,17 @@ fun VfsScreen(navController: NavController) {
                                     showCreate = false
                                     label = ""
                                     selectedUris = emptyList()
-                                    VfsRelayRuntime.newCode(context, created.shareId)
-                                        .onSuccess { pairingShareId = created.shareId }
-                                        .onFailure { message = it.message }
+                                    busy = false
+                                    scope.launch {
+                                        VfsRelayRuntime.newCode(context, created.shareId)
+                                            .onSuccess { pairingShareId = created.shareId }
+                                            .onFailure { message = it.message }
+                                    }
                                 }
-                                .onFailure { message = it.message }
-                            busy = false
+                                .onFailure {
+                                    message = it.message
+                                    busy = false
+                                }
                         }
                     }
                 },
@@ -356,6 +373,7 @@ private fun ShareCard(
     share: VfsRelayShareView,
     relayName: String,
     onPairing: () -> Unit,
+    onToggleStop: () -> Unit,
     onRevoke: () -> Unit,
     enabled: Boolean,
 ) {
@@ -402,16 +420,29 @@ private fun ShareCard(
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (share.status != "revoked") {
+                    if (!share.stopped) {
+                        TextButton(
+                            onClick = onPairing,
+                            enabled = enabled,
+                            contentPadding = PaddingValues(horizontal = 0.dp),
+                        ) {
+                            Text(stringResource(R.string.share_files_show_pairing))
+                        }
+                    }
                     TextButton(
-                        onClick = onPairing,
+                        onClick = onToggleStop,
                         enabled = enabled,
                         contentPadding = PaddingValues(horizontal = 0.dp),
                     ) {
-                        Text(stringResource(R.string.share_files_show_pairing))
+                        Text(
+                            stringResource(
+                                if (share.stopped) R.string.share_files_start else R.string.share_files_stop,
+                            ),
+                        )
                     }
                     TextButton(
                         onClick = onRevoke,
@@ -666,6 +697,7 @@ private fun shareStatusLabel(status: String): String =
             "active" -> R.string.share_files_status_active
             "paired" -> R.string.share_files_status_paired
             "paused" -> R.string.share_files_status_paused
+            "stopped" -> R.string.share_files_status_stopped
             "expired" -> R.string.share_files_status_expired
             "pending" -> R.string.share_files_status_pending
             "failed" -> R.string.share_files_status_failed
