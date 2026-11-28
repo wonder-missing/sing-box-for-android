@@ -254,13 +254,6 @@ fun VfsScreen(navController: NavController) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
-            if (shares.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.share_files_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             CreateShareCard(
                 label = label,
                 onLabel = { label = it },

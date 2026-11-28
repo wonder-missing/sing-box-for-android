@@ -118,7 +118,6 @@
     <string name="share_files_choose_server">Select a Relay Server first.</string>
     <string name="share_files_connecting">Connecting…</string>
     <string name="share_files_backoff">Reconnecting…</string>
-    <string name="share_files_empty">No Links.</string>
     <string name="share_files_new">New Link</string>
     <string name="share_files_label">Name (optional)</string>
     <string name="share_files_preset_recommended">Recommended</string>
