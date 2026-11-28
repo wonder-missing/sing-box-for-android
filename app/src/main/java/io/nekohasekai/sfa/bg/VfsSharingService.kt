@@ -124,15 +124,18 @@ class VfsSharingService : Service() {
             }
     }
 
+    private fun relayNotificationText(count: Int): String =
+        resources.getQuantityString(R.plurals.vfs_relay_notification_text, count, count)
+
     private fun publishRelay(state: VfsRelayState) {
         val (text, bigText, subText) =
             when (state) {
                 is VfsRelayState.Connected ->
                     Triple(
-                        getString(R.string.vfs_relay_notification_text, state.shares.size),
+                        relayNotificationText(state.shares.size),
                         state.shares.mapNotNull { it.label.takeIf { label -> label.isNotBlank() } }
                             .joinToString(", ")
-                            .ifBlank { getString(R.string.vfs_relay_notification_text, state.shares.size) },
+                            .ifBlank { relayNotificationText(state.shares.size) },
                         null,
                     )
 

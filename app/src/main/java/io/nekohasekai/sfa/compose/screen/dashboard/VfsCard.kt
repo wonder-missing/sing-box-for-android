@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,8 +56,9 @@ fun VfsCard(
             server == null -> stringResource(R.string.vfs_card_no_server)
             !hasShares -> stringResource(R.string.vfs_card_no_shares)
             state is VfsRelayState.Connected ->
-                stringResource(
-                    R.string.vfs_serving_traffic,
+                pluralStringResource(
+                    R.plurals.vfs_serving_traffic,
+                    activeShares,
                     activeShares,
                     Libbox.formatBytes((state as VfsRelayState.Connected).totalBytesRead),
                 )

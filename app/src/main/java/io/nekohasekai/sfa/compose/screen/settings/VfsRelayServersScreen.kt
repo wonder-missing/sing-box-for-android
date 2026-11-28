@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -129,7 +130,7 @@ fun VfsRelayServersScreen(navController: NavController) {
             Text(
                 text = stringResource(R.string.share_files_no_server),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
             serverViews.forEach { server ->
@@ -204,7 +205,7 @@ fun VfsRelayServersScreen(navController: NavController) {
                             overflow = TextOverflow.Ellipsis,
                         )
                         FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
                             if (!server.selected && canSelect) {
@@ -247,6 +248,10 @@ fun VfsRelayServersScreen(navController: NavController) {
                                 },
                                 enabled = !busy,
                                 contentPadding = PaddingValues(horizontal = 0.dp),
+                                colors =
+                                ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                ),
                             ) {
                                 Text(stringResource(R.string.share_files_delete))
                             }

@@ -1005,7 +1005,10 @@
     <string name="share_files_warning_red_short">可能暴露凭据、原始文件或对话。</string>
     <string name="share_files_warning_picker_short">仅共享你选中的文件。</string>
     <string name="share_files_pick_files">选择文件</string>
-    <string name="share_files_selected_count">已选 %1$d 个文件</string>
+    <plurals name="share_files_selected_count">
+        <item quantity="one">已选 %1$d 个文件</item>
+        <item quantity="other">已选 %1$d 个文件</item>
+    </plurals>
     <string name="share_files_create">创建 Link</string>
     <string name="share_files_show_pairing">显示配对行</string>
     <string name="share_files_last_read">最近读取 %1$s</string>
@@ -1056,7 +1059,10 @@
     <string name="share_files_scope_workspace">App 工作目录</string>
     <string name="share_files_scope_selected">已选文件</string>
     <string name="vfs_relay_notification_title">VFS 共享中</string>
-    <string name="vfs_relay_notification_text">正在提供 %1$d 个 Link</string>
+    <plurals name="vfs_relay_notification_text">
+        <item quantity="one">正在提供 %1$d 个 Link</item>
+        <item quantity="other">正在提供 %1$d 个 Link</item>
+    </plurals>
     <string name="vfs_relay_notification_connecting">正在连接 Relay Server</string>
     <string name="vfs_relay_notification_backoff">正在重连 Relay Server</string>
     <string name="vfs_relay_servers_title">VFS Relay</string>
@@ -1068,8 +1074,11 @@
     <string name="vfs_card_no_server">无 Relay Server</string>
     <string name="vfs_card_no_shares">无 Link</string>
     <string name="vfs_configure_server">配置 Relay Server</string>
-    <string name="vfs_server_label">Relay Server：%1$s</string>
-    <string name="vfs_serving_traffic">正在提供 %1$d 个 Link · ↑ %2$s</string>
+    <string name="vfs_server_label">Relay：%1$s</string>
+    <plurals name="vfs_serving_traffic">
+        <item quantity="one">正在提供 %1$d 个 Link · ↑ %2$s</item>
+        <item quantity="other">正在提供 %1$d 个 Link · ↑ %2$s</item>
+    </plurals>
     <string name="vfs_starting">正在启动 VFS…</string>
     <string name="vfs_check_relay_servers">检查 Relay Server</string>
     <string name="vfs_switch_requires_revoke">切换或编辑前，请先撤销这个 Relay Server 的 Link。</string>

@@ -134,7 +134,10 @@
     <string name="share_files_warning_red_short">Can expose credentials, raw files or conversations.</string>
     <string name="share_files_warning_picker_short">Only the files you pick.</string>
     <string name="share_files_pick_files">Pick files</string>
-    <string name="share_files_selected_count">%1$d files selected</string>
+    <plurals name="share_files_selected_count">
+        <item quantity="one">%1$d file selected</item>
+        <item quantity="other">%1$d files selected</item>
+    </plurals>
     <string name="share_files_create">Create Link</string>
     <string name="share_files_show_pairing">Show pairing line</string>
     <string name="share_files_last_read">Last read %1$s</string>
@@ -185,7 +188,10 @@
     <string name="share_files_scope_workspace">App working directory</string>
     <string name="share_files_scope_selected">Selected files</string>
     <string name="vfs_relay_notification_title">VFS sharing</string>
-    <string name="vfs_relay_notification_text">Serving %1$d Links</string>
+    <plurals name="vfs_relay_notification_text">
+        <item quantity="one">Serving %1$d Link</item>
+        <item quantity="other">Serving %1$d Links</item>
+    </plurals>
     <string name="vfs_relay_notification_connecting">Connecting to the Relay Server</string>
     <string name="vfs_relay_notification_backoff">Reconnecting to the Relay Server</string>
     <string name="vfs_relay_servers_title">VFS Relay</string>
@@ -197,8 +203,11 @@
     <string name="vfs_card_no_server">No Relay Server</string>
     <string name="vfs_card_no_shares">No Links</string>
     <string name="vfs_configure_server">Configure Relay Server</string>
-    <string name="vfs_server_label">Relay Server: %1$s</string>
-    <string name="vfs_serving_traffic">Serving %1$d Links · ↑ %2$s</string>
+    <string name="vfs_server_label">Relay: %1$s</string>
+    <plurals name="vfs_serving_traffic">
+        <item quantity="one">Serving %1$d Link · ↑ %2$s</item>
+        <item quantity="other">Serving %1$d Links · ↑ %2$s</item>
+    </plurals>
     <string name="vfs_starting">Starting VFS…</string>
     <string name="vfs_check_relay_servers">Check Relay Servers</string>
     <string name="vfs_switch_requires_revoke">Revoke all Links for this Relay Server before switching or editing it.</string>

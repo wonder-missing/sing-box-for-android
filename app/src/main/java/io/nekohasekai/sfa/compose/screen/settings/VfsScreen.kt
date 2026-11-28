@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -51,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -406,7 +408,11 @@ private fun ShareCard(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (share.status != "revoked") {
                     TextButton(
                         onClick = onPairing,
@@ -419,6 +425,10 @@ private fun ShareCard(
                         onClick = onRevoke,
                         enabled = enabled,
                         contentPadding = PaddingValues(horizontal = 0.dp),
+                        colors =
+                        ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
                     ) {
                         Text(stringResource(R.string.share_files_revoke))
                     }
@@ -542,7 +552,7 @@ private fun CreateShareCard(
                         Text(stringResource(R.string.share_files_pick_files))
                     }
                     Text(
-                        text = stringResource(R.string.share_files_selected_count, selectedUris.size),
+                        text = pluralStringResource(R.plurals.share_files_selected_count, selectedUris.size, selectedUris.size),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
