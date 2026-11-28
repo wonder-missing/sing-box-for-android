@@ -339,7 +339,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 - Shares 列表：label、scope 摘要、created、pairedAt、lastUsed、状态（waiting/paired/offline）、New code、Revoke。
 - New Share：名字、Recommended/Everything/Customize、per-scope 警告、Create。
 - Pairing 页：5:00 倒计时、一行配对说明、Copy pairing line、New code；无 QR；不进通知/状态栏；不设置 `FLAG_SECURE`，用户可主动截图；clipboard 自动清。
-- **多 Share 状态**：`VfsRelayState`：`Connected(shareCount, shares[{shareId,label,status,pairedAt,lastUsedAt}], totalBytesRead)`、`Idle`、`Backoff`、`Error`；通知「Sharing N Shares」+ Stop（不统计 Agent 数）；`totalBytesRead` 是 App 向 client 发送的 read 数据字节（上行），Dashboard 与 VFS 页实时显示。
+- **多 Share 状态**：`VfsRelayState`：`Connected(shareCount, shares[{shareId,label,status,pairedAt,lastUsedAt}], totalBytesRead)`、`Idle`、`Backoff`、`Error`；通知「Serving N Links」（不统计 Agent 数）；`totalBytesRead` 是 App 向 client 发送的 read 数据字节（上行），Dashboard 与 VFS 页实时显示。
 - **Stop sharing = 暂停**：遍历所有 Link，逐个发 `pair paused` 等 ack（2s；不可达按 Link 存 `pendingPairState=paused`，下次 Connect 补发），再 zeroize 所有 code、关闭 WS、清 pair cache；Share/Share Key 保留；Connect 恢复，不重配对。**Revoke = 永久**：best-effort unregister，删除 Share/linkId/secret，tombstone。**New code 不 eject 已配对 Agent**；只有 Revoke 断开。
 - **Disconnect vs Stop**：Disconnect 对每个已注册 Link 发 `unregister shutdown`（links 变 offline）、`desiredConnected=false`、关闭 WS；Stop 只发 `pair paused`（links 保持登记、Relay 有 paused 状态时 CLI 得到 `SHARE_PAUSED`）、`desiredConnected=false`、关闭 WS；两者都不删 Share/Share Key，New code 不 unregister。
 - **后台与恢复**：复用 `VfsSharingService` 的 FGS 外壳；新增 `VfsRelayPolicy`/`VfsRelayState`（多 Share、`totalBytesRead`，不沿用单连接/uploadBytes 逻辑）；FGS 活着时后台可读；WS 掉线在退避内自动重连/重注册（不要求用户操作）；进程死/Doze 后 503。进程死亡后重开 App：若停之前是 Connected（持久化 `desiredConnected=true`），自动恢复 Connect 一次；若用户 Stop 过，不自动连；所有 Share 都 Revoke 后 `desiredConnected=false`，停止 FGS/WS，避免空连接常驻。不引入 always-on。
