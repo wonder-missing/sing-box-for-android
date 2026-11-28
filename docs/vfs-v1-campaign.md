@@ -1,6 +1,6 @@
 # Share Key VFS v1 战役板
 
-状态：B0 准备中（2026-11-28）：AZ 已发布；之后完成 Link 即时创建、每 Link Stop/Start、Relay Server 卡片操作收敛和状态栏波晕修复。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
+状态：B0 已发布（2026-11-28）：AZ 已发布；之后完成 Link 即时创建、每 Link Stop/Start、Relay Server 卡片操作收敛和状态栏波晕修复。合同见 [`vfs-share-key.md`](vfs-share-key.md)，协议细节见 [`vfs-share-key-reference.md`](vfs-share-key-reference.md)。合同与参考冲突时以合同为准。
 
 ## 目标与验收
 
@@ -48,7 +48,7 @@
 | 旧路径清理 | WonderSing `099a6bf`：删除旧 vfs provider/consent/MCP tool/flag，保留 Relay 复用的只读 source；JVM 830 → 681。Portal `3c91b21`：删除 vfsd、`/vfs/provider`、VFS MCP 工具，job 改为本机 `/work`；Portal 208 → 187，lint 通过，已部署 `~/.clawdy-portal`，`vfsc status` → socket/relay ok |
 | CLI | `vfsc`（Portal commit `3c91b21`）；安装到 `$HOME/bin/vfsc`；`--link` 选择器、`links`、`status --probe`、命令前后选项可用；Portal 187 用例绿 |
 | 真机 E2E | 待主人后续引导：AY 安装、Link/pair/list/read/Revoke/自动连接/离线/重启/Doze |
-| Release | AZ 已发布：`v1.15.0-alpha.13-wonder.AZ`，commit `c2b6d8f`；APK 35,276,718 B，sha256 `f3575554b556cae062d6e2fe9e00150a7f6af4c99e7e734d684e8afc2d8761c8`；真实发送字节、Proxy groups 隐藏、旧 VFS 清理。AY 基线：`v1.15.0-alpha.13-wonder.AY`，APK 35,347,962 B，sha256 `b8b300ecd735a848d7ef9813cab7cf7afc38f8730517349f96280a51b3b3cae5`；Links UI。 |
+| Release | B0 已发布：`v1.15.0-alpha.13-wonder.B0`，commit `741f4e6`；APK 35,282,314 B，sha256 `7fcff74b870a5f451cc85c9aaecb6b3f63a8a475d5ccb875417ff69860ea5f0a`；Link 即时创建、每 Link Stop/Start、Reset Links 限定服务器、状态栏波晕修复。AZ 基线：`v1.15.0-alpha.13-wonder.AZ`，APK 35,276,718 B，sha256 `f3575554b556cae062d6e2fe9e00150a7f6af4c99e7e734d684e8afc2d8761c8`；真实发送字节、Proxy groups 隐藏、旧 VFS 清理。AY 基线：`v1.15.0-alpha.13-wonder.AY`，APK 35,347,962 B，sha256 `b8b300ecd735a848d7ef9813cab7cf7afc38f8730517349f96280a51b3b3cae5`；Links UI。 |
 
 ## 风险
 
