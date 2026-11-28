@@ -1,6 +1,8 @@
 # VFS 浸泡测试
 
-状态：2026-11-17 建立。脚本：[`scripts/vfs-soak.py`](../scripts/vfs-soak.py)。短测结果和修复历史见 [`vfs-connection-stability.md`](vfs-connection-stability.md)。
+> 2026-11-28：本文的旧 MCP VFS 链路已退役；Share Key VFS 的真机/浸泡验收待主人单独引导，见 [`vfs-share-key.md`](vfs-share-key.md)。
+
+状态：2026-11-17 建立；2026-11-28 旧 vfsd 脚本与链路一起退役。短测结果和修复历史见 [`vfs-connection-stability.md`](vfs-connection-stability.md)。
 
 ## 目标
 

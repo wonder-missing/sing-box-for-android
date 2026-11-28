@@ -10,7 +10,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 已保存的服务器可以再打开、刷新、编辑名称/命名空间或移除。刷新或重连以服务器当前 `tools/list` 为准，工具定义变化会直接替换本地目录；MCP 工具仍是 `AGENT_ONLY`，每次调用前照常确认。编辑命名空间会改工具名，Agent 下一轮消息才看到；URL 或 token 仍要移除再加。移除会删掉保存在这台设备上的 token。旧配置没有命名空间时会回退到服务器 id，长名字会被截到 16 个字符（例如 `clawdy_portal_kn`）；升级后在 Edit 里填一个短前缀（例如 `portal`）即可。
 
-下一句 Conductor 消息开始，Agent 能调用这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。工具名完全匹配时只返回那一个工具；搜服务器名或 `mcp` 会带出该服务器的工具。多个 exact 名用空格分隔一起搜（例如 `job_file vfs_export`）也按强匹配处理，不标 `weak`。wonder.51 起 system prompt 有一条静态提示：MCP 服务器可能在运行时增加工具，结论前先 `search_tools`；`search_tools` 输出带 `categories` 计数，弱匹配也能看到 `mcp` 组存在。
+下一句 Conductor 消息开始，Agent 能调用这些工具。路由模式仍然只发送 `route_call` 和 `search_tools`。模型用 `search_tools` 拿参数 schema，用 `route_call` 调用。工具名完全匹配时只返回那一个工具；搜服务器名或 `mcp` 会带出该服务器的工具。多个 exact 名用空格分隔一起搜（例如 `job_status job_file`）也按强匹配处理，不标 `weak`。wonder.51 起 system prompt 有一条静态提示：MCP 服务器可能在运行时增加工具，结论前先 `search_tools`；`search_tools` 输出带 `categories` 计数，弱匹配也能看到 `mcp` 组存在。
 
 系统提示不写 MCP 服务器名，也不写 MCP 工具名。添加、关掉或换一套服务器，都不改变 system prompt，前缀缓存因此不受影响。人看清单用 `/mcp`。要让下一句优先用某个工具，输入 `/mcp use orb_status`（或点补全）。这会把一句普通文字放进输入框，光标留在后面，你补上要做的事再发送。这句话是 user 消息，不是 system message。Claude Code 的 slash、Cursor 的 `@` 也是把引用放进输入框。系统提示不罗列你连了哪些服务器。
 
@@ -36,7 +36,7 @@ wonder.44 起，Conductor 可以作为 MCP 客户端，连接用户自己添加�
 
 参数不走内置工具那套「只能是字符串」。本机只检查 schema `required` 里的键：缺了、是 null、或是空字符串，就拒绝。其余类型交给服务器。
 
-App 不解释具体 MCP 工具的参数语义。`vfs`、`jobId`、`scope` 这些参数属于服务器；客户端只透传 JSON、做通用 `required` 检查和 content block 处理。某个工具是否需要先连 VFS、是否需要某个前置工具，由服务器在自己的工具描述和返回错误里表达（例如 Portal 在建 job 前预检）。唯一的例外是 VFS Link 握手本身：`vfs_link_request` 的 scope 是 App 的 VFS 契约，客户端会给这个参数补说明；这不涉及 job 参数。
+App 不解释具体 MCP 工具的参数语义；`jobId` 等参数属于服务器，客户端只透传 JSON、做通用 `required` 检查和 content block 处理。某个工具是否需要前置条件，由服务器在自己的工具描述和返回错误里表达。旧 VFS Link 握手（`vfs_link_request`、`X-WonderSing-Device` header、scope 注入）已于 2026-11-28 随旧 VFS 路径移除；Share Key VFS 只走 `vfsc` CLI，不经 MCP。
 
 所有 MCP 工具都是 `AGENT_ONLY`，先确认再发出；`annotations.readOnlyHint` 只作为服务器提示，不能绕过确认。权限是 `DATA_EGRESS`。确认卡保留 URL 的 host/path，但屏蔽 userinfo 和敏感 query。输出仍然过现有 sanitizer，所以结果里的订阅链接和 token 会被打掉。
 

@@ -2,6 +2,8 @@
 
 状态：已收敛，进入实现。目标版本：wonder.AB 起。
 
+> 2026-11-28：旧 MCP VFS 路径已退役，本文中的 `/vfs/...` 容器路径、`vfs_connect` 和 VFS scope 段落只作历史记录。本地文件、inbox/artifacts 和 MCP content-block 管道仍有效；Share Key VFS 见 [`vfs-share-key.md`](vfs-share-key.md)。
+
 ## 1. 目标
 
 让 Conductor 的工具可以组合，而不是为单个场景增加专用工具。

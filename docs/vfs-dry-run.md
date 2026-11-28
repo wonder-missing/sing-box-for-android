@@ -1,5 +1,7 @@
 # VFS 真机 dry-run 清单（P7）
 
+> 2026-11-28：旧 MCP VFS 路径已退役。本文只保留历史验收记录；当前 Share Key VFS 见 [`vfs-share-key.md`](vfs-share-key.md)。
+
 状态：部分验收。wonder.93 真机已验证 `conductor_session` / `all` 的展开和 visibleRoots、`workdir` 覆盖 `conductor/`；P7-4b 于 v2 实测通过。`vfs/` 私有目录排除、`/work` 隔离和只读写入等仍待收尾，其余项按清单继续执行；未列出的项不代表已经验收。
 设计以 `~/workspace/clawdy-portal/docs/agent-oriented-vfs.md` 为准，Portal 契约见 `~/workspace/clawdy-portal/VFS.md`。
 已知缺口：P6e「进程被杀后恢复最后一条 Link」未实现，本轮只记录，不计入通过。

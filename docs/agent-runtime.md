@@ -1,6 +1,8 @@
 # Conductor Agent 运行时设计
 
 状态：Phase 2a 已随 wonder.27/28/29/30/31/32 实现；Phase 2b 已完成（wonder.36）；wonder.37/38 收真机反馈；wonder.39 拆多 Provider；wonder.40 补中断 turn 收尾与对话文件导出；wonder.41 已发布传输错误边界、审批/批处理、`runtime:event` 中断信封和 A7 app icon。wonder.44 增加 MCP 客户端，见 [`mcp.md`](mcp.md)。wonder.48 起失败 turn 保留 user 并提供 Retry。wonder.49 加固工具超时、MCP 信任、上下文预算、probe_many、select_outbound 和可观测性；wonder.50 完成 P3 清理（trace 内存上限、错误码细分、prompt 字节锁）；wonder.51 修复跨版本会话（失败 user 对账、历史 tool 脱敏、版本边界、trace 摘要持久化），并结构化 tailscale_status、加入 MCP 发现提示和取消代际；wonder.52 增加数据面第一版（工作目录只读、`conductor/` 工作区读写、trace/transcript 导出、Taildrop 发送）；wonder.53 修页面切换取消 turn 和 `search_tools` 空 query 契约；wonder.54 恢复未应答 user；wonder.55 补抖动/性能遥测；wonder.56 修工具搜索的中文/分类召回；wonder.57 补文件工具召回；wonder.58 改为英文工具元数据，补齐文件分页/tail/grep 和用户选文件链路；wonder.59 改用模型 API 的上下文/输出上限，加入上下文百分比与 80% 自动 Compact。wonder.95 把 `network_snapshot` 改成 `system_snapshot` 并调整字段，新增 `file_append`/`file_edit` 和 `http_fetch`；`/tool` 可直接运行 `search_tools` 并提供 Run/Fill 动作。wonder.96 优化 Conductor 消息流（思考窗、工具行、间距、行内代码、逐条用量页脚），并修复草稿恢复和服务重启后的 CommandClient 重连。wonder.98 移除 `http_fetch` 的 `outbound`，新增 `web_search`（DeepSeek Anthropic-compatible 服务端搜索，返回 answer/sources/citations；非 DeepSeek provider 隐藏）和 `wait`（0–10 秒、可取消的等待工具），并把 VFS 后台重连延长到网络恢复。wonder.99 规范化 `web_search` 来源并保留 answer citations，`probe_many` 结束后恢复批次起始选择。wonder.A0 把输入框提示改为 `Ask Conductor`/`You Conduct...`，工具参数支持横向滑动，并把版本标签切到 base-36（A0=100）。
+
+> 2026-11-28：旧 MCP VFS 路径（`VfsConnectTool`、`vfs_link_request`、虚拟目录 provider、VFS 同意卡）已移除；本文中与旧 VFS 相关的历史段落只作记录。当前 Share Key VFS 见 [`vfs-share-key.md`](vfs-share-key.md)。
 最后更新：2026-11-21
 上位文档：[`agent-control-plane.md`](agent-control-plane.md)
 
@@ -418,15 +420,15 @@ enum class InvocationSource {
 确认卡只应该出现在“能执行且跨信任边界”的动作上。现行链路：
 
 1. `AgentTool.preflight(args)` 在确认卡之前做只读校验：文件路径/覆盖、编辑匹配、HTTP output_path、节点、peer 在线、图片路径、MCP scope 形状和 passthrough 顶层类型。预检失败直接返回错误，不生成卡片。
-2. `AgentConfirmation` 带 `kind`（workspace write / delete、network read、数据外发、远端执行、VFS 授权等）、`bulkApproval`（NONE/BATCH/TURN）和 `approvalScope`。`ConfirmationRequest` 把它们传给 UI。
+2. `AgentConfirmation` 带 `kind`（workspace write / delete、network read、数据外发、远端执行等）、`bulkApproval`（NONE/BATCH/TURN）和 `approvalScope`。`ConfirmationRequest` 把它们传给 UI。
 3. 会话档位由 Conductor 底部的 Approvals 菜单选择，默认 `Strict`，`/clear` 和进程重启回到 `Strict`：
    - `Strict`：所有确认都问；只读/诊断工具可以用一次 `Run all` 合并同类。
    - `Workspace`：本地工作区写入和诊断导出免卡；删除、网络和 MCP 仍问。
-   - `Test`：另外免卡本地 session 新建文件的单文件删除、只读网络（probe/GET/HEAD）和只读 MCP 状态；目录删除、未跟踪文件覆盖/删除、VFS 授权、远端 job、网络变更、Taildrop、telemetry 和图片外发仍问。
+   - `Test`：另外免卡本地 session 新建文件的单文件删除、只读网络（probe/GET/HEAD）和只读 MCP 状态；目录删除、未跟踪文件覆盖/删除、远端 job、网络变更、Taildrop、telemetry 和图片外发仍问。
 4. `ConductorFileStore` 记录本会话新建的文件。Test 档只自动删除这些文件；用户原有文件的覆盖或删除会生成未跟踪卡片。目录删除始终弹卡。
 5. UI 顶部有 `Workspace approvals` / `Test approvals` 常驻标识；切档在空闲时进行，运行中只提示。
 
-按 AC 走查的 43 张卡复核：18 张是预检就能拒绝的死动作，21 张是本地/只读动作，真正跨边界的只有 4 张（VFS 授权、远端 `job_run`、`artifacts` 目录递归删除、`telemetry_upload`）。`job_run` 卡片带 `Run all`，同一轮后续远端 job 不再弹卡。
+按 AC 走查的 43 张卡复核：18 张是预检就能拒绝的死动作，21 张是本地/只读动作，真正跨边界的只有 3 张（远端 `job_run`、`artifacts` 目录递归删除、`telemetry_upload`）。`job_run` 卡片带 `Run all`，同一轮后续远端 job 不再弹卡。
 
 `probe_via_node` 的 `reachable` 语义：只要收到任何 HTTP 状态码（1xx–5xx，包括 204、3xx、4xx、5xx），就表示链路可达，`reachable = true`，`statusCode` 原样回填；只有 DNS、连接失败、超时、EOF 这类没有状态码的传输错误才是 `reachable = false`。外层 `ToolObservation.ok` 仍表示工具调用本身是否成功，内层不再使用 `ok` 字段。libbox 的 HTTP 客户端对 204 等非 200 响应会抛异常，异常消息里带 `HTTP <code>`；`LibboxProbePort` 必须解析状态码并按上述规则归类，不能把异常本身当成失败。
 
