@@ -142,6 +142,8 @@
     <string name="share_files_selected_count">%1$d files selected</string>
     <string name="share_files_create">Create Share</string>
     <string name="share_files_new_code">New code</string>
+    <string name="share_files_show_pairing">Show pairing line</string>
+    <string name="share_files_last_read">Last read %1$s</string>
     <string name="share_files_revoke">Revoke</string>
     <string name="share_files_revoke_title">Revoke this Share?</string>
     <string name="share_files_revoke_help">The client loses access permanently. This cannot be undone.</string>

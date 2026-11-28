@@ -1965,9 +1965,11 @@ object VfsRelayRuntime {
     }
 
     private fun recordLastUsed(shareId: String) {
-        runCatching {
-            repository().markLastUsed(shareId, System.currentTimeMillis(), LAST_USED_THROTTLE_MS)
-        }
+        val updated =
+            runCatching {
+                repository().markLastUsed(shareId, System.currentTimeMillis(), LAST_USED_THROTTLE_MS)
+            }.getOrNull() ?: return
+        if (updated.lastUsedAt != null) publishShares()
     }
 
     private suspend fun markPairExpired(

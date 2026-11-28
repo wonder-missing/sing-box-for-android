@@ -65,6 +65,8 @@ import io.nekohasekai.sfa.vfs.relay.VfsRelayShareView
 import io.nekohasekai.sfa.vfs.relay.VfsRelayState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 
 private enum class SharePreset {
@@ -305,6 +307,7 @@ fun VfsScreen(navController: NavController) {
             shares.forEach { share ->
                 ShareCard(
                     share = share,
+                    onShowPairing = { pairingShareId = share.shareId },
                     onNewCode = {
                         scope.launch {
                             busy = true
@@ -399,6 +402,7 @@ private fun RelayStatus(
 @Composable
 private fun ShareCard(
     share: VfsRelayShareView,
+    onShowPairing: () -> Unit,
     onNewCode: () -> Unit,
     onRevoke: () -> Unit,
     enabled: Boolean,
@@ -422,6 +426,16 @@ private fun ShareCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            share.lastUsedAt?.let { lastUsed ->
+                Text(
+                    text = stringResource(
+                        R.string.share_files_last_read,
+                        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(lastUsed)),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             share.error?.let { error ->
                 Text(
                     text = error,
@@ -431,6 +445,11 @@ private fun ShareCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (share.status != "revoked") {
+                    if (share.status == "active") {
+                        TextButton(onClick = onShowPairing, enabled = enabled) {
+                            Text(stringResource(R.string.share_files_show_pairing))
+                        }
+                    }
                     TextButton(onClick = onNewCode, enabled = enabled) {
                         Text(stringResource(R.string.share_files_new_code))
                     }
