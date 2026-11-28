@@ -159,19 +159,7 @@ fun DashboardSettingsBottomSheet(
                 )
                 TextButton(
                     onClick = {
-                        val defaultOrder =
-                            listOfNotNull(
-                                CardGroup.UploadTraffic,
-                                CardGroup.DownloadTraffic,
-                                CardGroup.Debug,
-                                CardGroup.Connections,
-                                CardGroup.SystemProxy,
-                                CardGroup.ClashMode,
-                                CardGroup.Profiles,
-                                CardGroup.Vfs,
-                                CardGroup.Activity,
-                                CardGroup.Logs,
-                            )
+                        val defaultOrder = DefaultDashboardCardOrder
                         val allCardsEnabled = CardGroup.values().toSet()
                         reorderedList = defaultOrder
                         currentVisibleCards = allCardsEnabled

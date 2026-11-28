@@ -352,7 +352,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 
 ### 3.9 CLI
 
-- 安装：Portal `pnpm service-install` 装 `$HOME/bin/vfsc`；skill/CLAUDE.md 提示；App 复制一行 `Use "$HOME/bin/vfsc" to access my shared files: Link ID=<linkId>, Pair Code=<code>.`（绝对路径）。
+- 安装：Portal `pnpm service-install` 装 `$HOME/bin/vfsc`；skill/CLAUDE.md 提示；App 复制一行 `Use "$HOME/bin/vfsc" to access my shared files: Link ID=<linkId>, Pair Code=<code>.`（绝对路径）。UI/CLI 用户面统一叫 Link/Links；wire、存储和内部类型仍是 Share。
 - `--help` 一页：App 路径、pair 流程、每命令一个示例、JSON 默认、大文件、Portal 盲区、not-paired 错误。
 - 命令：
 - `pair --link ... --code ...`（CLI 从 code+linkId 派生 pairId，兼容非交互 Agent）；也支持 `--code-stdin` / `VFSC_CODE`（避免 argv/shell history 的可选方式）；App 复制行只含 linkId/code，提示“含一次性 code”。
@@ -360,8 +360,8 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
   - `stat <path> --json`
   - `read <path> [--max-bytes 65536] --json`
   - `get <path> --out <file>`
-  - `shares --json`（列出本地保存的 Share；不含 secret）
-  - `status --json`（socket/Relay 可达性、当前 Share 是否 paired；不发数据）
+  - `links --json`（列出本地保存的 Link；不含 secret）
+  - `status [--probe] --json`（socket/Relay/本地配对；`--probe` 用 `stat /` 探测 provider）
   - `forget --share <shareId|label>`（410 后清理本地 key；不删远端）
   - `--share <shareId|label>`；`--socket <path>`（默认 `<stateDir>/run/vfs-relay.sock`；`<stateDir>` 未设 `PORTAL_STATE_FILE` 时为 `~/.clawdy-portal`，可用 `VFSC_STATE_DIR`/`PORTAL_STATE_FILE` 覆盖）；远端 Consumer v1 不提供（无 `--relay/--api-key`）。
 - JSON envelope：`{"ok":true,"data":...}` / `{"ok":false,"error":{"code","message","retryable","hint"}}`。
@@ -371,8 +371,8 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
   - `stat`：`{"path","name","isDirectory","size","mtimeMs","mimeType?","etag?"}`
   - `read`：`{"path","offset","length","eof","encoding":"utf-8"|"base64","data","truncated","nextOffset"}`
   - `get`：`{"path","out","bytes","sha256"}`
-  - `shares`：`{"shares":[{"shareId","label","linkId","pairedAt","lastUsedAt"}]}`
-  - `status`：`{"socket":"ok"|"unreachable","relay":"ok"|"unreachable"|"unknown","paired":true|false}`；`relay` 来自 Unix socket `GET /v1/health`（`{vfsRelay:"ok",links:N}`），不是仅 connect 成功。
+  - `links`：`{"links":[{"shareId","label","linkId","pairedAt","lastUsedAt"}]}`
+  - `status`：`{"socket":"ok"|"unreachable","relay":"ok"|"unreachable"|"unknown","paired":true|false}`；`relay` 来自 Unix socket `GET /v1/health`（`{vfsRelay:"ok",links:N}`），不是仅 connect 成功。加 `--probe` 时多一个 `provider:"ok"|"offline"|"error"` 字段。
 - `pair` 的 pair-error 映射按 §3.4.1；`pair` 成功前必须已持久化 key；失败不写 key。**同一 CLI 进程内** pair 超时/204 用同一 tuple 重试，不换 pairId；CLI 进程重启会丢失 code，必须 New code（不持久化 code/tuple）；`RATE_LIMITED` 按 `Retry-After` 退避。
 - Exit codes：0 成功；2 usage；3 transient；4 permanent；5 not found。
 - Error codes：`NOT_PAIRED`、`SHARE_PAUSED`、`CODE_EXPIRED`、`CODE_INVALID`、`CODE_CONSUMED`、`PROVIDER_OFFLINE`、`PAIR_WARMING`、`PROVIDER_TIMEOUT`、`SHARE_UNKNOWN`、`SHARE_REVOKED`、`RELAY_UNREACHABLE`、`RELAY_STATE_UNAVAILABLE`、`RATE_LIMITED`、`TOO_LARGE`、`PATH_NOT_FOUND`、`PERMISSION_LOST`、`SHARE_AMBIGUOUS`、`PROVIDER_KEY_REVOKED`、`PROTOCOL_ERROR`、`IN_FLIGHT`、`RESPONSE_UNKNOWN`、`REQID_CONFLICT`、`NONCE_REUSED`、`STALE_TS`、`AUTH`、`CURSOR_INVALID`、`BAD_RANGE`、`PROVIDER_ERROR`。
@@ -447,7 +447,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 - **P0**：评审并冻结本文档 + 附录 A vectors + 附录 B/C golden；不改代码。
 - **P1 App provider core**：Portal server 选择/auto-provision；Share store/deviceId/generation/pairEpoch/deviceSecret；`POST /v1/links`；Keystore `VfsShareCipher`；pairing/pairId/pair-error；control ack/error（含 pairEpoch）；AEAD/HKDF；scope source/denylist/redaction（所有 source 改 `list(path,cursor,limit)`）；`VfsRelayPolicy`/`VfsSharingService` 重写多 Share + 自动重连；Settings/Share UI（创建/New code 需 ack）；`ShareKeyVfs` flag；旧路径保留；JVM 测试。
 - **P2 Portal/Relay**：provider key issue/rotate/revoke/list（hook secret + deviceSecret + admin）；hook capability 发放/迁移；persistent link store/`POST /v1/links`/ownership；Link 路由/注册 generation/tombstone；pairing/pairId/pair state/pairEpoch/pair-error；control ack/error；rotate 不 tombstone；close codes；Unix/admin socket、listener profile、public provider-key/links 路由；新 transport gate（不复用 `live()`）；60s long-poll；limits/audit；flag；旧路径保留；契约测试。
-- **P3 CLI**：`vfsc` 安装（修改 `install-launchd.sh` 实际落 `$HOME/bin`，显式 Node shebang/路径）；pair/list/stat/read/get/shares/status/forget；consumerId；`GET /v1/response/{consumerId}/{linkId}/{reqId}`；key store；pair-error/link-error 映射；JSON/exit/errors；skill；测试。
+- **P3 CLI**：`vfsc` 安装（修改 `install-launchd.sh` 实际落 `$HOME/bin`，显式 Node shebang/路径）；pair/list/stat/read/get/links/status/forget；consumerId；`GET /v1/response/{consumerId}/{linkId}/{reqId}`；key store；pair-error/link-error 映射；JSON/exit/errors；skill；测试。
 - **P4 E2E**：真机 + Mini + Agent；flag on；Relay 只见密文；revoke/offline/restart/rotate；release AP（old path/AO 导出仍保留）；验收。
 - **P5 清理**：移除旧 App/Portal 路径、vfsd、容器 `/vfs`、旧 strings/tests/docs；移除 AO 导出；移除 flag；清理版 AP。
 - P1/P2/P3 在 v16 参考 + vectors 提交后可并行；实现以 [v1 合同](vfs-share-key.md) 为准；P4 依赖 P1–P3。
@@ -507,7 +507,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 
 ### 4.6 CLI 改动
 
-- 新增 `$HOME/bin/vfsc`（Node/Go；优先 Node）；安装脚本；skill/CLAUDE.md；key store；socket；JSON/exit/errors；pair-error/link-error 映射；list cursor；read preview/get/forget/shares/status；60s long-poll；v1 无 `--relay`。
+- 新增 `$HOME/bin/vfsc`（Node/Go；优先 Node）；安装脚本；skill/CLAUDE.md；key store；socket；JSON/exit/errors；pair-error/link-error 映射；list cursor；read preview/get/forget/links/status；60s long-poll；v1 无 `--relay`。
 - 输出 schema/错误/退出码按 §3.9/§3.10；测试各 schema、key 0700/0600/atomic/fsync、pair 成功前不写 key、pair-error/link-error 映射、Unix socket、`$HOME/bin`、multi-Share、duplicate label、code 脱敏、大文件、list 1 MiB 页、60s 超时用同一 `(consumerId,linkId,reqId)`、IN_FLIGHT/RESPONSE_UNKNOWN/REQID_CONFLICT/PROVIDER_TIMEOUT/NONCE_REUSED/STALE_TS/AUTH/413。
 
 ### 4.7 测试
@@ -519,7 +519,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 - Relay：malicious swap/replay/reorder/drop、400 BAD_ENVELOPE/401/403/404/409/410/413/429/503/504、pair-error/link-error（含缓存 GET）、control ack/error、consumerId 与 HTTP 连接池换连接、两个 consumer 撞 reqId、close codes 4401/4403/4404/4412/4413/4414/4429、DEVICE_MISMATCH per-link frame 不 close、consumed exact cache 优先、heartbeat 30s/90s JSON ping、frame/body/list 1 MiB caps、per-hook key/WS/control caps、restart/reconnect、持久 link store 跨重启、第二 device 抢注册/抢 revoked 被拒、generation takeover/rotate 重注册、duplicate linkId、public listener 挂 provider-key/links 且豁免登录、HTTPS `.ts.net` Funnel、Unix 只 consumer/health、Provider WS 升级 401/403 错误、admin socket 立即 hook suspend/delete、离线 delete 两 store、link store init crash/adopt/marker（不被 auth.saveState 抹）、revoked tombstone 无硬上限、stale socket lock、audit grep、tombstone、offline record 503 保留/admin prune、cache purge、`GET /v1/response/{consumerId}/{linkId}/{reqId}`、60s long-poll/204、v1 public Consumer 404、旧 4409 rebind 不冲突、unregister 真值表、同 deviceId 不同 hook owner 隔离、Relay 重启无 pairState 的 503 分支。
 - Scopes：每个 scope × 路径矩阵；appdata/groups/diagnostics/telemetry 生成；logs redaction corpus；scope→root 映射；app.workspace denylist/canonical/reserved roots/symlink；vfs/ 与物理 conductor/ 不可达；all 创建时展开、旧 Share 不自动加 scope、不含 user.selected；user.selected 权限丢失/删除/目录/seek；app.files 警告真实高风险路径（configuration/configs/logs/telemetry/activity）且不含 settings.db/profiles.db；`app.files`/`app.workspace` 红字；amber 不等于已脱敏；warning strings 中英；app.workspace `/` 与物理 conductor 同名覆盖测试。
 - App：Share create/copy/New code/Revoke/Stop；registrationState/registeredAt 崩溃恢复；创建/New code 需 Connected + link/register/pair ack；切换 Portal 保留旧 Share/独立 key；多 Share 状态/通知；background/Doze/process death；desiredConnected 自动重连/Stop 后不自动连；deviceSecret 首次生成/加密/丢失/issue 前 fsync；Share 状态 atomic+fsync；Keystore encrypt/decrypt/失败；egressMode=public + OkHttp dns/socketFactory + protect/bind（VPN on/off/rule switch）；API21 runtime gate；时钟偏差 serverTs/skewMs；默认 pair 命令 argv 形式 + stdin/env 替代；expired 不发 paused；Stop/Disconnect/shutdown 语义；flag off/on；key/code/deviceSecret 不进 telemetry/export/screenshot/clipboard/notification。
-- CLI：JSON/exit/errors、key store 0700/0600/atomic/fsync、pair 成功前不写 key、pair-error/link-error 映射、Unix socket/默认 stateDir、`$HOME/bin`、list cursor（A.6）/排序/1 MiB 页/CURSOR_INVALID、read preview/get/forget/shares/status、60s 超时同 `(consumerId,linkId,reqId)`、multi-Share、duplicate label、no code/key in logs、IN_FLIGHT/RESPONSE_UNKNOWN/REQID_CONFLICT/PROVIDER_TIMEOUT/NONCE_REUSED/STALE_TS/AUTH/413。
+- CLI：JSON/exit/errors、key store 0700/0600/atomic/fsync、pair 成功前不写 key、pair-error/link-error 映射、Unix socket/默认 stateDir、`$HOME/bin`、list cursor（A.6）/排序/1 MiB 页/CURSOR_INVALID、read preview/get/forget/links/status、60s 超时同 `(consumerId,linkId,reqId)`、multi-Share、duplicate label、no code/key in logs、IN_FLIGHT/RESPONSE_UNKNOWN/REQID_CONFLICT/PROVIDER_TIMEOUT/NONCE_REUSED/STALE_TS/AUTH/413。
 - E2E：真机 + Mini + Agent；已知文件；Relay 只见密文/元数据；revoke/tamper/offline；overnight；large files；multi-device；容器 `/vfs` 退役记录。
 - UX：新用户按 6 步完成；术语；`--help`；错误可行动；`all`/per-scope 警告清楚。
 
@@ -569,7 +569,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 | `all`/`app.files`/`app.workspace` 警告可见；物理 `vfs/`、`conductor/`、`.runtime/` 不可达；`user.selected` 不在 `all`；reserved roots；`all` 创建时展开；app.files 警告不含 `settings.db`/`profiles.db`；amber 不等于已脱敏 | scope matrix；UI 截图/strings 测试；symlink 测试。 |
 | 旧 `/vfs/provider`/vfsd/`job_run(vfs=true)`/`VfsConnectTool` 在 P5 禁用；P4 前 flag off 可回退 | flag off/on；旧路径回归；docs 更新。 |
 | 多 Share 状态/通知正确；Stop=pause，Revoke=permanent；totalBytesRead 正确；desiredConnected 自动重连；Keystore at-rest；deviceSecret 首次生成/加密；API21 隐藏新旧 VFS | 多 Share UI 测试；通知/strings；重启/Stop 测试；Keystore 失败测试；API21 分支测试。 |
-| CLI JSON/exit/errors/key store/socket/PATH/list cursor 正确；`shares`/`status`；pair-error/link-error 映射；60s long-poll/204 同 `(consumerId,linkId,reqId)`；list 1 MiB 页；IN_FLIGHT/RESPONSE_UNKNOWN/REQID_CONFLICT/PROVIDER_TIMEOUT/NONCE_REUSED/STALE_TS/AUTH/413 可行动 | CLI 契约测试；Agent 实际调用。 |
+| CLI JSON/exit/errors/key store/socket/PATH/list cursor 正确；`links`/`status`；pair-error/link-error 映射；60s long-poll/204 同 `(consumerId,linkId,reqId)`；list 1 MiB 页；IN_FLIGHT/RESPONSE_UNKNOWN/REQID_CONFLICT/PROVIDER_TIMEOUT/NONCE_REUSED/STALE_TS/AUTH/413 可行动 | CLI 契约测试；Agent 实际调用。 |
 | 202+poll 的 POST/GET 可跨 HTTP 连接；两个 consumer 撞 reqId、同 reqId 不同 nonce/ct 可区分 | consumerId/REQID_CONFLICT 契约测试。 |
 | 附录 A vectors 在 Kotlin/Node 逐字节通过；附录 B/C golden 通过；malicious Relay/scope/background/egress 测试通过 | 测试报告/记录路径。 |
 

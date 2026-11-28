@@ -63,6 +63,37 @@ enum class CardPairGroup {
     Statistics,
 }
 
+internal val DefaultDashboardCardOrder =
+    listOf(
+        CardGroup.UploadTraffic,
+        CardGroup.DownloadTraffic,
+        CardGroup.Debug,
+        CardGroup.Connections,
+        CardGroup.SystemProxy,
+        CardGroup.ClashMode,
+        CardGroup.Profiles,
+        CardGroup.Vfs,
+        CardGroup.Activity,
+        CardGroup.Logs,
+    )
+
+internal val LegacyDashboardCardOrder =
+    listOf(
+        CardGroup.UploadTraffic,
+        CardGroup.DownloadTraffic,
+        CardGroup.Debug,
+        CardGroup.Connections,
+        CardGroup.SystemProxy,
+        CardGroup.ClashMode,
+        CardGroup.Profiles,
+        CardGroup.Activity,
+        CardGroup.Logs,
+        CardGroup.Vfs,
+    )
+
+internal fun migrateDashboardCardOrder(order: List<CardGroup>): List<CardGroup> =
+    if (order == LegacyDashboardCardOrder) DefaultDashboardCardOrder else order
+
 data class DashboardUiState(
     val serviceStatus: Status = Status.Stopped,
     val profiles: List<Profile> = emptyList(),
@@ -115,19 +146,7 @@ data class DashboardUiState(
             CardGroup.Logs,
             CardGroup.Vfs,
         ),
-    val cardOrder: List<CardGroup> =
-        listOf(
-            CardGroup.UploadTraffic,
-            CardGroup.DownloadTraffic,
-            CardGroup.Debug,
-            CardGroup.Connections,
-            CardGroup.SystemProxy,
-            CardGroup.ClashMode,
-            CardGroup.Profiles,
-            CardGroup.Vfs,
-            CardGroup.Activity,
-            CardGroup.Logs,
-        ),
+    val cardOrder: List<CardGroup> = DefaultDashboardCardOrder,
     val showCardSettingsDialog: Boolean = false,
 ) {
     data class DeprecatedNote(val message: String, val migrationLink: String?)
@@ -784,43 +803,17 @@ class DashboardViewModel :
 
         updateState {
             copy(
-                cardOrder = getDefaultItemOrder(),
+                cardOrder = DefaultDashboardCardOrder,
                 visibleCards = CardGroup.values().toSet(),
             )
         }
     }
 
     // Helper functions for serialization
-    private fun getDefaultItemOrder() = listOf(
-        CardGroup.UploadTraffic,
-        CardGroup.DownloadTraffic,
-        CardGroup.Debug,
-        CardGroup.Connections,
-        CardGroup.SystemProxy,
-        CardGroup.ClashMode,
-        CardGroup.Profiles,
-        CardGroup.Vfs,
-        CardGroup.Activity,
-        CardGroup.Logs,
-    )
-
-    private fun legacyDefaultItemOrder() = listOf(
-        CardGroup.UploadTraffic,
-        CardGroup.DownloadTraffic,
-        CardGroup.Debug,
-        CardGroup.Connections,
-        CardGroup.SystemProxy,
-        CardGroup.ClashMode,
-        CardGroup.Profiles,
-        CardGroup.Activity,
-        CardGroup.Logs,
-        CardGroup.Vfs,
-    )
-
     private fun loadItemOrder(): List<CardGroup> {
         val savedOrder = Settings.dashboardItemOrder
         if (savedOrder.isBlank()) {
-            return getDefaultItemOrder()
+            return DefaultDashboardCardOrder
         }
 
         return try {
@@ -844,10 +837,9 @@ class DashboardViewModel :
                 order.add(if (logsIndex >= 0) logsIndex else order.size, CardGroup.Activity)
             }
             // Users who never touched the order keep the new default placement.
-            if (order == legacyDefaultItemOrder()) return getDefaultItemOrder()
-            order
+            migrateDashboardCardOrder(order)
         } catch (e: JSONException) {
-            getDefaultItemOrder()
+            DefaultDashboardCardOrder
         }
     }
 

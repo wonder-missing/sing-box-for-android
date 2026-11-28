@@ -4,7 +4,7 @@
 
 ## 1. 目标与非目标
 
-**目标**：配对的 CLI client（当前是 Claude Code Agent）在 Mini 上直接读取 WonderSing 的 VFS；App 是 Provider，client 侧只用 `vfsc` CLI，Portal/Relay 只做盲路由。用户配置一次 Relay Server；之后每个 client 建一个 Share、粘一次 5 分钟 Pairing Code。连接只为已有 Share 维持，不设手动 Connect/Stop。
+**目标**：配对的 CLI client（当前是 Claude Code Agent）在 Mini 上直接读取 WonderSing 的 VFS；App 是 Provider，client 侧只用 `vfsc` CLI，Portal/Relay 只做盲路由。用户配置一次 Relay Server；之后每个 client 建一个 Share、粘一次 5 分钟 Pairing Code。连接只为已有 Share 维持，不设手动 Connect/Stop。用户面统一叫 Link/Links；wire、存储和内部类型仍是 Share。
 
 **非目标（v1）**：Consumer MCP、容器 `/vfs`、always-on、FCM 唤醒、PFS、多租户/跨账号、远程 Consumer、多 Portal 同时在线、Provider key 自动轮换。
 
