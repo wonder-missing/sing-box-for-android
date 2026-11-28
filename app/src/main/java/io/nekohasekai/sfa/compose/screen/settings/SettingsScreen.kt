@@ -262,6 +262,31 @@ fun SettingsScreen(navController: NavController) {
                     ),
                 )
 
+                if (BuildConfig.SHARE_KEY_VFS && android.os.Build.VERSION.SDK_INT >= 24) {
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                stringResource(R.string.settings_share_files_title),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        },
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.Outlined.FolderShared,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        modifier =
+                        Modifier
+                            .clickable { navController.navigate("settings/vfs_servers") },
+                        colors =
+                        ListItemDefaults.colors(
+                            containerColor = Color.Transparent,
+                        ),
+                    )
+                }
+
                 ListItem(
                     headlineContent = {
                         Text(
@@ -303,54 +328,6 @@ fun SettingsScreen(navController: NavController) {
                     Modifier
                         .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
                         .clickable { navController.navigate("settings/telemetry") },
-                    colors =
-                    ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
-                    ),
-                )
-            }
-        }
-
-        // Security Section
-        Text(
-            text = stringResource(R.string.settings_security),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
-        )
-
-        Card(
-            modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            colors =
-            CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            ),
-        ) {
-            if (BuildConfig.SHARE_KEY_VFS && android.os.Build.VERSION.SDK_INT >= 24) {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            stringResource(R.string.settings_share_files_title),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
-                    supportingContent = {
-                        Text(stringResource(R.string.settings_share_files_help))
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.FolderShared,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    modifier =
-                    Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { navController.navigate("settings/vfs_servers") },
                     colors =
                     ListItemDefaults.colors(
                         containerColor = Color.Transparent,

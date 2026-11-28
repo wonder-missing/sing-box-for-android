@@ -169,18 +169,10 @@ fun DashboardSettingsBottomSheet(
                                 CardGroup.ClashMode,
                                 CardGroup.Profiles,
                                 CardGroup.Vfs,
+                                CardGroup.Activity,
+                                CardGroup.Logs,
                             )
-                        val allCardsEnabled =
-                            setOfNotNull(
-                                CardGroup.ClashMode,
-                                CardGroup.UploadTraffic,
-                                CardGroup.DownloadTraffic,
-                                CardGroup.Debug,
-                                CardGroup.Connections,
-                                CardGroup.SystemProxy,
-                                CardGroup.Profiles,
-                                CardGroup.Vfs,
-                            )
+                        val allCardsEnabled = CardGroup.values().toSet()
                         reorderedList = defaultOrder
                         currentVisibleCards = allCardsEnabled
                         onResetOrder()

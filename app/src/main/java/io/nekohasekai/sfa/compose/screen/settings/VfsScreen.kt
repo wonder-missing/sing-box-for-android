@@ -53,7 +53,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
@@ -80,7 +79,7 @@ private enum class SharePreset {
 fun VfsScreen(navController: NavController) {
     OverrideTopBar {
         TopAppBar(
-            title = { Text(stringResource(R.string.share_files_title)) },
+            title = { Text(stringResource(R.string.vfs_links_title)) },
             navigationIcon = {
                 IconButton(onClick = { navController.navigateUp() }) {
                     Icon(
@@ -149,6 +148,21 @@ fun VfsScreen(navController: NavController) {
         }
     }
 
+    val openPairing: (String) -> Unit = { shareId ->
+        scope.launch {
+            busy = true
+            message = null
+            if (VfsRelayRuntime.pairingUi(shareId) != null) {
+                pairingShareId = shareId
+            } else {
+                VfsRelayRuntime.newCode(context, shareId)
+                    .onSuccess { pairingShareId = shareId }
+                    .onFailure { message = it.message }
+            }
+            busy = false
+        }
+    }
+
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             uris.forEach { uri ->
@@ -176,12 +190,6 @@ fun VfsScreen(navController: NavController) {
             ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = stringResource(R.string.share_files_intro),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
         if (selectedServer == null) {
             Text(
                 text = stringResource(R.string.vfs_no_server),
@@ -194,18 +202,6 @@ fun VfsScreen(navController: NavController) {
             return@Column
         }
 
-        Text(
-            text = stringResource(R.string.vfs_server_label, selectedServer.name),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        if (shares.isNotEmpty() ||
-            relayState is VfsRelayState.Connecting ||
-            relayState is VfsRelayState.Backoff
-        ) {
-            RelayStatus(relayState, shares.size)
-        }
         if (relayError != null) {
             Text(
                 text = relayError.message,
@@ -299,25 +295,14 @@ fun VfsScreen(navController: NavController) {
         }
 
         if (shares.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.share_files_shares),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
             shares.forEach { share ->
+                val relayName =
+                    serverViews.firstOrNull { it.id == share.serverId }?.name
+                        ?: selectedServer?.name.orEmpty()
                 ShareCard(
                     share = share,
-                    onShowPairing = { pairingShareId = share.shareId },
-                    onNewCode = {
-                        scope.launch {
-                            busy = true
-                            message = null
-                            VfsRelayRuntime.newCode(context, share.shareId)
-                                .onSuccess { pairingShareId = share.shareId }
-                                .onFailure { message = it.message }
-                            busy = false
-                        }
-                    },
+                    relayName = relayName,
+                    onPairing = { openPairing(share.shareId) },
                     onRevoke = { revokeShareId = share.shareId },
                     enabled = !busy,
                 )
@@ -370,40 +355,10 @@ fun VfsScreen(navController: NavController) {
 }
 
 @Composable
-private fun RelayStatus(
-    state: VfsRelayState,
-    shareCount: Int,
-) {
-    val text =
-        when (state) {
-            is VfsRelayState.Connected ->
-                stringResource(
-                    R.string.vfs_serving_traffic,
-                    shareCount,
-                    Libbox.formatBytes(state.totalBytesRead),
-                )
-            is VfsRelayState.Connecting -> stringResource(R.string.share_files_connecting)
-            is VfsRelayState.Backoff -> stringResource(R.string.share_files_backoff)
-            is VfsRelayState.Error -> state.message
-            is VfsRelayState.Idle -> stringResource(R.string.vfs_starting)
-        }
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color =
-            if (state is VfsRelayState.Error) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-    )
-}
-
-@Composable
 private fun ShareCard(
     share: VfsRelayShareView,
-    onShowPairing: () -> Unit,
-    onNewCode: () -> Unit,
+    relayName: String,
+    onPairing: () -> Unit,
     onRevoke: () -> Unit,
     enabled: Boolean,
 ) {
@@ -418,6 +373,11 @@ private fun ShareCard(
             )
             Text(
                 text = shareStatusLabel(share.status),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(R.string.vfs_share_relay, relayName.ifBlank { "—" }),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -445,13 +405,8 @@ private fun ShareCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (share.status != "revoked") {
-                    if (share.status == "active") {
-                        TextButton(onClick = onShowPairing, enabled = enabled) {
-                            Text(stringResource(R.string.share_files_show_pairing))
-                        }
-                    }
-                    TextButton(onClick = onNewCode, enabled = enabled) {
-                        Text(stringResource(R.string.share_files_new_code))
+                    TextButton(onClick = onPairing, enabled = enabled) {
+                        Text(stringResource(R.string.share_files_show_pairing))
                     }
                     TextButton(onClick = onRevoke, enabled = enabled) {
                         Text(stringResource(R.string.share_files_revoke))
@@ -653,11 +608,7 @@ private fun PairingDialog(
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.share_files_done))
-            }
-        },
+        confirmButton = {},
     )
 }
 

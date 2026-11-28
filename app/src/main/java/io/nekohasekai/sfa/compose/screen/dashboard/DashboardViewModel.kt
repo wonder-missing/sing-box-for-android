@@ -124,9 +124,9 @@ data class DashboardUiState(
             CardGroup.SystemProxy,
             CardGroup.ClashMode,
             CardGroup.Profiles,
+            CardGroup.Vfs,
             CardGroup.Activity,
             CardGroup.Logs,
-            CardGroup.Vfs,
         ),
     val showCardSettingsDialog: Boolean = false,
 ) {
@@ -799,6 +799,19 @@ class DashboardViewModel :
         CardGroup.SystemProxy,
         CardGroup.ClashMode,
         CardGroup.Profiles,
+        CardGroup.Vfs,
+        CardGroup.Activity,
+        CardGroup.Logs,
+    )
+
+    private fun legacyDefaultItemOrder() = listOf(
+        CardGroup.UploadTraffic,
+        CardGroup.DownloadTraffic,
+        CardGroup.Debug,
+        CardGroup.Connections,
+        CardGroup.SystemProxy,
+        CardGroup.ClashMode,
+        CardGroup.Profiles,
         CardGroup.Activity,
         CardGroup.Logs,
         CardGroup.Vfs,
@@ -830,6 +843,8 @@ class DashboardViewModel :
                 val logsIndex = order.indexOf(CardGroup.Logs)
                 order.add(if (logsIndex >= 0) logsIndex else order.size, CardGroup.Activity)
             }
+            // Users who never touched the order keep the new default placement.
+            if (order == legacyDefaultItemOrder()) return getDefaultItemOrder()
             order
         } catch (e: JSONException) {
             getDefaultItemOrder()

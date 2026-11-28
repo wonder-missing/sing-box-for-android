@@ -94,7 +94,6 @@ class RelayServerNoMcpTest {
         val required =
             listOf(
                 "settings_share_files_title",
-                "settings_share_files_help",
                 "share_files_add_server",
                 "share_files_add_server_title",
                 "share_files_server_name",
@@ -123,9 +122,9 @@ class RelayServerNoMcpTest {
                 assertFalse("$path still has '$forbidden' in Share files copy", values.contains(forbidden))
             }
         }
-        assertTrue(
+        assertFalse(
             source("src/main/res/values/strings.xml")
-                .contains("<string name=\"share_files_relay_server\">Relay Server</string>"),
+                .contains("name=\"share_files_relay_server\""),
         )
     }
 }
