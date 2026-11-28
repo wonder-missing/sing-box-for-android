@@ -28,7 +28,7 @@
 
 ### P2 数据面与能力
 
-- [ ] **Share Key VFS（VFS Broker 替代）**：v1 合同见 [`docs/vfs-share-key.md`](docs/vfs-share-key.md)；协议细节见 [`docs/vfs-share-key-reference.md`](docs/vfs-share-key-reference.md)（参考，不作门槛）；AY 已发布，用户面统一为 Links；CLI 提供 `links`、`status --probe`。`app.data.groups` v1 仍返回 available:false，需决定实现全局快照或从 Scope 移除。App 作为 Provider 生成 Link Key；用户建 Link 后把 5 分钟 Pairing Code 粘给 Agent；Consumer 只提供 `vfsc` CLI（不做 MCP）；Portal/Relay 只做盲路由。旧 Conductor VFS / MCP `vfs_link_request` / vfsd / `job_run(vfs=true)` 容器挂载退役；AO 的 Activity/Groups 分散导出在真机验收后移除。
+- [ ] **Share Key VFS（VFS Broker 替代）**：v1 合同见 [`docs/vfs-share-key.md`](docs/vfs-share-key.md)；协议细节见 [`docs/vfs-share-key-reference.md`](docs/vfs-share-key-reference.md)（参考，不作门槛）；AY 已发布，用户面统一为 Links；CLI 提供 `links`、`status --probe`。`app.data.groups`（UI 名 Proxy groups）已从 v1 可创建 Scope 中隐藏；旧 Link 读取仍返回 available:false，后续需接全局快照再恢复。App 作为 Provider 生成 Link Key；用户建 Link 后把 5 分钟 Pairing Code 粘给 Agent；Consumer 只提供 `vfsc` CLI（不做 MCP）；Portal/Relay 只做盲路由。旧 Conductor VFS / MCP `vfs_link_request` / vfsd / `job_run(vfs=true)` 容器挂载退役；AO 的 Activity/Groups 分散导出在真机验收后移除。
 
 - [ ] **plan_update 隐藏导致相邻思考卡**：一轮只有 `plan_update` 时，它只更新顶部计划卡、不插入对话流；前后两个模型调用的 reasoning 卡会贴在一起。可选轻量「计划已更新 · x/y」行，或合并同一 turn 内相邻 reasoning；两条路的视觉不同，待拍板。
 - [ ] **Plan 卡完成态与变更历史（AF 候选）**：全部 `done` 后隐藏 Edit；`PlanEvent` 记录模型/用户每次版本、来源和 action，Transcript 增加 `## Plan history`；`[runtime:plan]` 增加 `updated by`。735 用例绿。待真机确认 v3→v4 能在 transcript 看到 user 取消第 5 步，且全部完成时没有编辑入口。

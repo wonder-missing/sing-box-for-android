@@ -41,8 +41,6 @@ class AgentPromptStabilityTest {
         assertTrue(first.contains("[runtime:...]"))
         assertTrue(first.contains("A [runtime:...] user message is state"))
         assertTrue(first.contains("plan_update"))
-        assertTrue(first.contains("job_run(vfs=true)"))
-        assertFalse(first.contains("docker_run(vfs=true)"))
         assertTrue(first.contains("headings sparingly"))
         assertTrue(first.contains("tables render with horizontal scroll"))
         assertTrue(first.contains("fenced code blocks"))
@@ -63,7 +61,7 @@ class AgentPromptStabilityTest {
                 .digest(prompt.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-        assertEquals("ba04b38b0079da9951a4a5ab677c683053c8413a9d5904994aea827906867ca3", digest)
+        assertEquals("b4cf41db9fbf9efc2b399672bf258a5c57f83c31587c56cf9c78a1e831696fb2", digest)
     }
 
     @Test

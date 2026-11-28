@@ -24,9 +24,6 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 
 internal const val MCP_PROTOCOL = "2025-06-18"
 internal const val MCP_MAX_TOOLS = 64
-internal const val VFS_LINK_REQUEST_TOOL = "vfs_link_request"
-internal const val VFS_LINK_REVOKE_TOOL = "vfs_link_revoke"
-internal const val VFS_DEVICE_HEADER = "X-WonderSing-Device"
 internal const val DOCKER_RUN_TOOL = "docker_run"
 internal const val MCP_DOCKER_RUN_READ_TIMEOUT_MS: Int = 3_700_000
 internal const val MAX_EMBEDDED_BYTES: Int = 1024 * 1024
@@ -316,7 +313,6 @@ class McpSession(
     private val transport: McpTransport,
     private val token: String = "",
     private val clientVersion: String = "wondersing",
-    private val deviceId: () -> String = { "" },
 ) {
     private val mutex = Mutex()
     private var sessionId: String? = null
@@ -361,21 +357,12 @@ class McpSession(
                     put("name", name)
                     put("arguments", arguments)
                 }
-            val extraHeaders =
-                if (name == VFS_LINK_REQUEST_TOOL || name == VFS_LINK_REVOKE_TOOL) {
-                    deviceId().takeIf { it.isNotBlank() }?.let {
-                        mapOf(VFS_DEVICE_HEADER to it)
-                    }.orEmpty()
-                } else {
-                    emptyMap()
-                }
             val result =
                 request(
                     "tools/call",
                     params,
                     cancellation,
                     allowRetry = false,
-                    extraHeaders = extraHeaders,
                     readTimeoutMs =
                         if (name == DOCKER_RUN_TOOL) {
                             MCP_DOCKER_RUN_READ_TIMEOUT_MS

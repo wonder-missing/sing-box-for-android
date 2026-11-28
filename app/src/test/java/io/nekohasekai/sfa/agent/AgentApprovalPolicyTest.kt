@@ -17,7 +17,6 @@ class AgentApprovalPolicyTest {
         assertFalse(AgentApprovalPolicy.autoApprove(ApprovalProfile.TEST, ConfirmationKind.WORKSPACE_DELETE_DIR))
         assertFalse(AgentApprovalPolicy.autoApprove(ApprovalProfile.TEST, ConfirmationKind.WORKSPACE_DELETE_UNTRACKED))
         assertFalse(AgentApprovalPolicy.autoApprove(ApprovalProfile.TEST, ConfirmationKind.WORKSPACE_OVERWRITE))
-        assertFalse(AgentApprovalPolicy.autoApprove(ApprovalProfile.TEST, ConfirmationKind.VFS_GRANT))
         assertFalse(AgentApprovalPolicy.autoApprove(ApprovalProfile.TEST, ConfirmationKind.REMOTE_EXEC))
         assertFalse(AgentApprovalPolicy.autoApprove(ApprovalProfile.TEST, ConfirmationKind.DATA_EGRESS))
         assertFalse(AgentApprovalPolicy.autoApprove(ApprovalProfile.TEST, ConfirmationKind.FILE_TRANSFER))
@@ -74,7 +73,6 @@ class AgentApprovalPolicyTest {
         val cardKinds =
             listOf(
                 ConfirmationKind.WORKSPACE_DELETE_DIR, // artifacts directory
-                ConfirmationKind.VFS_GRANT, // vfs_link_request
                 ConfirmationKind.REMOTE_EXEC, // job_run
                 ConfirmationKind.DATA_EGRESS, // telemetry_upload
             )
@@ -84,7 +82,7 @@ class AgentApprovalPolicyTest {
                 AgentApprovalPolicy.autoApprove(ApprovalProfile.TEST, kind)
             }
 
-        assertEquals(4, prompts.size)
+        assertEquals(3, prompts.size)
         assertEquals(cardKinds.toSet(), prompts.toSet())
     }
 }

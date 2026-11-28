@@ -46,7 +46,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
@@ -75,7 +74,7 @@ fun VfsRelayServersScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scaffoldPadding = LocalScaffoldPadding.current
-    val supported = BuildConfig.SHARE_KEY_VFS && android.os.Build.VERSION.SDK_INT >= 24
+    val supported = android.os.Build.VERSION.SDK_INT >= 24
 
     if (!supported) {
         Column(

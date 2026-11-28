@@ -103,10 +103,6 @@ import io.nekohasekai.sfa.telemetry.TelemetryRuntime
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
 import io.nekohasekai.sfa.vendor.Vendor
-import io.nekohasekai.sfa.vfs.VfsConsentDecision
-import io.nekohasekai.sfa.vfs.VfsConsentUi
-import io.nekohasekai.sfa.vfs.VfsConnectTool
-import io.nekohasekai.sfa.vfs.VfsRuntime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
@@ -755,14 +751,6 @@ class ConductorViewModel(
 
     private val agentConfig = AgentConfig()
 
-    private val vfsConnectionManager = VfsRuntime.manager(getApplication())
-
-    val vfsConsent: StateFlow<VfsConsentUi?> = VfsRuntime.consent
-
-    fun resolveVfsConsent(decision: VfsConsentDecision) {
-        VfsRuntime.resolveVfsConsent(decision)
-    }
-
     private val visionPort: VisionPort by lazy {
         object : VisionPort {
             override suspend fun analyze(
@@ -804,7 +792,7 @@ class ConductorViewModel(
                     chatImage = { imageStore.load(it) },
                     planStore = planStore,
                 ).all +
-                listOf(VfsConnectTool(vfsConnectionManager), AskUserTool(askUserPort)),
+                listOf(AskUserTool(askUserPort)),
             toolTimeoutMs = agentConfig.toolTimeoutMs,
         )
 
@@ -1382,7 +1370,6 @@ class ConductorViewModel(
     fun onHostFinishing() {
         cancelPendingFileRequest("The app was closed while waiting for file selection.")
         cancelPendingAskUser("The app was closed while waiting for an answer.")
-        VfsRuntime.cancelPendingConsent("The app was closed while waiting for VFS confirmation.")
     }
 
     fun cancelFileRequest(requestId: String) {

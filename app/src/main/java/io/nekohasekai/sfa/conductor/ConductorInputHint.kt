@@ -3,10 +3,8 @@ package io.nekohasekai.sfa.conductor
 internal fun hasPendingUserInteraction(
     items: List<ConductorItem>,
     hasFileRequest: Boolean,
-    hasVfsConsent: Boolean,
 ): Boolean =
     hasFileRequest ||
-        hasVfsConsent ||
         items.any { item ->
             when (item) {
                 is ConductorItem.Confirmation -> true

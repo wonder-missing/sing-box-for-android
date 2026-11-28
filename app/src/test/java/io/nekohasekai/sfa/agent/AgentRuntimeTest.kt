@@ -871,15 +871,15 @@ class AgentRuntimeTest {
     fun testProfileStillCardsAnExternalBoundary() {
         val definition =
             AgentToolDefinition(
-                name = "vfs_grant",
+                name = "external_grant",
                 description = "Grant",
                 permission = AgentPermission.DATA_EGRESS,
                 parameters = emptyList(),
                 confirmationPolicy = ConfirmationPolicy.AGENT_ONLY,
                 category = "mcp",
-                confirmationKind = ConfirmationKind.VFS_GRANT,
+                confirmationKind = ConfirmationKind.NETWORK_CHANGE,
             )
-        val call = ToolCall("call_1", "vfs_grant", "{}")
+        val call = ToolCall("call_1", "external_grant", "{}")
         val model =
             ScriptedModel(
                 mutableListOf(
@@ -902,7 +902,7 @@ class AgentRuntimeTest {
                                 argsJson = call.argumentsJson,
                                 displayArgsJson = call.argumentsJson,
                                 reason = "grant",
-                                kind = ConfirmationKind.VFS_GRANT,
+                                kind = ConfirmationKind.NETWORK_CHANGE,
                             ),
                     )
                 }

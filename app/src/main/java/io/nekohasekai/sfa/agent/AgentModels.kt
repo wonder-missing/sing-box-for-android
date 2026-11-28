@@ -64,7 +64,6 @@ enum class ConfirmationKind {
     DATA_EGRESS,
     FILE_TRANSFER,
     REMOTE_EXEC,
-    VFS_GRANT,
     MCP_READ,
     MCP_WRITE,
     OTHER,

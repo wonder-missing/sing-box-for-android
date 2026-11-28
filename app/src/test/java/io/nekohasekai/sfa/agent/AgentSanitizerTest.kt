@@ -1,13 +1,9 @@
 package io.nekohasekai.sfa.agent
 
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,45 +51,6 @@ class AgentSanitizerTest {
     }
 
     @Test
-    fun vfsV2LinkKeepsServerLinkIdAndScope() {
-        val output =
-            buildJsonObject {
-                put(
-                    "link",
-                    buildJsonObject {
-                        put("type", "vfs-link")
-                        put("version", 2)
-                        put("server", "https://clawdy-mini.tailf665f5.ts.net")
-                        put("linkId", "l_cbb79c6a9e92830cf0d22f577f059c88")
-                        putJsonArray("scope") { add("conductor") }
-                    },
-                )
-            }
-
-        val sanitized = AgentSanitizer.sanitizeElement(output) as JsonObject
-        val link = sanitized["link"] as JsonObject
-
-        assertEquals(
-            "https://clawdy-mini.tailf665f5.ts.net",
-            (link["server"] as JsonPrimitive).content,
-        )
-    }
-
-    @Test
-    fun vfsConnectV2OutputKeepsServerWithoutALinkId() {
-        val output =
-            buildJsonObject {
-                put("connected", true)
-                put("server", "https://clawdy-mini.tailf665f5.ts.net")
-                putJsonArray("scope") { add("conductor") }
-            }
-
-        val sanitized = AgentSanitizer.sanitizeElement(output).toString()
-
-        assertTrue(sanitized.contains("https://clawdy-mini.tailf665f5.ts.net"))
-    }
-
-    @Test
     fun aPlainServerAndScopeObjectIsStillRedacted() {
         val output =
             buildJsonObject {
@@ -105,25 +62,6 @@ class AgentSanitizerTest {
 
         assertTrue(sanitized.contains("[redacted-url]"))
         assertFalse(sanitized.contains("example.com"))
-    }
-
-    @Test
-    fun aVfsLinkStillRedactsOtherUrls() {
-        val output =
-            buildJsonObject {
-                put("type", "vfs-link")
-                put("server", "https://clawdy-mini.tailf665f5.ts.net")
-                put("linkId", "l_cbb79c6a9e92830cf0d22f577f059c88")
-                putJsonArray("scope") { add("conductor") }
-                put("note", "https://example.com/sub?token=SECRET")
-            }
-
-        val sanitized = AgentSanitizer.sanitizeElement(output).toString()
-
-        assertTrue(sanitized.contains("clawdy-mini.tailf665f5.ts.net"))
-        assertTrue(sanitized.contains("[redacted-url]"))
-        assertFalse(sanitized.contains("example.com"))
-        assertFalse(sanitized.contains("SECRET"))
     }
 
     @Test

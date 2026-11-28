@@ -4,9 +4,6 @@ import android.content.Context
 import io.nekohasekai.sfa.agent.AgentTool
 import io.nekohasekai.sfa.agent.ConductorFileStore
 import io.nekohasekai.sfa.agent.ToolCancellation
-import io.nekohasekai.sfa.vfs.VfsDeviceIdStore
-import io.nekohasekai.sfa.vfs.VfsServerBase
-import io.nekohasekai.sfa.vfs.VfsPrivateFiles
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -67,7 +64,6 @@ class McpRuntime(
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val staleAfterMs: Long = 60_000,
     private val clientVersion: String = "wondersing",
-    private val deviceId: () -> String = { "" },
     private val artifactSink: McpArtifactSink? = null,
 ) {
     private val gate = Mutex()
@@ -96,20 +92,6 @@ class McpRuntime(
     fun tools(): List<AgentTool> = toolSnapshot
 
     suspend fun listedTools(): List<McpListedTool> = gate.withLock { listLocked() }
-
-    /** Resolve exactly one enabled server whose server base matches a Link. */
-    suspend fun resolveServerForVfs(server: String): McpServerConfig? =
-        gate.withLock {
-            servers
-                .filter { config ->
-                    config.enabled &&
-                        VfsServerBase.matches(
-                            server,
-                            config.serverBase.takeIf { it.isNotBlank() },
-                            config.url,
-                        )
-                }.singleOrNull()
-        }
 
     fun cancelActive() {
         cancels.forEach { it.cancel() }
@@ -338,7 +320,6 @@ class McpRuntime(
                 transport = transportFactory(config),
                 token = config.token,
                 clientVersion = clientVersion,
-                deviceId = deviceId,
             )
         val cancel = McpCancel()
         cancels.add(cancel)
@@ -489,16 +470,11 @@ object McpRuntimes {
             instance?.let { return it }
             val app = context.applicationContext
             val file = File(app.filesDir, "conductor/mcp-servers.json")
-            val deviceIdStore =
-                VfsDeviceIdStore(
-                    VfsPrivateFiles.deviceIdFile(app.noBackupFilesDir),
-                )
             val workingDir = app.getExternalFilesDir(null) ?: app.filesDir
             val artifactSink = FileMcpArtifactSink(ConductorFileStore(workingDir))
             return McpRuntime(
                 repository = FileMcpServerRepository(file, McpTokenCipherFactory.create()),
                 transportFactory = { config -> McpHttpTransport(config.url, config.token) },
-                deviceId = { deviceIdStore.getOrCreate() },
                 artifactSink = artifactSink,
             ).also { instance = it }
         }

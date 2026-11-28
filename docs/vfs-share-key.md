@@ -74,13 +74,13 @@
 
 | Scope 组 | 内容 | 警告 |
 |---|---|---|
-| `app.data.*` | activity / groups / logs / telemetry / diagnostics | amber；logs 是 redactor best-effort，telemetry 是 raw |
+| `app.data.*` | activity / proxy groups / logs / telemetry / diagnostics | amber；logs 是 redactor best-effort，telemetry 是 raw |
 | `app.files` | `filesDir/**`，硬排除物理 `vfs/` 与 `conductor/` | red |
 | `app.workspace` | external files dir，排除 `conductor/`、`.runtime/`、保留虚拟 root | red |
 | `user.selected` | SAF 多选文件，read-only，不进 `all` | picker |
 | `all` | 所有固定 scope 的并集，**不含 `user.selected`**，硬排除物理 `vfs/` 与 `conductor/` | red 并集 |
 
-Recommended = 仅 `app.data.*`；Everything = `all`；Customize = 任意固定 scope + 可选 `user.selected`。Share 创建时展开 concrete scope，之后新增 scope 不自动进入旧 Share。
+Recommended = activity / logs / telemetry / diagnostics；Everything = 所有 available 固定 scope；Customize = 任意 available 固定 scope + 可选 `user.selected`。`app.data.groups`（UI 名 Proxy groups）数据源未接入，v1 不作为可选项；旧 Share 仍可解析，读取返回 `available:false`。Share 创建时展开 concrete scope，之后新增 scope 不自动进入旧 Share。
 
 ## 7. 错误与验收
 

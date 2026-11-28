@@ -8,8 +8,6 @@ import io.nekohasekai.sfa.agent.ConfirmationKind
 import io.nekohasekai.sfa.agent.ConfirmationPolicy
 import io.nekohasekai.sfa.agent.ToolCancellation
 import io.nekohasekai.sfa.agent.ToolExecution
-import io.nekohasekai.sfa.vfs.VfsScope
-import io.nekohasekai.sfa.vfs.VfsScopeAliases
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -57,7 +55,7 @@ fun mcpAgentTools(
                     serverName = serverName,
                     namespace = serverPrefix,
                     confirmationReason = "This sends the arguments to the MCP server \"$serverName\".",
-                    parametersSchemaOverride = withVfsScopeHint(tool.name, tool.inputSchema),
+                    parametersSchemaOverride = tool.inputSchema,
                     passthroughArguments = true,
                     timeoutMs =
                         if (tool.name == DOCKER_RUN_TOOL) {
@@ -115,7 +113,6 @@ private fun mcpKind(
     readOnly: Boolean,
 ): ConfirmationKind =
     when {
-        name == VFS_LINK_REQUEST_TOOL -> ConfirmationKind.VFS_GRANT
         name in remoteExecNames -> ConfirmationKind.REMOTE_EXEC
         isReadOnlyRemote(name, readOnly) -> ConfirmationKind.MCP_READ
         else -> ConfirmationKind.MCP_WRITE
@@ -138,7 +135,6 @@ private fun mcpScope(
     when (mcpKind(name, readOnly)) {
         ConfirmationKind.MCP_READ -> "mcp_read"
         ConfirmationKind.REMOTE_EXEC -> "remote_exec"
-        ConfirmationKind.VFS_GRANT -> "vfs_grant"
         ConfirmationKind.MCP_WRITE -> "mcp_write"
         else -> "mcp"
     }
@@ -163,34 +159,7 @@ private fun aliases(
 private fun describe(
     serverName: String,
     tool: McpRemoteTool,
-): String {
-    val base = "MCP server: $serverName. ${tool.description.ifBlank { tool.name }}"
-    return if (tool.name == VFS_LINK_REQUEST_TOOL) "$base $VFS_SCOPE_HINT" else base
-}
-
-private val VFS_SCOPE_HINT =
-    "Prefer a preset when it matches: " +
-        "${VfsScopeAliases.ALL} = whole app (workdir + appfiles + trace + system_prompt + conversation); " +
-        "${VfsScopeAliases.CONDUCTOR_SESSION} = Conductor workspace + trace/system_prompt/conversation. " +
-        "Fine-grained roots: " +
-        VfsScope.entries.joinToString(", ") { it.wire } +
-        ". Prefer the narrowest grant. Never ask the user to name scopes."
-
-/**
- * Puts the scope mapping next to the parameter the model actually fills in.
- * The remote schema is otherwise passed through unchanged.
- */
-private fun withVfsScopeHint(
-    name: String,
-    schema: JsonObject,
-): JsonObject {
-    if (name != VFS_LINK_REQUEST_TOOL) return schema
-    val properties = schema["properties"] as? JsonObject ?: return schema
-    val scope = properties["scope"] as? JsonObject ?: return schema
-    val updatedScope = JsonObject(scope + ("description" to JsonPrimitive(VFS_SCOPE_HINT)))
-    val updatedProperties = JsonObject(properties + ("scope" to updatedScope))
-    return JsonObject(schema + ("properties" to updatedProperties))
-}
+): String = "MCP server: $serverName. ${tool.description.ifBlank { tool.name }}"
 
 private class McpBoundTool(
     override val definition: AgentToolDefinition,
@@ -199,24 +168,6 @@ private class McpBoundTool(
     private val artifactSink: McpArtifactSink?,
     private val allowedResourceOrigins: Set<String>,
 ) : AgentTool {
-    override suspend fun preflight(args: JsonObject): ToolExecution? {
-        if (remoteName != VFS_LINK_REQUEST_TOOL) return null
-        val scope = args["scope"] as? JsonArray
-            ?: return ToolExecution(
-                errorCode = "invalid_parameter",
-                errorMessage = "scope must be a non-empty array of scope names.",
-            )
-        if (scope.isEmpty() ||
-            scope.any { it !is JsonPrimitive || !it.isString || it.content.isBlank() }
-        ) {
-            return ToolExecution(
-                errorCode = "invalid_parameter",
-                errorMessage = "scope must be a non-empty array of scope names.",
-            )
-        }
-        return null
-    }
-
     override suspend fun execute(
         args: JsonObject,
         cancellation: ToolCancellation,

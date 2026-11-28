@@ -2,7 +2,6 @@ package io.nekohasekai.sfa.vfs.relay
 
 import android.content.Context
 import android.os.Build
-import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.bg.VfsSharingService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -44,7 +43,7 @@ sealed interface VfsRelayState {
 
     data class Connected(
         val shares: List<VfsRelayShareView>,
-        val totalBytesRead: Long,
+        val totalBytesSent: Long,
     ) : VfsRelayState
 
     data class Backoff(
@@ -101,7 +100,7 @@ object VfsRelayRuntime {
     private val linkGate = RelayLinkGate()
     private val pairLimiter = RelayPairRateLimiter()
     private val sourceCache = ConcurrentHashMap<String, VfsRelaySource>()
-    private val totalBytesRead = AtomicLong(0)
+    private val totalBytesSent = AtomicLong(0)
 
     private val _state = MutableStateFlow<VfsRelayState>(VfsRelayState.Idle)
     val state: StateFlow<VfsRelayState> = _state.asStateFlow()
@@ -135,7 +134,7 @@ object VfsRelayRuntime {
     private var expiryJobs = ConcurrentHashMap<String, Job>()
     private var reconnectAttempt = 0
 
-    fun isAvailable(): Boolean = BuildConfig.SHARE_KEY_VFS && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+    fun isAvailable(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
 
     fun ensure(context: Context) {
         if (appContext != null) return
@@ -1188,7 +1187,10 @@ object VfsRelayRuntime {
         val now = System.currentTimeMillis()
         purgeExpiredCaches(now)
         responseCache[cacheKey]?.takeIf { it.expiresAt > now }?.let {
-            client?.send(it.json)
+            if (client?.send(it.json) == true) {
+                totalBytesSent.addAndGet(it.json.toByteArray(Charsets.UTF_8).size.toLong())
+                publishConnected()
+            }
             return
         }
         if (!inFlight.add(cacheKey)) {
@@ -1258,10 +1260,6 @@ object VfsRelayRuntime {
                         RelayDispatch(RelayWire.innerError(code, error.message ?: "provider error"), 0, cache = false)
                     }
             sendEncryptedInner(context, record, envelope, response.payload, shareKey, cache = response.cache)
-            if (response.bytesRead > 0) {
-                totalBytesRead.addAndGet(response.bytesRead.toLong())
-                publishConnected()
-            }
             recordLastUsed(record.shareId)
         } finally {
             inFlight.remove(cacheKey)
@@ -1347,7 +1345,10 @@ object VfsRelayRuntime {
             responseCache["${record.linkId}|${envelope.reqId}|${envelope.clientNonce}"] =
                 CachedResponse(text, System.currentTimeMillis() + RESPONSE_CACHE_MS)
         }
-        client?.send(text)
+        if (client?.send(text) == true) {
+            totalBytesSent.addAndGet(text.toByteArray(Charsets.UTF_8).size.toLong())
+            publishConnected()
+        }
     }
 
     private fun rejectPairAttempt(
@@ -1881,7 +1882,7 @@ object VfsRelayRuntime {
             pairResponseCache.clear()
             sourceCache.clear()
             revokedLinkIds.clear()
-            totalBytesRead.set(0)
+            totalBytesSent.set(0)
             _shares.value = emptyList()
             storeBlocked = false
             synchronized(this) {
@@ -1901,7 +1902,7 @@ object VfsRelayRuntime {
     private fun publishConnected() {
         publishShares()
         if (client?.isOpen() == true) {
-            _state.value = VfsRelayState.Connected(_shares.value, totalBytesRead.get())
+            _state.value = VfsRelayState.Connected(_shares.value, totalBytesSent.get())
         }
     }
 
@@ -1951,7 +1952,7 @@ object VfsRelayRuntime {
             }
         _shares.value = views
         if (_state.value is VfsRelayState.Connected) {
-            _state.value = VfsRelayState.Connected(views, totalBytesRead.get())
+            _state.value = VfsRelayState.Connected(views, totalBytesSent.get())
         }
     }
 

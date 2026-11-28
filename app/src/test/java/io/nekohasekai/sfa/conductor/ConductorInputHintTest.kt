@@ -15,7 +15,7 @@ class ConductorInputHintTest {
     }
 
     @Test
-    fun `detects confirmations questions and file or vfs requests`() {
+    fun `detects confirmations questions and file requests`() {
         val confirmation =
             ConductorItem.Confirmation(
                 ConfirmationRequest(
@@ -32,10 +32,9 @@ class ConductorInputHintTest {
                 options = listOf("Yes", "No"),
             )
 
-        assertTrue(hasPendingUserInteraction(listOf(confirmation), hasFileRequest = false, hasVfsConsent = false))
-        assertTrue(hasPendingUserInteraction(listOf(question), hasFileRequest = false, hasVfsConsent = false))
-        assertTrue(hasPendingUserInteraction(emptyList(), hasFileRequest = true, hasVfsConsent = false))
-        assertTrue(hasPendingUserInteraction(emptyList(), hasFileRequest = false, hasVfsConsent = true))
+        assertTrue(hasPendingUserInteraction(listOf(confirmation), hasFileRequest = false))
+        assertTrue(hasPendingUserInteraction(listOf(question), hasFileRequest = false))
+        assertTrue(hasPendingUserInteraction(emptyList(), hasFileRequest = true))
     }
 
     @Test
@@ -43,6 +42,6 @@ class ConductorInputHintTest {
         val answered = ConductorItem.Question(id = "q1", question = "Continue?", answered = true)
         val cancelled = ConductorItem.Question(id = "q2", question = "Continue?", cancelled = true)
 
-        assertFalse(hasPendingUserInteraction(listOf(answered, cancelled), hasFileRequest = false, hasVfsConsent = false))
+        assertFalse(hasPendingUserInteraction(listOf(answered, cancelled), hasFileRequest = false))
     }
 }

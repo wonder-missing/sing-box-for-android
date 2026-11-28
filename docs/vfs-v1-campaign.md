@@ -58,7 +58,7 @@
 
 ## v1 已知限制
 
-- `app.data.groups` 目前固定 `{"available":false,"groups":[]}`：Conductor group state 在 ViewModel 内，没有全局源；不在 v1 修旧架构。
+- `app.data.groups`（UI 名 Proxy groups）目前固定 `{"available":false,"groups":[]}`：Conductor group state 在 ViewModel 内，没有全局源；v1 已从可创建 scope 中隐藏，旧 Link 仍可解析。
 - 真实 Keystore 只有编译 + fake cipher JVM 测试；等真机安装后验证。
 - Egress 的 `VpnService.protect`/underlying DNS 只有注入测试；VPN on/off、per-app include、规则切换需真机 E2E。
 - 重复 JSON 键由 kotlinx 宽松解析；不作为 v1 阻塞。

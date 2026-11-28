@@ -262,7 +262,7 @@ fun SettingsScreen(navController: NavController) {
                     ),
                 )
 
-                if (BuildConfig.SHARE_KEY_VFS && android.os.Build.VERSION.SDK_INT >= 24) {
+                if (android.os.Build.VERSION.SDK_INT >= 24) {
                     ListItem(
                         headlineContent = {
                             Text(

@@ -185,9 +185,6 @@ import io.nekohasekai.sfa.agent.ToolStatus
 import io.nekohasekai.sfa.compose.topbar.LocalScaffoldPadding
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.utils.RemoteControlManager
-import io.nekohasekai.sfa.vfs.VfsConsentDecision
-import io.nekohasekai.sfa.vfs.VfsConsentUi
-import io.nekohasekai.sfa.vfs.VfsScope
 
 private val InputPanelTopPadding = 18.dp
 private val InputPanelBottomPadding = 60.dp
@@ -243,7 +240,6 @@ fun ConductorScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val fileRequest by viewModel.fileRequest.collectAsState()
-    val vfsConsent by viewModel.vfsConsent.collectAsState()
     val draft by viewModel.draft.collectAsState()
     val remoteServer by RemoteControlManager.remoteServer.collectAsState()
     val remoteConnected by RemoteControlManager.isConnected.collectAsState()
@@ -385,7 +381,6 @@ fun ConductorScreen(
         hasPendingUserInteraction(
             items = uiState.items,
             hasFileRequest = fileRequest != null,
-            hasVfsConsent = vfsConsent != null,
         )
     val showYourTurnHint =
         shouldShowYourTurnHint(
@@ -970,14 +965,6 @@ fun ConductorScreen(
             }
         }
 
-        vfsConsent?.let { request ->
-            VfsConsentDialog(
-                request = request,
-                onDecision = viewModel::resolveVfsConsent,
-                onDismiss = { viewModel.resolveVfsConsent(VfsConsentDecision.DENY) },
-            )
-        }
-
         textViewer?.let { viewer ->
             ConductorTextViewerDialog(
                 viewer = viewer,
@@ -1127,84 +1114,6 @@ private fun FileRequestCard(
         }
     }
 }
-
-@Composable
-private fun VfsConsentDialog(
-    request: VfsConsentUi,
-    onDecision: (VfsConsentDecision) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.vfs_consent_title, request.serverName)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = stringResource(R.string.vfs_consent_server, request.server),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = stringResource(R.string.vfs_consent_scope),
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                request.scope.forEach { scope ->
-                    Text(
-                        text = "• ${vfsScopeLabel(scope)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                if (request.scope.contains(VfsScope.CONVERSATION)) {
-                    Text(
-                        text = stringResource(R.string.vfs_consent_conversation),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (request.scope.contains(VfsScope.APPFILES)) {
-                    Text(
-                        text = stringResource(R.string.vfs_consent_appfiles),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.vfs_consent_detail),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onDecision(VfsConsentDecision.TRUST_15_DAYS) }) {
-                Text(stringResource(R.string.vfs_consent_trust))
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { onDecision(VfsConsentDecision.DENY) }) {
-                    Text(stringResource(R.string.vfs_consent_deny))
-                }
-                TextButton(onClick = { onDecision(VfsConsentDecision.ONCE) }) {
-                    Text(stringResource(R.string.vfs_consent_once))
-                }
-            }
-        },
-    )
-}
-
-@Composable
-private fun vfsScopeLabel(scope: VfsScope): String =
-    stringResource(
-        when (scope) {
-            VfsScope.CONDUCTOR -> R.string.vfs_scope_conductor
-            VfsScope.TRACE -> R.string.vfs_scope_trace
-            VfsScope.SYSTEM_PROMPT -> R.string.vfs_scope_system_prompt
-            VfsScope.CONVERSATION -> R.string.vfs_scope_conversation
-            VfsScope.WORKDIR -> R.string.vfs_scope_workdir
-            VfsScope.APPFILES -> R.string.vfs_scope_appfiles
-        },
-    )
 
 @Composable
 private fun ApprovalChip(

@@ -48,7 +48,7 @@ class InternalFilesVirtualDirectorySource(
         offset: Long,
         length: Int,
     ): VfsRead {
-        if (offset < 0 || length < 0 || length > VfsProtocol.MAX_READ_BYTES) {
+        if (offset < 0 || length < 0 || length > MAX_READ_BYTES) {
             throw VfsException(VfsErrorCode.BAD_REQUEST, "Invalid read range.")
         }
         val segments = virtualDirectorySegments(path)
@@ -105,8 +105,8 @@ class InternalFilesVirtualDirectorySource(
                 isDirectory = false,
                 size = file.length(),
                 mtimeMs = mtime,
-                mimeType = ConductorVirtualDirectorySource.mimeTypeFor(file.name),
-                etag = ConductorVirtualDirectorySource.fileEtag(file.length(), mtime),
+                mimeType = VfsFileMetadata.mimeTypeFor(file.name),
+                etag = VfsFileMetadata.fileEtag(file.length(), mtime),
             )
         }
     }
@@ -130,5 +130,6 @@ class InternalFilesVirtualDirectorySource(
 
     private companion object {
         const val EXCLUDED_DIR = "vfs"
+        const val MAX_READ_BYTES = 1024 * 1024
     }
 }

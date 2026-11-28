@@ -51,15 +51,12 @@ class McpToolsTest {
     fun mcpToolsGetRiskKindsBeforeTheCard() {
         val remote =
             listOf(
-                McpRemoteTool("vfs_link_request", "grant", buildJsonObject { put("type", "object") }, false),
                 McpRemoteTool("job_run", "run", buildJsonObject { put("type", "object") }, false),
                 McpRemoteTool("job_status", "status", buildJsonObject { put("type", "object") }, false),
                 McpRemoteTool("note_create", "write", buildJsonObject { put("type", "object") }, false),
             )
         val tools = mcpAgentTools("Portal", "portal", remote, unusedSession()).associateBy { it.definition.name }
 
-        assertEquals(ConfirmationKind.VFS_GRANT, tools.getValue("portal_vfs_link_request").definition.confirmationKind)
-        assertEquals(BulkApproval.NONE, tools.getValue("portal_vfs_link_request").definition.bulkApproval)
         assertEquals(ConfirmationKind.REMOTE_EXEC, tools.getValue("portal_job_run").definition.confirmationKind)
         assertEquals(BulkApproval.TURN, tools.getValue("portal_job_run").definition.bulkApproval)
         assertEquals(ConfirmationKind.MCP_READ, tools.getValue("portal_job_status").definition.confirmationKind)
@@ -67,27 +64,6 @@ class McpToolsTest {
         assertEquals(ConfirmationKind.MCP_WRITE, tools.getValue("portal_note_create").definition.confirmationKind)
         assertEquals(BulkApproval.BATCH, tools.getValue("portal_note_create").definition.bulkApproval)
     }
-
-    @Test
-    fun vfsLinkPreflightRejectsMissingOrStringScope() =
-        runBlocking {
-            val tool =
-                mcpAgentTools(
-                    "Portal",
-                    "portal",
-                    listOf(McpRemoteTool("vfs_link_request", "grant", buildJsonObject { put("type", "object") }, false)),
-                    unusedSession(),
-                ).single()
-
-            val missing = tool.preflight(Json.parseToJsonElement("{}").jsonObject)
-            assertEquals("invalid_parameter", missing!!.errorCode)
-
-            val wrongType = tool.preflight(Json.parseToJsonElement("""{"scope":"conductor"}""").jsonObject)
-            assertEquals("invalid_parameter", wrongType!!.errorCode)
-
-            val valid = tool.preflight(Json.parseToJsonElement("""{"scope":["conductor"]}""").jsonObject)
-            assertNull(valid)
-        }
 
     @Test
     fun toolNamesUseTheNamespaceWithoutTheMcpPrefix() {
@@ -214,50 +190,6 @@ class McpToolsTest {
 
         assertEquals("MCP server: Demo. $description", definition.description)
         assertFalse(definition.description.contains("…"))
-    }
-
-    @Test
-    fun vfsLinkRequestCarriesTheWholeWorkingDirectoryScopeHint() {
-        val tool =
-            McpRemoteTool(
-                name = "vfs_link_request",
-                description = "Request a VFS Link.",
-                inputSchema =
-                    buildJsonObject {
-                        put("type", "object")
-                        putJsonObject("properties") {
-                            putJsonObject("scope") { put("type", "array") }
-                        }
-                    },
-                readOnly = false,
-            )
-
-        val definition = mcpAgentTools("Portal", "portal", listOf(tool), unusedSession()).single().definition
-
-        assertTrue(definition.description.contains("Prefer a preset"))
-        assertTrue(definition.description.contains("appfiles"))
-        val schema = definition.parametersSchemaOverride as JsonObject
-        val scope = (schema["properties"] as JsonObject)["scope"] as JsonObject
-        val hint = (scope["description"] as JsonPrimitive).content
-        assertTrue(hint.contains("all = whole app"))
-        assertTrue(hint.contains("conductor_session"))
-        assertTrue(hint.contains("appfiles"))
-        assertTrue(hint.contains("Never ask the user to name scopes"))
-    }
-
-    @Test
-    fun nonVfsToolsDoNotGetTheScopeHint() {
-        val tool =
-            McpRemoteTool(
-                name = "orb_status",
-                description = "Orb status",
-                inputSchema = buildJsonObject { put("type", "object") },
-                readOnly = true,
-            )
-
-        val definition = mcpAgentTools("Demo", "demo", listOf(tool), unusedSession()).single().definition
-
-        assertFalse(definition.description.contains("Whole workspace"))
     }
 
     @Test

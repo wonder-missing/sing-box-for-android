@@ -5,9 +5,10 @@ enum class RelayScope(
     val wire: String,
     val root: String,
     val warning: RelayWarning,
+    val available: Boolean = true,
 ) {
     APP_DATA_ACTIVITY("app.data.activity", "/appdata/activity", RelayWarning.AMBER),
-    APP_DATA_GROUPS("app.data.groups", "/appdata/groups", RelayWarning.AMBER),
+    APP_DATA_GROUPS("app.data.groups", "/appdata/groups", RelayWarning.AMBER, available = false),
     APP_DATA_LOGS("app.data.logs", "/appdata/logs", RelayWarning.AMBER),
     APP_DATA_TELEMETRY("app.data.telemetry", "/appdata/telemetry", RelayWarning.AMBER),
     APP_DATA_DIAGNOSTICS("app.data.diagnostics", "/appdata/diagnostics", RelayWarning.AMBER),
@@ -19,7 +20,7 @@ enum class RelayScope(
     companion object {
         private val byWire = RelayScope.entries.associateBy { it.wire }
 
-        val fixed: List<RelayScope> = RelayScope.entries.filter { it != USER_SELECTED }
+        val fixed: List<RelayScope> = RelayScope.entries.filter { it != USER_SELECTED && it.available }
 
         fun fromWire(value: String): RelayScope? = byWire[value]
 
@@ -29,7 +30,6 @@ enum class RelayScope(
         fun recommended(): Set<RelayScope> =
             setOf(
                 APP_DATA_ACTIVITY,
-                APP_DATA_GROUPS,
                 APP_DATA_LOGS,
                 APP_DATA_TELEMETRY,
                 APP_DATA_DIAGNOSTICS,

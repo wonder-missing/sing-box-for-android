@@ -109,25 +109,6 @@ class McpClientTest {
         }
 
     @Test
-    fun vfsLinkRequestSendsTheCurrentDeviceHeader() =
-        runBlocking {
-            val transport = ScriptTransport()
-            var next = 0
-            val session =
-                McpSession(
-                    transport,
-                    token = "secret-token",
-                    deviceId = { "device-${next++}" },
-                )
-
-            session.call(VFS_LINK_REQUEST_TOOL, buildJsonObject {})
-            assertEquals("device-0", transport.headers.last()[VFS_DEVICE_HEADER])
-
-            session.call(VFS_LINK_REQUEST_TOOL, buildJsonObject {})
-            assertEquals("device-1", transport.headers.last()[VFS_DEVICE_HEADER])
-        }
-
-    @Test
     fun dockerRunUsesTheLongReadTimeoutOnly() =
         runBlocking {
             val transport = ScriptTransport()
@@ -138,17 +119,6 @@ class McpClientTest {
 
             session.call("orb_status", buildJsonObject {})
             assertNull(transport.readTimeouts.last())
-        }
-
-    @Test
-    fun nonVfsToolsDoNotSendADeviceHeader() =
-        runBlocking {
-            val transport = ScriptTransport()
-            val session = McpSession(transport, token = "secret-token", deviceId = { "device-0" })
-
-            session.call("orb_status", buildJsonObject {})
-
-            assertFalse(transport.headers.last().containsKey(VFS_DEVICE_HEADER))
         }
 
     @Test

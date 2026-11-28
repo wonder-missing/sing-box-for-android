@@ -60,7 +60,7 @@ fun VfsCard(
                     R.plurals.vfs_serving_traffic,
                     activeShares,
                     activeShares,
-                    Libbox.formatBytes((state as VfsRelayState.Connected).totalBytesRead),
+                    Libbox.formatBytes((state as VfsRelayState.Connected).totalBytesSent),
                 )
             state is VfsRelayState.Connecting -> stringResource(R.string.share_files_connecting)
             state is VfsRelayState.Backoff -> stringResource(R.string.share_files_backoff)

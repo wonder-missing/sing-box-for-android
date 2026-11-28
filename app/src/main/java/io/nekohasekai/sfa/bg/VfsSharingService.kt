@@ -15,11 +15,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.MainActivity
-import io.nekohasekai.sfa.utils.humanBytes
-import io.nekohasekai.sfa.vfs.VfsConnectionState
-import io.nekohasekai.sfa.vfs.VfsRuntime
-import io.nekohasekai.sfa.vfs.VfsScope
-import io.nekohasekai.sfa.vfs.VfsSharingPolicy
 import io.nekohasekai.sfa.vfs.relay.VfsRelayRuntime
 import io.nekohasekai.sfa.vfs.relay.VfsRelayState
 import kotlinx.coroutines.CoroutineScope
@@ -27,20 +22,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
- * Keeps the VFS provider connection alive while the app is in the background.
+ * Keeps the VFS Relay provider connection alive while the app is in the background.
  * The ongoing notification is the user-visible counterpart: sharing never
- * continues silently, and Disconnect is always one tap away.
+ * continues silently, and revoking the last Link stops the service.
  */
 class VfsSharingService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var collectJob: Job? = null
-
-    private var lastServer: String? = null
-    private var lastScope: Set<VfsScope> = emptySet()
     private var lastText: String? = null
     private var lastBigText: String? = null
     private var lastSubText: String? = null
@@ -48,7 +39,6 @@ class VfsSharingService : Service() {
     override fun onCreate() {
         super.onCreate()
         running = true
-        VfsRuntime.setSharingActive(true)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -58,12 +48,6 @@ class VfsSharingService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        if (intent?.action == ACTION_DISCONNECT) {
-            // Keep the foreground status until the state collector sees Idle;
-            // stopping here could let the process die mid-close.
-            VfsRuntime.disconnect()
-            return START_NOT_STICKY
-        }
         createChannel()
         try {
             ServiceCompat.startForeground(
@@ -87,53 +71,33 @@ class VfsSharingService : Service() {
         scope.cancel()
         running = false
         requested = false
-        VfsRuntime.setSharingActive(false)
         VfsRelayRuntime.onSharingServiceStopped()
         super.onDestroy()
     }
 
     private suspend fun observe() {
-        combine(
-            VfsRuntime.state,
-            VfsRuntime.uploadBytes,
-            VfsRelayRuntime.state,
-        ) { state, bytes, relay -> Triple(state, bytes, relay) }
-            .collect { (state, bytes, relay) ->
-                val oldKeep =
-                    VfsSharingPolicy.shouldRun(
-                        state = state,
-                        hasActiveConnection = VfsRuntime.hasActiveConnection(),
-                    )
-                val relayActive =
-                    relay is VfsRelayState.Connecting ||
-                        relay is VfsRelayState.Connected ||
-                        relay is VfsRelayState.Backoff
-                if (!oldKeep && !relayActive) {
-                    stopSelf()
-                    return@collect
-                }
-                if (relayActive) {
-                    publishRelay(relay)
-                } else {
-                    if (state is VfsConnectionState.Connected) {
-                        lastServer = state.serverName ?: lastServer
-                        lastScope = state.scope
-                    }
-                    publish(state, bytes)
-                }
+        VfsRelayRuntime.state.collect { state ->
+            when (state) {
+                is VfsRelayState.Connecting,
+                is VfsRelayState.Connected,
+                is VfsRelayState.Backoff,
+                -> publish(state)
+                else -> stopSelf()
             }
+        }
     }
 
     private fun relayNotificationText(count: Int): String =
         resources.getQuantityString(R.plurals.vfs_relay_notification_text, count, count)
 
-    private fun publishRelay(state: VfsRelayState) {
+    private fun publish(state: VfsRelayState) {
         val (text, bigText, subText) =
             when (state) {
                 is VfsRelayState.Connected ->
                     Triple(
                         relayNotificationText(state.shares.size),
-                        state.shares.mapNotNull { it.label.takeIf { label -> label.isNotBlank() } }
+                        state.shares
+                            .mapNotNull { it.label.takeIf { label -> label.isNotBlank() } }
                             .joinToString(", ")
                             .ifBlank { relayNotificationText(state.shares.size) },
                         null,
@@ -160,46 +124,6 @@ class VfsSharingService : Service() {
         runCatching {
             getSystemService<NotificationManager>()?.notify(
                 NOTIFICATION_ID,
-                buildNotification(text, bigText, subText, stopRelay = true),
-            )
-        }
-    }
-
-    private fun publish(
-        state: VfsConnectionState,
-        bytes: Long,
-    ) {
-        val server = lastServer
-        val text: String
-        val bigText: String
-        if (server != null) {
-            text = getString(R.string.vfs_notification_text, server, humanBytes(bytes))
-            val scopes = lastScope.sortedBy { it.ordinal }.joinToString(", ") { scopeLabel(it) }
-            bigText =
-                if (scopes.isEmpty()) {
-                    text
-                } else {
-                    text + "\n" + getString(R.string.vfs_notification_scopes, scopes)
-                }
-        } else {
-            text = getString(R.string.vfs_status_connecting)
-            bigText = text
-        }
-        val subText =
-            when (state) {
-                is VfsConnectionState.Connecting,
-                is VfsConnectionState.Backoff,
-                -> getString(R.string.vfs_status_connecting)
-
-                else -> null
-            }
-        if (text == lastText && bigText == lastBigText && subText == lastSubText) return
-        lastText = text
-        lastBigText = bigText
-        lastSubText = subText
-        runCatching {
-            getSystemService<NotificationManager>()?.notify(
-                NOTIFICATION_ID,
                 buildNotification(text, bigText, subText),
             )
         }
@@ -209,7 +133,6 @@ class VfsSharingService : Service() {
         text: String? = null,
         bigText: String? = null,
         subText: String? = null,
-        stopRelay: Boolean = false,
     ) = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL)
         .setShowWhen(false)
         .setOngoing(true)
@@ -218,13 +141,11 @@ class VfsSharingService : Service() {
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-        .setContentTitle(
-            getString(if (stopRelay) R.string.vfs_relay_notification_title else R.string.vfs_notification_title),
-        )
-        .setContentText(text ?: getString(R.string.vfs_status_connecting))
+        .setContentTitle(getString(R.string.vfs_relay_notification_title))
+        .setContentText(text ?: getString(R.string.vfs_relay_notification_connecting))
         .setStyle(
             NotificationCompat.BigTextStyle().bigText(
-                bigText ?: getString(R.string.vfs_status_connecting),
+                bigText ?: getString(R.string.vfs_relay_notification_connecting),
             ),
         )
         .apply { subText?.let { setSubText(it) } }
@@ -236,22 +157,6 @@ class VfsSharingService : Service() {
                 pendingIntentFlags(),
             ),
         )
-        .apply {
-            if (!stopRelay) {
-                addAction(
-                    NotificationCompat.Action.Builder(
-                        0,
-                        getText(R.string.vfs_status_disconnect),
-                        PendingIntent.getService(
-                            this@VfsSharingService,
-                            0,
-                            Intent(this@VfsSharingService, VfsSharingService::class.java).setAction(ACTION_DISCONNECT),
-                            pendingIntentFlags(),
-                        ),
-                    ).build(),
-                )
-            }
-        }
         .build()
 
     private fun createChannel() {
@@ -265,22 +170,9 @@ class VfsSharingService : Service() {
         )
     }
 
-    private fun scopeLabel(scope: VfsScope): String =
-        getString(
-            when (scope) {
-                VfsScope.CONDUCTOR -> R.string.vfs_scope_conductor
-                VfsScope.TRACE -> R.string.vfs_scope_trace
-                VfsScope.SYSTEM_PROMPT -> R.string.vfs_scope_system_prompt
-                VfsScope.CONVERSATION -> R.string.vfs_scope_conversation
-                VfsScope.WORKDIR -> R.string.vfs_scope_workdir
-                VfsScope.APPFILES -> R.string.vfs_scope_appfiles
-            },
-        )
-
     companion object {
         private const val NOTIFICATION_ID = 4
         private const val NOTIFICATION_CHANNEL = "vfs-sharing"
-        private const val ACTION_DISCONNECT = "io.nekohasekai.sfa.action.VFS_DISCONNECT"
 
         @Volatile
         private var running = false
@@ -289,7 +181,7 @@ class VfsSharingService : Service() {
         private var requested = false
 
         /**
-         * Requested from the VFS state observer, which only reaches Connecting
+         * Requested from the relay state observer, which only reaches Connecting
          * after a user-approved (foreground) action. Returns false when Android
          * rejects the background start; the runtime then falls back to grace.
          */
