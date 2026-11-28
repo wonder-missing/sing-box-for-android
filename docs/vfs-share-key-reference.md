@@ -82,11 +82,11 @@
 一次性设置：
 
 1. 安装 `vfsc` CLI（Portal `pnpm service-install` 装到 `$HOME/bin`；Claude Code skill/CLAUDE.md 告诉 Agent 命令）。
-2. Settings → Share files → 选择 Portal connection（现有 MCP server；Advanced 可手填 URL/key）→ Connect。
+2. Settings → VFS Relay → 选择 Relay Server（Advanced 可手填完整 `/relay/v1` URL + Relay token）→ Test connection。
 
 每个 Agent：
 
-3. New Share → 名字（可选）→ Recommended / Everything / Customize → Create。
+3. New Link → 名字（可选）→ Recommended / Everything / Customize → Create。
 4. Copy pairing line（5:00 倒计时）；App 复制一行无换行文本 `Use "$HOME/bin/vfsc" to access my shared files: Link ID=<linkId>, Pair Code=<code>.`；CLI 从 code+linkId 派生 pairId，并支持 `--code-stdin`/`VFSC_CODE`。code 会进入聊天/模型上下文，见 §2.5。
 5. 粘到 Agent 聊天；Agent 运行命令，返回它能看到的 roots。
 6. Agent 运行 `"$HOME/bin/vfsc" list/read ...`；不再需要 code。撤销 Share → Revoke。
@@ -132,7 +132,7 @@ Agent CLI (Consumer) --Unix socket--> Portal/Relay
 
 ### 3.2 App / Portal 配置与 Provider key
 
-- **Portal 选择**：Share files 页列出已配置且 enabled 的 MCP server；用户选一个作为 Portal（`VfsRelayConfig` 存 `portalServerId` + canonical base；`canonicalBase = origin(vfsBase ?: serverBase)`（新 `VfsServerBase.origin()` 只保留 scheme://host:port；现有 `normalize()` 保留 path，不能直接复用；v1 要求 Portal `/v1/*` 在根路径，子路径部署拒绝并提示）；`serverBase` 仍是 MCP 的权威字段，`vfsBase` 是可选 VFS override；`vfsBase=null` 时取 origin(serverBase)，非空时优先 `vfsBase`，不做自动迁移；连接时校验 base 与已有 binding 一致）；Provisioner 只对该 base/token 调用，不自动推断。`McpServerConfig` 增加 `authKind=knock|oauth` 与 `vfsBase`(HTTPS)；Token 必须是该 Portal server 的 knock secret（`whsec_`），**OAuth-only (`authKind=oauth`) 在 v1 直接禁用 Share Key VFS**；`http://` 明文 base 拒绝；HTTPS `.ts.net` Funnel（`PORTAL_PUBLIC_URL`）允许；App 只按显式配置判断：`egressMode=tailnet` 拒绝；URL 无法区分 Funnel/Serve，v1 只支持 Funnel，Serve base 连接失败并提示改用 Funnel；是否 public 由显式 `egressMode`/listener profile 判断，不按 hostname 猜。Advanced 页面显示本机 deviceId，并要求输入 hookId；管理员用 `portal-knock provider-keys issue --hook <hookId> --device <deviceId> --name <name>` 签发（返回一次，含 hookId；已有 `(hook,device)` 默认 409，需显式 `--rotate` 才替换；手工 key 无 deviceSecret，rotate/delete 仅 admin）。没有可选 server 时 Advanced 手填 Relay URL + Provider key。
+- **Relay 选择**：Settings → VFS Relay Servers 保存本地列表（完整 `/relay/v1` URL + Relay token，Keystore 加密）；用户选一个作为当前 Relay，App 用 Relay token + deviceSecret 领 Provider key，不再读取 MCP server/hook secret。Advanced 可手填 URL/token；Test connection 只验证 URL/token/device，不创建 Link。
 - **Provider key 发放（device-bound）**：App 首次生成 32B `deviceSecret`（按 `(hookId,deviceId)` 存 `noBackupFilesDir/vfs/device-secrets/<hookId>/<deviceId>`；首次 issue 前暂存 `pending/<hash(canonicalBase|deviceId)>`，拿到 hookId 后原子迁移，`VfsShareCipher` 加密）；`POST /v1/provider-keys`（hook secret + `shareKeyVfs`）body `{deviceId,name,deviceSecret}`；`deviceSecret` 是 32B base64url 无 padding，`providerKey` 为 `wsk_` + 32B base64url，`providerKeyId` 为 16B base64url，响应含 `hookId`。首次创建 `(hookId,deviceId)` 记录并保存 `SHA-256(deviceSecret)`、返回 key；同 device 再调必须带同一 secret（constant-time 比较），且仅在当前 key active 未过期时返回当前 key（issue-once）；secret 不匹配 → `403 DEVICE_AUTH`；deviceRevokedAt 非空 → `403 DEVICE_REVOKED`；keyRevokedAt 非空 → 发新 key；过期 → `403 ROTATE_REQUIRED`（用 rotate）。hook secret 单独不能取回已有 device 的 key；`deviceSecret` 不进日志/审计/URL。
 - **管理面**：`GET /v1/provider-keys` 用该 device 的 Provider key 只返回自己；admin 用 `GET /v1/provider-keys?hook=<hookId>` 列该 hook 全部；删除任意 device 只走 Portal 管理员（登录会话或本机 `portal-knock provider-keys delete --hook <hookId> --device <deviceId>`），hook secret 单独 → `403 ADMIN_REQUIRED`。`DELETE /v1/provider-keys/{deviceId}?hook=<hookId>` **以 `(hookId,deviceId)` 为单位**：admin 删除 → 标记 `deviceRevokedAt`、关闭 WS（4414）、tombstone 该 `(hook,device)` 的 Link，之后该组合 issue/rotate `DEVICE_REVOKED`；该 device 的 Provider key 自删只标记 `keyRevokedAt`、不 tombstone Link（links 变 offline），之后带 deviceSecret 的 issue-once 可发一把新 key 恢复。不得跨 hook 删除/tombstone；capability 移除只是 suspend（见下），不是 delete。
 - **Rotate**：`POST /v1/provider-keys/rotate` body `{deviceId,deviceSecret}`（或该 device 的 Provider key）撤销旧 key、返回新 key；关闭旧 WS；**不 tombstone Link**；App 用新 key 重连并重注册同一 linkId，Share Key/Agent 不需要重配对。响应丢失时重发 issue-once 取当前 key。
@@ -168,8 +168,8 @@ Agent CLI (Consumer) --Unix socket--> Portal/Relay
 - Cap 8：按 `(hookId,deviceId)`/当前 Portal 分区，第 9 个提示先撤销；切换 Portal 不占另一 Portal 的名额。
 - **Share Key 唯一性语义**：一个 Share 只有一把 Share Key；所有持有它的 CLI 等价。New code 是给**同一逻辑 Agent**恢复；**第二个 CLI 必须用 New code**（同一 code 只能兑换一次），New code 不 eject 第一个；两个 CLI 最终共享同一 Share Key；没有 per-Agent 撤销。要切断全部持有者只能 Revoke（或 Stop+Revoke）。UI 在 New code 处写明。
 - Share 默认不过期；`expiresAt` 预留。
-- **Pending revocation**：Revoke 不论 WS 是否连接，先持久化 `{linkId,reason,portalServerId,canonicalBase,hookId,deviceId,providerKeyId?,pendingUntil}`，并写 `revokingAt`（逻辑状态 `revoking`，不写入 pairState；清 secretCiphertext、停止服务），但**保留归属信息直到 tombstone ack**；下次 Connect/启动/网络恢复时只向 owning Portal 重试（必要时为该 Portal 临时建立一次 WS，先处理 4412/4413/issue-once）；收到 ack/410 后才删除 Share/linkId/secret 与 pending；收到 401/403 `DEVICE_REVOKED` 或 410 视为终态，清 pending、删除本地 Share 与 secret、不再重试；503/超时保留 pending。`unregister` purge pair/response cache。若 `POST /v1/links` 成功但 Share 落盘失败，立即 best-effort `unregister revoked`/记录 orphan 供 admin prune。**pending 未送达前 Relay 不会墓碑，CLI 只得到 503/`SHARE_UNKNOWN`；App 重连补发 unregister 后才 410**；CLI 不应在 503 时 `forget`。
-- **Stop sharing**：遍历所有已注册 Link，逐个标记 Share stopped、拒绝新 pair 兑换，并持久化 per-link `pendingPairState=paused`；逐个向 Relay 发 `pair {v:1,controlId,linkId,state:"paused",pairEpoch}` 并等 ack（2s）；Relay 不可达的保留 pending，下次 Connect 先补发；然后 zeroize 所有 code、关闭 Provider WS、清 pair cache。Share/Share Key 保留；Connect 恢复，不重配对。不等同 Revoke。Relay 不可达期间 CLI 得到 503 `PROVIDER_OFFLINE`，不是 `SHARE_REVOKED`/`SHARE_UNKNOWN`。
+- **Pending revocation**：Revoke 不论 WS 是否连接，先持久化 `{linkId,reason,portalServerId,canonicalBase,hookId,deviceId,providerKeyId?,pendingUntil}`，并写 `revokingAt`（逻辑状态 `revoking`，不写入 pairState；清 secretCiphertext、停止服务），但**保留归属信息直到 tombstone ack**；下次 Connect/启动/网络恢复时只向 owning Portal 重试（必要时为该 Portal 临时建立一次 WS，先处理 4412/4413/issue-once）；收到 ack/410 后才删除 Share/linkId/secret 与 pending；收到 401/403 `DEVICE_REVOKED` 或 410 视为终态，清 pending、删除本地 Share 与 secret、不再重试；503/超时保留 pending。`unregister` purge pair/response cache。若 `POST /v1/links` 成功但 Share 落盘失败，立即 best-effort `unregister revoked`/记录 orphan 供 admin prune。**pending 未送达前 Relay 不会墓碑，CLI 只得到 503/`LINK_UNKNOWN`；App 重连补发 unregister 后才 410**；CLI 不应在 503 时 `forget`。
+- **Stop sharing**：遍历所有已注册 Link，逐个标记 Share stopped、拒绝新 pair 兑换，并持久化 per-link `pendingPairState=paused`；逐个向 Relay 发 `pair {v:1,controlId,linkId,state:"paused",pairEpoch}` 并等 ack（2s）；Relay 不可达的保留 pending，下次 Connect 先补发；然后 zeroize 所有 code、关闭 Provider WS、清 pair cache。Share/Share Key 保留；Connect 恢复，不重配对。不等同 Revoke。Relay 不可达期间 CLI 得到 503 `PROVIDER_OFFLINE`，不是 `LINK_REVOKED`/`LINK_UNKNOWN`。
 
 ### 3.4 Wire、AAD 与 Inner Payload
 
@@ -191,8 +191,8 @@ Pair request/response：
 - `linkId`/`pairId`/`reqId`：16B base64url（无 padding）；`clientNonce`：32B base64url；`iv`：12B base64url；`ct`：base64url(`ciphertext || 16B GCM tag`)；`v`：JSON int 1；`ts`：JSON int Unix 毫秒。
 - Pair request plaintext（UTF-8 JSON，字段顺序如下）：`{"pairId":"<b64url>","clientNonce":"<b64url>"}`；inner 的 `pairId/clientNonce` 必须等于 outer，否则 `pair_unknown`/`PROTOCOL_ERROR`；outer `ts` 必须在 ±5 分钟内。
 - Pair response plaintext：`{"shareId":"<b64url>","shareSecret":"<b64url>","scopes":["..."],"roots":["..."],"label":"..."}`；`roots` 按 §3.7 的 scope→root 映射去重排序。
-- **Pair error（明文控制帧，不加密、不含 data）**：`{"v":1,"op":"pair-error","consumerId":"...","linkId":"...","pairId":"...","reqId":"...","code":"pair_unknown"|"code_invalid"|"code_expired"|"code_consumed"|"share_paused"|"stale_ts"|"rate_limited","message":"...","retryAfterMs":0,"serverTs":0,"skewMs":0}`。Provider 在 code 未知/过期/已用/限速/时钟偏差时返回；Relay 在 pairId 非 active/已过期时返回 `pair_unknown`/`code_expired`；`state=paused` 返回 `share_paused`，`state=expired` 返回 `code_expired`（HTTP 200，同步，不需要 Provider WS）。`message` 固定短语，不含 code/secret/路径。Provider 返回的 pair-error 按 `(consumerId,linkId,reqId)` 缓存 120s，GET 可取；Relay 本地直接 200 的同步返回不缓存。CLI 映射：`pair_unknown`/`code_invalid`→`CODE_INVALID`，`code_expired`→`CODE_EXPIRED`，`code_consumed`→`CODE_CONSUMED`，`share_paused`→`SHARE_PAUSED`，`stale_ts`→`STALE_TS`，`rate_limited`→`RATE_LIMITED`。
-- **Link error（明文控制帧）**：`{"v":1,"op":"link-error","consumerId":"...","linkId":"...","reqId":"...","code":"link_unknown"|"share_revoked"|"not_paired"|"auth_failed","message":"..."}`。App 在无法解密/找不到 Share/Link 已不在本地时返回；`message` 固定短语，不含路径/scope/文件名；按 `(consumerId,linkId,reqId)` 缓存 120s，GET 可取。CLI 映射：`link_unknown`/`share_revoked`→`SHARE_UNKNOWN`（**未验证提示，保留 key、不 `forget`/不重建 Share**）、`not_paired`→`NOT_PAIRED`、`auth_failed`→`AUTH`（不删 key）。只有 HTTP 410 触发终止性 `SHARE_REVOKED`；明文 `link-error` 与 inner error 都不触发 `forget`/删 key。
+- **Pair error（明文控制帧，不加密、不含 data）**：`{"v":1,"op":"pair-error","consumerId":"...","linkId":"...","pairId":"...","reqId":"...","code":"pair_unknown"|"code_invalid"|"code_expired"|"code_consumed"|"share_paused"|"stale_ts"|"rate_limited","message":"...","retryAfterMs":0,"serverTs":0,"skewMs":0}`。Provider 在 code 未知/过期/已用/限速/时钟偏差时返回；Relay 在 pairId 非 active/已过期时返回 `pair_unknown`/`code_expired`；`state=paused` 返回 `share_paused`，`state=expired` 返回 `code_expired`（HTTP 200，同步，不需要 Provider WS）。`message` 固定短语，不含 code/secret/路径。Provider 返回的 pair-error 按 `(consumerId,linkId,reqId)` 缓存 120s，GET 可取；Relay 本地直接 200 的同步返回不缓存。CLI 映射：`pair_unknown`/`code_invalid`→`CODE_INVALID`，`code_expired`→`CODE_EXPIRED`，`code_consumed`→`CODE_CONSUMED`，`share_paused`→`LINK_PAUSED`，`stale_ts`→`STALE_TS`，`rate_limited`→`RATE_LIMITED`。
+- **Link error（明文控制帧）**：`{"v":1,"op":"link-error","consumerId":"...","linkId":"...","reqId":"...","code":"link_unknown"|"share_revoked"|"not_paired"|"auth_failed","message":"..."}`。App 在无法解密/找不到 Share/Link 已不在本地时返回；`message` 固定短语，不含路径/scope/文件名；按 `(consumerId,linkId,reqId)` 缓存 120s，GET 可取。CLI 映射：`link_unknown`/`share_revoked`→`LINK_UNKNOWN`（**未验证提示，保留 key、不 `forget`/不重建 Share**）、`not_paired`→`NOT_PAIRED`、`auth_failed`→`AUTH`（不删 key）。只有 HTTP 410 触发终止性 `LINK_REVOKED`；明文 `link-error` 与 inner error 都不触发 `forget`/删 key。
 - Data inner request（UTF-8 JSON）：`{"v":1,"type":"stat"|"list"|"read","path":"...","offset":0,"length":0,"cursor":"...","limit":0,"etag":"..."}`；path 以 `/` 开头（root 是 `/`）、UTF-8、≤4 KiB、无 `.`/`..`/`//`、尾斜杠规范化；这是相对旧 VFS 相对路径的 breaking change，CLI/App 都只用绝对路径；违规 → inner `invalid_path`；无内层 id，外层 `reqId` 关联。
 - Data inner response：`{"v":1,"type":"entry"|"entries"|"data"|"error","entry":{...},"entries":[...],"nextCursor":null|"...","data":"<base64>","etag":"...","offset":0,"length":0,"nextOffset":0,"eof":true,"error":{"code":"...","message":"..."}}`。
 - `entry`：`{path,name,isDirectory,size,mtimeMs,mimeType?,etag?}`；`list` 的 `entries` 同 schema；`read` 的 `data` 带 `offset/length/nextOffset/eof`，`get` 分块使用；分块带 `etag`，变化 → `bad_request` 并重读；cursor 的 lastKey 已删除/改名 → `cursor_invalid`。
@@ -333,15 +333,15 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 
 ### 3.8 App UI、后台、状态、feature flag、egress
 
-- Settings → Share files：Portal server 选择（现有 MCP server；Advanced 手填）、Connect/Disconnect、状态。
+- Settings → VFS Relay：Relay Server 列表、Add/Edit/Delete、Test connection。
 - **Store 容量**：App 显示当前未 revoke link 占用（含 offline）；配额 8/64；revoked tombstone 不设硬上限、不会被正常使用撑死；admin prune 只删已 deviceRevoked 记录。
 - **切换 Portal**：切换前断开当前 WS；旧 Portal 的 Share/Provider key/deviceSecret 保留并显示为 offline；新 Portal 用同一 deviceId 但新 hook 领独立 key、建新 Share；切回旧 Portal 可恢复旧 Share。CLI 本地 socket 只连当前 Portal，切换期间旧 Share 404/503，不是 Revoke。
 - Shares 列表：label、scope 摘要、created、pairedAt、lastUsed、状态（waiting/paired/offline）、New code、Revoke。
-- New Share：名字、Recommended/Everything/Customize、per-scope 警告、Create。
+- New Link：名字、Recommended/Everything/Customize、per-scope 警告、Create。
 - Pairing 页：5:00 倒计时、一行配对说明、Copy pairing line、New code；无 QR；不进通知/状态栏；不设置 `FLAG_SECURE`，用户可主动截图；clipboard 自动清。
 - **多 Share 状态**：`VfsRelayState`：`Connected(shareCount, shares[{shareId,label,status,pairedAt,lastUsedAt}], totalBytesSent)`、`Idle`、`Backoff`、`Error`；通知「Serving N Links」（不统计 Agent 数）；`totalBytesSent` 是 App 实际发到 WS 的 VFS 响应 JSON UTF-8 字节（含 list/stat/read/error 和缓存命中，不含 WS/TCP 连接、心跳与帧开销），Dashboard 实时显示。
 - **Stop sharing = 暂停**：遍历所有 Link，逐个发 `pair paused` 等 ack（2s；不可达按 Link 存 `pendingPairState=paused`，下次 Connect 补发），再 zeroize 所有 code、关闭 WS、清 pair cache；Share/Share Key 保留；Connect 恢复，不重配对。**Revoke = 永久**：best-effort unregister，删除 Share/linkId/secret，tombstone。**New code 不 eject 已配对 Agent**；只有 Revoke 断开。
-- **Disconnect vs Stop**：Disconnect 对每个已注册 Link 发 `unregister shutdown`（links 变 offline）、`desiredConnected=false`、关闭 WS；Stop 只发 `pair paused`（links 保持登记、Relay 有 paused 状态时 CLI 得到 `SHARE_PAUSED`）、`desiredConnected=false`、关闭 WS；两者都不删 Share/Share Key，New code 不 unregister。
+- **Disconnect vs Stop**：Disconnect 对每个已注册 Link 发 `unregister shutdown`（links 变 offline）、`desiredConnected=false`、关闭 WS；Stop 只发 `pair paused`（links 保持登记、Relay 有 paused 状态时 CLI 得到 `LINK_PAUSED`）、`desiredConnected=false`、关闭 WS；两者都不删 Share/Share Key，New code 不 unregister。
 - **后台与恢复**：复用 `VfsSharingService` 的 FGS 外壳；新增 `VfsRelayPolicy`/`VfsRelayState`（多 Share、`totalBytesSent`，不沿用单连接/uploadBytes 逻辑）；FGS 活着时后台可读；WS 掉线在退避内自动重连/重注册（不要求用户操作）；进程死/Doze 后 503。进程死亡后重开 App：若停之前是 Connected（持久化 `desiredConnected=true`），自动恢复 Connect 一次；若用户 Stop 过，不自动连；所有 Share 都 Revoke 后 `desiredConnected=false`，停止 FGS/WS，避免空连接常驻。不引入 always-on。
 - **App store 持久化契约**：`deviceSecret` 在首次 `POST /v1/provider-keys` **之前** atomic+fsync 落盘，同一 `(canonicalBase,hookId,deviceId)` 的 deviceSecret 永不重新生成；Share 创建、registrationState/registeredAt、pairState active/consumed、Stop、pending revocation 都先 atomic+fsync 再发网络 ack；Provider key 丢失可从 issue-once 恢复，Share Key 丢失才不可恢复；`lastUsedAt`/`desiredConnected` 同一 store/config atomic 写，允许丢失。
 - **at-rest**：Share `secret`/`deviceSecret`/Provider key 用 `VfsShareCipher`（Android Keystore AES-256-GCM，alias `wondersing-vfs-share-v1`，`setUserAuthenticationRequired(false)` 以便后台读取）；文件格式 `0x01||iv(12)||ct||tag(16)`，**App VfsShareCipher 侧 AAD** 为 UTF-8 用途字面量（`|` 分隔、不含 secret 本身）`v1|<shareId>|secret`（shareId 用 wire base64url 字符串）、`v1|<canonicalBase>|<hookId>|<deviceId>|deviceSecret`、`v1|<canonicalBase>|<hookId>|<deviceId>|providerKey|<providerKeyId>`（**不把 secret 本身放进 AAD**，否则解密前无法计算）；`canonicalBase` 变化前必须先按旧 AAD 解密、再按新 AAD 重加密并原子写记录与新 base，不能只改 base 字段；解密失败标记 Share/device error，不静默删除/不返回明文；卸载会删 Keystore key，旧 Share/deviceSecret 不可恢复（与 reinstall 一致）。
@@ -375,8 +375,8 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
   - `status`：`{"socket":"ok"|"unreachable","relay":"ok"|"unreachable"|"unknown","paired":true|false}`；`relay` 来自 Unix socket `GET /v1/health`（`{vfsRelay:"ok",links:N}`），不是仅 connect 成功。加 `--probe` 时多一个 `provider:"ok"|"offline"|"error"|"ambiguous"` 字段；多个 Link 未指定 `--link` 时为 `ambiguous`。
 - `pair` 的 pair-error 映射按 §3.4.1；`pair` 成功前必须已持久化 key；失败不写 key。**同一 CLI 进程内** pair 超时/204 用同一 tuple 重试，不换 pairId；CLI 进程重启会丢失 code，必须 New code（不持久化 code/tuple）；`RATE_LIMITED` 按 `Retry-After` 退避。
 - Exit codes：0 成功；2 usage；3 transient；4 permanent；5 not found。
-- Error codes：`NOT_PAIRED`、`SHARE_PAUSED`、`CODE_EXPIRED`、`CODE_INVALID`、`CODE_CONSUMED`、`PROVIDER_OFFLINE`、`PAIR_WARMING`、`PROVIDER_TIMEOUT`、`SHARE_UNKNOWN`、`SHARE_REVOKED`、`RELAY_UNREACHABLE`、`RELAY_STATE_UNAVAILABLE`、`RATE_LIMITED`、`TOO_LARGE`、`PATH_NOT_FOUND`、`PERMISSION_LOST`、`LINK_AMBIGUOUS`、`PROVIDER_KEY_REVOKED`、`PROTOCOL_ERROR`、`IN_FLIGHT`、`RESPONSE_UNKNOWN`、`REQID_CONFLICT`、`NONCE_REUSED`、`STALE_TS`、`AUTH`、`CURSOR_INVALID`、`BAD_RANGE`、`PROVIDER_ERROR`。
-- 明文 `link-error`/`pair-error` 是未验证提示，不触发 `forget`/删 key/重建 Share；`SHARE_REVOKED` 只由 HTTP 410 触发；inner error 不触发终止。
+- Error codes：`NOT_PAIRED`、`LINK_PAUSED`、`CODE_EXPIRED`、`CODE_INVALID`、`CODE_CONSUMED`、`PROVIDER_OFFLINE`、`PAIR_WARMING`、`PROVIDER_TIMEOUT`、`LINK_UNKNOWN`、`LINK_REVOKED`、`RELAY_UNREACHABLE`、`RELAY_STATE_UNAVAILABLE`、`RATE_LIMITED`、`TOO_LARGE`、`PATH_NOT_FOUND`、`PERMISSION_LOST`、`LINK_AMBIGUOUS`、`PROVIDER_KEY_REVOKED`、`PROTOCOL_ERROR`、`IN_FLIGHT`、`RESPONSE_UNKNOWN`、`REQID_CONFLICT`、`NONCE_REUSED`、`STALE_TS`、`AUTH`、`CURSOR_INVALID`、`BAD_RANGE`、`PROVIDER_ERROR`。
+- 明文 `link-error`/`pair-error` 是未验证提示，不触发 `forget`/删 key/重建 Share；`LINK_REVOKED` 只由 HTTP 410 触发；inner error 不触发终止。
 - `CLI_NOT_FOUND` 由 skill/CLAUDE.md 发，不由 CLI 发。
 - Key store：`~/Library/Application Support/vfsc/keys.json` 目录 0700、文件 0600、atomic+fsync；Share Key 明文，文档提示排除 Time Machine/云同步；每 Share `{shareId,label,linkId,secret}`；不打印、不进 argv/env/日志/错误；code 在 pair argv 里是设计允许的，错误中脱敏。
 - `GET /v1/response/{consumerId}/{linkId}/{reqId}` 单次 long-poll 60s；超时 204 后 CLI 用**同一 `(consumerId,linkId,reqId)`** 继续等；若 404 `RESPONSE_UNKNOWN`，在 120s 内**重发同一 tuple POST**（Provider 120s 缓存/重算）一次，再失败则新 reqId；不要无限 GET。
@@ -390,8 +390,8 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 | 情况 | code | exit | 动作 |
 |---|---|---|---|
 | CLI 未安装/PATH | skill 提示 | 2 | 用 `"$HOME/bin/vfsc"` 或 `pnpm service-install`。 |
-| 未配对 | `NOT_PAIRED` | 4 | WonderSing → Settings → Share files → New Share。 |
-| Share 暂停 | `SHARE_PAUSED` | 3 | 打开 WonderSing → Share files → Connect（已配对 Agent 直接用 key）；未配对/旧 code 需 New code。 |
+| 未配对 | `NOT_PAIRED` | 4 | WonderSing → VFS → New Link。 |
+| Link 暂停 | `LINK_PAUSED` | 3 | 打开 WonderSing → VFS 检查 Link；已配对 Agent 直接用 key；未配对/旧 code 需 New code。 |
 | | code 过期 | `CODE_EXPIRED` | 4 | New code（5 分钟）。 |
 | code 错误/`pair_unknown` | `CODE_INVALID` | 4 | 检查 16 字符；New code。 |
 | code 已用/缓存丢失 | `CODE_CONSUMED` | 4 | New code。 |
@@ -399,12 +399,12 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 | Provider 离线 | `PROVIDER_OFFLINE` | 3 | 打开 WonderSing，确认 Connected；重试。 |
 | Pair 状态预热中 | `PAIR_WARMING` | 3 | 等 1–2 秒重试，最多 10 秒；超时按 `PROVIDER_OFFLINE`；不要 New code。 |
 | Provider 超时 | `PROVIDER_TIMEOUT` | 3 | 重试同一请求；仍超时检查网络/大文件改 `get --out`。 |
-| Share revoked | `SHARE_REVOKED` | 4 | 新建 Share。 |
-| 404 link 无记录 | `SHARE_UNKNOWN` | 3 | 保留 key；让 App 重新 claim/register；确认 Revoke 后 `forget`/新建 Share。 |
+| Link revoked | `LINK_REVOKED` | 4 | 新建 Link。 |
+| 404 link 无记录 | `LINK_UNKNOWN` | 3 | 保留 key；让 App 重新 claim/register；确认 Revoke 后 `forget`/新建 Link。 |
 | Relay 状态损坏 | `RELAY_STATE_UNAVAILABLE` | 3 | Portal link store 损坏/丢失；让管理员恢复，不要 claim/重建。 |
-| 响应未到 | `RESPONSE_UNKNOWN` | 3 | 120s 内重发同一 tuple POST 一次；仍失败换 reqId；若同时 `LINK_UNKNOWN` 按 SHARE_UNKNOWN。 |
+| 响应未到 | `RESPONSE_UNKNOWN` | 3 | 120s 内重发同一 tuple POST 一次；仍失败换 reqId；若同时 `LINK_UNKNOWN` 按 LINK_UNKNOWN。 |
 | 同 reqId 冲突 | `REQID_CONFLICT` | 4 | 换新 `reqId`（不能复用旧 nonce/ct）。 |
-| Provider key revoked/expired | `PROVIDER_KEY_REVOKED` | 4 | 打开 App 重新 Connect；rotate 后无需重配对；已 delete 才新建 Share。CLI 不能 rotate。 |
+| Provider key revoked/expired | `PROVIDER_KEY_REVOKED` | 4 | 打开 App 重新 Connect；rotate 后无需重配对；已 delete 才新建 Link。CLI 不能 rotate。 |
 | Portal 不可达 | `RELAY_UNREACHABLE` | 3 | 检查 Portal/Unix socket；确认 `pnpm service-install`。 |
 | 限速 | `RATE_LIMITED` | 3 | 等 `Retry-After`；不要 New code（不清 rate）。 |
 | 大文件/envelope/list 页 | `TOO_LARGE` | 4 | `get --out`；减小 range/limit；用 cursor。 |
@@ -557,7 +557,7 @@ AAD 由下列字段按顺序拼接；每个字段编码为 `u32be(len(fieldValue
 | providerKeyId 16B golden；存储主键 `(hookId,deviceId)`；hook sweep suspend/delete tombstone；consumed exact cache；DEVICE_MISMATCH per-link | golden/存储/sweep/consumed/frame 测试。 |
 | HTTPS `.ts.net` Funnel 可用；Stop paused 在 Relay 仍有状态时可回答；pending Revoke 保留 Portal 归属；link store 无 256 死锁 | base/Stop/Revoke/retention 测试。 |
 | cursor 可逆/排序/绑定/tamper；同 deviceId 跨 hook 不能互删；pending Revoke 全字段；master loss 4413 恢复；Relay 重启 pairState 503 语义；provider-key marker | cursor/跨 hook/Revoke/master/重启/marker 测试。 |
-| Pairing Code 5 分钟、一次性；长期 Share Key 不打印、不进聊天；CLI 按 Share 保存；code memory-only；New code pairId 隔离；pair-error/Relay pair 过期/Stop paused（SHARE_PAUSED）/Relay 不可达 503/CLI 重启 New code/roots 可复现 | pairing 测试；transcript/log 扫描；CLI key store 权限；process death；old pairId cache；pair-error 映射。 |
+| Pairing Code 5 分钟、一次性；长期 Share Key 不打印、不进聊天；CLI 按 Share 保存；code memory-only；New code pairId 隔离；pair-error/Relay pair 过期/Stop paused（LINK_PAUSED）/Relay 不可达 503/CLI 重启 New code/roots 可复现 | pairing 测试；transcript/log 扫描；CLI key store 权限；process death；old pairId cache；pair-error 映射。 |
 | Portal 只见密文 + 路由元数据；无 key/code/路径/inner error；同机主机信任边界、明文控制帧可伪造已写入 | malicious Relay 测试；audit grep；tcpdump/WSS 检查；inner error 加密；控制错误伪造测试；文档扫描“Portal 宿主机可信”。 |
 | Revoke 后 Relay 可达时 410；持久 tombstone 跨 Relay 重启仍 410；第二 device 抢注册/抢 revoked 被 `LINK_OWNED`/`LINK_UNKNOWN` 拒绝；离线/重启按 tombstone/503；迟到请求回 `link-error`；New code 可重配对；Provider 离线 503；Relay/App 重启不重配对；Provider key rotate 不 tombstone、不重配对；delete 持久 revoked；新手机新 Share；reinstall 文案正确 | revoke/tombstone/restart/new-phone/reinstall/rotate/delete/第二 device 测试。 |
 | Provider WS 控制帧 ack/error、generation/ownership/LINK_OWNED error frame、pairEpoch 可复现；`register.deviceId` 必须等于 Provider key auth；`(hookId,deviceId)` owner 覆盖 pair/unregister/数据；deviceSecret 防同 hook 取回；admin-only list/delete；`shareKeyVfs` grant/revoke/list 与 legacy one-click grant 可用；`HOOK_SUSPENDED` 显示等待 regrant | 控制帧契约测试；deviceSecret/权限测试；hook capability 测试；App 选无 capability server 的错误提示。 |

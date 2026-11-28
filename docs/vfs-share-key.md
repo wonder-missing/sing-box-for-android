@@ -25,7 +25,7 @@
 ## 3. 用户流程
 
 1. Portal 的顶级 **Relay** 页面提供 Relay URL + Relay token。Settings → **VFS Relay Servers** → **Add Relay Server**（填完整 `/relay/v1` URL + token）。**Test connection** 只验证 URL/token/device，不创建 Share，也不打开 Provider WS。
-2. 首页 Dashboard 的 **VFS 卡片**同时是指示器和入口；它不依赖 VPN 服务是否运行。进入 VFS → **New Share**：名字（可选）→ Recommended / Everything / Customize → Create。创建时自动连接 Relay Server。
+2. 首页 Dashboard 的 **VFS 卡片**同时是指示器和入口；它不依赖 VPN 服务是否运行。进入 VFS → **New Link**：名字（可选）→ Recommended / Everything / Customize → Create。创建时自动连接 Relay Server。
 3. App 显示 5:00 倒计时和一行配对说明（含 Link ID 与 Pair Code）；**Copy pairing line** 复制该行（无换行）：
    `Use "$HOME/bin/vfsc" to access my shared files: Link ID=<linkId>, Pair Code=<code>.`
    `pairId` 由 code 与 linkId 用 HKDF 派生，不进入复制文本；code 只显示一次。
@@ -84,7 +84,7 @@ Recommended = activity / logs / telemetry / diagnostics；Everything = 所有 av
 
 ## 7. 错误与验收
 
-**用户可见错误**：`NOT_PAIRED`、`CODE_INVALID`、`CODE_EXPIRED`、`CODE_CONSUMED`、`SHARE_PAUSED`、`PROVIDER_OFFLINE`、`PAIR_WARMING`、`SHARE_UNKNOWN`、`SHARE_REVOKED`、`RELAY_UNREACHABLE`、`RATE_LIMITED`、`TOO_LARGE`、`PERMISSION_LOST`、`PROTOCOL_ERROR`。每个都要给下一步动作；未配对/暂停/撤销不得只报技术错误。
+**用户可见错误**：`NOT_PAIRED`、`CODE_INVALID`、`CODE_EXPIRED`、`CODE_CONSUMED`、`LINK_PAUSED`、`PROVIDER_OFFLINE`、`PAIR_WARMING`、`LINK_UNKNOWN`、`LINK_REVOKED`、`RELAY_UNREACHABLE`、`RATE_LIMITED`、`TOO_LARGE`、`PERMISSION_LOST`、`PROTOCOL_ERROR`。每个都要给下一步动作；未配对/暂停/撤销不得只报技术错误。
 
 **验收（必须全过）**：
 
