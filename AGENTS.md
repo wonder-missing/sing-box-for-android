@@ -30,6 +30,7 @@ General working style follows the owner's global working agreement; project-spec
 4. Features/fixes need JVM unit tests.
 5. Run `./scripts/local-test.sh` for JVM compile and tests; run `./scripts/e2e-emulator.sh` for startup/UI wiring. Then commit, `git push origin dev`, and `gh run list -R wonder-missing/sing-box-for-android -w Test -L 1` / `gh run watch <id> -R wonder-missing/sing-box-for-android --exit-status`. Red → fix and repeat until green. CI remains the release gate.
 6. When an issue is fixed: `gh issue comment` (what changed, which commit or release) and `gh issue close` (with `-R ...`).
+7. Device and soak runs are owner-led: do not start them autonomously. Report exactly what only a real device can prove.
 
 ## Upstream sync
 - Sync infrequently and in one pass: fetch upstream, identify already-applied equivalents, cherry-pick the remaining commits together, resolve all conflicts, verify once, and push once. Do not split functional and translation commits into separate merges.
@@ -45,18 +46,33 @@ General working style follows the owner's global working agreement; project-spec
 ## Planning
 - Plans are change plans: files/changes, order, tests and release steps. No time estimates; `Agent-Time` / `Agent-Loops` are release metadata recorded only when measured (see Release flow).
 - Complete the whole requested change in one pass. Stop for the owner only when there are two genuinely different designs. For an evidence-backed cleanup, list observed issues and evidence first; if there is no design fork, implement without a second confirmation.
+- **Align the concept model before multi-surface edits.** If a request changes product language, navigation or several screens, state the model and the exact entries to add/remove in the first response, then implement the whole change; ask only if the model has a real fork.
+- **Cut a design that keeps reopening.** Repeated rounds, or an abstraction that needs another layer to justify it, mean over-scoping: keep only mechanisms with an observed failure or user case, reduce to the smallest contract and delete the rest.
+- **Do not preserve never-shipped compatibility.** If no released user could have used an old format, flag or command, remove it; do not build a migration or dual-path support for it.
 - For visual/interaction exploration, show a concrete effect before an implementation list; technical choices that will remain still need a plan.
 - The ~1–2h scope is for autonomous TODO/issue picking; a user-requested change is delivered as one whole change. Product phases in `docs/` are roadmaps.
 
 ## UI and interaction
 - Layout uses `dp`; text uses `sp`. Standard scale: spacing `4/8/12/16/24dp`; corner radius `8/12/16dp` (pills half height); touch target `48dp`; body text `14–16sp`. A bare "px" means design dp (`1 design px ≈ 1dp`); inputs/cards usually use `8–12dp`.
 - **Standard interactions first**, one action per control: prefer a visible button, chevron or menu item over hidden gestures; do not duplicate entry points; custom gestures need approval first. Copy uses native long-press + System Copy (no tap-to-copy on inline code). Keep interactive rows at least `48dp` unless a compact design was explicitly approved (the reasoning strip is the known exception). Show user-message send time under the bubble.
+- **No ceremonial controls.** Do not add Connect, Stop or Refresh for state the app can derive or maintain automatically; every control must change a user-visible outcome.
+- **Progressive disclosure.** Lead with the smallest actionable artifact (one pairing line, one current value); do not give internal IDs or one-time codes equal visual weight.
+- **Settings are controls, not documentation.** Show label and current value; move multi-sentence explanations to help or empty states.
 - The owner uses frontend terms (`padding`/`margin`/`gap`/`flex`); translate to dp and Compose. Prefer relative references over exact numbers, and apply product-level spacing/alignment yourself.
 - **Inspect the UI path before explaining behavior.** When the owner reports an interaction, read the Compose/UI code and reproduce it; an agent's explanation of a card it cannot see is not evidence.
 - **Conductor Plan card completion is terminal.** When every step is `done`, hide Edit and do not add Reopen; re-planning is a natural-language request to Conductor. While work remains, the card stays editable. Every model/user plan change is a `PlanEvent` (version, time, actor, action) and appears in `## Plan history`; `[runtime:plan]` carries `updatedBy`.
 - **Render UI changes locally.** Compile/tests are not a UI proof; use `scripts/e2e-emulator.sh` (`E2E_KEEP_EMULATOR=1` when inspecting) and keep screenshots/XML under `build/e2e-emulator/`.
+- **Actions need visible boundaries.** In any action row, keep at least `16dp` between text buttons; destructive actions use the error color; verify at phone width that adjacent labels do not read as one control. Do not ship a dialog button row with no action.
+- **Never set `FLAG_SECURE` on user-facing screens.** The owner must be able to screenshot any app surface; protect secrets with clipboard clearing and explicit reveal, not by blocking capture.
 - **Show UI changes, don't just describe them.** For a new design or adjustment that is hard to state in prose, send screenshots first for review: use `"$HOME/bin/feisend"` (number multiple images on the image itself, A01, B02, …) or a `~/notes` image note (no numbering). A note is preferred when images plus captions are richer. The Mini is headless; never report a local screenshot path as the only deliverable.
 - Design specs/tokens live in [`design/README.md`](design/README.md); Conductor-specific UI decisions live in [`docs/agent-control-plane.md`](docs/agent-control-plane.md).
+
+## Product language and concept hygiene
+- **One public noun per concept.** Use the owner's term in every public surface: UI labels, buttons, empty/error states, CLI commands and flags, JSON fields and user-visible error codes. Wire/storage names may differ, but must not leak into public output. Do not substitute a near-synonym to avoid renaming work.
+- **A replacement retires the old path.** When a new flow replaces an old one, remove the old entry point, tool, flag and public strings in the same release close-out; do not ship two parallel concepts or keep a shim for a version that never worked. If removal is unsafe, name the blocker and the release that removes it; do not re-list it each round.
+- **Labels describe user data.** Scope, card and setting names say what the owner gets (`Proxy groups`, `VFS`), not the wire key. An unavailable data source is hidden from new flows, not shown as a dead option.
+- **Copy output is one self-contained line.** Pairing/copy text must be newline-free and include the entry command plus the minimum IDs; an external agent should be able to act after `--help` without hidden context.
+- **Metrics name their boundary.** A traffic/usage/size number states what it counts and excludes, and measures the owner-visible boundary rather than a convenient proxy.
 
 ## Conductor tool metadata
 - Tool names, descriptions, aliases and search keywords are English-only. The model translates intent to English before `search_tools` and answers in the user's language.
@@ -72,6 +88,7 @@ Deterministic steps live in [`scripts/release.sh`](scripts/release.sh): `--check
 4. `gh run watch` Release; `gh release view <tag> -R wonder-missing/sing-box-for-android`; confirm the `arm64-v8a` APK asset and the `Release notify` message; report the download URL.
 - Releases are **arm64-v8a only**. Release notes/tag annotations are **English-only** except when Chinese is the quoted source fact. Commit messages and tags omit `Co-Authored-By`.
 - Release notes list only app-facing changes under `app/src/main`; exclude AGENTS/docs, CI, local test/emulator tooling, repository governance and merge mechanics. `scripts/release.sh` applies the same path filter to `Changes since`.
+- Before tagging, scan UI strings, routes and public JSON for stale terms and parallel entries from a replaced path; a release with two public names for one concept is not complete.
 - `release.yml` restores the `libbox.aar` cache written by `test.yml` on `dev`; keep cache key and recipe version in sync.
 - Never delete/move tags or releases; never force-push; push only `dev` (and release tags).
 - In `.claude/settings.json`, keep the delete-refspec deny as `Bash(git push origin ::*)`. A trailing `:*` is the prefix wildcard; `Bash(git push origin :*)` would match every push, including `dev` and tags.
