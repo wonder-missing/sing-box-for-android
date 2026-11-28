@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -219,6 +220,7 @@ fun VfsRelayServersScreen(navController: NavController) {
                                         }
                                     },
                                     enabled = !busy,
+                                    contentPadding = PaddingValues(horizontal = 0.dp),
                                 ) {
                                     Text(stringResource(R.string.vfs_use_server))
                                 }
@@ -229,6 +231,7 @@ fun VfsRelayServersScreen(navController: NavController) {
                                     editServer = server
                                 },
                                 enabled = !busy && !active && !hasShares,
+                                contentPadding = PaddingValues(horizontal = 0.dp),
                             ) {
                                 Text(stringResource(R.string.share_files_edit))
                             }
@@ -243,6 +246,7 @@ fun VfsRelayServersScreen(navController: NavController) {
                                     }
                                 },
                                 enabled = !busy,
+                                contentPadding = PaddingValues(horizontal = 0.dp),
                             ) {
                                 Text(stringResource(R.string.share_files_delete))
                             }

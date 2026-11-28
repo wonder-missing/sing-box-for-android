@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -52,6 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
@@ -223,6 +226,21 @@ fun VfsScreen(navController: NavController) {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
 
+        if (shares.isNotEmpty()) {
+            shares.forEach { share ->
+                val relayName =
+                    serverViews.firstOrNull { it.id == share.serverId }?.name
+                        ?: selectedServer?.name.orEmpty()
+                ShareCard(
+                    share = share,
+                    relayName = relayName,
+                    onPairing = { openPairing(share.shareId) },
+                    onRevoke = { revokeShareId = share.shareId },
+                    enabled = !busy,
+                )
+            }
+        }
+
         if (shares.isNotEmpty() && !showCreate) {
             Button(onClick = { showCreate = true }, enabled = !busy) {
                 Text(stringResource(R.string.share_files_new))
@@ -294,21 +312,6 @@ fun VfsScreen(navController: NavController) {
             )
         }
 
-        if (shares.isNotEmpty()) {
-            shares.forEach { share ->
-                val relayName =
-                    serverViews.firstOrNull { it.id == share.serverId }?.name
-                        ?: selectedServer?.name.orEmpty()
-                ShareCard(
-                    share = share,
-                    relayName = relayName,
-                    onPairing = { openPairing(share.shareId) },
-                    onRevoke = { revokeShareId = share.shareId },
-                    enabled = !busy,
-                )
-            }
-        }
-
         pairingShareId?.let { shareId ->
             PairingDialog(
                 pairing = VfsRelayRuntime.pairingUi(shareId),
@@ -366,7 +369,7 @@ private fun ShareCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = share.label.ifBlank { share.shareId.take(8) },
                 style = MaterialTheme.typography.bodyLarge,
@@ -405,10 +408,18 @@ private fun ShareCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (share.status != "revoked") {
-                    TextButton(onClick = onPairing, enabled = enabled) {
+                    TextButton(
+                        onClick = onPairing,
+                        enabled = enabled,
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                    ) {
                         Text(stringResource(R.string.share_files_show_pairing))
                     }
-                    TextButton(onClick = onRevoke, enabled = enabled) {
+                    TextButton(
+                        onClick = onRevoke,
+                        enabled = enabled,
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                    ) {
                         Text(stringResource(R.string.share_files_revoke))
                     }
                 }
@@ -436,7 +447,7 @@ private fun CreateShareCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = label,
                 onValueChange = { onLabel(it.take(64)) },
@@ -565,11 +576,20 @@ private fun PairingDialog(
     onDismiss: () -> Unit,
 ) {
     var copied by remember(pairing?.code) { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.share_files_pairing_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.share_files_pairing_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
                 if (pairing == null) {
                     Text(
                         text = stringResource(R.string.share_files_pairing_expired),
@@ -607,9 +627,8 @@ private fun PairingDialog(
                     }
                 }
             }
-        },
-        confirmButton = {},
-    )
+        }
+    }
 }
 
 private fun copyToClipboard(
